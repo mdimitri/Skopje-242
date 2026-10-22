@@ -40,6 +40,8 @@ class Renderer:
         self._built = 0
         self.shadows = True
         self.car_models = {}
+        self._own = {}                         # id(body) -> body with its own model
+        self._frames = 0
         self.ped_models = {}
         self.pick_models = {}
         self.t = 0.0
@@ -96,13 +98,26 @@ class Renderer:
             b.model = gl3d.car_model(b.kind, b.color, b.dents, 1.0 if b.exploded else min(1.0, b.burn / 6.0) * 0.5,
                                      b.color < 0)
             b.dirty = False
+            self._own[id(b)] = b
         if b.model is not None:
             return b.model
+        if b.color >= 0:                                   # plain car: shared model, built within the per-frame budget
+            return self.ai_model(b.kind, b.color)
         key = (b.kind, b.color)
         m = self.car_models.get(key)
         if m is None:
-            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, b.color < 0)
+            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, True)
         return m
+
+    def _free_orphans(self, bodies):
+        """Dented / burnt cars own a model; give its video memory back once the car is gone (never for a car still in play)."""
+        live = {id(b) for b in bodies}
+        for k in [k for k in self._own if k not in live]:
+            b = self._own.pop(k)
+            if b.model is not None:
+                gl3d.free_model(b.model)
+                b.model = None
+                b.dirty = True
 
     BUILD_BUDGET = 2                      # new procedural models per frame (keeps the first sight of a new car/person smooth)
 
@@ -123,7 +138,9 @@ class Renderer:
         m = self.ped_models.get(key)
         if m is None:
             if self._built >= self.BUILD_BUDGET:
-                return self.ped_models.get((arch, 0, frame, 0))
+                fb = self.ped_models.get((arch, 0, frame, 0)) or self.ped_models.get((arch, 0, 0, 0))
+                if fb is not None:
+                    return fb                                  # (none yet: build it now, a person is never just a shadow)
             self._built += 1
             m = self.ped_models[key] = gl3d.ped_model(arch, tone, frame, skin)
         return m
@@ -146,9 +163,9 @@ class Renderer:
         rl.begin_mode_3d(cam)
         try:
             rl.rl_disable_backface_culling()
-            self._overview()
             lod = ppm >= LOD_PPM
             drawn = 0
+            missing = not lod
             if lod:
                 x0, x1 = math.floor((rect[0]) / S), math.floor(rect[2] / S)
                 y0, y1 = math.floor((rect[1]) / S), math.floor(rect[3] / S)
@@ -158,6 +175,10 @@ class Renderer:
                         if gm is not None:
                             rl.draw_model(gm, V3(0, 0, 0), 1.0, WHITE)
                             drawn += 1
+                        else:
+                            missing = True
+            if missing:                                    # the coarse whole-city model is only seen where a chunk is not baked yet
+                self._overview()
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
@@ -270,6 +291,9 @@ class Renderer:
 
     def _actors(self, rect, sim, t):
         w = self.w
+        self._frames += 1
+        if self._frames % 240 == 0:
+            self._free_orphans(sim.bodies)
         sh = []
         # pickups
         for x, z, kind, alive, _t in sim.pickups:

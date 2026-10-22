@@ -74,17 +74,15 @@ class Night:
         rl.end_blend_mode()
 
     def _beam(self, cam, x, y, ca, sa, a, length=13.0, spread=0.3):
-        """A headlight beam: one soft triangle from the lamp forward plus a brighter inner one."""
+        """A headlight beam: exactly one soft triangle from the lamp forward."""
         def scr(d, side):
             w_ = d * spread * side
             px, py = x + ca * d - sa * w_, y + sa * d + ca * w_
             return rl.get_world_to_screen(V3(px, self.w.ground_y(px, py) + 0.15, py), cam)
-        p0 = scr(0.2, 0)
-        for ln, k in ((length, 0.22), (length * 0.55, 0.3)):
-            p1, p2 = scr(ln, -1), scr(ln, 1)
-            c = _col(255, 238, 190, a * k)
-            rl.draw_triangle(p0, p1, p2, c)
-            rl.draw_triangle(p0, p2, p1, c)
+        p0, p1, p2 = scr(0.2, 0), scr(length, -1), scr(length, 1)
+        if (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x) > 0:   # raylib needs counter-clockwise
+            p1, p2 = p2, p1
+        rl.draw_triangle(p0, p1, p2, _col(255, 238, 190, a * 0.3))
 
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)

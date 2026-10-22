@@ -15,6 +15,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
+import faulthandler   # noqa: E402 - a native crash (GPU / raylib) leaves a Python stack in logs/crash.log
+try:
+    os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+    _crash_f = open(os.path.join(ROOT, "logs", "crash.log"), "a")
+    _crash_f.write(time.strftime("--- start %Y-%m-%d %H:%M:%S\n"))
+    _crash_f.flush()
+    faulthandler.enable(_crash_f, all_threads=True)
+except Exception:  # noqa: BLE001
+    pass
+
 import pyray as rl   # noqa: E402
 import font   # noqa: E402
 
@@ -284,6 +294,8 @@ def main():
     ap.add_argument("--demo", action="store_true", help="offline synthetic demo city")
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
     ap.add_argument("--nomenu", action="store_true", help="skip the start menu")
+    ap.add_argument("--car", action="store_true", help="start inside the car (default: on foot next to it)")
+    ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
     ap.add_argument("--foot", action="store_true", help="start on foot (with --start: at the nearest footpath)")
     ap.add_argument("--deck", action="store_true", help="with --start: stand on the bridge deck if there is one")
     a = ap.parse_args()
@@ -468,6 +480,9 @@ def main():
         streamer.update([key], True, 1e9)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
+    res_ = ""
+    if not a.test and not a.nomenu:
+        loader.hold()                              # let the showcase (cars / characters) play until a key press
     log("[game] ready")
     if not a.test and not a.nomenu:
         res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud)
@@ -482,6 +497,8 @@ def main():
             if d_:
                 sx, sy = savegame.restore(sim, cfg, d_)
                 apply_cfg(cfg, True)
+    if (a.walker or (not a.test and not a.car)) and not a.foot and sim.mode == "car" and not res_.startswith("load"):
+        sim.exit_car()                                     # new game: you start as a walker standing next to the car
     hud.set_banner(rng.choice(slang.START), 4.0)
     popups.add(rng.choice(slang.TIPS), sx, sy, 6.0, 7.0, (200, 230, 255), 20)
 
@@ -733,7 +750,7 @@ def main():
             elif kind == "respawn":
                 hud.set_banner("Пак си тука. Нема фрка.", 2.0)
             elif kind == "free_model":
-                gl3d.free_model(d["model"])
+                pass                      # the renderer owns the model and frees it in _free_orphans (freeing here too = double free, heap crash)
         sim.events.clear()
 
     def effects(dt):
@@ -794,10 +811,13 @@ def main():
 
     def handle_places(fx_, fy_):
         r = places.update(fx_, fy_)
-        if r:
+        first_call = not t_places["seen"]
+        t_places["seen"] = True
+        if r and not first_call:                            # the starting neighbourhood is not called out
             hud.set_place(r[0], r[1], 5.0)
             say(r[1], fx_, fy_, "Водич", True)
 
+    t_places = {"seen": False}
     amb_state = {"next": 8.0, "dens": 0.3}
 
     def density_at(x, y):
@@ -1063,7 +1083,7 @@ def main():
         # ------------------------------------------------ camera
         speed = math.hypot(fvx, fvy)
         if sim.mode == "car":
-            tgt_ppm = (10.5 - 4.6 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
+            tgt_ppm = 1.18 * (10.5 - 4.6 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
         else:
             tgt_ppm = 26.0 * user_zoom * cfg["zoom_walk"]
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)

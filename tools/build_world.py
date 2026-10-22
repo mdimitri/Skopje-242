@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 10
+VERSION = 11
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -50,6 +50,83 @@ AREA_STYLE = {   # kind: (z-order, rgb)
     "playground": (1, (190, 190, 150)), "plaza": (2, (212, 202, 186)), "parking": (2, (172, 172, 178)),
     "water": (3, (86, 146, 198)),
 }
+
+
+def connect_roads(roads, radius=7.0):
+    """Join dead ends that stop just short of another road (a gap in the data): the end moves onto the nearest vertex or onto a new
+    junction node inserted into that road.  Same level only (never bridges, never motorways), the end must point at the road."""
+    use = {}
+    for rd in roads:
+        if (rd["drive"] or rd["walk"]) and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                use[n] = use.get(n, 0) + 1
+    cs = 16.0
+    grid = {}
+    for ri, rd in enumerate(roads):
+        if not (rd["drive"] or rd["walk"]) or rd["bridge"] or rd["cls"] == "motorway" or len(rd["nodes"]) != len(rd["pts"]):
+            continue
+        pts = rd["pts"]
+        for k in range(len(pts) - 1):
+            (ax, ay), (bx, by) = pts[k], pts[k + 1]
+            for cx in range(int((min(ax, bx) - radius) // cs), int((max(ax, bx) + radius) // cs) + 1):
+                for cy in range(int((min(ay, by) - radius) // cs), int((max(ay, by) + radius) // cs) + 1):
+                    grid.setdefault((cx, cy), []).append((ri, k))
+    inserts = {}                                    # road -> [(segment k, t, new node id, point)]
+    fresh = -1
+    snapped = merged = 0
+    for ri, rd in enumerate(roads):
+        if not (rd["drive"] or rd["walk"]) or rd["bridge"] or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
+            continue
+        for end in (0, -1):
+            node, p = rd["nodes"][end], rd["pts"][end]
+            if use.get(node, 0) != 1:
+                continue
+            q = rd["pts"][1] if end == 0 else rd["pts"][-2]
+            dl = math.hypot(p[0] - q[0], p[1] - q[1]) or 1.0
+            dx, dy = (p[0] - q[0]) / dl, (p[1] - q[1]) / dl
+            best = None
+            for ri2, k in grid.get((int(p[0] // cs), int(p[1] // cs)), ()):
+                r2 = roads[ri2]
+                if ri2 == ri or r2["layer"] != rd["layer"] or r2["bridge"]:
+                    continue
+                if rd["drive"] and not r2["drive"]:
+                    continue
+                (ax, ay), (bx, by) = r2["pts"][k], r2["pts"][k + 1]
+                ex, ey = bx - ax, by - ay
+                l2 = ex * ex + ey * ey
+                t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * ex + (p[1] - ay) * ey) / l2))
+                qx, qy = ax + ex * t, ay + ey * t
+                d = math.hypot(p[0] - qx, p[1] - qy)
+                if d > radius or d < 0.05:
+                    continue
+                if (qx - p[0]) * dx + (qy - p[1]) * dy < 0.2 * d:         # not pointing at it: a parallel neighbour
+                    continue
+                if best is None or d < best[0]:
+                    best = (d, ri2, k, t, qx, qy)
+            if best is None:
+                continue
+            d, ri2, k, t, qx, qy = best
+            r2 = roads[ri2]
+            if t < 0.15 or t > 0.85:                                       # right at a vertex: share that node
+                kk = k if t < 0.5 else k + 1
+                rd["nodes"][end] = r2["nodes"][kk]
+                rd["pts"][end] = r2["pts"][kk]
+                use[r2["nodes"][kk]] = use.get(r2["nodes"][kk], 0) + 1
+                merged += 1
+            else:
+                fresh -= 1
+                inserts.setdefault(ri2, []).append((k, t, fresh, (qx, qy)))
+                rd["nodes"][end] = fresh
+                rd["pts"][end] = (qx, qy)
+                use[fresh] = 2
+                snapped += 1
+    for ri2, lst in inserts.items():
+        r2 = roads[ri2]
+        for k, t, nid_, pt in sorted(lst, key=lambda q: (q[0], q[1]), reverse=True):
+            r2["pts"].insert(k + 1, pt)
+            r2["nodes"].insert(k + 1, nid_)
+    print(f"[build] connected {merged + snapped} dead ends to nearby roads ({snapped} new junctions)")
+    return merged + snapped
 
 
 def area_kind(t):
@@ -797,6 +874,7 @@ def main():
     print(f"[build] roads: {len(roads)}")
     phase("graph")
 
+    connect_roads(roads)
     # ---- routing graph ----------------------------------------------------------------------------
     use = {}
     for rd in roads:

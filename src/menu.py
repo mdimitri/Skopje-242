@@ -240,8 +240,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
     -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'"""
     import savegame
     tab, flash, flash_t = 0, "", 0.0
-    if not in_game and _title() is not None and _title_card():
-        return "quit"
+    # (the poster title card is gone: the 3D loading showcase is the only splash)
     if not in_game:                      # start: title card + character choice, then straight into the game
         pick_character.load = False
         if pick_character(cfg, aud):

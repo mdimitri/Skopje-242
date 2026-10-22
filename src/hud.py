@@ -101,10 +101,10 @@ class Hud:
         self.place = ("", "", 0.0)   # neighbourhood tooltip: title, line, seconds left
 
     def set_banner(self, text, secs=3.0):
-        self.banner = (text, secs)
+        self.banner = (text, max(secs * 1.3, 1.4 + len(text) * 0.075))
 
     def set_place(self, name, line, secs=5.0):
-        self.place = (name, line, secs)
+        self.place = (name, line, max(secs * 1.3, 1.6 + len(line or name) * 0.075))
 
     def update(self, dt):
         t, s = self.banner

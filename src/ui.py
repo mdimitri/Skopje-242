@@ -11,7 +11,7 @@ import font   # noqa: E402
 
 import geo
 import poster as poster_mod
-import showcase as showcase_mod
+import splash3d as showcase_mod
 import slang
 import strings as T
 
@@ -99,8 +99,9 @@ class Loader:
         self.b_done = set()
         self.b_frac = 0.0
         self.posters = poster_mod.Posters()
-        self.show = showcase_mod.Showcase()
-        self.title_until = time.time() + 5.0 if self.posters.title() else 0.0
+        self.show = showcase_mod.Splash3D()
+        self.title_until = 0.0                      # the showcase starts at once (a cached world loads in 2-3 s)
+        self.hint = ""
         self.quip = random.choice(slang.LOADING_QUIPS)
         self.quip_t = self.title_until or time.time()
         if self.posters.title():
@@ -302,7 +303,7 @@ class Loader:
         rl.begin_drawing()
         rl.clear_background(rl.Color(18, 20, 25, 255))
         m = max(16, W // 60)
-        lw = int(W * 0.44)
+        lw = int(W * 0.62)
         rx = m + lw + (m if lw else 0)
         rw = W - rx - m
         if lw:
@@ -362,8 +363,20 @@ class Loader:
                 c = GREEN if "✓" in ln else (RED if "✗" in ln else (rl.Color(255, 220, 90, 255) if "↓" in ln else GREY))
                 font.draw_text(font.fit(ln, 13, rw), rx, y + 4, 13, c)
                 y += 17
+        if self.hint and int(now * 1.6) % 2 == 0:
+            font.draw_text(self.hint, m + 14, H - m - 30, 20, rl.Color(255, 245, 210, 255), bold=True)
         font.exit_button()
         rl.end_drawing()
+
+    def hold(self, min_s=1.5, max_s=None):
+        """Loading is done: keep the showcase on screen until a key / click (after `min_s`) or `max_s`."""
+        t0 = time.time()
+        self.hint = "Готово! Притисни било кое копче за да продолжиш"
+        while max_s is None or time.time() - t0 < max_s:
+            self.draw(force=True)
+            if time.time() - t0 > min_s and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):
+                break
+        self.hint = ""
 
     def _map(self, x, y, w, h_avail):
         mw = min(w, int(max(120, h_avail - 40) * (self.box[2] - self.box[0]) / (self.box[3] - self.box[1])))

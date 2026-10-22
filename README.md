@@ -1,4 +1,4 @@
-# Скопје 242 – Skopje GTA (v1.0)
+# Скопје 242 – Skopje GTA (v1.1)
 
 A top-down, real-3D, GTA-1-style sandbox of **Skopje, North Macedonia**, in Macedonian Cyrillic and Skopje slang.
 An 11 × 7 km map around the Stone Bridge is built from **OpenStreetMap** and open elevation data; everything the map
@@ -38,13 +38,14 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 
 **World**
 - Real OSM map of Skopje (roads, buildings, water, green areas, landmarks, neighbourhoods) and real terrain: slopes affect cars and walkers, the Vardar bed is carved in.
+- Dead-end roads are joined to nearby roads, so there are fewer broken streets.
 - Smoothed 3D roads with gutters, kerbs, markings, zebra crossings; bridges with real decks you can pass under or fall from (splash in the river).
 - Street furniture, kiosks, bus shelters, **real bus stops** from OSM, bushes, playgrounds, goals and school yards, breakable props.
 - Working **traffic lights** in a green wave, day/night cycle with lamps and headlights, **Skopje smog** haze, wall bullet holes and scorch marks.
 
 **Vehicles and people**
 - 59 named vehicles (Yugo, Fico, Lada Niva, Trabant, Passat Dijaspora, taxi, police, ambulance, fire truck, JSP bus, wedding limo…) with dents, fire and explosions.
-- 39+ road users with their own one-liners; hero characters with 52 lines each; kids playing at playgrounds and pitches; "people with problems" lines.
+- 39+ road users with their own one-liners; **35 playable characters** (11 new in v1.1: administratorka, bilder, boza, burek, fitka, nastavnica, navivac, palavko, shmizla, srednoskolec, vojnik) with 52 lines each; kids playing at playgrounds and pitches; "people with problems" lines.
 - **Real JSP city buses** on real OSM lines that stop at real stops; ride one, or take it over.
 - Ambulance revives the fallen, fire brigade puts out burning wrecks.
 
@@ -55,6 +56,7 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 **Menus and UI**
 - All text in Macedonian Cyrillic (DejaVu Sans). Settings menu with tabs (display, camera, sound, light, map, game), saved to `settings.json`; quit confirmation.
 - **Download splash**: a map of OSM cells and elevation tiles showing waiting / downloading / done / failed, real speed, and warnings; every request has a time limit, so it cannot hang.
+- **3D loading splash**: an endless street built with the game's own generators, with cars and characters walking, fighting, chasing and shouting jokes while the world loads.
 - Showcase splash (title poster, then cars in blocks of 10 and all characters with jokes) and joke posters.
 
 **Sound**

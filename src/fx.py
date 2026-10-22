@@ -91,6 +91,11 @@ class Particles:
         rl.rl_enable_depth_mask()
 
 
+def read_time(text, secs):
+    """Show time grows with the text length: about 14 characters a second plus a pause, never shorter than asked, a bit longer in general."""
+    return max(secs * 1.3, 1.4 + len(text) * 0.075)
+
+
 class Popups:
     """Floating comic text at world positions (speech bubbles, +1 burek, KABOOM ...)."""
 
@@ -98,6 +103,7 @@ class Popups:
         self.items = []     # [text, x, y(height), z, ttl, color, size]
 
     def add(self, text, x, z, y=3.0, ttl=2.4, color=(255, 255, 255), size=22):
+        ttl = read_time(text, ttl)
         # avoid piling identical text on one spot
         for it in self.items:
             if it[0] == text and abs(it[1] - x) < 3 and abs(it[3] - z) < 3:

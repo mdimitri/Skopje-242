@@ -130,3 +130,10 @@ renders a contact sheet of all models.
 
 ## Round 6 - car radio
 src/radio.py (raylib music streams, shuffle bag, generated static), tools/fetch_radio.py (Commons API, licence filter), setting vol_radio.
+
+## Round 15 (polish)
+- World VERSION 11: `connect_roads()` in tools/build_world.py joins dead ends that stop within 7 m of another road (same level, pointing at it) to the nearest vertex or a new junction node. Needs a world rebuild (automatic: build_world.py is newer than the manifest).
+- Pop-ups, banners and place names stay visible in proportion to their length (`fx.read_time`).
+- Start: the player stands next to the car (`--car` starts inside it, `--walker` forces it in `--test`); the starting neighbourhood is not announced.
+- `World.wet()` is false while standing on a bridge deck (deck ends dip to bank level and used to count as river).
+- Renderer: the whole-city overview model is only drawn when a ground chunk is missing; plain cars/bodies use the shared, budgeted models; dented-car models are freed when the car is gone; a person is never drawn as just a shadow.

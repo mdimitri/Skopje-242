@@ -340,6 +340,17 @@ def persona_of(p, rng):
     return PERSONAS[p.persona]
 
 
+def wchoice(lines, rng=random, gamma=0.6):
+    """Pick a line with probability falling with its length as (len/mean)^-gamma: long lines get spoken less often, never never."""
+    lines = list(lines)
+    if len(lines) < 2:
+        return rng.choice(lines)
+    ls = [max(len(str(x)), 1) for x in lines]
+    m = sum(ls) / len(ls)
+    w = [(l / m) ** -gamma for l in ls]
+    return rng.choices(lines, weights=w)[0]
+
+
 def say(p, sim, rng=random):
     """An idle line for pedestrian p: personality, type, district, time of day, Skopje/politics/jokes, insults by aggression."""
     import vehicles
@@ -348,16 +359,16 @@ def say(p, sim, rng=random):
     a = vehicles.PED_IDS[p.arch]
     r = rng.random()
     if aggro >= 2 and r < 0.08 * aggro:                     # nervous city: random cursing at nobody in particular
-        return rng.choice(NSFW if lang >= 2 else (STREET_INSULT if lang == 1 else POLITE_INSULT))
+        return wchoice(NSFW if lang >= 2 else (STREET_INSULT if lang == 1 else POLITE_INSULT), rng)
     if rng.random() < 0.3:                                 # people with problems
-        return rng.choice(pool(problems.for_arch(a), lang))
+        return wchoice(pool(problems.for_arch(a), lang), rng)
     r = rng.random()
     if r < 0.08:
-        return rng.choice(pool([gossip(rng)], lang))
+        return wchoice(pool([gossip(rng)], lang), rng)
     if r < 0.12 or (0.38 <= r < 0.44):                   # thoughts in the first person
-        return rng.choice(pool(ME, lang))
+        return wchoice(pool(ME, lang), rng)
     if r < 0.2:
-        return rng.choice(pool(JARGON, lang))
+        return wchoice(pool(JARGON, lang), rng)
     if r < 0.38:
         lines = persona_of(p, rng)[2]
     elif r < 0.55:
@@ -373,7 +384,7 @@ def say(p, sim, rng=random):
         lines = POLITICS
     else:
         lines = STEREO.get(a, JOKES) + JOKES
-    return rng.choice(pool(lines, lang))
+    return wchoice(pool(lines, lang), rng)
 
 
 def react(kind, arch, sim, base, rng=random):
@@ -385,4 +396,4 @@ def react(kind, arch, sim, base, rng=random):
         lines = pool(FIGHT_TALK, lang)
     if kind in ("hit", "fight") and rng.random() < 0.15 * aggro:
         lines = NSFW if lang >= 2 else (STREET_INSULT if lang == 1 else POLITE_INSULT)
-    return rng.choice(lines)
+    return wchoice(lines, rng)

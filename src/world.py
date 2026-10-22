@@ -235,8 +235,11 @@ class World:
         k = iy * self.ncx + ix
         if not (self.hgt[k] & 4) or self.surf[k] == 3:
             return False
-        if self.surf[k] == 2 and (not self.dgrid or self.deck_h(x, y) is None):
+        d = self.deck_h(x, y) if self.dgrid else None
+        if self.surf[k] == 2 and d is None:
             return False                                     # a bridge without a 3D deck: drive across at ground level
+        if d is not None and wy >= d - 0.9:
+            return False                                     # standing on the deck (its ends dip to bank level: never "in the river")
         return wy <= self.th(x, y) + 0.6
 
     def slope_at(self, x, y, dx, dy, wy, d=1.2):

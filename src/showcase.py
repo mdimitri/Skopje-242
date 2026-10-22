@@ -4,6 +4,7 @@ import math
 import random
 import time
 
+import numpy as np
 import pyray as rl
 
 import characters
@@ -12,7 +13,7 @@ import poster as poster_mod
 import showcase_lines as L
 import vehicles
 
-CAR_SECS, CHAR_SECS, BLOCK = 5.6, 6.4, 10
+CAR_SECS, CHAR_SECS, BLOCK = 9.0, 11.0, 4
 GOLD = rl.Color(240, 200, 60, 255)
 PAINT = [(190, 50, 45), (50, 90, 160), (210, 210, 215), (60, 130, 85), (200, 160, 40), (110, 60, 130), (150, 150, 155), (40, 40, 46),
          (200, 110, 40), (130, 30, 40)]
@@ -33,6 +34,7 @@ class Showcase:
         self.cur = None
         self.t0 = time.time()
         self.tex = {}
+        self.meshes = {}
         self.now_fn = time.time
         self.hills = [(self.rng.uniform(0, 1), self.rng.uniform(0.12, 0.3), self.rng.uniform(0.08, 0.2)) for _ in range(9)]
         self.houses = [(self.rng.uniform(0, 1), self.rng.uniform(0.07, 0.2), self.rng.uniform(0.06, 0.12), self.rng.randrange(4)) for _ in range(12)]
@@ -42,9 +44,11 @@ class Showcase:
         for _ in range(BLOCK):
             self.queue.append(("car", self.cars[self.car_pos % len(self.cars)]))
             self.car_pos += 1
-        order = list(range(len(characters.LIKOVI)))
-        self.rng.shuffle(order)
-        self.queue += [("char", i) for i in order]
+        if not getattr(self, "char_order", None):
+            self.char_order = list(range(len(characters.LIKOVI)))
+            self.rng.shuffle(self.char_order)
+        for _ in range(BLOCK):                                 # 4 cars, 4 characters, ... until everything has been shown
+            self.queue.append(("char", self.char_order.pop()))
 
     def _next(self, now):
         if not self.queue:
@@ -196,30 +200,66 @@ class Showcase:
         rl.end_scissor_mode()
         rl.draw_rectangle_lines(int(x), int(y), int(w), int(h), rl.Color(90, 92, 98, 255))
 
+    def _mesh(self, i, frame):
+        """The character's in-game 3D model (gl3d box model) as triangles -> (xyz Nx3x3, colours Nx3x4); None if unavailable."""
+        k = (i, frame)
+        if k not in self.meshes:
+            m = None
+            try:
+                import gl3d
+                pos, _uv, rgba = gl3d._hero(i, frame)
+                n = len(pos) - len(pos) % 3
+                m = (pos[:n].reshape(-1, 3, 3).astype(np.float32), rgba[:n:3].astype(np.uint8))
+            except Exception:  # noqa: BLE001 - the splash falls back to the caricature
+                m = None
+            self.meshes[k] = m
+        return self.meshes[k]
+
+    def _avatar(self, i, frame, cx, base, S, ang):
+        """Painter's-algorithm orthographic drawing of the hero model, turned by `ang` about the vertical axis."""
+        m = self._mesh(i, frame)
+        if m is None:
+            return False
+        tri, col = m
+        ca, sa = math.cos(ang), math.sin(ang)
+        sx = tri[:, :, 0] * ca - tri[:, :, 2] * sa
+        dp = tri[:, :, 0] * sa + tri[:, :, 2] * ca
+        order = np.argsort(-dp.mean(axis=1))                       # far first
+        rl.draw_ellipse(int(cx), int(base), S * 0.45, S * 0.09, rl.Color(0, 0, 0, 90))
+        px = cx + sx * S
+        py = base - tri[:, :, 1] * S
+        for n in order:
+            a, b, c = ((px[n, 0], py[n, 0]), (px[n, 1], py[n, 1]), (px[n, 2], py[n, 2]))
+            area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+            if abs(area) < 0.2:
+                continue
+            if area > 0:
+                b, c = c, b
+            r_ = col[n]
+            rl.draw_triangle(rl.Vector2(*a), rl.Vector2(*b), rl.Vector2(*c), rl.Color(int(r_[0]), int(r_[1]), int(r_[2]), 255))
+        return True
+
     def _chars_scene(self, c, t, x, y, w, sh, base, now):
-        ph = int(sh * 0.86)
         slide = min(1.0, t * 5) * (1.0 - max(0.0, (t - 0.9) * 10))
-        tex = self._texture(c["i"])
-        px = x + int(w * 0.06) - int((1.0 - slide) * w * 0.4)
-        py = y + sh - ph - 6 + int(math.sin(now * 3.2) * 3)
-        if tex:
-            sc = ph / tex.height
-            pw = int(tex.width * sc)
-            poster_mod.draw_fit(tex, px, py, pw, ph)
-        else:
-            pw = int(ph * 0.6)
-            rl.draw_circle(px + pw // 2, py + ph // 2, ph // 3, rl.Color(120, 90, 60, 255))
-        # speech bubble (the words themselves are in the caption below)
-        bx, by, bw_, bh_ = px + pw + 22, py + int(ph * 0.08), int(w - pw - int(w * 0.06) - 36), int(ph * 0.5)
-        if bw_ > 60:
-            a = int(255 * slide)
-            rl.draw_rectangle_rounded(rl.Rectangle(bx, by, bw_, bh_), 0.3, 8, rl.Color(250, 250, 245, a))
-            rl.draw_triangle(rl.Vector2(bx, by + bh_ * 0.6), rl.Vector2(bx + 18, by + bh_ * 0.45), rl.Vector2(bx + 18, by + bh_ * 0.75), rl.Color(250, 250, 245, a))
-            words = c["text"][:int(len(c["text"]) * min(1.0, t / 0.4 + 0.01))]
-            ty = by + 12
-            for ln in font.wrap(words, 20, bw_ - 32)[:6]:
-                font.draw_text(ln, bx + 16, ty, 20, rl.Color(30, 30, 40, a), bold=True)
-                ty += 25
+        S = sh * 0.4
+        cx = x + w * 0.3 - (1.0 - slide) * w * 0.4
+        frame = 3 if t < 0.12 else int(now * 3.5) % 2                    # arms up when he/she arrives, then the walk cycle
+        ang = 0.5 + 0.5 * math.sin(now * 0.9)
+        by_ = base + int(sh * 0.12)
+        ok = self._avatar(c["i"], frame, cx, by_ + math.sin(now * 7) * 1.5, S, ang)
+        if not ok:
+            tex = self._texture(c["i"])
+            if tex:
+                poster_mod.draw_fit(tex, int(cx - S * 0.4), int(by_ - S * 1.8), int(S * 0.8), int(S * 1.8))
+        bx, by, bw_, bh_ = int(x + w * 0.5), int(y + sh * 0.08), int(w * 0.46), int(sh * 0.42)
+        a = int(255 * slide)
+        rl.draw_rectangle_rounded(rl.Rectangle(bx, by, bw_, bh_), 0.25, 8, rl.Color(250, 250, 245, a))
+        rl.draw_triangle(rl.Vector2(bx + 10, by + bh_ - 4), rl.Vector2(bx - 26, by + bh_ + 34), rl.Vector2(bx + 50, by + bh_ - 4), rl.Color(250, 250, 245, a))
+        words = c["text"][:int(len(c["text"]) * min(1.0, t / 0.4 + 0.01))]
+        ty = by + 12
+        for ln in font.wrap(words, 19, bw_ - 28)[:7]:
+            font.draw_text(ln, bx + 14, ty, 19, rl.Color(30, 30, 40, a), bold=True)
+            ty += 24
 
 L_CARS = "ВОЗИЛА"
 L_CHARS = "ЛИКОВИ"

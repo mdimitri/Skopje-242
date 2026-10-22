@@ -362,7 +362,7 @@ def bake_overview(world, size, path, progress=None):
     stamp = f"{int(world.stamp)}"
     while size >= 1024:
         sizeh = int(round(size * world.hy / world.hx))
-        png = f"{path}_{size}_{stamp}.png"
+        png = f"{path}_{size}_{stamp}b.png"          # "b": older caches were baked with face culling on (no buildings/parks)
         if os.path.exists(png) and os.path.exists(png + ".ok"):
             try:
                 data = open(png, "rb").read()

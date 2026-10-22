@@ -887,6 +887,18 @@ _HERO = [
     dict(sk=(230, 184, 154), hair=((24, 22, 22), "short"), top=(244, 244, 244), legs=(50, 50, 56), shoe=(20, 20, 22), extras=("shades", "coat", "tie", "stetho")),
     dict(sk=(240, 196, 170), hair=((120, 80, 44), "short"), top=(40, 110, 110), legs=(40, 40, 70), shoe=(40, 40, 46), scale=0.68, belly=0.04, extras=("puffer",)),
     dict(sk=(214, 164, 132), hair=((70, 56, 40), "hardhat"), top=(130, 110, 80), legs=(56, 74, 110), shoe=(70, 54, 40), extras=("overalls", "bottle", "stubble")),
+    # ---- likovi2: the 11 added characters (own look instead of wrapping onto the first 13)
+    dict(sk=(240, 214, 190), hair=((70, 50, 38), "short"), top=(240, 240, 236), legs=(60, 60, 66), shoe=(40, 30, 24), belly=0.18, extras=("pin", "stubble")),
+    dict(sk=(226, 176, 146), hair=((230, 230, 230), "cap"), cap=(245, 245, 245), top=(245, 245, 245), legs=(50, 50, 56), shoe=(40, 30, 24), belly=0.2, extras=("bottle", "moustache")),
+    dict(sk=(232, 184, 152), hair=((200, 150, 80), "long"), top=(240, 70, 150), legs=(28, 28, 34), shoe=(244, 244, 248), scale=0.96, extras=("phone", "crop", "lips")),
+    dict(sk=(214, 166, 134), hair=((30, 26, 24), "short"), top=(240, 240, 240), legs=(40, 40, 46), shoe=(30, 30, 34), scale=1.1, belly=0.1, extras=("stubble", "shades", "chain")),
+    dict(sk=(236, 184, 154), hair=((235, 215, 150), "long"), top=(30, 30, 34), legs=(30, 30, 34), shoe=(250, 250, 250), scale=0.97, extras=("lips", "phone", "shades")),
+    dict(sk=(240, 196, 170), hair=((90, 60, 36), "messy"), top=(230, 170, 40), legs=(70, 90, 140), shoe=(230, 230, 230), scale=0.72, extras=("backpack",)),
+    dict(sk=(232, 186, 156), hair=((40, 30, 24), "quiff"), top=(60, 60, 70), legs=(50, 60, 100), shoe=(240, 240, 240), scale=0.92, extras=("backpack", "phones")),
+    dict(sk=(222, 172, 142), hair=((34, 28, 24), "cap"), cap=(70, 90, 50), top=(84, 100, 60), legs=(70, 84, 50), shoe=(30, 26, 22), belly=0.04, extras=("belt",)),
+    dict(sk=(226, 172, 140), hair=((60, 44, 34), "short"), top=(200, 30, 40), legs=(30, 30, 34), shoe=(240, 240, 240), extras=("bottle", "stubble")),
+    dict(sk=(236, 186, 160), hair=((90, 60, 40), "short"), top=(210, 210, 226), legs=None, skirt=(90, 90, 110), shoe=(60, 50, 50), extras=("glasses", "paper", "lips")),
+    dict(sk=(230, 180, 150), hair=((150, 140, 130), "short"), top=(70, 60, 100), legs=None, skirt=(60, 50, 70), shoe=(40, 34, 34), extras=("glasses", "paper")),
 ]
 
 
