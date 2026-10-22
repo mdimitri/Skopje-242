@@ -1,0 +1,4 @@
+raylib>=5.5
+numpy
+pillow
+mapbox-earcut

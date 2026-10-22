@@ -1,0 +1,9 @@
+.runtime/
+data/
+logs/
+__pycache__/
+*.pyc
+dist/
+build/
+assets/radio/
+.crlf/

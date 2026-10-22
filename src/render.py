@@ -1,0 +1,360 @@
+"""3D drawing: ground chunk quads, streamed building/tree meshes, cars with dents, pedestrians, pickups, shadows."""
+import math
+
+import numpy as np
+import pyray as rl
+
+import gl3d
+import projectiles
+import vehicles
+import slang
+
+FOV = 38.0
+TILT = 0.20
+TAN = math.tan(math.radians(FOV / 2))
+WHITE = rl.WHITE
+V3 = rl.Vector3
+UP = V3(0, 1, 0)
+ONE = V3(1, 1, 1)
+LOD_PPM = 2.4
+
+
+def quad_tex(tex_id, x0, z0, x1, z1, y, flip):
+    rl.rl_set_texture(tex_id)
+    rl.rl_begin(rl.RL_QUADS)
+    rl.rl_color4ub(255, 255, 255, 255)
+    v0, v1 = (1.0, 0.0) if flip else (0.0, 1.0)
+    rl.rl_tex_coord2f(0.0, v0); rl.rl_vertex3f(x0, y, z0)
+    rl.rl_tex_coord2f(1.0, v0); rl.rl_vertex3f(x1, y, z0)
+    rl.rl_tex_coord2f(1.0, v1); rl.rl_vertex3f(x1, y, z1)
+    rl.rl_tex_coord2f(0.0, v1); rl.rl_vertex3f(x0, y, z1)
+    rl.rl_end()
+    rl.rl_set_texture(0)
+
+
+class Renderer:
+    def __init__(self, world, streamer, overview):
+        self.w = world
+        self.st = streamer
+        self.overview = overview
+        self._built = 0
+        self.shadows = True
+        self.car_models = {}
+        self.ped_models = {}
+        self.pick_models = {}
+        self.t = 0.0
+        self.drawn_chunks = 0
+        self.drawn_meshes = 0
+
+    # ---------------------------------------------------------------- camera
+    def camera(self, cx, cz, ppm, sw, sh, cy=0.0):
+        """cy: height of the ground under the camera focus (terrain), so the zoom stays the same on a hill."""
+        H = (sh / 2) / (ppm * TAN)
+        cam = rl.Camera3D(V3(cx, cy + H, cz + H * TILT), V3(cx, cy, cz), UP, FOV, rl.CAMERA_PERSPECTIVE)
+        k = 1.0 + (35.0 / H if self.w.hilly else 0.0)          # lower ground further out is seen from further away
+        hw, hh = sw / (2 * ppm) * k, sh / (2 * ppm) * k
+        rect = (cx - hw - 30, cz - hh - 30, cx + hw + 30, cz + hh + 30 + H * TILT * 0.4)
+        return cam, H, rect
+
+    # ---------------------------------------------------------------- the whole city, far LOD: coarse terrain under the overview map
+    def _overview(self):
+        if getattr(self, "_ov_model", None) is None:
+            w = self.w
+            if w.hilly:
+                step = 4                                           # every 40 m; minimum of the 5x5 posts around: never pokes through
+                g = w.tgrid
+                ny, nx = g.shape
+                gi = np.arange(0, ny, step)
+                gj = np.arange(0, nx, step)
+                pad = np.pad(g, 2, mode="edge")
+                low = np.min([pad[2 + di:2 + di + ny, 2 + dj:2 + dj + nx] for di in range(-2, 3) for dj in range(-2, 3)], axis=0)
+                H = low[np.ix_(gi, gj)] - 0.4
+                X = gj * w.tstep - w.hx
+                Z = gi * w.tstep - w.hy
+            else:
+                X = np.array([-w.hx, w.hx])
+                Z = np.array([-w.hy, w.hy])
+                H = np.full((2, 2), -0.25)
+            XX, ZZ = np.meshgrid(X, Z)
+            P = np.stack([XX, H, ZZ], -1).astype(np.float32)
+            U = np.stack([(XX + w.hx) / (2 * w.hx), (ZZ + w.hy) / (2 * w.hy)], -1).astype(np.float32)
+            ny_, nx_ = H.shape
+            i00 = (np.arange(ny_ - 1)[:, None] * nx_ + np.arange(nx_ - 1)[None, :]).ravel()
+            idx = np.stack([i00, i00 + 1, i00 + nx_ + 1, i00, i00 + nx_ + 1, i00 + nx_], 1).ravel()
+            m = gl3d.make_model(P.reshape(-1, 3)[idx], U.reshape(-1, 2)[idx], np.full((len(idx), 4), 255, np.uint8))
+            if m is not None:
+                gl3d.set_texture(m, self.overview)
+            self._ov_model = m
+        if self._ov_model is not None:
+            rl.draw_model(self._ov_model, V3(0, 0, 0), 1.0, WHITE)
+
+    # ---------------------------------------------------------------- models
+    def car_model(self, b):
+        if b.dirty or (b.model is None and (b.dents or b.exploded)):
+            if b.model is not None:
+                gl3d.free_model(b.model)
+            b.model = gl3d.car_model(b.kind, b.color, b.dents, 1.0 if b.exploded else min(1.0, b.burn / 6.0) * 0.5,
+                                     b.color < 0)
+            b.dirty = False
+        if b.model is not None:
+            return b.model
+        key = (b.kind, b.color)
+        m = self.car_models.get(key)
+        if m is None:
+            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, b.color < 0)
+        return m
+
+    BUILD_BUDGET = 2                      # new procedural models per frame (keeps the first sight of a new car/person smooth)
+
+    def ai_model(self, kind, color):
+        key = (kind, color)
+        m = self.car_models.get(key)
+        if m is None:
+            if self._built >= self.BUILD_BUDGET:                 # over budget: show the plain-paint version for now
+                m = self.car_models.get((kind, 0))
+                if m is not None:
+                    return m                                      # (none yet: build it now, a car is never invisible)
+            self._built += 1
+            m = self.car_models[key] = gl3d.car_model(kind, color)
+        return m
+
+    def ped_model(self, arch, tone, frame, skin):
+        key = (arch, tone, frame, skin)
+        m = self.ped_models.get(key)
+        if m is None:
+            if self._built >= self.BUILD_BUDGET:
+                return self.ped_models.get((arch, 0, frame, 0))
+            self._built += 1
+            m = self.ped_models[key] = gl3d.ped_model(arch, tone, frame, skin)
+        return m
+
+    def pick_model(self, kind):
+        m = self.pick_models.get(kind)
+        if m is None:
+            m = self.pick_models[kind] = gl3d.pickup_model(kind)
+        return m
+
+    # ---------------------------------------------------------------- scene
+    def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True):
+        self._built = 0
+        w, st = self.w, self.st
+        S, M = w.chunk, w.margin
+        HX, HY = w.hx, w.hy
+        self.t = t
+        gl3d.ground_time(t)
+        rl.rl_set_clip_planes(2.0, H * 4 + 400)
+        rl.begin_mode_3d(cam)
+        try:
+            rl.rl_disable_backface_culling()
+            self._overview()
+            lod = ppm >= LOD_PPM
+            drawn = 0
+            if lod:
+                x0, x1 = math.floor((rect[0]) / S), math.floor(rect[2] / S)
+                y0, y1 = math.floor((rect[1]) / S), math.floor(rect[3] / S)
+                for cx in range(x0, x1 + 1):
+                    for cy in range(y0, y1 + 1):
+                        gm = st.get_ground_model((cx, cy))
+                        if gm is not None:
+                            rl.draw_model(gm, V3(0, 0, 0), 1.0, WHITE)
+                            drawn += 1
+            self.drawn_chunks = drawn
+            nm = 0
+            if lod and show_meshes:
+                for key, (models, _last) in list(st.meshes.items()):
+                    ch = w.chunks.get(key)
+                    bb = ch["bb"] if ch else None
+                    if bb is None or bb[2] < rect[0] or bb[0] > rect[2] or bb[3] < rect[1] or bb[1] > rect[3]:
+                        continue
+                    for m in models.values():
+                        rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                    nm += 1
+                    _last_touch = st.meshes[key]
+                    _last_touch[1] = st.frame
+            self.drawn_meshes = nm
+            if lod:
+                if getattr(w, "roads3d", False):
+                    self._decals(rect)
+                self._actors(rect, sim, t)
+                self._shots(rect, sim)
+                if getattr(sim, "lights", None) is not None:
+                    sim.lights.draw(rect, w.ground_y)
+                particles.draw()
+        finally:
+            rl.end_mode_3d()
+
+    def _decals(self, rect):
+        """Skid marks, blood and scorch as flat quads just above the 3D road surface."""
+        w = self.w
+        S = w.chunk
+        rl.rl_disable_depth_mask()
+        rl.rl_begin(rl.RL_QUADS)
+        n = 0
+        for cx in range(math.floor(rect[0] / S), math.floor(rect[2] / S) + 1):
+            for cy in range(math.floor(rect[1] / S), math.floor(rect[3] / S) + 1):
+                for d in self.st.decals.get((cx, cy), ()):
+                    if d[0] == "l":
+                        _, x1, z1, x2, z2, hw, col = d
+                        dx, dz = x2 - x1, z2 - z1
+                        l = math.hypot(dx, dz) or 1.0
+                        nx, nz = -dz / l * hw, dx / l * hw
+                        y = max(w.ground_y(x1, z1), w.ground_y(x2, z2)) + 0.03
+                        rl.rl_color4ub(col[0], col[1], col[2], col[3])
+                        rl.rl_vertex3f(x1 + nx, y, z1 + nz); rl.rl_vertex3f(x2 + nx, y, z2 + nz)
+                        rl.rl_vertex3f(x2 - nx, y, z2 - nz); rl.rl_vertex3f(x1 - nx, y, z1 - nz)
+                    else:
+                        _, x, z, r, col = d
+                        y = w.ground_y(x, z) + 0.035
+                        rl.rl_color4ub(col[0], col[1], col[2], col[3])
+                        for k in range(2):                       # an octagon-ish blob from two rotated squares
+                            a = k * math.pi / 4
+                            ca, sa = math.cos(a) * r, math.sin(a) * r
+                            rl.rl_vertex3f(x - ca + sa, y, z - sa - ca); rl.rl_vertex3f(x + ca + sa, y, z + sa - ca)
+                            rl.rl_vertex3f(x + ca - sa, y, z + sa + ca); rl.rl_vertex3f(x - ca - sa, y, z - sa + ca)
+                    n += 1
+                    if n > 2500:
+                        break
+        rl.rl_end()
+        rl.rl_enable_depth_mask()
+
+    @staticmethod
+    def _kiosk(x, y, z, h):
+        rl.rl_push_matrix()
+        rl.rl_translatef(x, y, z)
+        rl.rl_rotatef(-math.degrees(h), 0.0, 1.0, 0.0)
+        rl.draw_cube(V3(0, 1.1, 0), 2.1, 2.2, 1.7, rl.Color(236, 226, 196, 255))
+        rl.draw_cube(V3(0.08, 2.32, 0), 2.5, 0.16, 2.1, rl.Color(196, 40, 40, 255))
+        rl.draw_cube(V3(1.06, 1.45, 0), 0.06, 0.7, 1.3, rl.Color(250, 214, 80, 255))        # serving window
+        rl.draw_cube(V3(1.2, 1.12, 0), 0.34, 0.07, 1.4, rl.Color(150, 110, 70, 255))        # counter
+        rl.draw_cube(V3(0, 2.62, 0), 0.9, 0.34, 0.12, rl.Color(250, 214, 80, 255))           # sign
+        rl.rl_pop_matrix()
+
+    def _in(self, x, z, rect, pad=6.0):
+        return rect[0] - pad < x < rect[2] + pad and rect[1] - pad < z < rect[3] + pad
+
+    def _shadow_batch(self, items):
+        rl.rl_disable_depth_mask()
+        rl.rl_begin(rl.RL_QUADS)
+        for x, z, h, hl, hw, a, gy in items:
+            ca, sa = math.cos(h), math.sin(h)
+            x += 0.5
+            z += 0.4
+            rl.rl_color4ub(10, 10, 20, a)
+            for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                lx, lz = sx * hl, sz * hw
+                rl.rl_vertex3f(x + ca * lx - sa * lz, gy + 0.18, z + sa * lx + ca * lz)
+        rl.rl_end()
+        rl.rl_enable_depth_mask()
+
+    def _shots(self, rect, sim):
+        """Flying projectiles (short glowing streaks) and the bullet holes / scorch marks they left on walls."""
+        sh = getattr(sim, "shots", None)
+        if sh is None:
+            return
+        w = self.w
+        for x, y, vx, vy, _tr, _re, _d, kind, z in sh.list:
+            if self._in(x, y, rect):
+                gy = w.ground_y(x, y) + z
+                sp = math.hypot(vx, vy) or 1.0
+                k = (1.6 if kind != "rocket" else 0.8) / sp
+                col = rl.Color(*projectiles.KINDS[kind][2], 255)
+                if kind == "rocket":
+                    rl.draw_cube(V3(x, gy, y), 0.35, 0.35, 0.35, rl.Color(80, 90, 50, 255))
+                rl.draw_line_3d(V3(x - vx * k, gy, y - vy * k), V3(x, gy, y), col)
+                rl.draw_cube(V3(x, gy, y), 0.09, 0.09, 0.09, col)
+        for x, y, z, nx, ny, size, dark in sh.marks:
+            if self._in(x, y, rect):
+                gy = w.ground_y(x, y) + z
+                c = rl.Color(30, 26, 22, 230) if dark else rl.Color(70, 64, 58, 230)
+                rl.draw_cube(V3(x, gy, y), size * (1 - abs(nx)) + 0.02, size, size * (1 - abs(ny)) + 0.02, c)
+
+    def _actors(self, rect, sim, t):
+        w = self.w
+        sh = []
+        # pickups
+        for x, z, kind, alive, _t in sim.pickups:
+            if alive and self._in(x, z, rect):
+                m = self.pick_model(kind)
+                rl.draw_model_ex(m, V3(x, w.ground_y(x, z) + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+        # cars
+        cars = []
+        for c in sim.traffic.cars:
+            if self._in(c.x, c.y, rect):
+                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll))
+                sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
+        for b in sim.bodies:
+            if self._in(b.x, b.y, rect):
+                tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
+                gy = b.az if b.az is not None else w.ground_y(b.x, b.y)
+                cars.append((b.x, b.y, b.h, self.car_model(b), tint, gy, b.pitch, b.roll))
+                hl = vehicles.HALF_L[b.kind] + 0.1
+                sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
+        # peds
+        peds = []
+        for p in sim.peds.list:
+            if self._in(p.x, p.y, rect):
+                if p.mode in ("dead", "air"):
+                    frame, y = 2, p.hy
+                elif p.mode == "ko":
+                    frame, y = 2, 0.0
+                elif p.mode == "fight":
+                    frame, y = (p.atk_kind if p.atk_t > 0 else int(p.anim * 2.2) & 1), 0.0
+                elif p.mode == "rage":
+                    frame, y = (3 if int(p.anim) & 1 else 0), 0.0
+                else:
+                    frame, y = int(p.anim * 2.2) & 1, 0.0
+                pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)
+                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin))
+                if p.mode not in ("dead", "ko"):
+                    sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
+        wk = sim.walker
+        if sim.mode == "foot" and wk is not None:
+            frame = int(wk.anim * 2.4) & 1 if wk.moving else 0
+            if wk.atk_t > 0:
+                frame = wk.atk_kind
+            if wk.z > 0.05:
+                frame = 3
+            if wk.health <= 0:
+                frame = 2
+            if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
+                pass                                       # flicker while hurt
+            else:
+                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
+            sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
+        for kx, kz, kh in sim.kiosks:
+            if self._in(kx, kz, rect):
+                self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
+        if self.shadows:
+            self._shadow_batch(sh)
+        for x, z, h, m, tint, gy, pitch, roll in cars:
+            if m is None:
+                continue
+            if abs(pitch) < 0.004 and abs(roll) < 0.004:
+                rl.draw_model_ex(m, V3(x, gy, z), UP, -math.degrees(h), ONE, tint)
+            else:                                            # tilt with the slope: roll, pitch, heading, then move
+                M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
+                                                          rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+                old = m.transform
+                m.transform = M
+                rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
+                m.transform = old
+        for x, y, z, h, arch, tone, frame, skin in peds:
+            pm = self.ped_model(arch, tone, frame, skin)
+            if pm is not None:
+                rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+
+        # the player's marker shines through the bridge deck when they are underneath it
+        if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:
+            mx, mz, maz = sim.walker.x, sim.walker.y, sim.walker.az
+        elif sim.mode == "car" and sim.car is not None and sim.car.az is not None:
+            mx, mz, maz = sim.car.x, sim.car.y, sim.car.az
+        else:
+            return
+        dk = w.deck_h(mx, mz)
+        if dk is not None and maz < dk - 0.7:
+            rl.rl_draw_render_batch_active()
+            rl.rl_disable_depth_test()
+            rl.draw_cylinder(V3(mx, maz + 0.1, mz), 0.9, 0.9, 0.04, 20, rl.Color(255, 220, 60, 120))
+            rl.draw_circle_3d(V3(mx, maz + 0.16, mz), 1.2, V3(1, 0, 0), 90.0, rl.Color(255, 240, 120, 255))
+            rl.rl_draw_render_batch_active()
+            rl.rl_enable_depth_test()

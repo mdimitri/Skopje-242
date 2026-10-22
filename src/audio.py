@@ -1,0 +1,283 @@
+"""Procedural sound: every effect is synthesised with numpy at start-up (no asset files), played through raylib.
+If there is no audio device (or anything fails) every call quietly does nothing."""
+import math
+import os
+import tempfile
+import wave
+
+import numpy as np
+import pyray as rl
+
+SR = 22050
+
+
+def _save(path, x, sr=SR):
+    x = np.clip(x, -1, 1)
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((x * 32000).astype(np.int16).tobytes())
+
+
+def _t(d):
+    return np.arange(int(d * SR), dtype=np.float32) / SR
+
+
+def _lp(x, k):
+    """crude one-pole-ish low-pass via moving average"""
+    k = max(1, int(k))
+    return np.convolve(x, np.ones(k, np.float32) / k, mode="same")
+
+
+def _env(n, a=0.005, d=0.3):
+    t = np.arange(n, dtype=np.float32) / SR
+    return np.minimum(1, t / a) * np.exp(-t / d)
+
+
+def build():
+    rng = np.random.default_rng(4)
+    S = {}
+    # engine loops (whole number of cycles so they loop cleanly): one per engine character
+    n = int(SR * 0.5)
+    t = np.arange(n, dtype=np.float32) / SR
+
+    def eng(f, nh, decay, am_hz, am_depth, noise=0.0, clatter=0.0):
+        x = sum(np.sin(2 * np.pi * f * k * t + k) * (1.0 / k ** decay) for k in range(1, nh)) * (1 + am_depth * np.sin(2 * np.pi * am_hz * t))
+        if clatter:
+            pulse = (np.sin(2 * np.pi * 20 * t) > 0.85).astype(np.float32)
+            x = x + _lp(rng.standard_normal(n).astype(np.float32), 5) * pulse * clatter * 6
+        if noise:
+            x = x + _lp(rng.standard_normal(n).astype(np.float32), 8) * noise
+        return x / np.abs(x).max() * 0.55
+    S["engine_i4"] = eng(44.0, 14, 0.8, 8, 0.25)
+    S["engine_small"] = eng(70.0, 11, 0.55, 30, 0.45, 0.05)                 # buzzy two-cylinder: Fico, Trabant, Yugo
+    S["engine_v8"] = eng(28.0, 18, 0.95, 14, 0.4, 0.04)                     # burbling V8: Mafijash, Hummer, Bavarka
+    S["engine_diesel"] = eng(36.0, 16, 0.7, 6, 0.2, 0.03, 1.0)              # clattering diesel: vans, buses, Land Cruiser
+    S["engine_truck"] = eng(24.0, 20, 0.85, 4, 0.3, 0.05, 1.3)              # heavy truck / tractor
+    ev = np.sin(2 * np.pi * 400 * t) * 0.6 + np.sin(2 * np.pi * 800 * t) * 0.25 + np.sin(2 * np.pi * 1200 * t) * 0.1
+    S["engine_ev"] = ev / np.abs(ev).max() * 0.35                           # electric whine: Tesla
+    S["engine"] = S["engine_i4"]
+    # horn
+    t = _t(0.55)
+    x = (np.sin(2 * np.pi * 415 * t) + 0.6 * np.sin(2 * np.pi * 523 * t) + 0.3 * np.sign(np.sin(2 * np.pi * 415 * t))) * np.minimum(1, t / 0.02) * np.minimum(1, (0.55 - t) / 0.05)
+    S["horn"] = x / np.abs(x).max() * 0.5
+    # crash: noise burst + low thump
+    t = _t(0.7)
+    nz = rng.standard_normal(len(t)).astype(np.float32)
+    x = _lp(nz, 3) * np.exp(-t / 0.12) + np.sin(2 * np.pi * 70 * t) * np.exp(-t / 0.18) * 1.2
+    S["crash"] = x / np.abs(x).max() * 0.8
+    # fist and kick
+    t = _t(0.16)
+    x = np.sin(2 * np.pi * (120 - 380 * t) * t) * np.exp(-t / 0.05) + _lp(rng.standard_normal(len(t)).astype(np.float32), 6) * np.exp(-t / 0.03) * 0.8
+    S["punch"] = x / np.abs(x).max() * 0.8
+    t = _t(0.22)
+    x = np.sin(2 * np.pi * (90 - 200 * t) * t) * np.exp(-t / 0.08) * 1.2 + _lp(rng.standard_normal(len(t)).astype(np.float32), 4) * np.exp(-t / 0.05)
+    S["kick"] = x / np.abs(x).max() * 0.85
+    # gun
+    t = _t(0.35)
+    x = rng.standard_normal(len(t)).astype(np.float32) * np.exp(-t / 0.05) + np.sin(2 * np.pi * 120 * t) * np.exp(-t / 0.1)
+    S["shot"] = x / np.abs(x).max() * 0.8
+    # explosion
+    t = _t(1.6)
+    x = _lp(rng.standard_normal(len(t)).astype(np.float32), 18) * np.exp(-t / 0.45) * 3 + np.sin(2 * np.pi * 45 * t) * np.exp(-t / 0.5)
+    S["boom"] = x / np.abs(x).max() * 0.9
+    # splash
+    t = _t(0.6)
+    x = _lp(rng.standard_normal(len(t)).astype(np.float32), 5) * np.exp(-t / 0.2) * (1 + np.sin(2 * np.pi * 14 * t) * 0.4)
+    S["splash"] = x / np.abs(x).max() * 0.6
+    # pickup chimes
+    t = _t(0.3)
+    S["chime"] = (np.sin(2 * np.pi * 660 * t) * np.minimum(1, t / 0.005) + np.sin(2 * np.pi * 990 * np.maximum(t - 0.07, 0)) * (t > 0.07)) * np.exp(-t / 0.12) * 0.45
+    t = _t(0.25)
+    tk = _t(0.05)
+    S["tick"] = (np.sin(2 * np.pi * 1800 * tk) * np.exp(-tk / 0.012) * 0.35).astype(np.float32)
+    tw = _t(0.6)
+    S["pick"] = ((np.sin(2 * np.pi * (330 + 500 * tw) * tw) + 0.6 * np.sin(2 * np.pi * (495 + 750 * tw) * tw))
+                 * np.minimum(1, tw / 0.02) * np.exp(-tw / 0.22) * 0.4).astype(np.float32)
+    S["cash"] = (np.sin(2 * np.pi * 1320 * t) + 0.5 * np.sin(2 * np.pi * 1980 * t)) * np.exp(-t / 0.07) * 0.4
+    # crunch (eating)
+    t = _t(0.4)
+    gate = (np.sin(2 * np.pi * 13 * t) > 0.2).astype(np.float32)
+    S["eat"] = _lp(rng.standard_normal(len(t)).astype(np.float32), 3) * gate * np.exp(-t / 0.25) * 1.2
+    # sirens: police yelp, ambulance hi-lo, fire engine slow wail (each seamless)
+    def sweep(period, f0, f1, shape):
+        t = _t(period)
+        u = shape(t / period)
+        fr = f0 + (f1 - f0) * u
+        ph = np.cumsum(2 * np.pi * fr / SR)
+        x = np.sin(ph) + 0.3 * np.sin(2 * ph) + 0.1 * np.sin(3 * ph)
+        return x / np.abs(x).max() * 0.35
+    S["siren_police"] = sweep(1.0, 700, 1500, lambda u: 0.5 - 0.5 * np.cos(2 * np.pi * u * 2))
+    S["siren_amb"] = sweep(1.2, 700, 950, lambda u: (np.floor(u * 2) % 2).astype(np.float32))
+    S["siren_fire"] = sweep(3.2, 380, 820, lambda u: 0.5 - 0.5 * np.cos(2 * np.pi * u))
+    S["siren"] = S["siren_police"]
+    # horns
+    t = _t(0.35)
+    x = (np.sin(2 * np.pi * 540 * t) + 0.5 * np.sin(2 * np.pi * 680 * t)) * np.minimum(1, t / 0.01) * np.minimum(1, (0.35 - t) / 0.04)
+    S["horn_small"] = x / np.abs(x).max() * 0.45
+    t = _t(0.9)
+    x = (np.sin(2 * np.pi * 196 * t) + 0.7 * np.sin(2 * np.pi * 247 * t) + 0.4 * np.sign(np.sin(2 * np.pi * 196 * t))) * np.minimum(1, t / 0.03) * np.minimum(1, (0.9 - t) / 0.1)
+    S["horn_truck"] = x / np.abs(x).max() * 0.6
+    notes = (392, 392, 392, 523, 659)                                       # wedding / ice-cream-van jingle
+    x = np.concatenate([np.sin(2 * np.pi * f * _t(0.16)) * np.minimum(1, _t(0.16) / 0.01) * np.minimum(1, (0.16 - _t(0.16)) / 0.03) for f in notes])
+    S["horn_jingle"] = x * 0.4
+    # tyre screech (loop, modulated band noise)
+    t = _t(1.0)
+    nz = rng.standard_normal(len(t)).astype(np.float32)
+    x = (nz - _lp(nz, 14)) * 0.5 * (1 + 0.3 * np.sin(2 * np.pi * 9 * t))
+    S["screech"] = _loopify(x / np.abs(x).max() * 0.4, 0.1)
+    # water spray (loop)
+    t = _t(1.0)
+    x = _lp(rng.standard_normal(len(t)).astype(np.float32), 3) * (1 + 0.3 * np.sin(2 * np.pi * 13 * t))
+    S["spray"] = _loopify(x / np.abs(x).max() * 0.4, 0.1)
+    # ambience: crowd murmur, traffic roar, wind, dog bark, church bell
+    t = _t(6.0)
+    nz = rng.standard_normal(len(t)).astype(np.float32)
+    voice = _lp(nz, 9) - _lp(nz, 30)
+    syl = 0.55 + 0.45 * np.sin(2 * np.pi * 3.7 * t + 3 * np.sin(2 * np.pi * 0.3 * t)) * np.sin(2 * np.pi * 5.3 * t)
+    x = voice * syl
+    S["crowd"] = _loopify(x / np.abs(x).max() * 0.4)
+    x = _lp(nz, 40) * 5 * (1 + 0.25 * np.sin(2 * np.pi * t / 2.0)) + _lp(nz, 8) * 0.5
+    S["traffic"] = _loopify(x / np.abs(x).max() * 0.4)
+    x = _lp(nz, 120) * 8 * (0.6 + 0.4 * np.sin(2 * np.pi * t / 6.0 + 1))
+    S["wind"] = _loopify(x / np.abs(x).max() * 0.35)
+    t = _t(0.5)
+    x = np.zeros(len(t), np.float32)
+    for st in (0.0, 0.2):
+        i0 = int(st * SR)
+        tt = _t(0.12)
+        fr = 520 - 700 * tt
+        x[i0:i0 + len(tt)] += (np.sin(np.cumsum(2 * np.pi * fr / SR)) + 0.4 * _lp(rng.standard_normal(len(tt)).astype(np.float32), 4)) * np.exp(-tt / 0.06)
+    S["dog"] = x / np.abs(x).max() * 0.5
+    t = _t(3.0)
+    x = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((196, 1.0), (392, 0.5), (588, 0.3), (237, 0.4))) * np.exp(-t / 0.9)
+    S["bell"] = x / np.abs(x).max() * 0.5
+    t = _t(0.5)
+    S["revive"] = (np.sin(2 * np.pi * 523 * t) * (t < 0.15) + np.sin(2 * np.pi * 659 * t) * ((t >= 0.15) & (t < 0.3)) + np.sin(2 * np.pi * 784 * t) * (t >= 0.3)) * np.exp(-(t % 0.15) / 0.2) * 0.4
+    # city ambience: rumble + distant hiss (loop 6 s, faded ends)
+    t = _t(6.0)
+    nz = rng.standard_normal(len(t)).astype(np.float32)
+    x = _lp(nz, 60) * 6 + _lp(nz, 6) * 0.4
+    x *= 1 + 0.15 * np.sin(2 * np.pi * t / 3.0)
+    S["city"] = _loopify(x / np.abs(x).max() * 0.35)
+    # birds: sparse chirps
+    t = _t(8.0)
+    x = np.zeros(len(t), np.float32)
+    for _ in range(9):
+        st = rng.uniform(0.2, 7.2)
+        i0 = int(st * SR)
+        tt = _t(0.16)
+        fr = 3000 + rng.uniform(0, 1200) + 900 * np.sin(2 * np.pi * rng.uniform(14, 26) * tt)
+        x[i0:i0 + len(tt)] += np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.exp(-tt / 0.07) * 0.5
+    S["birds"] = _loopify(x)
+    # crickets
+    t = _t(4.0)
+    carr = np.sin(2 * np.pi * 4300 * t)
+    gate = (np.sin(2 * np.pi * 36 * t) > 0.4) * (np.sin(2 * np.pi * 2.0 * t) > -0.3)
+    S["crickets"] = _loopify((carr * gate * 0.25).astype(np.float32))
+    return S
+
+
+def _loopify(x, fade=0.25):
+    n = int(fade * SR)
+    x = x.copy()
+    ramp = np.linspace(0, 1, n, dtype=np.float32)
+    x[:n] = x[:n] * ramp + x[-n:] * (1 - ramp)
+    return x[:-n]
+
+
+class Audio:
+    LOOPS = ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "siren_police", "siren_amb",
+             "siren_fire", "screech", "spray", "city", "birds", "crickets", "crowd", "traffic", "wind")
+
+    def __init__(self, mute=False):
+        self.ok = False
+        self.snd = {}
+        self.dyn = []                                   # (sound, path) for speech clips, unloaded when finished
+        self.master = 0.8
+        self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
+        self.muted = False
+        self._tmp = None
+        if mute:
+            self.muted = True
+            return
+        try:
+            rl.init_audio_device()
+            if not rl.is_audio_device_ready():
+                return
+            self._tmp = tempfile.mkdtemp(prefix="skopje_snd_")
+            for name, x in build().items():
+                p = os.path.join(self._tmp, name + ".wav")
+                _save(p, x)
+                self.snd[name] = rl.load_sound(p)
+            self.ok = True
+        except Exception:  # noqa: BLE001
+            self.ok = False
+
+    def play(self, name, vol=1.0, pitch=1.0, bus="sfx"):
+        if not self.ok or self.muted or vol <= 0.01 or name not in self.snd:
+            return
+        try:
+            s = self.snd[name]
+            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
+            rl.set_sound_pitch(s, pitch)
+            rl.play_sound(s)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def loop(self, name, vol, pitch=1.0, bus="ambient"):
+        """Keep a looping sound going at the given volume (0 stops it)."""
+        if not self.ok or name not in self.snd:
+            return
+        try:
+            s = self.snd[name]
+            if vol <= 0.01 or self.muted:
+                if rl.is_sound_playing(s):
+                    rl.stop_sound(s)
+                return
+            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
+            rl.set_sound_pitch(s, pitch)
+            if not rl.is_sound_playing(s):
+                rl.play_sound(s)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def speak(self, pcm, vol, sr=SR):
+        if not self.ok or self.muted:
+            return
+        try:
+            p = os.path.join(self._tmp, f"sp{len(self.dyn) % 8}_{id(pcm) & 0xffff}.wav")
+            _save(p, pcm.astype(np.float32) / 32768.0, sr)
+            for o, _p in self.dyn:                     # never two voices at once
+                rl.stop_sound(o)
+            s = rl.load_sound(p)
+            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get("speech", 1.0))
+            rl.play_sound(s)
+            self.dyn.append((s, p))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def speaking(self):
+        return any(rl.is_sound_playing(s) for s, _p in self.dyn)
+
+    def reap(self):
+        keep = []
+        for s, p in self.dyn:
+            try:
+                if rl.is_sound_playing(s):
+                    keep.append((s, p))
+                else:
+                    rl.unload_sound(s)
+                    os.remove(p)
+            except Exception:  # noqa: BLE001
+                pass
+        self.dyn = keep
+
+    def close(self):
+        try:
+            for s in self.snd.values():
+                rl.unload_sound(s)
+            rl.close_audio_device()
+        except Exception:  # noqa: BLE001
+            pass
