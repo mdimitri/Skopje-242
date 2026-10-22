@@ -4,7 +4,9 @@ import math
 import numpy as np
 import pyray as rl
 
+import actors
 import gl3d
+import weaponart
 import projectiles
 import vehicles
 import slang
@@ -44,6 +46,7 @@ class Renderer:
         self._frames = 0
         self.ped_models = {}
         self.pick_models = {}
+        self.wreck_models = {}
         self.t = 0.0
         self.drawn_chunks = 0
         self.drawn_meshes = 0
@@ -299,7 +302,27 @@ class Renderer:
         for x, z, kind, alive, _t in sim.pickups:
             if alive and self._in(x, z, rect):
                 m = self.pick_model(kind)
-                rl.draw_model_ex(m, V3(x, w.ground_y(x, z) + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+                gy0 = w.ground_y(x, z)
+                if kind in weaponart.BOXES:                           # weapons: the real shape, big, slowly turning, over a glow disc
+                    rl.draw_cylinder(V3(x, gy0 + 0.04, z), 0.9, 0.9, 0.03, 16, rl.Color(255, 200, 60, 90))
+                    Mw = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(2.4, 2.4, 2.4), rl.matrix_rotate_x(1.45)),   # side face up, so the top view shows the shape
+                                            rl.matrix_rotate_y(math.radians((t * 70 + x * 13) % 360)))
+                    Mw = rl.matrix_multiply(Mw, rl.matrix_translate(x, gy0 + 1.0 + 0.15 * math.sin(t * 3 + x), z))
+                    old_t = m.transform
+                    m.transform = Mw
+                    rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                    m.transform = old_t
+                else:
+                    rl.draw_model_ex(m, V3(x, gy0 + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+        # what is left of broken trees / posts / props (stump, bent pole, rubble): they stay, they just stop being solid
+        for bx, bz, _r, _hi, bk, seed in w.broken:
+            if self._in(bx, bz, rect):
+                key = (bk, seed % 6 if bk == "mid" else 0)
+                m = self.wreck_models.get(key)
+                if m is None and key not in self.wreck_models:
+                    m = self.wreck_models[key] = gl3d.wreck_model(bk, seed)
+                if m is not None:
+                    rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
         # cars
         cars = []
         for c in sim.traffic.cars:
@@ -344,6 +367,17 @@ class Renderer:
                 pass                                       # flicker while hurt
             else:
                 peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
+            if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
+                wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
+                if wm is not None:
+                    sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
+                    Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(0.8)),
+                                            rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(-wk.h)))
+                    Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
+                    old_t = wm.transform
+                    wm.transform = Mh
+                    rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
+                    wm.transform = old_t
             sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
         for kx, kz, kh in sim.kiosks:
             if self._in(kx, kz, rect):

@@ -781,6 +781,8 @@ def main():
             elif b.exploded:
                 if rng.random() < 0.25:
                     particles.smoke(b.x, b.y, 0.9, 1, 1.0)
+                if rng.random() < 0.45 * b.fire_lvl:                # the wreck keeps burning until the fire brigade gets there
+                    particles.fire(b.x + rng.uniform(-1, 1), b.y + rng.uniform(-0.6, 0.6), 1, 0.7, 0.35 + 0.5 * b.fire_lvl)
             elif b.health <= 0:
                 particles.fire(b.x + fx_ * 1.2, b.y + fy_ * 1.2, 2, 0.9)
                 particles.smoke(b.x + fx_, b.y + fy_, 0.9, 1, 1.2)

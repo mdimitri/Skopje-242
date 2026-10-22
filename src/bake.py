@@ -241,6 +241,8 @@ class Streamer:
                 if m is not None:
                     names = ("A", "B", "roof", "white", "panel", "house")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
+                    if mat == 3 and getattr(self.world, "roads3d", False):
+                        gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
         self.mesh_loaded += 1

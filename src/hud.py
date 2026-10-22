@@ -6,6 +6,7 @@ import pyray as rl
 import font   # noqa: E402
 
 import slang
+import weaponart
 import vehicles
 from actors import CAR_NAMES, WEAPONS
 from geo import project
@@ -172,6 +173,7 @@ class Hud:
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "Тупаници [Ctrl]") + "  [Tab]"
                 font.draw_text(f"Здравје {int(max(0, wk.health))}%   {gun}", sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
+                self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
                 if wk.health <= 0 and wk.cause == "fight":
@@ -292,6 +294,27 @@ class Hud:
             col = rl.Color(235, 235, 235, 255) if ok else rl.Color(150, 150, 150, 255)
             font.draw_text(f"[{i + 1}] {name}", x + 14, y + 40 + i * 30, 20, col)
             font.draw_text(f"{price} ден.  +{heal}", x + w - 140, y + 40 + i * 30, 20, rl.Color(130, 230, 140, 255) if ok else col)
+
+    @staticmethod
+    def weapon_icon(kind, x, y, h):
+        """Side-view icon of a weapon (same boxes as the 3D model) in a dark plate; x, y = top-left, h = plate height."""
+        bx = weaponart.BOXES.get(kind)
+        w = int(h * 2.6)
+        rl.draw_rectangle(x, y, w, h, rl.Color(20, 20, 26, 190))
+        rl.draw_rectangle_lines(x, y, w, h, rl.Color(250, 220, 80, 255))
+        if kind == "fist":
+            rl.draw_rectangle(x + w // 2 - h // 5, y + h // 4, h * 2 // 5, h // 2, rl.Color(226, 178, 140, 255))
+            return
+        if not bx:
+            return
+        x0 = min(b[0] for b in bx); x1 = max(b[0] + b[2] for b in bx)
+        y0 = min(b[1] for b in bx); y1 = max(b[1] + b[3] for b in bx)
+        k = min((w - 8) / (x1 - x0), (h - 8) / (y1 - y0))
+        ox = x + (w - (x1 - x0) * k) / 2
+        oy = y + (h - (y1 - y0) * k) / 2
+        for bxx, byy, bw, bh, c in bx:
+            rl.draw_rectangle(int(ox + (bxx - x0) * k), int(oy + (y1 - byy - bh) * k), max(1, int(bw * k)), max(1, int(bh * k)),
+                              rl.Color(min(255, c[0] + 50), min(255, c[1] + 50), min(255, c[2] + 50), 255))
 
     @staticmethod
     def _bar(x, y, w, h, f, col):

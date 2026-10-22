@@ -263,8 +263,10 @@ class World:
         cell = self.pgrid.get((int(e[0] // cg), int(e[1] // cg)))
         if cell and e in cell:
             cell.remove(e)
-        tree = e[2] >= 0.45 and e[4] - e[3] > 8
-        self.broken.append((e[0], e[1], 4.2 if tree else max(0.7, e[2] + 0.5), e[4] + (6 if tree else 0.5)))
+        tree = e[2] >= 0.45 and e[4] - max(e[3], self.ground_y(e[0], e[1]) - 0.3) > 8       # (`lo` of low props reaches far below the ground)
+        hgt = e[4] - max(e[3], self.ground_y(e[0], e[1]) - 0.3)
+        self.broken.append((e[0], e[1], 4.2 if tree else max(0.7, e[2] + 0.5), e[4] + (6 if tree else 0.5),
+                            "tree" if tree else ("post" if hgt > 5.0 else "mid"), int(e[0] * 37 + e[1] * 91) & 0xffff))
         self.broken_ver += 1
 
     def hide_broken(self, pos, bb):
@@ -275,7 +277,7 @@ class World:
         pos = pos.copy()
         t = pos[: len(pos) - len(pos) % 3].reshape(-1, 3, 3)
         kill = np.zeros(len(t), bool)
-        for bx, by, r, hi in near:
+        for bx, by, r, hi, *_k in near:
             d2 = (t[:, :, 0] - bx) ** 2 + (t[:, :, 2] - by) ** 2
             kill |= np.all(d2 < r * r, axis=1) & np.all(t[:, :, 1] < hi, axis=1)
         t[kill] = 0.0
