@@ -177,7 +177,7 @@ class Renderer:
                             drawn += 1
                         else:
                             missing = True
-            if missing:                                    # the coarse whole-city model is only seen where a chunk is not baked yet
+            if missing:                    # the coarse whole-city model is only seen where a chunk is not baked yet
                 self._overview()
             self.drawn_chunks = drawn
             nm = 0
@@ -327,8 +327,13 @@ class Renderer:
                     frame, y = (3 if int(p.anim) & 1 else 0), 0.0
                 else:
                     frame, y = int(p.anim * 2.2) & 1, 0.0
+                lean = 0.0
+                if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
+                    frame = 4
+                elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
+                    frame, lean, y = 4, -1.05 + 0.1 * math.sin(p.anim * 6.0), -0.3
                 pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)
-                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin))
+                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean))
                 if p.mode not in ("dead", "ko"):
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         wk = sim.walker
@@ -362,10 +367,24 @@ class Renderer:
                 m.transform = M
                 rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
                 m.transform = old
-        for x, y, z, h, arch, tone, frame, skin in peds:
+        for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
             if pm is not None:
-                rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+                if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
+                    M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    old = pm.transform
+                    pm.transform = M
+                    rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
+                    pm.transform = old
+                else:
+                    rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+        for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
+            if self._in(f[0], f[1], rect):
+                rl.rl_push_matrix()
+                rl.rl_translatef(f[0], f[2], f[1])
+                rl.rl_rotatef(f[6], 0.6, 0.3, 0.74)
+                rl.draw_cube(V3(0, 0, 0), f[8], f[9], f[8], rl.Color(f[10][0], f[10][1], f[10][2], 255))
+                rl.rl_pop_matrix()
 
         # the player's marker shines through the bridge deck when they are underneath it
         if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:

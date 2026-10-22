@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2 – collisions, combat and rewards
+
+- **Collisions:** every car has an oriented 2D box (SAT) with a bounding-circle test and a 16 m grid as broadphase, so crashes work at any angle, including T-bones and long buses; traffic brakes for cars crossing sideways; you can no longer walk through cars (exact box vs. circle push-out).
+- **Punch the street:** bins, bollards and other small props fly away, bigger ones break, lamp posts fall to a kick; explosions break and throw props, push people and wrecks and hurt you; burning cars set neighbouring cars on fire and chain-explode (wrecks go after 20 in-game minutes).
+- **Fight animation:** the punching arm and the kicking leg are the real limbs (no extra limbs on top any more).
+- **Денари for mayhem:** punches, kicks, smashed props, car hits, running people over and explosions pay.
+- **Chasers give up** when you get about 22 m away for a few seconds (or 45 m at once).
+- **First responders:** more and closer ambulances / fire engines (3 jobs each, 420 m); firemen spray with the hose out while the flames die down, burning wrecks keep burning until they arrive; medics kneel over the patient and do CPR.
+- **Traffic:** a junction with 3+ stuck cars for 30 in-game minutes is clogged and nothing new spawns into it until it clears.
+
 ## v1.1 – polish and 3D splash
 
 - **3D loading splash:** endless street with the game's own buildings, furniture, cars and characters, jokes and sun shadows.

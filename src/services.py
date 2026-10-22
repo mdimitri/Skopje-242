@@ -30,6 +30,8 @@ class Job:
         self.stuck = 0.0
         self.rev = 0.0
         self.work_t = 0.0
+        self.spray_t = 0.0
+        self.said = False
         self.age = 0.0
 
 
@@ -108,7 +110,7 @@ class Services:
                 res.append(q)
         return res
 
-    def _spawn_node(self, x, y, lo=240.0, hi=380.0):
+    def _spawn_node(self, x, y, lo=130.0, hi=260.0):
         self._graph()
         c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi]
         if not c:
@@ -122,7 +124,7 @@ class Services:
         for j in self.jobs:
             if j.kind == kind and (j.target is target or math.hypot(j.x - x, j.y - y) < 14.0) and j.state != "leave":
                 return True
-        if sum(1 for j in self.jobs if j.kind == kind) >= 2:
+        if sum(1 for j in self.jobs if j.kind == kind) >= 3:
             return False
         self.jobs.append(Job(kind, target, x, y, delay + self.rng.uniform(0, 3)))
         return True
@@ -202,6 +204,10 @@ class Services:
         sim.ev("siren_on", x=b.x, y=b.y, kind=kind)
         return True
 
+    @staticmethod
+    def _face(c, x, y):
+        c.h = math.atan2(y - c.y, x - c.x)
+
     def _crew(self, j, n, arch, shirt):
         sim = self.sim
         b = j.body
@@ -268,43 +274,64 @@ class Services:
                     self._crew(j, 2, 8, 0)
                     sim.ev("shout", text=self.rng.choice(("Брза помош! Место!", "Тргнете се!", "Има ли пулс?")), x=b.x, y=b.y, who="Брза помош")
                 else:
-                    self._crew(j, 2, 6, 0)
+                    self._crew(j, 3, 6, 0)
                     sim.ev("shout", text=self.rng.choice(("Пожар! Тргнете се!", "Водата е на пат!", "Гаси го, брате!")), x=b.x, y=b.y, who="Пожарникар")
         elif j.state == "work":
             j.work_t += dt
             b.ctl = (0.0, 0.0, True)
-            for i, c in enumerate(j.crew):
-                if j.kind == "amb":
-                    off = 0.9 + i * 0.6
-                    d = self._walk_to(c, tgt.x - 0.3 * (1 - 2 * i) - 0.0, tgt.y + off * (1 if i else -1) * 0.5, dt)
-                else:
-                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + (i - 0.5) * 0.7
-                    self._walk_to(c, tgt.x + math.cos(ang) * 6.0, tgt.y + math.sin(ang) * 6.0, dt)
-                    if j.work_t > 3.0:
-                        c.h = math.atan2(tgt.y - c.y, tgt.x - c.x)
-                        sim.ev("spray", x0=c.x, y0=c.y, x1=tgt.x, y1=tgt.y)
             if j.kind == "amb":
-                arrived = all(math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.8 for c in j.crew)
-                if arrived and j.work_t > 8.0:
+                for i, c in enumerate(j.crew):                        # one medic each side of the patient
+                    side = 1 if i == 0 else -1
+                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + side * 1.25
+                    self._walk_to(c, tgt.x + math.cos(ang) * 0.95, tgt.y + math.sin(ang) * 0.95, dt, 4.2)
+                    c.pose = None
+                    if math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5:
+                        self._face(c, tgt.x, tgt.y)
+                arrived = all(math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5 for c in j.crew)
+                if arrived or j.work_t > 25:
                     j.state = "treat"
                     j.work_t = 0.0
-                if j.work_t > 25:
-                    j.state = "treat"
-                    j.work_t = 0.0
-            elif j.work_t > 9.0:
-                tgt.out = True
-                if not tgt.exploded:
-                    tgt.health = max(tgt.health, 12.0)
-                    tgt.burn = 0.0
-                    tgt.dirty = True
-                sim.stats["fires_out"] = sim.stats.get("fires_out", 0) + 1
-                sim.ev("extinguished", x=tgt.x, y=tgt.y)
-                self._leave(j)
+            else:
+                tgt.fire_lvl = max(0.0, 1.0 - max(0.0, j.work_t - 2.5) / 7.0)      # the flames die down while they spray
+                for i, c in enumerate(j.crew):
+                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + (i - 1) * 0.8
+                    d = self._walk_to(c, tgt.x + math.cos(ang) * 6.5, tgt.y + math.sin(ang) * 6.5, dt, 4.4)
+                    c.pose = None
+                    if d < 0.8:
+                        self._face(c, tgt.x, tgt.y)
+                        c.pose = "spray"                                  # nozzle out, water on the flames
+                        if i == 0 and j.work_t > 1.0:
+                            pass
+                        sim.ev("spray", x0=c.x, y0=c.y, x1=tgt.x, y1=tgt.y)
+                spraying = [c for c in j.crew if c.pose == "spray"]
+                if spraying:
+                    j.spray_t += dt
+                if j.spray_t > 8.0 or j.work_t > 40:
+                    tgt.out = True
+                    tgt.fire_lvl = 0.0
+                    if not tgt.exploded:
+                        tgt.health = max(tgt.health, 12.0)
+                        tgt.burn = 0.0
+                        tgt.dirty = True
+                    for c in j.crew:
+                        c.pose = None
+                    sim.stats["fires_out"] = sim.stats.get("fires_out", 0) + 1
+                    sim.ev("extinguished", x=tgt.x, y=tgt.y)
+                    self._leave(j)
         elif j.state == "treat":
             j.work_t += dt
-            for c in j.crew:
-                c.anim = 0.0
-            if j.work_t > 3.5:
+            for i, c in enumerate(j.crew):
+                c.pose = "cpr"                                        # kneeling over the patient, pumping the chest
+                c.anim = j.work_t * (2.0 + i * 0.3)
+                self._face(c, tgt.x, tgt.y)
+            if int(j.work_t * 2) != int((j.work_t - dt) * 2):
+                sim.ev("cpr", x=tgt.x, y=tgt.y)
+            if j.work_t > 0.6 and not j.said:
+                j.said = True
+                sim.ev("shout", text=self.rng.choice(("Еден, два, три, четири...", "Дишај, брате, дишај!", "Не оди никаде, држи се!")), x=tgt.x, y=tgt.y, who="Брза помош")
+            if j.work_t > 5.5:
+                for c in j.crew:
+                    c.pose = None
                 self._revive(tgt)
                 sim.ev("shout", text=self.rng.choice(("Жив е! Ајде, стани.", "Пулсот е тука. Бурекот ќе го врати.", "Нема фрка, ќе поживее.")), x=tgt.x, y=tgt.y, who="Брза помош")
                 self._leave(j)

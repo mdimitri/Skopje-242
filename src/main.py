@@ -729,6 +729,22 @@ def main():
                 shake = max(shake, 3.0)
             elif kind == "swing":
                 aud.play("punch", 0.5 if d["hit"] else 0.2)
+            elif kind == "prop_break":                              # a punched / blasted prop: hide its mesh, throw bits
+                streamer.reload_near(d["x"], d["y"])
+                big = d["kind"] in ("post", "tree")
+                particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "tree" else (150, 150, 156), 14 if big else 8, 0.6)
+                if d["kind"] == "tree":
+                    particles.leaves(d["x"], d["y"], 24)
+                aud.play("crash", 0.5 if near(d["x"], d["y"]) else 0.0, 1.3 if not big else 0.9)
+            elif kind == "prop_thud":
+                aud.play("punch", 0.4 if near(d["x"], d["y"]) else 0.0, 0.7)
+                if d.get("leaves"):
+                    particles.leaves(d["x"], d["y"], 8)
+            elif kind == "cpr":
+                particles.emit("c", d["x"], d["y"], 1.2, 0, 0, 1.5, 1, 0.3, 0.9, (255, 110, 150), 2.0, 0.8, 0.6)
+            elif kind == "car_ignite":
+                b = d["body"]
+                popups.add(rng.choice(("Се запали и тој!", "Огнот се прошири!", "Ќе експлодира и овој!")), b.x, b.y, 3.0, 2.2, (255, 170, 90))
             elif kind == "explode":
                 b = d["body"]
                 particles.explosion(b.x, b.y)
@@ -781,8 +797,11 @@ def main():
             elif b.exploded:
                 if rng.random() < 0.25:
                     particles.smoke(b.x, b.y, 0.9, 1, 1.0)
+                if rng.random() < 0.45 * b.fire_lvl:                # the wreck keeps burning until the fire brigade gets there
+                    particles.fire(b.x + rng.uniform(-1, 1), b.y + rng.uniform(-0.6, 0.6), 1, 0.7, 0.35 + 0.5 * b.fire_lvl)
             elif b.health <= 0:
-                particles.fire(b.x + fx_ * 1.2, b.y + fy_ * 1.2, 2, 0.9)
+                if rng.random() < b.fire_lvl:                      # the fire brigade turns the flames down
+                    particles.fire(b.x + fx_ * 1.2, b.y + fy_ * 1.2, 2, 0.9, 0.4 + 0.6 * b.fire_lvl)
                 particles.smoke(b.x + fx_, b.y + fy_, 0.9, 1, 1.2)
             elif b.health < 35 and rng.random() < 0.35:
                 particles.smoke(b.x + fx_ * 1.4, b.y + fy_ * 1.4, 0.3 + (35 - b.health) / 50, 1, 1.0)

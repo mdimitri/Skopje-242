@@ -263,7 +263,7 @@ class World:
         cell = self.pgrid.get((int(e[0] // cg), int(e[1] // cg)))
         if cell and e in cell:
             cell.remove(e)
-        tree = e[2] >= 0.45 and e[4] - e[3] > 8
+        tree = e[2] >= 0.45 and e[4] - max(e[3], self.ground_y(e[0], e[1]) - 0.3) > 8       # (`lo` of low props reaches far below the ground)
         self.broken.append((e[0], e[1], 4.2 if tree else max(0.7, e[2] + 0.5), e[4] + (6 if tree else 0.5)))
         self.broken_ver += 1
 
