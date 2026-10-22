@@ -82,7 +82,15 @@ class Night:
         p0, p1, p2 = scr(0.2, 0), scr(length, -1), scr(length, 1)
         if (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x) > 0:   # raylib needs counter-clockwise
             p1, p2 = p2, p1
-        rl.draw_triangle(p0, p1, p2, _col(255, 238, 190, a * 0.3))
+        # vertex colours: full at the lamp, fading to nothing at the far edge
+        rl.rl_set_texture(0)
+        rl.rl_begin(rl.RL_TRIANGLES)
+        rl.rl_color4ub(255, 238, 190, int(min(255, a * 0.4)))
+        rl.rl_vertex2f(p0.x, p0.y)
+        rl.rl_color4ub(255, 238, 190, 0)
+        rl.rl_vertex2f(p1.x, p1.y)
+        rl.rl_vertex2f(p2.x, p2.y)
+        rl.rl_end()
 
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)

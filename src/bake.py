@@ -191,6 +191,9 @@ class Streamer:
         self.decals = {}      # key -> history list (replayed on rebake)
         self.pending = {}     # key -> new decals to draw this frame
         self.errors = 0
+        self.clock = None     # set by main: decals (blood, scorch) fade out after DECAL_MIN in-game minutes
+        self.born = {}        # id(decal) -> clock.minutes when it was added
+        self._purge_t = 0
 
     # ---- ground mesh: the terrain under one chunk, textured with its baked ground texture
     def _ground_model(self, key, rt):
@@ -241,6 +244,8 @@ class Streamer:
                 if m is not None:
                     names = ("A", "B", "roof", "white", "panel", "house")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
+                    if mat == 3 and getattr(self.world, "roads3d", False):
+                        gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
         self.mesh_loaded += 1
@@ -302,6 +307,7 @@ class Streamer:
                 print(f"[stream] chunk {key} failed: {e}")
             n += 1
         self._evict()
+        self._purge_decals()
         self._flush_decals()
 
     def _evict(self):
@@ -327,7 +333,35 @@ class Streamer:
         hist = self.decals.setdefault(key, [])
         if len(hist) < 700:
             hist.append(d)
+            if self.clock is not None and d[0] == "d":
+                self.born[id(d)] = self.clock.minutes
         self.pending.setdefault(key, []).append(d)
+
+    DECAL_MIN = 20.0
+
+    def _purge_decals(self):
+        """Blood and scorch blobs disappear DECAL_MIN in-game minutes after they were made (skid lines stay)."""
+        if self.clock is None or not self.born:
+            return
+        self._purge_t += 1
+        if self._purge_t < 30:
+            return
+        self._purge_t = 0
+        now = self.clock.minutes
+        baked = not getattr(self.world, "roads3d", False)
+        for key, hist in self.decals.items():
+            old = [d for d in hist if now - self.born.get(id(d), now) > self.DECAL_MIN]
+            if not old:
+                continue
+            gone = {id(d) for d in old}
+            hist[:] = [d for d in hist if id(d) not in gone]
+            for i in gone:
+                self.born.pop(i, None)
+            e = self.ground.get(key)
+            if baked and e:                                   # the texture has them burnt in: rebake without
+                self.pool.append(e[0])
+                gl3d.free_model(e[2])
+                del self.ground[key]
 
     def _flush_decals(self):
         if not self.pending:

@@ -49,6 +49,8 @@ from night import Night   # noqa: E402
 from places import Places   # noqa: E402
 from speech import SpeechWorker   # noqa: E402
 import smog   # noqa: E402
+import poi as poi_mod   # noqa: E402
+import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
 from hud import Hud, build_labels, draw_labels   # noqa: E402
 from render import LOD_PPM, Renderer   # noqa: E402
@@ -290,6 +292,7 @@ def main():
     ap.add_argument("--zoom", type=float, default=1.0)
     ap.add_argument("--start", default="", help="x,y metres from centre (debug)")
     ap.add_argument("--hour", type=float, default=17.0, help="start time of day (0-24)")
+    ap.add_argument("--fetch-radio", dest="fetch_radio", action="store_true", help="legacy: download CC music into assets/radio (not needed, put files in music/)")
     ap.add_argument("--mute", action="store_true", help="no sound")
     ap.add_argument("--demo", action="store_true", help="offline synthetic demo city")
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
@@ -321,7 +324,8 @@ def main():
     need = plan_needs(a)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
-    start_radio_fetch(loader)
+    if a.fetch_radio or os.environ.get("GTA_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
+        start_radio_fetch(loader)
     world = ensure_world(a.world, loader, a.demo, a.refresh, need)
     log(f"[game] world: {len(world.buildings)} buildings, {len(world.roads)} roads, {len(world.edges)} edges, "
         f"{len(world.trees)} trees, {len(world.parked)} parked cars")
@@ -369,6 +373,7 @@ def main():
     sim = Sim(world, rng, a.cars, a.peds)
     sim.car.color = -1                                   # the player's own car gets racing stripes
     sim.clock.hour = (a.hour if a.test or "--hour" in sys.argv else cfg["hour"]) % 24.0
+    streamer.clock = sim.clock
     sim.auto_respawn = bool(a.test)
     lights = signals.Signals(world)
     sim.traffic.signals = sim.lights = lights
@@ -457,6 +462,8 @@ def main():
     print(f"[game] map points of interest: {len(hud.pois)}")
     labels += [(nm_, x_, world.ground_y(x_, y_) + 3.2, y_, "poi:" + c_) for x_, y_, c_, nm_ in hud.pois if nm_]
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
+    pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
+    selfie = selfie_mod.Selfie(ROOT)
     guard = Guard(lambda m: hud.set_banner(m, 5))
     apply_cfg(cfg, True)
 
@@ -532,6 +539,8 @@ def main():
         vol = 1.0 if prio else max(0.0, 1.0 - math.hypot(x - fx_, y - fy_) / 32.0)
         if vol < 0.15 or len(text) > 90:
             return
+        if not prio and t_game < pois.sup_until:
+            return                                              # right after a POI visit / selfie only the avatar speaks
         for k_ in [k_ for k_, v_ in pend_say.items() if t_game - v_[2] > 4.0]:   # lost requests never block speech
             del pend_say[k_]
         if not prio and (t_game - say_state["t"] < 1.3 or aud.speaking() or pend_say):
@@ -729,6 +738,22 @@ def main():
                 shake = max(shake, 3.0)
             elif kind == "swing":
                 aud.play("punch", 0.5 if d["hit"] else 0.2)
+            elif kind == "prop_break":                              # a punched / blasted prop: hide its mesh, throw bits
+                streamer.reload_near(d["x"], d["y"])
+                big = d["kind"] in ("post", "tree")
+                particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "tree" else (150, 150, 156), 14 if big else 8, 0.6)
+                if d["kind"] == "tree":
+                    particles.leaves(d["x"], d["y"], 24)
+                aud.play("crash", 0.5 if near(d["x"], d["y"]) else 0.0, 1.3 if not big else 0.9)
+            elif kind == "prop_thud":
+                aud.play("punch", 0.4 if near(d["x"], d["y"]) else 0.0, 0.7)
+                if d.get("leaves"):
+                    particles.leaves(d["x"], d["y"], 8)
+            elif kind == "cpr":
+                particles.emit("c", d["x"], d["y"], 1.2, 0, 0, 1.5, 1, 0.3, 0.9, (255, 110, 150), 2.0, 0.8, 0.6)
+            elif kind == "car_ignite":
+                b = d["body"]
+                popups.add(rng.choice(("Се запали и тој!", "Огнот се прошири!", "Ќе експлодира и овој!")), b.x, b.y, 3.0, 2.2, (255, 170, 90))
             elif kind == "explode":
                 b = d["body"]
                 particles.explosion(b.x, b.y)
@@ -781,8 +806,11 @@ def main():
             elif b.exploded:
                 if rng.random() < 0.25:
                     particles.smoke(b.x, b.y, 0.9, 1, 1.0)
+                if rng.random() < 0.45 * b.fire_lvl:                # the wreck keeps burning until the fire brigade gets there
+                    particles.fire(b.x + rng.uniform(-1, 1), b.y + rng.uniform(-0.6, 0.6), 1, 0.7, 0.35 + 0.5 * b.fire_lvl)
             elif b.health <= 0:
-                particles.fire(b.x + fx_ * 1.2, b.y + fy_ * 1.2, 2, 0.9)
+                if rng.random() < b.fire_lvl:                      # the fire brigade turns the flames down
+                    particles.fire(b.x + fx_ * 1.2, b.y + fy_ * 1.2, 2, 0.9, 0.4 + 0.6 * b.fire_lvl)
                 particles.smoke(b.x + fx_, b.y + fy_, 0.9, 1, 1.2)
             elif b.health < 35 and rng.random() < 0.35:
                 particles.smoke(b.x + fx_ * 1.4, b.y + fy_ * 1.4, 0.3 + (35 - b.health) / 50, 1, 1.0)
@@ -1027,6 +1055,26 @@ def main():
                 sim.teleport(pick[0], pick[1])
                 show_map = False
                 snap = True
+        sf_due_ = False
+        if a.test:
+            pt_ = os.environ.get("GTA_TEST_POI")
+            if pt_ and frame == int(pt_) and sim.walker is not None and pois.cells:
+                q_ = next(iter(next(iter(pois.cells.values()))))
+                sim.walker.x, sim.walker.y, sim.walker.az = q_[0] + 3.0, q_[1], None
+            if pt_ and frame == int(pt_) + int(os.environ.get("GTA_TEST_POI_BUY", "3")):
+                inp["buy"] = 0
+        if sim.mode == "foot" and (rl.is_key_pressed(rl.KEY_P) or (a.test and frame == int(os.environ.get("GTA_TEST_SELFIE", "-1")))) and not pois.busy:
+            if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
+                            lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
+                pois.sup_until = t_game + selfie_mod.DUR + 4.0
+        busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
+                          lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active
+        if busy_:                                            # inside a shop / posing: the controls are off
+            inp["move"], inp["attack"], inp["buy"], inp["jump"] = (0, 0), False, None, False
+            inp["throttle"] = inp["steer"] = 0
+            enter_pressed = False
+        if selfie.active:
+            sf_due_ = selfie.advance(dt)
         if enter_pressed:
             if sim.mode == "car":
                 sim.exit_car()
@@ -1062,9 +1110,15 @@ def main():
         fx, fy, fvx, fvy = sim.focus()
         guard.run("places", handle_places, fx, fy)
         guard.run("audio", handle_audio, fx, fy)
+        if sim.mode == "car" and not a.test and not busy_:
+            for k_, d_ in ((rl.KEY_E, 1), (rl.KEY_PERIOD, 1), (rl.KEY_Q, -1), (rl.KEY_COMMA, -1)):
+                if rl.is_key_pressed(k_):
+                    hud.set_banner(car_radio.step(d_), 2.0)
+                    break
+        hud.radio_line = car_radio.label() if sim.mode == "car" and car_radio.aud.ok else ""
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
-            hud.set_banner("Радио: " + song, 3.0)
+            hud.set_banner("Радио: " + song, 2.0)
         res = spk.poll()
         if res is not None:
             key, pcm, sr_ = res
@@ -1101,6 +1155,10 @@ def main():
         cam_h = foc_h if cam_h is None else cam_h + (foc_h - cam_h) * min(1.0, 4.0 * dt)
         jx, jy = random.uniform(-shake, shake) * cfg["shake"], random.uniform(-shake, shake) * cfg["shake"]
         cam, Hc, rect = renderer.camera(cam_x + jx, cam_y + jy, ppm, sw, sh, cam_h)
+        sf_on = selfie.active and sim.walker is not None
+        if sf_on:
+            cam, rect = selfie.camera(sim, world)
+            Hc = 0.0
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
@@ -1110,15 +1168,20 @@ def main():
         rl.begin_drawing()
         try:
             rl.clear_background(rl.Color(26, 28, 32, 255))
-            guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
+            if sf_on:
+                sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
+                selfie.haze(sf_hy, sim.clock.dark, sw)
+            else:
+                guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
             if lod:
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh)
-            if cfg.get("smog", 1):
+            if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic), 1.0, world.ground_y(cam_x, cam_y))
             guard.run("popups", popups.draw, cam)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
-            if lod and ppm > 4.0 and flags["labels"]:
+            if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""
             if sim.mode == "foot" and sim.walker and sim.walker.health > 0:
@@ -1136,12 +1199,19 @@ def main():
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = "[R] Почни одново"
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
-            guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
+            if sf_on:
+                selfie.overlay(sw, sh)
+                if sf_due_:
+                    selfie.take()
+            else:
+                pois.draw(sim, sw, sh)
+            if not sf_on:
+                guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()
             if vs_:
                 font.draw_text("Глас: " + vs_, 16, 62, 16, rl.Color(255, 220, 150, 220))
             if not a.test:
-                font.draw_text("WASD вози/оди  SPACE рачна/скок  CTRL удри/пукај  F влез/излез  H труба  1-4 киоск  M мапа (клик=телепорт)  T места  [ ] време  N тивко",
+                font.draw_text("WASD вози/оди  SPACE рачна/скок  CTRL удри/пукај  F влез/излез  H труба  1-4 киоск/места  P селфи  M мапа (клик=телепорт)  T места  [ ] време  N тивко",
                              16, sh - 30 if False else 36, 16, rl.Color(255, 255, 255, 170))
             if show_dbg:
                 font.draw_text(f"{rl.get_fps()} fps  {dt_real * 1000:.1f} ms | ground {renderer.drawn_chunks}/{len(streamer.ground)} "

@@ -3,6 +3,8 @@ import math
 import random
 
 import numpy as np
+
+import weaponart
 import pyray as rl
 
 ffi = rl.ffi
@@ -604,14 +606,22 @@ SKIN = [(236, 190, 160), (200, 150, 110), (150, 105, 80), (240, 205, 180)]
 HAIR = [(50, 36, 28), (190, 150, 80), (20, 20, 22), (120, 70, 40)]
 
 
-def _strike(add, kind, sk, legc, shoe):
-    """Extra limbs for the fight frames: 4 = punch (both fists thrown forward), 5 = high kick."""
+def _strike(add, kind, sk, legc, shoe, arm=None):
+    """The fight poses. The caller leaves out the limbs that move (both arms for 4, the right leg for 5), so these
+    replace them instead of growing on top of them. 4 = punch: right arm thrown straight out, left in guard;
+    5 = high front kick with the right leg."""
+    arm = sk if arm is None else arm
     if kind == 4:
-        add(0.45, 0.98, 0.22, 0.62, 0.13, 0.13, sk)
-        add(0.3, 1.04, -0.2, 0.4, 0.13, 0.13, sk)
+        add(0.2, 1.1, 0.3, 0.36, 0.13, 0.13, arm)             # right upper arm, horizontal from the shoulder
+        add(0.54, 1.1, 0.3, 0.34, 0.12, 0.12, arm)            # forearm
+        add(0.72, 1.09, 0.3, 0.14, 0.14, 0.14, sk)            # fist
+        add(0.06, 0.82, -0.34, 0.13, 0.36, 0.12, arm)         # left upper arm hangs
+        add(0.2, 1.0, -0.3, 0.3, 0.12, 0.12, arm)             # forearm raised forward (guard)
+        add(0.38, 1.0, -0.3, 0.12, 0.13, 0.12, sk)
     else:
-        add(0.42, 0.62, 0.11, 0.7, 0.2, 0.17, legc)
-        add(0.78, 0.6, 0.11, 0.26, 0.12, 0.18, shoe)
+        add(0.28, 0.74, 0.11, 0.56, 0.18, 0.16, legc)         # thigh forward
+        add(0.7, 0.8, 0.11, 0.34, 0.16, 0.15, legc)           # shin swinging up
+        add(0.9, 0.8, 0.11, 0.26, 0.12, 0.18, shoe)           # foot
 
 
 def _ped_special(arch, tone, frame, skin):
@@ -800,11 +810,15 @@ def _ped_special(arch, tone, frame, skin):
             add(0.3 if rider != "cart" else 0.15, 0.6, s * 0.11, 0.42, 0.15, 0.15, legc)
             add(0.5 + ph, 0.1, s * 0.11, 0.15, 0.55, 0.15, legc)
     elif D["skirt"]:
-        add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk); add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
+        add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk)
+        if strike != 5:
+            add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
         add(0.0, 0.3, 0, 0.36, 0.6, 0.48, D["skirt"])
     else:
         lc2 = D["legs"]
         for s, o in ((-1, sw), (1, -sw)):
+            if strike == 5 and s > 0:
+                continue
             if D["shorts"]:
                 add(o, 0.0, s * 0.11, 0.2, 0.5, 0.16, sk); add(o, 0.5, s * 0.11, 0.22, 0.32, 0.17, lc2)
             else:
@@ -824,8 +838,9 @@ def _ped_special(arch, tone, frame, skin):
             add(0.5, 0.95 + Y, s * 0.2, 0.1, 0.1, 0.1, sk)
     else:
         z = 0.34 + D["wide"] / 2
-        add(-asw, 0.8, -z, 0.14, 0.6, 0.12, ac); add(asw, 0.8, z, 0.14, 0.6, 0.12, ac)
-        add(-asw, 0.74, -z, 0.12, 0.1, 0.1, sk); add(asw, 0.74, z, 0.12, 0.1, 0.1, sk)
+        if strike != 4:
+            add(-asw, 0.8, -z, 0.14, 0.6, 0.12, ac); add(asw, 0.8, z, 0.14, 0.6, 0.12, ac)
+            add(-asw, 0.74, -z, 0.12, 0.1, 0.1, sk); add(asw, 0.74, z, 0.12, 0.1, 0.1, sk)
         for (sx, sy, sz, col, yy, zz) in held:                                # props carried in the right hand
             add(asw + 0.02, yy if yy else 0.1, z + 0.08 + zz, sx, sy, sz, col)
     for (x, y, z, sx, sy, sz, col) in extra:
@@ -855,7 +870,7 @@ def _ped_special(arch, tone, frame, skin):
     else:
         add(hx - 0.03 + bx, 1.5 + Y, 0, 0.27, 0.12, 0.26, hair)
     if strike:
-        _strike(add, strike, sk, D["legs"], D["shoe"])
+        _strike(add, strike, sk, D["legs"], D["shoe"], ac)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
     if rider == "cart" and frame < 2:
@@ -921,6 +936,8 @@ def _hero(i, frame):
     sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame]
     # legs: thigh + shin, knee, shoes with a sole
     for s_, z in ((sw, -0.11), (-sw, 0.11)):
+        if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
+            continue
         add(s_ * 0.7, 0.42, z, 0.19, 0.42, 0.16, legc)
         add(s_, 0.06, z, 0.17, 0.38, 0.14, legc if d.get("legs") else sk)
         add(s_ + 0.05, 0.0, z, 0.28, 0.08, 0.17, shoe)
@@ -964,6 +981,8 @@ def _hero(i, frame):
     arm_c = A(top) * 0.92 if "coat" not in ex else A((240, 240, 240))
     hand = (24, 24, 26) if "gloves" in ex else sk
     for s_, z in ((-asw, -0.34), (asw, 0.34)):
+        if strike == 4:                                 # punching: both arms are drawn by _strike
+            continue
         if frame == 3:
             add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
             add(0.0, 1.8, z, 0.12, 0.12, 0.11, hand)
@@ -1051,7 +1070,7 @@ def _hero(i, frame):
         add(hx - 0.02, hy + 0.32, 0, 0.12, 0.1, 0.12, (220, 50, 60))
         add(hx - 0.02, hy + 0.42, 0, 0.06, 0.1, 0.06, (240, 220, 60))
     if strike:
-        _strike(add, strike, A(sk), legc, shoe)
+        _strike(add, strike, A(sk), legc, shoe, arm_c)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
     pos *= d.get("scale", 1.0)
@@ -1108,13 +1127,15 @@ def ped_arrays(arch, tone, frame, skin=0):
     sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame] * (0.7 if arch == 1 else 1.0)
     if arch in (1, 7):                                       # skirt / dress instead of legs
         add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk)
-        add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
+        if strike != 5:
+            add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
         add(0.0, 0.42, 0, 0.34, 0.46, 0.46, torso if arch == 7 else (90, 70, 60))
     else:
         add(sw, 0.0, -0.11, 0.2, 0.82, 0.16, legc)
-        add(-sw, 0.0, 0.11, 0.2, 0.82, 0.16, legc)
         add(sw + 0.04, 0.0, -0.11, 0.26, 0.1, 0.17, shoe)
-        add(-sw + 0.04, 0.0, 0.11, 0.26, 0.1, 0.17, shoe)
+        if strike != 5:                                       # (the kicking leg is drawn by _strike)
+            add(-sw, 0.0, 0.11, 0.2, 0.82, 0.16, legc)
+            add(-sw + 0.04, 0.0, 0.11, 0.26, 0.1, 0.17, shoe)
     add(0, 0.8, 0, 0.26, 0.62, 0.5, torso)                    # torso
     asw = sw * 0.8
     arms_c = A(torso) * 0.92
@@ -1131,10 +1152,11 @@ def ped_arrays(arch, tone, frame, skin=0):
         add(0.0, 1.0, -0.36, 0.14, 0.7, 0.12, sk)
         add(0.0, 1.0, 0.36, 0.14, 0.7, 0.12, sk)
     else:
-        add(-asw, 0.8, -0.34, 0.14, 0.6, 0.12, arms_c)
-        add(asw, 0.8, 0.34, 0.14, 0.6, 0.12, arms_c)
-        add(-asw, 0.74, -0.34, 0.12, 0.1, 0.1, sk)
-        add(asw, 0.74, 0.34, 0.12, 0.1, 0.1, sk)
+        if strike != 4:                                       # (punching: both arms are drawn by _strike)
+            add(-asw, 0.8, -0.34, 0.14, 0.6, 0.12, arms_c)
+            add(asw, 0.8, 0.34, 0.14, 0.6, 0.12, arms_c)
+            add(-asw, 0.74, -0.34, 0.12, 0.1, 0.1, sk)
+            add(asw, 0.74, 0.34, 0.12, 0.1, 0.1, sk)
         if arch == 2:
             add(asw, 0.55, 0.40, 0.08, 0.22, 0.34, (110, 70, 40))                                  # briefcase
         if arch == 1:
@@ -1168,7 +1190,7 @@ def ped_arrays(arch, tone, frame, skin=0):
     if arch in (3, 5):
         add(-0.2, 0.8, 0, 0.14, 0.5 if arch == 3 else 0.34, 0.34, (40, 70, 160) if tone != 1 else (190, 60, 40))   # backpack
     if strike:
-        _strike(add, strike, sk, legc, shoe)
+        _strike(add, strike, sk, legc, shoe, arms_c)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
     pos *= scale
@@ -1200,19 +1222,47 @@ def prism_arrays(radius, height, sides, top_col, side_col):
     return np.array(pos, np.float32), np.zeros((len(pos), 2), np.float32), np.clip(np.array(col), 0, 255).astype(np.uint8)
 
 
+def _boxes_model(boxes):
+    """boxes (cx, base y, cz, sx, sy, sz, colour) -> one model."""
+    parts = []
+    for cx, y, cz, sx, sy, sz, col in boxes:
+        for _nm, (v, n) in box_faces(cx, y, cz, sx, sy, sz).items():
+            parts.append((v, np.tile(np.array(col, np.float32) * _shade(np.array(n, np.float32)), (len(v), 1))))
+    pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
+    col = np.clip(np.concatenate([p[1] for p in parts]), 0, 255).astype(np.uint8)
+    col = np.concatenate([col, np.full((len(col), 1), 255, np.uint8)], 1) if col.shape[1] == 3 else col
+    return make_model(pos, np.zeros((len(pos), 2), np.float32), col)
+
+
+def weapon_model(kind):
+    d = weaponart.DEPTH[kind]
+    return _boxes_model([(x + w / 2, y, 0.0, w, h, d, c) for x, y, w, h, c in weaponart.BOXES[kind]])
+
+
+def wreck_model(kind, seed):
+    """What is left of a broken tree / post / prop: a charred stump, a bent pole lying down, a crumpled heap."""
+    rg = random.Random(seed)
+    if kind == "tree":
+        return _boxes_model([(0, 0, 0, 0.5, 0.9, 0.5, (52, 40, 30)), (0.1, 0.9, 0.05, 0.3, 0.4, 0.25, (36, 30, 26)),
+                             (1.6, 0.0, 0.5, 2.8, 0.34, 0.34, (66, 50, 36)), (3.6, 0.0, 0.7, 1.2, 0.5, 0.9, (46, 70, 38))])
+    if kind == "post":
+        return _boxes_model([(0, 0, 0, 0.3, 0.5, 0.3, (88, 88, 92)), (1.9, 0.0, 0.1, 3.6, 0.14, 0.14, (110, 110, 116)),
+                             (3.8, 0.0, 0.1, 0.6, 0.16, 0.3, (80, 80, 84))])
+    boxes = []
+    for i in range(5):
+        c = rg.choice(((84, 90, 96), (110, 84, 60), (60, 70, 66), (130, 126, 120)))
+        boxes.append((rg.uniform(-0.35, 0.35), rg.uniform(0, 0.12) + 0.0, rg.uniform(-0.35, 0.35), rg.uniform(0.25, 0.6),
+                      rg.uniform(0.08, 0.25), rg.uniform(0.15, 0.45), c))
+    return _boxes_model(boxes)
+
+
 def pickup_model(kind):
     if kind == "burek":
         return make_model(*prism_arrays(0.55, 0.42, 9, (240, 200, 90), (196, 130, 60)))
     if kind == "cash":
         return make_model(*prism_arrays(0.42, 0.14, 6, (120, 200, 110), (60, 140, 70)))
-    if kind in ("pistol", "uzi", "shotgun", "kalash"):
-        size = {"pistol": 0.4, "uzi": 0.5, "shotgun": 0.6, "kalash": 0.7}[kind]
-        tint = {"pistol": (60, 60, 66), "uzi": (40, 44, 50), "shotgun": (110, 70, 40), "kalash": (140, 90, 40)}[kind]
-        return make_model(*prism_arrays(size, 0.3, 4, tint, (30, 30, 34)))
-    if kind == "bat":                                    # wooden club
-        return make_model(*prism_arrays(0.12, 0.95, 6, (150, 104, 60), (110, 74, 40)))
-    if kind == "zolja":                                  # olive-green rocket tube
-        return make_model(*prism_arrays(0.16, 1.0, 8, (86, 100, 52), (60, 70, 36)))
+    if kind in weaponart.BOXES:                          # the weapon itself, barrel along +x (spun in the world, held by the avatar)
+        return weapon_model(kind)
     if kind == "fuel":                                   # red jerry can
         return make_model(*prism_arrays(0.45, 0.6, 4, (210, 40, 30), (150, 20, 20)))
     return make_model(*prism_arrays(0.32, 0.7, 8, (240, 240, 240), (190, 36, 30)))      # ajvar jar
@@ -1222,8 +1272,8 @@ def pickup_model(kind):
 DETAIL_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp;
-out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos;
-void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wpos = vertexPosition.xz;
+out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos; out vec3 wp;
+void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wpos = vertexPosition.xz; wp = vertexPosition;
              gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
 DETAIL_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos;
@@ -1231,6 +1281,48 @@ uniform sampler2D texture0; uniform sampler2D texture1; uniform sampler2D textur
 out vec4 finalColor;
 const vec3 WATER = vec3(0.337, 0.573, 0.776);
 const vec3 GROUND = vec3(0.788, 0.769, 0.714);
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+// road wear: the further from the centre (world origin), the rougher; asphalt only (dark grey), not pavements
+vec3 wear(vec3 c, float road, float crack){
+  if (road < 0.5) return c;
+  float rough = smoothstep(500.0, 4200.0, length(wpos));
+  float cr2 = texture(texture2, wpos / 3.1 + 0.37).r;
+  c *= 1.0 - road * cr2 * (0.08 + 0.5 * rough);                                       // fine crazing, worse on the outskirts
+  c *= 1.0 - road * crack * rough * 0.25;
+  float oilz = texture(texture1, wpos / 15.0 + 0.5).g, oilf = texture(texture1, wpos / 5.3).r;
+  float oil = smoothstep(0.80 - 0.06 * rough, 0.88, oilz * 0.8 + oilf * 0.3);          // oil slicks: dark, with a faint rainbow sheen
+  vec3 sheen = 0.5 + 0.5 * cos(6.2832 * (oilf * 2.0 + vec3(0.0, 0.33, 0.67)));
+  c = mix(c, c * 0.55 + sheen * 0.05, road * oil * 0.75);
+  float pot = smoothstep(0.86 - 0.08 * rough, 0.93, texture(texture1, wpos / 9.0 + 0.2).b * 0.5 + texture(texture1, wpos / 2.7).r * 0.5 + 0.3 * rough);
+  c = mix(c, c * vec3(0.45, 0.42, 0.4), road * pot * rough * 0.9);                      // potholes, only out of town
+  vec2 cell = floor(wpos / 14.0);
+  float h1 = h21(cell), h2 = h21(cell + 3.7), h3 = h21(cell + 8.1);
+  {
+    if (h1 < 0.8) {                                                                    // manhole cover: ring, disc, grating lines
+      vec2 mc = (cell + 0.1 + 0.8 * vec2(h2, h3)) * 14.0;
+      vec2 q = wpos - mc;
+      float dm = length(q);
+      float disc = 1.0 - smoothstep(0.40, 0.46, dm);
+      float ring = smoothstep(0.34, 0.38, dm) * disc;
+      float grate = 0.5 + 0.5 * sin(q.x * 38.0 + q.y * 5.0);
+      c = mix(c, vec3(0.19, 0.18, 0.17) * (0.85 + 0.25 * grate), disc * 0.9);
+      c = mix(c, vec3(0.34, 0.33, 0.31), ring * 0.7);
+    }
+    vec2 cell2 = floor(wpos / 41.0 + 0.13);
+    float g1 = h21(cell2 + 11.3);
+    if (g1 < 0.35) {                                                                    // repair strip / trench patch: fresh dark tar with an edge
+      vec2 pc = (cell2 + 0.5) * 41.0 + (vec2(h21(cell2 + 2.1), h21(cell2 + 5.9)) - 0.5) * 20.0;
+      vec2 q = wpos - pc;
+      if (g1 < 0.175) q = q.yx;
+      vec2 a = abs(q) - vec2(3.0 + 5.0 * h21(cell2 + 1.1), 0.55 + 0.5 * h21(cell2 + 4.4));
+      float inside = 1.0 - smoothstep(-0.05, 0.05, max(a.x, a.y));
+      float edge = (1.0 - smoothstep(0.0, 0.08, abs(max(a.x, a.y)))) * 0.6;
+      c = mix(c, c * 0.62, inside * 0.8);
+      c = mix(c, c * 1.35, edge);
+    }
+  }
+  return c;
+}
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
   vec2 uv = wpos / 3.5;
@@ -1254,6 +1346,8 @@ void main(){
   float crack = cr.r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);   // cracks come in worn zones
   c *= 1.0 - paved * crack * (lum > 0.5 ? 0.35 : 0.55);
   c = mix(c, c * 0.82, paved * cr.g * 0.7);                            // tar patches / potholes
+  float road = paved * (1.0 - smoothstep(0.38, 0.52, lum));
+  c = wear(c, road, crack);
   float wet = 1.0 - smoothstep(0.04, 0.12, distance(base.rgb, WATER));   // rivers / lakes: moving ripples
   if (wet > 0.0) {
     float r1 = texture(texture1, wpos / 9.0 + vec2(time * 0.031, time * 0.012)).r;
@@ -1264,6 +1358,46 @@ void main(){
   }
   finalColor = vec4(c, base.a);
 }"""
+# the road / prop mesh (one material for both): only flat dark-grey surfaces get the road wear, walls and trees stay as baked
+SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")].replace("in vec2 wpos;", "in vec2 wpos; in vec3 wp;", 1) + """void main(){
+  vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
+  vec3 c = base.rgb;
+  vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
+  float lum = dot(c, vec3(0.333));
+  float grey = 1.0 - clamp((max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b))) * 9.0, 0.0, 1.0);
+  float road = grey * (1.0 - smoothstep(0.38, 0.52, lum)) * step(0.92, abs(nrm.y));
+  float crack = texture(texture2, wpos / 7.0).r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);
+  c *= 1.0 - road * crack * 0.3;
+  c = wear(c, road, crack);
+  finalColor = vec4(c, base.a);
+}"""
+_solid = None
+
+
+def road_detail():
+    """Wear shader for the 3D road meshes (needs the same textures as the ground detail); None when unavailable."""
+    global _solid
+    if _solid is None:
+        d = ground_detail()
+        _solid = False
+        if d is not None:
+            try:
+                sh = rl.load_shader_from_memory(DETAIL_VS, SOLID_FS)
+                if sh.id and sh.id != rl.rl_get_shader_id_default():
+                    _solid = (sh, d[1], d[3])
+            except Exception as e:  # noqa: BLE001
+                print(f"[gfx] road detail off: {e}")
+    return _solid or None
+
+
+def apply_road_detail(model):
+    d = road_detail()
+    if d is not None and model is not None:
+        model.materials[0].shader = d[0]
+        model.materials[0].maps[1].texture = d[1]
+        model.materials[0].maps[2].texture = d[2]
+
+
 _detail = None
 
 

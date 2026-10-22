@@ -4,7 +4,9 @@ import math
 import numpy as np
 import pyray as rl
 
+import actors
 import gl3d
+import weaponart
 import projectiles
 import vehicles
 import slang
@@ -44,6 +46,7 @@ class Renderer:
         self._frames = 0
         self.ped_models = {}
         self.pick_models = {}
+        self.wreck_models = {}
         self.t = 0.0
         self.drawn_chunks = 0
         self.drawn_meshes = 0
@@ -152,14 +155,14 @@ class Renderer:
         return m
 
     # ---------------------------------------------------------------- scene
-    def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True):
+    def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
         w, st = self.w, self.st
         S, M = w.chunk, w.margin
         HX, HY = w.hx, w.hy
         self.t = t
         gl3d.ground_time(t)
-        rl.rl_set_clip_planes(2.0, H * 4 + 400)
+        rl.rl_set_clip_planes(near, H * 4 + 400)
         rl.begin_mode_3d(cam)
         try:
             rl.rl_disable_backface_culling()
@@ -177,7 +180,7 @@ class Renderer:
                             drawn += 1
                         else:
                             missing = True
-            if missing:                                    # the coarse whole-city model is only seen where a chunk is not baked yet
+            if missing or far_overview:                    # the coarse whole-city model is only seen where a chunk is not baked yet
                 self._overview()
             self.drawn_chunks = drawn
             nm = 0
@@ -299,7 +302,27 @@ class Renderer:
         for x, z, kind, alive, _t in sim.pickups:
             if alive and self._in(x, z, rect):
                 m = self.pick_model(kind)
-                rl.draw_model_ex(m, V3(x, w.ground_y(x, z) + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+                gy0 = w.ground_y(x, z)
+                if kind in weaponart.BOXES:                           # weapons: the real shape, big, slowly turning, over a glow disc
+                    rl.draw_cylinder(V3(x, gy0 + 0.04, z), 0.9, 0.9, 0.03, 16, rl.Color(255, 200, 60, 90))
+                    Mw = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(2.4, 2.4, 2.4), rl.matrix_rotate_x(1.45)),   # side face up, so the top view shows the shape
+                                            rl.matrix_rotate_y(math.radians((t * 70 + x * 13) % 360)))
+                    Mw = rl.matrix_multiply(Mw, rl.matrix_translate(x, gy0 + 1.0 + 0.15 * math.sin(t * 3 + x), z))
+                    old_t = m.transform
+                    m.transform = Mw
+                    rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                    m.transform = old_t
+                else:
+                    rl.draw_model_ex(m, V3(x, gy0 + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+        # what is left of broken trees / posts / props (stump, bent pole, rubble): they stay, they just stop being solid
+        for bx, bz, _r, _hi, bk, seed in w.broken:
+            if self._in(bx, bz, rect):
+                key = (bk, seed % 6 if bk == "mid" else 0)
+                m = self.wreck_models.get(key)
+                if m is None and key not in self.wreck_models:
+                    m = self.wreck_models[key] = gl3d.wreck_model(bk, seed)
+                if m is not None:
+                    rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
         # cars
         cars = []
         for c in sim.traffic.cars:
@@ -327,12 +350,17 @@ class Renderer:
                     frame, y = (3 if int(p.anim) & 1 else 0), 0.0
                 else:
                     frame, y = int(p.anim * 2.2) & 1, 0.0
+                lean = 0.0
+                if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
+                    frame = 4
+                elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
+                    frame, lean, y = 4, -1.05 + 0.1 * math.sin(p.anim * 6.0), -0.3
                 pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)
-                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin))
+                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean))
                 if p.mode not in ("dead", "ko"):
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         wk = sim.walker
-        if sim.mode == "foot" and wk is not None:
+        if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = int(wk.anim * 2.4) & 1 if wk.moving else 0
             if wk.atk_t > 0:
                 frame = wk.atk_kind
@@ -344,6 +372,17 @@ class Renderer:
                 pass                                       # flicker while hurt
             else:
                 peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
+            if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
+                wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
+                if wm is not None:
+                    sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
+                    Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(0.8)),
+                                            rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(-wk.h)))
+                    Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
+                    old_t = wm.transform
+                    wm.transform = Mh
+                    rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
+                    wm.transform = old_t
             sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
         for kx, kz, kh in sim.kiosks:
             if self._in(kx, kz, rect):
@@ -362,10 +401,24 @@ class Renderer:
                 m.transform = M
                 rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
                 m.transform = old
-        for x, y, z, h, arch, tone, frame, skin in peds:
+        for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
             if pm is not None:
-                rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+                if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
+                    M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    old = pm.transform
+                    pm.transform = M
+                    rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
+                    pm.transform = old
+                else:
+                    rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+        for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
+            if self._in(f[0], f[1], rect):
+                rl.rl_push_matrix()
+                rl.rl_translatef(f[0], f[2], f[1])
+                rl.rl_rotatef(f[6], 0.6, 0.3, 0.74)
+                rl.draw_cube(V3(0, 0, 0), f[8], f[9], f[8], rl.Color(f[10][0], f[10][1], f[10][2], 255))
+                rl.rl_pop_matrix()
 
         # the player's marker shines through the bridge deck when they are underneath it
         if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:

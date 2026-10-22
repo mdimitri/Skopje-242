@@ -75,20 +75,50 @@ class Particles:
     def draw(self):
         if not self.p:
             return
+        global _SOFT
+        if _SOFT is None:
+            _SOFT = _soft_texture()
         rl.rl_disable_depth_mask()
-        rl.rl_begin(QUADS)
-        for x, y, z, _vx, _vy, _vz, life, life0, size, col, _g, _gr, rot in self.p:
-            f = max(0.0, life / life0)
-            a = int(255 * min(1.0, f * 1.6) * (0.85 if col[0] > 200 and col[1] < 200 else 0.7))
-            rl.rl_color4ub(int(col[0]), int(col[1]), int(col[2]), a)
-            h = size * 0.5
-            c, s = math.cos(rot) * h, math.sin(rot) * h
-            rl.rl_vertex3f(x - c - s, y, z - s + c)
-            rl.rl_vertex3f(x + c - s, y, z + s + c)
-            rl.rl_vertex3f(x + c + s, y, z + s - c)
-            rl.rl_vertex3f(x - c + s, y, z - s - c)
-        rl.rl_end()
+        for soft in (False, True):
+            rl.rl_set_texture(_SOFT.id if soft else 0)
+            rl.rl_begin(QUADS)
+            for x, y, z, _vx, _vy, _vz, life, life0, size, col, _g, _gr, rot in self.p:
+                if (_g > 1.0) != soft:   # growing puffs (smoke, fire, blasts) are soft discs
+                    continue
+                f = max(0.0, life / life0)
+                a = int(255 * min(1.0, f * 1.6) * (0.85 if col[0] > 200 and col[1] < 200 else 0.7))
+                rl.rl_color4ub(int(col[0]), int(col[1]), int(col[2]), a)
+                h = size * 0.5
+                c, s = math.cos(rot) * h, math.sin(rot) * h
+                rl.rl_tex_coord2f(0, 0)
+                rl.rl_vertex3f(x - c - s, y, z - s + c)
+                rl.rl_tex_coord2f(1, 0)
+                rl.rl_vertex3f(x + c - s, y, z + s + c)
+                rl.rl_tex_coord2f(1, 1)
+                rl.rl_vertex3f(x + c + s, y, z + s - c)
+                rl.rl_tex_coord2f(0, 1)
+                rl.rl_vertex3f(x - c + s, y, z - s - c)
+            rl.rl_end()
+        rl.rl_set_texture(0)
         rl.rl_enable_depth_mask()
+
+
+_SOFT = None
+
+
+def _soft_texture():
+    """64x64 white disc whose alpha falls smoothly to 0 at the rim, so puffs have no square edges."""
+    n = 64
+    img = rl.gen_image_color(n, n, rl.Color(255, 255, 255, 0))
+    for j in range(n):
+        for i in range(n):
+            d = math.hypot((i + 0.5) / n * 2 - 1, (j + 0.5) / n * 2 - 1)
+            t = max(0.0, 1.0 - d)
+            rl.image_draw_pixel(img, i, j, rl.Color(255, 255, 255, int(255 * t * t * (3 - 2 * t))))
+    tex = rl.load_texture_from_image(img)
+    rl.unload_image(img)
+    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_BILINEAR)
+    return tex
 
 
 def read_time(text, secs):

@@ -34,6 +34,16 @@ def cat_of(t):
     return None
 
 
+def sub_of(t):
+    """OSM sub-tag that tells the vendor type (shop=bakery -> "bakery", amenity=fast_food + cuisine=kebab -> "fast_food/kebab")."""
+    for k in ("shop", "amenity", "tourism", "leisure"):
+        v = t.get(k)
+        if v:
+            cu = (t.get("cuisine") or "").split(";")[0]
+            return f"{v}/{cu}" if cu and k == "amenity" else v
+    return ""
+
+
 def main():
     import osmium
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,6 +55,7 @@ def main():
         return 0
     s_, w_, n_, e_ = bbox()
     res = []
+    subs = {}                                       # "x,y" -> OSM sub-tag for the vendor menus (poi_vendors.py)
 
     class H(osmium.SimpleHandler):
         def node(self, n):
@@ -54,6 +65,7 @@ def main():
                 if c:
                     x, y = project(n.location.lat, n.location.lon)
                     res.append([round(x, 1), round(y, 1), c, t.get("name", "")[:40]])
+                    subs[f"{round(x, 1)},{round(y, 1)}"] = sub_of(t)
 
         def area(self, a):
             t = dict(a.tags)
@@ -72,11 +84,14 @@ def main():
             if s_ <= lat <= n_ and w_ <= lon <= e_:
                 x, y = project(lat, lon)
                 res.append([round(x, 1), round(y, 1), c, t.get("name", "")[:40]])
+                subs[f"{round(x, 1)},{round(y, 1)}"] = sub_of(t)
 
     H().apply_file(pbf, locations=True)
     with open(out + ".tmp", "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False)
     os.replace(out + ".tmp", out)
+    with open(os.path.join(osm, "map_poi_kinds.json"), "w", encoding="utf-8") as f:
+        json.dump(subs, f, ensure_ascii=False)
     print(f"[poi] {len(res)} points of interest -> {out}")
     return 0
 

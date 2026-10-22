@@ -30,6 +30,8 @@ class Job:
         self.stuck = 0.0
         self.rev = 0.0
         self.work_t = 0.0
+        self.spray_t = 0.0
+        self.said = False
         self.age = 0.0
 
 
@@ -108,7 +110,7 @@ class Services:
                 res.append(q)
         return res
 
-    def _spawn_node(self, x, y, lo=240.0, hi=380.0):
+    def _spawn_node(self, x, y, lo=130.0, hi=260.0):
         self._graph()
         c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi]
         if not c:
@@ -122,7 +124,7 @@ class Services:
         for j in self.jobs:
             if j.kind == kind and (j.target is target or math.hypot(j.x - x, j.y - y) < 14.0) and j.state != "leave":
                 return True
-        if sum(1 for j in self.jobs if j.kind == kind) >= 2:
+        if sum(1 for j in self.jobs if j.kind == kind) >= 3:
             return False
         self.jobs.append(Job(kind, target, x, y, delay + self.rng.uniform(0, 3)))
         return True
@@ -161,8 +163,15 @@ class Services:
         tx, ty = j.path[j.pi]
         err = _wrap(math.atan2(ty - b.y, tx - b.x) - b.h)
         dend = math.hypot(j.path[-1][0] - b.x, j.path[-1][1] - b.y)
-        vmax = vehicles.PERF[b.kind][0] * 0.62
-        v = min(v_cruise, vmax) * (1.0 - min(0.75, abs(err) / 1.1))
+        vmax = vehicles.PERF[b.kind][0] * 0.55
+        v = min(v_cruise, vmax) * (1.0 - min(0.8, abs(err) / 0.8))
+        k = min(len(j.path) - 1, j.pi + 3)                    # slow down for a bend coming up
+        if k > j.pi:
+            bend = abs(_wrap(math.atan2(j.path[k][1] - ty, j.path[k][0] - tx) - math.atan2(ty - b.y, tx - b.x)))
+            v = min(v, max(4.0, v_cruise * (1.0 - min(0.65, bend / 1.2))))
+        gap = self._gap(b, 10.0 + max(vf, 0.0) * 2.6)          # never drive into anything: brake for what is ahead
+        if gap is not None:
+            v = min(v, max(0.0, (gap - 2.5) * 0.7))
         if stop_at_end:
             v = min(v, max(0.0, (dend - 7.0) * 0.55))
         if j.rev > 0:                                 # reversing out of a jam
@@ -170,6 +179,9 @@ class Services:
             b.ctl = (-1.0, -max(-1.0, min(1.0, err * 2)), False)
             return False
         thr = max(-1.0, min(1.0, (v - vf) * 0.7))
+        if gap is not None and vf > v + 1.0:
+            b.ctl = (-1.0, max(-1.0, min(1.0, err * 1.8)), gap < 3.0)         # brake hard
+            return False
         b.ctl = (thr, max(-1.0, min(1.0, err * 1.8)), stop_at_end and dend < 9.0 and v < 0.5)
         if abs(vf) < 0.6 and v > 2.5:
             j.stuck += dt
@@ -181,6 +193,43 @@ class Services:
         else:
             j.stuck = 0.0
         return dend < 9.0 and abs(vf) < 1.0
+
+    def _gap(self, b, look):
+        """Free distance ahead of body b along its heading (cars, other bodies, people on foot), or None if clear."""
+        sim = self.sim
+        hx, hy = math.cos(b.h), math.sin(b.h)
+        rx, ry = -hy, hx
+        hw_b, hl_b = vehicles.HALF_W[b.kind] + 0.3, vehicles.HALF_L[b.kind]
+        best = None
+
+        def test(ox, oy, hw, hl, oh):
+            nonlocal best
+            dx, dy = ox - b.x, oy - b.y
+            fwd = dx * hx + dy * hy
+            if fwd < 0.3 or fwd > look + hl:
+                return
+            if oh is not None:
+                ca, sa = abs(math.cos(oh - b.h)), abs(math.sin(oh - b.h))
+                hw, hl = ca * hw + sa * hl, ca * hl + sa * hw
+            if abs(dx * rx + dy * ry) > hw + hw_b:
+                return
+            g = fwd - hl_b - hl
+            if best is None or g < best:
+                best = g
+
+        for o in sim.bodies:
+            if o is not b and abs(o.x - b.x) < look + 8 and abs(o.y - b.y) < look + 8:
+                test(o.x, o.y, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind], o.h)
+        for c in sim.traffic.cars:
+            if abs(c.x - b.x) < look + 8 and abs(c.y - b.y) < look + 8:
+                test(c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c.h)
+        for p in sim.peds.list:
+            if p.mode in ("walk", "flee", "rage", "brawl") and abs(p.x - b.x) < look + 4 and abs(p.y - b.y) < look + 4:
+                test(p.x, p.y, 1.2, 0.4, None)
+        wk = sim.walker
+        if wk is not None and sim.mode == "foot":
+            test(wk.x, wk.y, 1.2, 0.4, None)
+        return best
 
     def _spawn_vehicle(self, j, kind, dest_x, dest_y):
         sim = self.sim
@@ -201,6 +250,10 @@ class Services:
         j.body, j.path, j.pi = b, path, 1
         sim.ev("siren_on", x=b.x, y=b.y, kind=kind)
         return True
+
+    @staticmethod
+    def _face(c, x, y):
+        c.h = math.atan2(y - c.y, x - c.x)
 
     def _crew(self, j, n, arch, shirt):
         sim = self.sim
@@ -259,8 +312,16 @@ class Services:
                 b.siren = False
             self._abort_light(j)
             return
+        if b.exploded or b.health <= 0:                          # burning / burnt out: no more driving, siren off, crew gone
+            b.siren, b.ctl = False, None
+            for c in j.crew:
+                c.mode, c.t = "dead", 0.0
+            j.crew = []
+            if j in self.jobs:
+                self.jobs.remove(j)
+            return
         if j.state == "drive":
-            if self._ctl(j, dt, 17.0, True):
+            if self._ctl(j, dt, 13.0, True):
                 j.state = "work"
                 j.work_t = 0.0
                 b.ctl = (0.0, 0.0, True)
@@ -268,48 +329,69 @@ class Services:
                     self._crew(j, 2, 8, 0)
                     sim.ev("shout", text=self.rng.choice(("Брза помош! Место!", "Тргнете се!", "Има ли пулс?")), x=b.x, y=b.y, who="Брза помош")
                 else:
-                    self._crew(j, 2, 6, 0)
+                    self._crew(j, 3, 6, 0)
                     sim.ev("shout", text=self.rng.choice(("Пожар! Тргнете се!", "Водата е на пат!", "Гаси го, брате!")), x=b.x, y=b.y, who="Пожарникар")
         elif j.state == "work":
             j.work_t += dt
             b.ctl = (0.0, 0.0, True)
-            for i, c in enumerate(j.crew):
-                if j.kind == "amb":
-                    off = 0.9 + i * 0.6
-                    d = self._walk_to(c, tgt.x - 0.3 * (1 - 2 * i) - 0.0, tgt.y + off * (1 if i else -1) * 0.5, dt)
-                else:
-                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + (i - 0.5) * 0.7
-                    self._walk_to(c, tgt.x + math.cos(ang) * 6.0, tgt.y + math.sin(ang) * 6.0, dt)
-                    if j.work_t > 3.0:
-                        c.h = math.atan2(tgt.y - c.y, tgt.x - c.x)
-                        sim.ev("spray", x0=c.x, y0=c.y, x1=tgt.x, y1=tgt.y)
             if j.kind == "amb":
-                arrived = all(math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.8 for c in j.crew)
-                if arrived and j.work_t > 8.0:
+                for i, c in enumerate(j.crew):                        # one medic each side of the patient
+                    side = 1 if i == 0 else -1
+                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + side * 1.25
+                    self._walk_to(c, tgt.x + math.cos(ang) * 0.95, tgt.y + math.sin(ang) * 0.95, dt, 4.2)
+                    c.pose = None
+                    if math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5:
+                        self._face(c, tgt.x, tgt.y)
+                arrived = all(math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5 for c in j.crew)
+                if arrived or j.work_t > 25:
                     j.state = "treat"
                     j.work_t = 0.0
-                if j.work_t > 25:
-                    j.state = "treat"
-                    j.work_t = 0.0
-            elif j.work_t > 9.0:
-                tgt.out = True
-                if not tgt.exploded:
-                    tgt.health = max(tgt.health, 12.0)
-                    tgt.burn = 0.0
-                    tgt.dirty = True
-                sim.stats["fires_out"] = sim.stats.get("fires_out", 0) + 1
-                sim.ev("extinguished", x=tgt.x, y=tgt.y)
-                self._leave(j)
+            else:
+                tgt.fire_lvl = max(0.0, 1.0 - max(0.0, j.work_t - 2.5) / 7.0)      # the flames die down while they spray
+                for i, c in enumerate(j.crew):
+                    ang = math.atan2(b.y - tgt.y, b.x - tgt.x) + (i - 1) * 0.8
+                    d = self._walk_to(c, tgt.x + math.cos(ang) * 6.5, tgt.y + math.sin(ang) * 6.5, dt, 4.4)
+                    c.pose = None
+                    if d < 0.8:
+                        self._face(c, tgt.x, tgt.y)
+                        c.pose = "spray"                                  # nozzle out, water on the flames
+                        if i == 0 and j.work_t > 1.0:
+                            pass
+                        sim.ev("spray", x0=c.x, y0=c.y, x1=tgt.x, y1=tgt.y)
+                spraying = [c for c in j.crew if c.pose == "spray"]
+                if spraying:
+                    j.spray_t += dt
+                if j.spray_t > 8.0 or j.work_t > 40:
+                    tgt.out = True
+                    tgt.fire_lvl = 0.0
+                    if not tgt.exploded:
+                        tgt.health = max(tgt.health, 12.0)
+                        tgt.burn = 0.0
+                        tgt.dirty = True
+                    for c in j.crew:
+                        c.pose = None
+                    sim.stats["fires_out"] = sim.stats.get("fires_out", 0) + 1
+                    sim.ev("extinguished", x=tgt.x, y=tgt.y)
+                    self._leave(j)
         elif j.state == "treat":
             j.work_t += dt
-            for c in j.crew:
-                c.anim = 0.0
-            if j.work_t > 3.5:
+            for i, c in enumerate(j.crew):
+                c.pose = "cpr"                                        # kneeling over the patient, pumping the chest
+                c.anim = j.work_t * (2.0 + i * 0.3)
+                self._face(c, tgt.x, tgt.y)
+            if int(j.work_t * 2) != int((j.work_t - dt) * 2):
+                sim.ev("cpr", x=tgt.x, y=tgt.y)
+            if j.work_t > 0.6 and not j.said:
+                j.said = True
+                sim.ev("shout", text=self.rng.choice(("Еден, два, три, четири...", "Дишај, брате, дишај!", "Не оди никаде, држи се!")), x=tgt.x, y=tgt.y, who="Брза помош")
+            if j.work_t > 5.5:
+                for c in j.crew:
+                    c.pose = None
                 self._revive(tgt)
                 sim.ev("shout", text=self.rng.choice(("Жив е! Ајде, стани.", "Пулсот е тука. Бурекот ќе го врати.", "Нема фрка, ќе поживее.")), x=tgt.x, y=tgt.y, who="Брза помош")
                 self._leave(j)
         elif j.state == "leave":
-            if self._ctl(j, dt, 18.0, False) or math.hypot(b.x - sim.focus()[0], b.y - sim.focus()[1]) > 330:
+            if self._ctl(j, dt, 13.0, False) or math.hypot(b.x - sim.focus()[0], b.y - sim.focus()[1]) > 330:
                 self._abort_light(j)
 
     def _abort_light(self, j):

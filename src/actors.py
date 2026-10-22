@@ -72,6 +72,8 @@ class Body:
         self.air = False             # between a deck and the ground
         self.pitch = 0.0             # tilt on slopes (rad): nose up > 0
         self.roll = 0.0
+        self.ignite = 0.0            # 0..1: heat soaked up from burning neighbours (1 -> catches fire)
+        self.fire_lvl = 1.0          # flames left (the fire brigade brings it down to 0)
 
     @property
     def speed(self):
@@ -114,6 +116,8 @@ def bump(b, impact, wx, wy, nx, ny):
 
 def drive(p, throttle, steer_in, handbrake, dt, world):
     VMAX, ACC, STEER, GRIP, _M = vehicles.PERF[p.kind]
+    if p.exploded or (p.health <= 0 and p.ctl is not None):   # a burnt-out wreck never drives again; a burning AI car stops
+        throttle, steer_in, handbrake = 0.0, 0.0, True
     BRAKE, REV = 22.0 + ACC, 9.0
     L_ = vehicles.DIMS[p.kind][0]
     wb = L_ * 0.62 if L_ < 6 else 3.7 + (L_ - 6) * 0.35   # long vehicles: wheelbase, not length (articulated / rear-axle steer)
@@ -293,6 +297,65 @@ def collide_static(p, world):
     return events
 
 
+def _rad(kind):
+    L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
+    return math.hypot(L, W) + 0.05
+
+
+_RAD = [_rad(k) for k in range(len(vehicles.DIMS))]          # radius of the circle around each car's 2D box
+
+
+def body_pairs(bodies):
+    """Broadphase: every pair of cars whose bounding circles overlap, found with a 16 m grid (cars are < 12 m long)."""
+    grid = {}
+    for i, b in enumerate(bodies):
+        grid.setdefault((int(b.x // 16), int(b.y // 16)), []).append(i)
+    out = []
+    for (cx, cy), idx in grid.items():
+        cand = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                cand.extend(grid.get((cx + dx, cy + dy), ()))
+        for i in idx:
+            a = bodies[i]
+            for j in cand:
+                if j <= i:
+                    continue
+                b = bodies[j]
+                r = _RAD[a.kind] + _RAD[b.kind]
+                if (a.x - b.x) ** 2 + (a.y - b.y) ** 2 < r * r:
+                    out.append((i, j))
+    return out
+
+
+def push_from_box(b, px, py, r):
+    """A circle (px, py, r) against the oriented box of car b: (nx, ny, penetration) pushing the circle out, or None."""
+    L, W = vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2
+    c, s_ = math.cos(b.h), math.sin(b.h)
+    dx, dy = px - b.x, py - b.y
+    u, v = dx * c + dy * s_, -dx * s_ + dy * c                        # circle centre in the car's frame
+    qu, qv = max(-L, min(L, u)), max(-W, min(W, v))
+    eu, ev_ = u - qu, v - qv
+    d = math.hypot(eu, ev_)
+    if d >= r:
+        return None
+    if d > 1e-6:
+        nu, nv, pen = eu / d, ev_ / d, r - d
+    else:                                                              # centre inside the box: leave by the nearest side
+        gaps = (L - u, u + L, W - v, v + W)
+        k = gaps.index(min(gaps))
+        nu, nv = ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0))[k]
+        pen = min(gaps) + r
+    return nu * c - nv * s_, nu * s_ + nv * c, pen
+
+
+class _At:
+    """The car as it was |dt| seconds ago (dt < 0), for the swept walker test: only the fields push_from_box reads."""
+
+    def __init__(self, b, dt):
+        self.x, self.y, self.h, self.kind = b.x + b.vx * dt, b.y + b.vy * dt, b.h, b.kind
+
+
 def _corners(b):
     L, W = vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2
     fx, fy = math.cos(b.h), math.sin(b.h)
@@ -303,7 +366,8 @@ def collide_bodies(a, b, ma=1.0, mb=1.0):
     """Oriented-box car/car collision (separating axis test) with a rigid-body impulse at the contact corner:
     a hit on the rear quarter spins the car, a head-on stops it. Returns (impact, wx, wy, nx, ny) or None,
     n pointing from a to b."""
-    if abs(a.x - b.x) > 9 or abs(a.y - b.y) > 9:
+    r_ = _RAD[a.kind] + _RAD[b.kind]
+    if (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > r_ * r_:        # bounding circles apart: cannot touch at any angle
         return None
     pa, pb = _corners(a), _corners(b)
     best_pen, n_ = 1e9, None
@@ -387,6 +451,8 @@ class Ped:
         self.atk_kind = 4
         self.looted = False
         self.foe = None              # the other pedestrian in a street brawl
+        self.far_t = 0.0             # seconds spent far from the player while chasing them
+        self.pose = None             # emergency crews: "spray" (hose out) / "cpr" (kneeling over a patient)
         self.say_t = random.uniform(4, 18)
         self.e = 0
         self.d = 1
@@ -640,11 +706,22 @@ class Peds:
                 p.hv = 4 + hit.speed * 0.45
                 p.hy = 0.2
                 ev("ped_hit", ped=p, body=hit)
+                if self.sim is not None and hit.player_car:
+                    self.sim._pay(min(70, 25 + int(hit.speed * 2)), p.x, p.y)       # running people over pays (badly)
                 out.append(p)
                 continue
             if p.mode in ("queue", "board", "alight", "play"):       # moved by Transit / Kids (they can still be hit)
                 out.append(p)
                 continue
+            if p.mode in ("walk", "flee", "rage", "brawl"):         # people are not ghosts: parked cars, wrecks and traffic push them out
+                tc = self.sim.traffic.cars if self.sim is not None else ()
+                for b in (*bodies, *tc):
+                    if abs(b.x - p.x) > 7 or abs(b.y - p.y) > 7:
+                        continue
+                    hit_ = push_from_box(b, p.x, p.y, 0.3)
+                    if hit_ is not None:
+                        p.x += hit_[0] * hit_[2]
+                        p.y += hit_[1] * hit_[2]
             # ------------- panic near fast cars
             if p.mode == "walk":
                 for b in bodies:
@@ -720,6 +797,16 @@ class Peds:
                     d = math.hypot(p.x - fx, p.y - fy) or 1.0
                     p.vx, p.vy = (p.x - fx) / d * 3.0, (p.y - fy) / d * 3.0
                 else:
+                    dist2 = (wk.x - p.x) ** 2 + (wk.y - p.y) ** 2
+                    p.far_t = p.far_t + dt if dist2 > 22 ** 2 else 0.0
+                    if p.far_t > 3.5 or dist2 > 45 ** 2:           # lost you: stops chasing and goes back to its business
+                        p.far_t = 0.0
+                        p.mode, p.t, p.vx, p.vy = "flee", 0.05, 0.0, 0.0
+                        if rng.random() < 0.5:
+                            ev("shout", text=rng.choice(("Бегај бре, бегај!", "Само да те фатам некогаш...", "Ај, нема ти фајде да бегаш!", "Ќе се видиме пак!")),
+                               x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                        out.append(p)
+                        continue
                     dx, dy = wk.x - p.x, wk.y - p.y
                     d = math.hypot(dx, dy) or 1e-6
                     p.h = math.atan2(dy, dx)
@@ -846,6 +933,10 @@ class Traffic:
         self.target = target
         self.hash = {}
         self.signals = None          # signals.Signals, set by main: AI stops on red
+        self.sim = None              # set by Sim (game clock for the junction jam timer)
+        self.jam = {}                # junction node -> game minutes it has had >= 3 cars stuck waiting for it
+        self.clogged = set()         # junctions jammed for CLOG_MIN game minutes: nothing new spawns into them
+        self._jam_t = 0.0
 
     def _place(self, c):
         e = self.w.edges[c.e]
@@ -866,6 +957,8 @@ class Traffic:
             return
         ei = rng.choice(lst)
         e = w.edges[ei]
+        if self.clogged and (e["a"] in self.clogged or e["b"] in self.clogged):
+            return                                            # never feed a jammed junction
         c = Car()
         c.e = ei
         c.d = 1 if (e["ow"] or rng.random() < .5) else -1
@@ -911,14 +1004,48 @@ class Traffic:
                         continue
                     dx, dy = o[0] - c.x, o[1] - c.y
                     fwd = dx * hx + dy * hy
-                    if fwd < 0.3 or fwd > rng_ahead:
+                    if fwd > rng_ahead + o[3]:
                         continue
-                    if abs(dx * rx + dy * ry) > o[2]:
+                    lat = abs(dx * rx + dy * ry)
+                    if o[5] is None:                                  # a person: a thin upright post
+                        hw, hl = o[2], o[3]
+                    else:                                             # the other car's box, seen from this car's heading:
+                        ca, sa = abs(math.cos(o[5] - c.h)), abs(math.sin(o[5] - c.h))
+                        hw, hl = ca * o[2] + sa * o[3], ca * o[3] + sa * o[2]     # (a car crossing sideways is wide)
+                    if lat > hw + (0.0 if o[5] is None else vehicles.HALF_W[c.kind]):
                         continue
-                    gap = fwd - vehicles.HALF_L[c.kind] - o[3]
+                    gap = fwd - vehicles.HALF_L[c.kind] - hl
+                    if fwd < (0.3 if o[5] is None else -0.2):                          # beside or behind: not in the way
+                        continue
                     if best is None or gap < best:
                         best = gap
         return best
+
+    CLOG_MIN = 30.0                  # game minutes of standstill before a junction counts as clogged
+
+    def _track_jams(self, dt):
+        """Count cars that have been stopped for a while on the approach to each junction; a junction that keeps >= 3
+        of them for CLOG_MIN game minutes is clogged and gets no new traffic until it clears."""
+        w = self.w
+        clk = getattr(self.sim, "clock", None)
+        gm = dt * 60.0 * (clk.speed / clk.SECONDS_PER_HOUR if clk else 1.0 / 55.0)       # game minutes that passed
+        cnt = {}
+        for c in self.cars:
+            if c.v < 0.3 and c.stuck > 6.0:
+                e = w.edges[c.e]
+                node = e["b"] if c.d == 1 else e["a"]
+                cnt[node] = cnt.get(node, 0) + 1
+        for node, n in cnt.items():
+            if n >= 3:
+                self.jam[node] = self.jam.get(node, 0.0) + gm
+        for node in list(self.jam):
+            if cnt.get(node, 0) < 3:
+                self.jam[node] -= gm * 3.0                    # it moves again: the jam score drains fast
+                if self.jam[node] <= 0:
+                    del self.jam[node]
+                    self.clogged.discard(node)
+            elif self.jam[node] >= self.CLOG_MIN:
+                self.clogged.add(node)
 
     def make_body(self, c):
         b = Body(c.x, c.y, c.h, c.kind, c.color)
@@ -930,22 +1057,22 @@ class Traffic:
         w, rng = self.w, self.rng
         h = {}
         for c in self.cars:
-            h.setdefault((int(c.x // 16), int(c.y // 16)), []).append((c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c))
+            h.setdefault((int(c.x // 16), int(c.y // 16)), []).append((c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c, c.h))
         for b in bodies:
             if b.parked_idx is not None and b.speed < 0.3:
                 continue
-            h.setdefault((int(b.x // 16), int(b.y // 16)), []).append((b.x, b.y, vehicles.HALF_W[b.kind], vehicles.HALF_L[b.kind], b))
+            h.setdefault((int(b.x // 16), int(b.y // 16)), []).append((b.x, b.y, vehicles.HALF_W[b.kind], vehicles.HALF_L[b.kind], b, b.h))
         for p in peds:
             if p.mode in ("walk", "flee", "rage", "brawl"):
-                h.setdefault((int(p.x // 16), int(p.y // 16)), []).append((p.x, p.y, 1.7, 0.4, p))
+                h.setdefault((int(p.x // 16), int(p.y // 16)), []).append((p.x, p.y, 1.7, 0.4, p, None))
         if walker is not None and walker.health > 0:          # traffic brakes for the player on foot too
-            h.setdefault((int(walker.x // 16), int(walker.y // 16)), []).append((walker.x, walker.y, 1.7, 0.4, walker))
+            h.setdefault((int(walker.x // 16), int(walker.y // 16)), []).append((walker.x, walker.y, 1.7, 0.4, walker, None))
         self.hash = h
         keep = []
         for c in self.cars:
             e = w.edges[c.e]
             L = e["len"]
-            vmax = min(e["speed"] * c.pace, vehicles.PERF[c.kind][0] * 0.85)
+            vmax = min(e["speed"] * c.pace * 0.9, vehicles.PERF[c.kind][0] * 0.8)
             if w.hilly:                                           # engines labour uphill, brakes hold downhill
                 sl = c.pitch
                 vmax *= max(0.4, 1.0 - 4.5 * sl) if sl > 0 else min(1.2, 1.0 - 1.2 * sl)
@@ -960,9 +1087,9 @@ class Traffic:
                     vlim = min(vlim, math.sqrt(2 * 3.5 * max(rem, 0.0)))
             braking = False
             if c.ghost <= 0:
-                gap = self.scan(c, 7.0 + c.v * 1.7)
+                gap = self.scan(c, 9.0 + c.v * 2.4)
                 if gap is not None:
-                    vlim = min(vlim, max(0.0, (gap - 1.0) * 0.8))
+                    vlim = min(vlim, max(0.0, (gap - 1.8) * 0.7))
                     braking = True
             else:
                 c.ghost -= dt
@@ -1004,6 +1131,10 @@ class Traffic:
                 c.roll += (rl_ - c.roll) * kk
             keep.append(c)
         self.cars = [c for c in keep if (c.x - fx) ** 2 + (c.y - fy) ** 2 < 460 ** 2]
+        self._jam_t += dt
+        if self._jam_t >= 1.0:
+            self._track_jams(self._jam_t)
+            self._jam_t = 0.0
         for _ in range(2):
             if len(self.cars) < self.target:
                 self.spawn(fx, fy)
@@ -1039,6 +1170,9 @@ class Sim:
         self.money = 250
         self.riding = None                   # the city bus you ride as a passenger (Ctrl takes it over)
         self.shots = projectiles.Projectiles(self)
+        import chaos
+        self.chaos = chaos.Chaos(self)       # breakable props, blast waves, chain fires
+        self.traffic.sim = self
         self.clock = clock.GameClock(17.0)
         self.base_cars, self.base_peds = n_cars, n_peds
         self._cull_t = 0.0
@@ -1055,6 +1189,12 @@ class Sim:
     # ---------------------------------------------------------------- helpers
     def ev(self, _kind, **kw):
         self.events.append((_kind, kw))
+
+    def _pay(self, amount, x, y):
+        """Денари for mayhem: destruction, car hits, run-over people, punches."""
+        if amount > 0:
+            self.money += int(amount)
+            self.ev("pay", x=x, y=y, amount=int(amount))
 
     def focus(self):
         if self.mode == "car":
@@ -1190,8 +1330,10 @@ class Sim:
                 best, bd = p, d
         self.ev("kick" if kick else "punch", x=wk.x + fx, y=wk.y + fy, hit=best is not None)
         if best is None:
+            self.chaos.punch(wk, kick)                 # nobody there: street furniture takes it
             return
         p = best
+        self._pay(rng.randint(6, 11) if kick else rng.randint(3, 6), p.x, p.y)
         p.hp -= dmg * rng.uniform(0.85, 1.15)
         kb = 5.5 if kick else 3.0
         p.vx, p.vy = fx * kb, fy * kb
@@ -1259,6 +1401,7 @@ class Sim:
     def blast(self, x, y):
         """Rocket impact: burning wrecks, people thrown, a crater."""
         self.ev("rocket", x=x, y=y)
+        self.chaos.blast(x, y, 9.0, peds=False)
         pay = 0
         for c in list(self.traffic.cars):                 # traffic in the blast becomes burning wrecks
             if (c.x - x) ** 2 + (c.y - y) ** 2 < 7 ** 2:
@@ -1500,6 +1643,7 @@ class Sim:
                 wk.combo_t = getattr(wk, "combo_t", 0.0) - dt
                 if wk.combo_t <= 0:
                     wk.combo = 0
+                px0, py0 = wk.x, wk.y
                 wk.update(dt, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
                 if inp.get("attack"):
                     self.attack()
@@ -1533,39 +1677,47 @@ class Sim:
                     wk.dead_t = 0
                     self.safe = (wk.x, wk.y, wk.h)
                     self.safe_z = wk.az
-                for b in self.bodies:
-                    if abs(b.x - wk.x) > 6 or abs(b.y - wk.y) > 6:
+                near_tc = []
+                step_ = math.hypot(wk.x - px0, wk.y - py0)
+                for c_ in self.traffic.cars:                       # AI traffic is solid too (it used to be walk-through)
+                    rr_ = _RAD[c_.kind] + 0.5 + step_ + abs(c_.v) * dt
+                    if (c_.x - wk.x) ** 2 + (c_.y - wk.y) ** 2 <= rr_ * rr_:
+                        near_tc.append(self.traffic.make_body(c_))
+                for b in self.bodies + near_tc:
+                    rr_ = _RAD[b.kind] + 0.5 + step_ + math.hypot(b.vx, b.vy) * dt
+                    if (b.x - wk.x) ** 2 + (b.y - wk.y) ** 2 > rr_ * rr_:
                         continue
                     top = vehicles.DIMS[b.kind][4] * 0.6
-                    cs, r = circles(b)
-                    r += 0.38
-                    for x, y in cs:
-                        dx, dy = wk.x - x, wk.y - y
-                        d = math.hypot(dx, dy)
-                        if d >= r:
+                    if wk.z > top:                         # jumped onto / over the car
+                        continue
+                    hit = push_from_box(b, wk.x, wk.y, 0.38)
+                    if hit is None:                        # swept: player and car moved a lot this frame (run, big dt): test the path
+                        mv = step_ + math.hypot(b.vx, b.vy) * dt
+                        for k in range(1, int(mv / 0.25) + 1):
+                            f_ = k * 0.25 / mv
+                            hit = push_from_box(_At(b, -dt * (1.0 - f_)), px0 + (wk.x - px0) * f_, py0 + (wk.y - py0) * f_, 0.38)
+                            if hit is not None:
+                                break
+                        if hit is None:
                             continue
-                        if wk.z > top:                     # jumped onto / over the car
-                            continue
-                        nx, ny = (dx / d, dy / d) if d > 1e-6 else (1.0, 0.0)
-                        closing = (b.vx - wk.vx) * nx + (b.vy - wk.vy) * ny
-                        closing = -closing                  # > 0 when the car moves into the player
-                        wk.x += nx * (r - d)
-                        wk.y += ny * (r - d)
-                        wk.push_out(w)
-                        if closing > 4.5 and wk.inv_t <= 0 and not b.empty:
-                            dmg = (closing - 3.0) * 5.5
-                            wk.health -= dmg
-                            wk.hurt_t, wk.inv_t = 0.5, 0.6
-                            sp = math.hypot(b.vx, b.vy)
-                            k = min(0.5, 6.0 / sp) if sp > 1e-3 else 0.0        # knocked aside, not launched across town
-                            wk.vx += b.vx * k
-                            wk.vy += b.vy * k
-                            if wk.health <= 0:
-                                wk.cause = "car"
-                                ev("walker_dead", cause="car")
-                            else:
-                                ev("hurt_car", dmg=dmg)
-                        break
+                    nx, ny, pen = hit
+                    closing = -((b.vx - wk.vx) * nx + (b.vy - wk.vy) * ny)      # > 0 when the car moves into the player
+                    wk.x += nx * pen
+                    wk.y += ny * pen
+                    wk.push_out(w)
+                    if closing > 4.5 and wk.inv_t <= 0 and not b.empty:
+                        dmg = (closing - 3.0) * 5.5
+                        wk.health -= dmg
+                        wk.hurt_t, wk.inv_t = 0.5, 0.6
+                        sp = math.hypot(b.vx, b.vy)
+                        k = min(0.5, 6.0 / sp) if sp > 1e-3 else 0.0        # knocked aside, not launched across town
+                        wk.vx += b.vx * k
+                        wk.vy += b.vy * k
+                        if wk.health <= 0:
+                            wk.cause = "car"
+                            ev("walker_dead", cause="car")
+                        else:
+                            ev("hurt_car", dmg=dmg)
                 if wk.health > 0 and (abs(wk.x) > HX - 5 or abs(wk.y) > HY - 5):
                     wk.x = max(-HX + 5, min(HX - 5, wk.x))
                     wk.y = max(-HY + 5, min(HY - 5, wk.y))
@@ -1594,6 +1746,7 @@ class Sim:
         fx, fy, fvx, fvy = self.focus()
         self._dispatch()
         self.services.update(dt)
+        self.chaos.update(dt)
         if getattr(self, "transit", None) is not None:
             self.transit.update(dt)
         if getattr(self, "kids", None) is not None:
@@ -1619,6 +1772,9 @@ class Sim:
                     b.exploded, b.age = True, 0.0             # age now counts the time since the blast
                     self.stats["boom"] += 1
                     ev("explode", body=b)
+                    self.chaos.blast(b.x, b.y, 9.0)
+                    if (b.x - fx) ** 2 + (b.y - fy) ** 2 < 120 ** 2:
+                        self._pay(60 if not b.service else 0, b.x, b.y)
                     for o in self.bodies:
                         if o is not b:
                             d = math.hypot(o.x - b.x, o.y - b.y)
@@ -1634,17 +1790,24 @@ class Sim:
                         self.walker.health = 0
                     b.dirty = True
         # body <-> body
-        n = len(self.bodies)
-        for i in range(n):
-            for j in range(i + 1, n):
-                a, b = self.bodies[i], self.bodies[j]
-                r = collide_bodies(a, b, vehicles.PERF[a.kind][4], vehicles.PERF[b.kind][4])
-                if r and r[0] > 1.5:
-                    ev("crash", body=a if a.player_car else b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
+        for i, j in body_pairs(self.bodies):
+            a, b = self.bodies[i], self.bodies[j]
+            r = collide_bodies(a, b, vehicles.PERF[a.kind][4], vehicles.PERF[b.kind][4])
+            if r and r[0] > 1.5:
+                ev("crash", body=a if a.player_car else b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
+                if (a.player_car or b.player_car) and r[0] > 3.0 and not (a.service or b.service) and self.mode == "car" \
+                        and a.health > 0 and b.health > 0:            # (ramming a wreck again pays nothing)
+                    self._pay(min(60, int(r[0] * 3)), r[1], r[2])             # smashing into things pays
         # ---------------- traffic <-> bodies (hits convert AI cars into drivable wrecks)
+        bgrid = {}
+        for b in self.bodies:
+            bgrid.setdefault((int(b.x // 16), int(b.y // 16)), []).append(b)
         for c in list(self.traffic.cars):
-            for b in self.bodies:
-                if abs(c.x - b.x) > 6 or abs(c.y - b.y) > 6:
+            gx_, gy_ = int(c.x // 16), int(c.y // 16)
+            near_ = [b for dx in (-1, 0, 1) for dy in (-1, 0, 1) for b in bgrid.get((gx_ + dx, gy_ + dy), ())]
+            for b in near_:
+                rr_ = _RAD[b.kind] + _RAD[c.kind]
+                if (c.x - b.x) ** 2 + (c.y - b.y) ** 2 > rr_ * rr_:
                     continue
                 tmp = self.traffic.make_body(c)
                 tmp.parked_idx = None
@@ -1658,6 +1821,8 @@ class Sim:
                     if rng.random() < 0.7:
                         ev("shout", text=rng.choice(slang.PED_HIT + slang.DRIVER_RAGE[1:3]), x=p.x, y=p.y)
                     ev("crash", body=b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
+                    if b.player_car and self.mode == "car" and b.health > 0:
+                        self._pay(min(80, int(r[0] * 4)), r[1], r[2])
                     break
                 elif r:                                  # light touch: the AI car is pushed out too and stops
                     c.x, c.y, c.h = tmp.x, tmp.y, tmp.h
@@ -1686,7 +1851,7 @@ class Sim:
                 keep.append(b)
                 continue
             d2 = (b.x - fx) ** 2 + (b.y - fy) ** 2
-            if d2 > 420 ** 2 or (b.exploded and b.age > clear_secs(self)):
+            if d2 > 420 ** 2 or (b.exploded and b.age > clear_secs(self) and not self.services.has_job_for(b)):
                 if b.model is not None:
                     self.ev("free_model", model=b.model)
                 continue
@@ -1755,9 +1920,9 @@ class Sim:
         sv = self.services
         if sv.amb_on:
             for p in self.peds.list:
-                if p.mode in ("dead", "air") and not getattr(p, "svc", False) and (p.x - fx) ** 2 + (p.y - fy) ** 2 < 260 ** 2:
-                    p.svc = True
-                    if self.rng.random() < 0.9 and sv.request("amb", p, p.x, p.y):
+                if p.mode in ("dead", "air") and not getattr(p, "svc", False) and (p.x - fx) ** 2 + (p.y - fy) ** 2 < 420 ** 2:
+                    if sv.request("amb", p, p.x, p.y):
+                        p.svc = True
                         p.t = max(p.t, 80.0)
             wk = self.walker
             if self.mode == "foot" and wk is not None and wk.health <= 0 and wk.cause != "fight" and not getattr(wk, "svc", False):
@@ -1767,8 +1932,8 @@ class Sim:
                 wk.svc = False
         if sv.fire_on:
             for b in self.bodies:
-                if not b.out and not b.service and b.health <= 0 and (b.burn > 0.4 or b.exploded) and (b.x - fx) ** 2 + (b.y - fy) ** 2 < 260 ** 2:
-                    sv.request("fire", b, b.x, b.y, 2.0)
+                if not b.out and not b.service and b.health <= 0 and (b.burn > 0.4 or b.exploded) and (b.x - fx) ** 2 + (b.y - fy) ** 2 < 420 ** 2:
+                    sv.request("fire", b, b.x, b.y, 1.5)
 
     def _parked(self, fx, fy):
         w = self.w

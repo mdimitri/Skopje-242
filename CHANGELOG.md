@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2 – collisions, combat, shops and radio
+
+- **Collisions:** oriented-box (SAT) collisions for every car with a grid broadphase; traffic brakes for sideways cars; exact walker-vs-car push-out; careful driving.
+- **Chaos:** punchable props that fly and break, blast waves, chain fires and explosions between cars; punches and kicks use the real limbs.
+- **Money:** rewards for punches, props, car hits, run-overs and explosions.
+- **Shops and places (POI):** walk in to cafes, food, schools, health, worship, fuel, banks, markets, police and more via 1–4 menus, with spoken lines.
+- **Selfies** (`P`), weapon models, more road detail.
+- **Radio:** plays local music from `music/` with station switching (`Q` / `E`); no more radio downloads.
+- **Services:** reworked first responders (spray pose, CPR kneel, more jobs); chasers give up at distance; clogged junction spawn block.
+
 ## v1.1 – polish and 3D splash
 
 - **3D loading splash:** endless street with the game's own buildings, furniture, cars and characters, jokes and sun shadows.

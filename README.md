@@ -1,4 +1,4 @@
-# Скопје 242 – Skopje GTA (v1.1)
+# Скопје 242 – Skopje GTA (v1.2)
 
 A top-down, real-3D, GTA-1-style sandbox of **Skopje, North Macedonia**, in Macedonian Cyrillic and Skopje slang.
 An 11 × 7 km map around the Stone Bridge is built from **OpenStreetMap** and open elevation data; everything the map
@@ -13,8 +13,7 @@ Python + raylib (OpenGL 3.3), numpy, Pillow. Windows is the target platform (`ru
 
 ## Run
 
-Double-click **`run.bat`**. First start sets up Python and libraries, downloads the map (Geofabrik / Overpass), terrain and
-radio tracks, and builds the world (a few minutes); later starts take seconds. `run.bat demo` runs an offline demo city,
+Double-click **`run.bat`**. First start sets up Python and libraries, downloads the map (Geofabrik / Overpass) and terrain, and builds the world (a few minutes); later starts take seconds. `run.bat demo` runs an offline demo city,
 `run.bat refresh` re-downloads the map. Options: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--mute`, `--hour H`.
 
 ## Controls
@@ -28,6 +27,8 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 | `1`–`4` | – | buy kiosk food (burek, tulumba, kebapi, ajvar sandwich) |
 | `F` / `Enter` | get out | enter / steal a car, board a city bus (40 ден.) |
 | `H` | horn / siren toggle | shout |
+| `Q` / `E` (or `,` `.`) | change radio station (last step = off) | – |
+| `P` | – | take a selfie |
 | `M` / `Tab` | map, click to teleport | same |
 | `T` / `Shift+T` | next / previous neighbourhood | same |
 | `[` `]` | time −/+ 1 h | same |
@@ -39,7 +40,7 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 **World**
 - Real OSM map of Skopje (roads, buildings, water, green areas, landmarks, neighbourhoods) and real terrain: slopes affect cars and walkers, the Vardar bed is carved in.
 - Dead-end roads are joined to nearby roads, so there are fewer broken streets.
-- Smoothed 3D roads with gutters, kerbs, markings, zebra crossings; bridges with real decks you can pass under or fall from (splash in the river).
+- Smoothed 3D roads with extra road detail (gutters, kerbs, markings, zebra crossings); bridges with real decks you can pass under or fall from (splash in the river).
 - Street furniture, kiosks, bus shelters, **real bus stops** from OSM, bushes, playgrounds, goals and school yards, breakable props.
 - Working **traffic lights** in a green wave, day/night cycle with lamps and headlights, **Skopje smog** haze, wall bullet holes and scorch marks.
 
@@ -47,7 +48,11 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 - 59 named vehicles (Yugo, Fico, Lada Niva, Trabant, Passat Dijaspora, taxi, police, ambulance, fire truck, JSP bus, wedding limo…) with dents, fire and explosions.
 - 39+ road users with their own one-liners; **35 playable characters** (11 new in v1.1: administratorka, bilder, boza, burek, fitka, nastavnica, navivac, palavko, shmizla, srednoskolec, vojnik) with 52 lines each; kids playing at playgrounds and pitches; "people with problems" lines.
 - **Real JSP city buses** on real OSM lines that stop at real stops; ride one, or take it over.
-- Ambulance revives the fallen, fire brigade puts out burning wrecks.
+- Ambulance revives the fallen, fire brigade puts out burning wrecks; reworked first responders (spray pose, CPR kneel, more jobs).
+- **Oriented-box collisions**: every car is a rotated box, walkers are pushed out exactly, traffic brakes for sideways cars; careful driving by traffic and a clogged-junction spawn block.
+- **Chain explosions**: fires spread between cars, blast waves throw people and props; punchable props fly and break; punches and kicks animate the real limbs.
+- **Shops and places**: walk up to a cafe, shop, bank, church, school, fuel station, market or police station and pick 1–4 things to do from a menu; money rewards for punches, props, hits and explosions; chasers give up at distance.
+- **Selfie mode** (`P`) and weapon models in the hand.
 
 **Gameplay**
 - Fighting, pistols and other weapons with real projectiles (bullets, pellets, rockets) hitting people, cars, walls and trees.
@@ -61,7 +66,7 @@ radio tracks, and builds the world (a few minutes); later starts take seconds. `
 
 **Sound**
 - All effects, ambience, engines and sirens are synthesised with numpy.
-- **Car radio**: real songs fetched from open-licence sources, shuffled with static between tracks (volume in the menu).
+- **Car radio**: plays your own music from the `music/` folder (sub-folders = stations, switch with `Q` / `E`), with static between tracks; volume in the menu. Nothing is downloaded.
 - **Speech**: Suze (Macedonian RHVoice voice via Windows SAPI) with per-character pitch / rate profiles.
 
 ![Splash](docs/screenshots/splash.jpg)

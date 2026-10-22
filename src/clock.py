@@ -23,12 +23,15 @@ class GameClock:
     def __init__(self, hour=17.0):
         self.hour = hour % 24.0
         self.speed = 1.0
+        self.minutes = 0.0                       # in-game minutes since the start (never wraps): ages decals
 
     def update(self, dt):
         self.hour = (self.hour + dt * self.speed / self.SECONDS_PER_HOUR) % 24.0
+        self.minutes += dt * self.speed / self.SECONDS_PER_HOUR * 60.0
 
     def shift(self, hours):
         self.hour = (self.hour + hours) % 24.0
+        self.minutes += hours * 60.0
 
     @property
     def traffic(self):
