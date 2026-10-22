@@ -9,7 +9,7 @@ Python + raylib (OpenGL 3.3), numpy, Pillow. Windows is the target platform (`ru
 ![Driving](docs/screenshots/drive.jpg)
 ![Kiosk](docs/screenshots/kiosk.jpg)
 
-*Screenshots are from the offline synthetic demo city (`run.bat demo`); the real game uses the real Skopje map.*
+*Screenshots (1280x720) are taken from the real game on the real Skopje map.*
 
 ## Run
 
@@ -71,6 +71,13 @@ Double-click **`run.bat`**. First start sets up Python and libraries, downloads 
 
 ![Splash](docs/screenshots/splash.jpg)
 ![Characters](docs/screenshots/likovi.jpg)
+
+![Character select](docs/screenshots/select.jpg)
+![Roads](docs/screenshots/roads.jpg)
+![Night headlights](docs/screenshots/night.jpg)
+![Weapons](docs/screenshots/weapons.jpg)
+![POI shop menu](docs/screenshots/poi.jpg)
+![Selfie](docs/screenshots/selfie.jpg)
 
 | ![](docs/screenshots/menu_bg.jpg) | ![](docs/screenshots/vardar.jpg) |
 |---|---|

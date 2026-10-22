@@ -1,5 +1,7 @@
 # Changelog
 
+Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.jpg`), roads (`roads.jpg`), night headlights (`night.jpg`), weapons (`weapons.jpg`), POI shop menu (`poi.jpg`), selfie sky (`selfie.jpg`), driving, kiosk and Vardar, all from the real game at 1280x720.
+
 ## v1.2 – collisions, combat, shops and radio
 
 - **Collisions:** oriented-box (SAT) collisions for every car with a grid broadphase; traffic brakes for sideways cars; exact walker-vs-car push-out; careful driving.
