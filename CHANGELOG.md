@@ -1,24 +1,32 @@
 # Changelog
 
-Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.jpg`), roads (`roads.jpg`), night headlights (`night.jpg`), weapons (`weapons.jpg`), POI shop menu (`poi.jpg`), selfie sky (`selfie.jpg`), driving, kiosk and Vardar, all from the real game at 1280x720.
+All notable changes to Скопје 242. Newest first.
 
-## v2.0 – walking, bumping, muffled car music, joined roads
+## v2.0 – people that move and talk like Skopje
 
-- **Walk cycle (final):** eight-phase stride cycle with cosine limb swing at real cadence (one stride per ~1.5 m walking, ~2.6 m running); arms hang down when standing; arms holding a prop swing with it. Refreshed screenshots (drive, kiosk, roads, night) from the real map.
+### Animation
+- Rigged limbs: legs swing from hip and knee, arms from shoulder and elbow, for the avatar and every pedestrian.
+- Eight-phase walk and run cycle at a real pace (one stride per about 1.5 m walking and 2.6 m running), forward lean when running, arms down when standing. Arms holding a prop swing with it.
 
-- **Walk animation:** longer strides, bigger leg and arm swing and a forward lean (strong when running) for the avatar and pedestrians, so the heading reads from above.
-- **Speech:** your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x, default 1x = as before).
-- **Bumping:** walk into a pedestrian and they grumble, insult you, threaten you ("ќе ти врзам шамар", "гитла бе", "мрш", "фаќај магла" ...) and after a few bumps fight you. Lines depend on the character type (`src/bump_lines.py`).
-- **Cars:** about 1 in 10 traffic cars plays the music from `music/` inside the cabin; only one at a time is heard, low-passed (muffled) and quiet. Nearby traffic now has an engine hum.
-- **Combat:** much more ammo per pickup; a swung bat also smashes props; animated score pop-ups (sparks, bigger and hotter numbers for bigger payouts).
-- **Roads (world version 12, rebuilds automatically):** roads that continue, bend, widen or narrow share one cross-section (same vertices, smooth width taper); pavements join into curved corners at junctions; tiny height offsets stop coplanar road pieces from z-fighting (flicker).
+### Speech and slang
+- All pedestrian, hero and neighbourhood lines are written against `docs/Skopje_slang_bible.txt` (421 terms) and adapted to each character type (old, woman, kid, tough, posh, youth, sport, priest, vendor, cop) and all 24 playable characters.
+- Language level 2 ("Без цензура") is now unhinged.
+- Your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x).
+- **Bumping:** walk into a pedestrian and they grumble, insult you, threaten you ("ќе ти врзам шамар", "гитла бе", "мрш", "фаќај магла"), and after a few bumps they fight you.
+- `python tools/check_slang.py --missing` lists bible terms the game does not use yet.
 
-## v2.0 – slang bible
+### Cars and sound
+- About 1 in 10 traffic cars plays music from `music/` in its cabin. It is muffled and quiet, and only one is heard at a time.
+- Nearby traffic has an engine hum.
 
-- All pedestrian talk now draws on `docs/Skopje_slang_bible.txt` (421 terms): `src/bible_lines.py` has per-character-style lines (old, woman, kid, tough, posh, youth, sport, priest, vendor, cop) for idle, hit, panic, fight, KO and the bump escalation, plus topic pools, neighbourhood lines and extra lines for all 24 playable characters.
-- Language level 2 ("Без цензура") is now unhinged: much more and much harsher cursing, adapted to the character.
-- `python tools/check_slang.py --missing` shows which bible terms the game text does not use yet.
-- Limbs are rigged: legs swing from hip and knee, arms from shoulder and elbow, four-pose walk cycle and a bigger run cycle.
+### Combat
+- Much more ammo per pickup; a swung bat smashes props; animated score pop-ups that grow with the payout.
+
+### Roads (world version 12, rebuilds automatically)
+- Roads that continue, bend, widen or narrow share one cross-section with a smooth taper. Pavements join in curved corners at junctions. Small height offsets stop road pieces from flickering (z-fighting).
+
+### Docs
+- Reorganised README with gallery and project layout; refreshed screenshots (drive, kiosk, roads, night) from the real map.
 
 ## v1.2 – collisions, combat, shops and radio
 
