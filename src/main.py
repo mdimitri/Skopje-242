@@ -627,7 +627,7 @@ def main():
                 popups.add((f"+{d['amt']}" + TXT("main.0013")), d["x"], d["y"], 2.0, 1.8, (140, 255, 150), 22)
             elif kind == "gun":
                 aud.play("chime", 0.8, 1.4)
-                hud.set_banner((f"{d.get('name', 'Пиштол').upper()}" + TXT("main.0014")), 2.4)
+                hud.set_banner((d.get('name', TXT("main.0055")).upper() + TXT("main.0014")), 2.4)
             elif kind == "fuel":
                 aud.play("chime", 0.6, 0.9)
                 hud.set_banner((TXT("main.0015") + f"{int(d['f'] * 100)}%."), 2.0)

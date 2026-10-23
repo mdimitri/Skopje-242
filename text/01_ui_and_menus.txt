@@ -1,0 +1,916 @@
+##############################################################################
+#  1. USER INTERFACE: menus, HUD, loading screens, settings, saves, messages
+##############################################################################
+#
+# CONTAINS: main menu, character picker, settings, pause/quit dialogs, loading splash, HUD banners, notifications, selfie screen, save/load
+#
+# HOW TO READ THIS FILE (full rules: text/README.md)
+#   - Only edit the text AFTER " = ". Never change the key before it (e.g. talk.0042).
+#   - Comment lines (starting with #) tell you where the text appears in the game.
+#   - Keep placeholders such as {name}, {}, %s, %d exactly as they are.
+#   - A line marked "WARNING: lookup" is also compared with other data by the code:
+#     do not reword it without asking the developer.
+#   - "sentence:" shows how separate fragments are glued into one message in the game
+#     (the part in angle brackets is a number/name inserted by the code).
+
+
+#=============================================================================
+# SECTION: src/menu.py
+#   Options / pause menu. Keyboard (arrows, Enter, Esc) and mouse (hover, click, drag sliders).
+#=============================================================================
+
+# --- module level · data `TABS` (5 texts) ---
+# used in: menu.py > run
+
+# code note: Игра · Свет · Приказ · Звук · Мапа
+menu.0001 = Приказ и камера
+menu.0003 = Звук
+menu.0004 = Свет
+menu.0005 = Мапа
+menu.0006 = Игра
+
+# --- function/class `_rows` · data `spd` (1 texts) ---
+# purpose: -> list of (tab, Row).
+# called from: menu.py > run
+
+menu.0007 = запрено
+
+# --- function/class `_rows` · data `R` (34 texts) ---
+# purpose: -> list of (tab, Row).
+# called from: menu.py > run
+
+# [shown via Row(…)]
+menu.0008 = Големина на прозорецот
+menu.0009 = Цел екран
+menu.0010 = Детали
+
+# [shown via Row(…) · argument `note`]
+menu.0011 = сенки, натписи, честички, светла
+
+# [shown via Row(…)]
+menu.0012 = Смог
+
+# [shown via Row(…) · argument `note`]
+menu.0013 = скопскиот воздух, најгуст наутро и навечер
+
+# [shown via Row(…)]
+menu.0014 = Имиња на улици и места
+menu.0015 = Зум кога пешачиш
+
+# [shown via Row(…) · argument `note`]
+menu.0016 = колесцето на глувчето го менува привремено
+
+# [shown via Row(…)]
+menu.0017 = Зум кога возиш
+menu.0018 = Тресење на екранот
+menu.0019 = Општа јачина
+menu.0020 = Ефекти
+menu.0021 = Мотори
+menu.0022 = Амбиент
+menu.0023 = Говор
+menu.0024 = Радио
+menu.0025 = Гласовен мотор
+menu.0026 = Брзина на говорот
+menu.0027 = Време од денот
+menu.0028 = Брзина на времето
+
+# [shown via Row(…) · argument `note`]
+menu.0029 = колку брзо тече денот
+
+# [shown via Row(…)]
+menu.0030 = Густина на сообраќај
+menu.0031 = Густина на пешаци
+menu.0032 = Колку често зборуваат пешаците
+
+# [shown via Row(…) · argument `note`]
+menu.0033 = 1x е нормално
+
+# [shown via Row(…)]
+menu.0034 = Агресивност
+
+# [shown via Row(…) · argument `note`]
+menu.0035 = колку брзо се караат и тепаат
+
+# [shown via Row(…)]
+menu.0036 = Јазик
+
+# [shown via Row(…) · argument `note`]
+menu.0037 = пцовки и груби зборови
+
+# [shown via Row(…)]
+menu.0038 = Брзата помош ги оживува паднатите
+menu.0039 = Пожарникарите гаснат запалени коли
+menu.0040 = Извор при преземање
+
+# [shown via Row(…) · argument `note`]
+menu.0041 = важи за следното преземање
+
+# --- function/class `_rows` · data `g` (8 texts) ---
+# purpose: -> list of (tab, Row).
+# called from: menu.py > run
+
+# [shown via Row(…)]
+menu.0042 = Продолжи
+menu.0043 = Играј
+menu.0044 = Зачувај
+
+# [shown via Row(…)]
+# sentence: Слот ⟨f'{n}: {slots[n - 1]}'⟩
+menu.0045 = Слот\s
+menu.0046 = Вчитај
+
+# [shown via Row(…)]
+# sentence: Слот ⟨f'{n}: {slots[n - 1]}'⟩
+menu.0047 = Слот\s
+menu.0048 = Назад на избор на лик
+menu.0049 = Излез од играта
+
+# --- function/class `_title_card` · data `txt` (1 texts) ---
+# purpose: The title poster full screen until a key / click (or `seconds`). -> True if the window was closed.
+
+menu.0050 = Притисни било кое копче
+
+# --- function/class `pick_character` (4 texts) ---
+# purpose: Избор на лик (стрелки / глушец, Enter). -> True ако е затворен прозорецот.
+# called from: main.py > main, menu.py > run
+
+# [shown via font.draw_text(…)]
+menu.0051 = Избери лик
+
+# [shown via font.draw_text(…)]
+# sentence: ⟨f'{name} – {money}'⟩ ден. на старт
+menu.0052 = \sден. на старт
+menu.0053 = L  Вчитај игра
+menu.0054 = Стрелки / глушец избери   Enter потврди   L вчитај зачувана игра
+
+# --- function/class `run` · data `(flash, flash_t)` (3 texts) ---
+# purpose: Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game. -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'
+# called from: actors.py > Walker.__init__, actors.py > Walker.update, gl3d.py > _phase, main.py > main, render.py > Renderer._gait, terrain.py > make_deck …
+
+menu.0055 = Слотот е празен.
+
+# keep placeholders: %d
+menu.0056 = Зачувано во слот %d.
+menu.0057 = Не успеав да зачувам.
+
+# --- function/class `run` (5 texts) ---
+# purpose: Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game. -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'
+# called from: actors.py > Walker.__init__, actors.py > Walker.update, gl3d.py > _phase, main.py > main, render.py > Renderer._gait, terrain.py > make_deck …
+
+# [shown via font.draw_text(…)]
+menu.0058 = СКОПЈЕ · ЧЛЕН 242
+menu.0059 = Одземање на моторно возило
+menu.0060 = ВКЛ
+menu.0061 = ИСКЛ
+menu.0062 = Tab табови   Горе/Долу избери   Лево/Десно промени   Enter потврди   глувче   Esc продолжи
+
+#=============================================================================
+# SECTION: src/ui.py
+#   Loading screen: one monotone overall bar, a map of what is being downloaded and where it goes, the real transfer speed, warnings when a server stalls or rejects
+#=============================================================================
+
+# --- function/class `Loader.hold` · data `self.hint` (1 texts) ---
+# purpose: Loading is done: keep the showcase on screen until a key / click (after `min_s`) or `max_s`.
+# called from: main.py > main
+
+ui.0001 = Готово! Притисни било кое копче за да продолжиш
+
+#=============================================================================
+# SECTION: src/hud.py
+#   HUD: speed/health, stats, minimap, full map, floating slang labels, banners, streaming bar.
+#=============================================================================
+
+# --- function/class `build_labels` (1 texts) ---
+# purpose: Shop signs and graffiti pinned to buildings + landmark names. -> [(text, x, y_height, z, kind)]
+# called from: main.py > main
+
+# [shown via out.append(…)]
+hud.0001 = Водно – крстот свети над градот
+
+# --- function/class `Hud.draw` (16 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# [shown via font.draw_text(…)]
+hud.0002 = ШПИЦ
+hud.0003 = НОЌ
+
+# [shown via font.draw_text(…)]
+# sentence: ⟨f'{sim.money}'⟩ ден.
+hud.0004 = \sден.
+
+# [shown via enumerate(…)]
+hud.0005 = Бурек
+hud.0006 = Удрени пешаци
+hud.0007 = Нокаути
+hud.0008 = Украдени коли
+hud.0009 = Експлозии
+hud.0010 = Готов си
+
+# [shown via font.draw_text(…)]
+hud.0011 = км/ч
+
+# [shown via font.draw_text(…)]
+# sentence: Гориво ⟨f'{int(fu * 100)}%'⟩⟨TXT('hud.0013') if fu <= 0 els⟩
+hud.0012 = Гориво\s
+hud.0013 = \s – ПРАЗНО!
+hud.0014 = ПЕШКИ
+
+# --- function/class `Hud.draw` · data `gun` (1 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+hud.0015 = Тупаници [Ctrl]
+
+# --- function/class `Hud.draw` (16 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# [shown via font.draw_text(…)]
+# sentence: Здравје ⟨f'{int(max(0, wk.health))}% ⟩
+hud.0016 = Здравје\s
+
+# --- function/class `Hud.draw` · data `txt` (1 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+hud.0017 = НОКАУТ...
+
+# --- function/class `Hud.draw` (16 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# [shown via font.draw_text(…)]
+# sentence: Се вчитува мапата ⟨f'{n}/{tot}'⟩
+hud.0018 = Се вчитува мапата\s
+hud.0019 = Скопје – 11 x 7 км   КЛИКНИ за телепорт   (M за затворање)
+
+# --- function/class `Hud._menu` (2 texts) ---
+# called from: hud.py > Hud.draw
+
+# [shown via font.draw_text(…)]
+hud.0020 = КИОСК – скопски специјалитети
+
+# [shown via font.draw_text(…)]
+# sentence: ⟨f'{price}'⟩ ден. +⟨f'{heal}'⟩
+hud.0021 = \sден.  +
+
+#=============================================================================
+# SECTION: src/settings.py
+#   User settings, saved to settings.json next to run.bat.
+#=============================================================================
+
+# --- module level · data `DETAIL` (3 texts) ---
+# used in: menu.py > _rows
+
+settings.0001 = Ниско
+settings.0002 = Средно
+settings.0003 = Високо
+
+# --- module level · data `MAP_SOURCES` (3 texts) ---
+# used in: menu.py > _rows
+
+settings.0004 = Автоматски
+settings.0005 = Geofabrik (една датотека)
+settings.0006 = Overpass (по плочки)
+
+# --- module level · data `AGGRO` (4 texts) ---
+# used in: menu.py > _rows
+
+settings.0007 = Мирни
+settings.0008 = Нормални
+settings.0009 = Нервозни
+settings.0010 = Луди
+
+# --- module level · data `LANGUAGE` (3 texts) ---
+# used in: menu.py > _rows
+
+settings.0011 = Пристојно
+settings.0012 = Улично
+settings.0013 = Без цензура (18+)
+
+# --- module level · data `VOICES` (2 texts) ---
+# used in: menu.py > _rows
+
+settings.0014 = Формантен (резервен)
+settings.0015 = Сузе (RHVoice)
+
+#=============================================================================
+# SECTION: src/savegame.py
+#   Save slots (saves/slot<N>.json): player, car, money, time of day, pickups, stats. Traffic and pedestrians respawn.
+#=============================================================================
+
+# --- function/class `summary` (2 texts) ---
+# purpose: One line for the menu: 'dd.mm HH:MM лик пари час' or 'празно'.
+# called from: menu.py > run
+
+savegame.0001 = празно
+
+# sentence: ⟨f"{time.strftime('%d.%m %H:%M'⟩ ден. ⟨f'{int(h):02d}:{int(h % 1 * 60⟩
+savegame.0002 = \sден.  \s
+
+#=============================================================================
+# SECTION: src/font.py
+#   Text drawing with a Cyrillic-capable font (DejaVu Sans, free licence: assets/fonts/LICENSE_DEJAVU). raylib's built-in font only has Latin glyphs, so every text 
+#=============================================================================
+
+# --- function/class `confirm_quit` · data `q` (1 texts) ---
+# purpose: Modal "really quit?" card. -> True when the player confirms. `in_frame`: the caller is between begin/end_drawing.
+# called from: font.py > exit_button, menu.py > run
+
+font.0001 = Дали навистина сакаш да излезеш?
+
+# --- function/class `confirm_quit` · data `hint` (1 texts) ---
+# purpose: Modal "really quit?" card. -> True when the player confirms. `in_frame`: the caller is between begin/end_drawing.
+# called from: font.py > exit_button, menu.py > run
+
+font.0002 = Y / Enter = излез      N / Esc = продолжи
+
+# --- function/class `confirm_quit` · data `stay` (1 texts) ---
+# purpose: Modal "really quit?" card. -> True when the player confirms. `in_frame`: the caller is between begin/end_drawing.
+# called from: font.py > exit_button, menu.py > run
+
+# [shown via button(…)]
+font.0003 = Продолжи
+
+# --- function/class `confirm_quit` · data `leave` (1 texts) ---
+# purpose: Modal "really quit?" card. -> True when the player confirms. `in_frame`: the caller is between begin/end_drawing.
+# called from: font.py > exit_button, menu.py > run
+
+# [shown via button(…)]
+font.0004 = Излез
+
+# --- function/class `exit_button` (1 texts) ---
+# purpose: The always-there "× Излез" button: asks first, then closes the game.
+# called from: main.py > main, menu.py > _title_card, menu.py > pick_character, menu.py > run, ui.py > Loader.draw, ui.py > fatal_screen
+
+# [shown via button(…)]
+font.0005 = × Излез
+
+#=============================================================================
+# SECTION: src/main.py
+#   Скопје 242 - top-down 3D driving sandbox built from OpenStreetMap data. Start via run.bat.
+#=============================================================================
+
+# --- function/class `Guard.run` (1 texts) ---
+# called from: actors.py > Walker.__init__, actors.py > Walker.update, gl3d.py > _phase, main.py > main, menu.py > run, render.py > Renderer._gait …
+
+# [shown via self.msg(…)]
+# sentence: ⟨f'{name}'⟩: исклучено по повторени грешки (види logs/game.log)
+main.0001 = : исклучено по повторени грешки (види logs/game.log)
+
+# --- function/class `main` (13 texts) ---
+# called from: main.py, build_world.py, check_slang.py, fetch_extras.py, fetch_osm.py, fetch_pois.py …
+
+# [shown via rl.init_window(…)]
+main.0002 = Скопје · Член 242
+main.0003 = Скопје · Член 242
+
+# --- function/class `main.handle_events` (30 texts) ---
+# called from: main.py > main
+
+# [shown via popups.add(…)]
+main.0004 = НОКАУТ!
+
+# [shown via hud.set_banner(…)]
+main.0005 = Ново утро, ново оружје на улиците (види мапа - M)
+
+# [shown via hud.set_banner(…)]
+# sentence: Во автобус си (билет ⟨f"{d['fare']}"⟩ ден.) – Ctrl: преземи го воланот, F: излези
+main.0006 = Во автобус си (билет\s
+
+# [shown via hud.set_banner(…)]
+# sentence: Во автобус си (билет ⟨f"{d['fare']}"⟩ ден.) – Ctrl: преземи го воланот, F: излези
+main.0007 = \sден.)  –  Ctrl: преземи го воланот,  F: излези
+main.0008 = Слезе од автобусот.
+
+# [shown via popups.add(…)]
+# sentence: ⟨f"-{d['lost']}"⟩ ден. (некој ти ги зеде)
+main.0009 = \sден. (некој ти ги зеде)
+
+# [shown via hud.set_banner(…)]
+main.0010 = Се разбуди. Главата боли.
+
+# [shown via popups.add(…)]
+# sentence: ⟨f"{d['item']} +{d['heal']}"⟩ здравје
+main.0011 = \sздравје
+
+# [shown via popups.add(…)]
+# sentence: ⟨f"{d['item']} = {d['price']}"⟩ ден.
+main.0012 = \sден.
+
+# [shown via popups.add(…)]
+# sentence: ⟨f"+{d['amt']}"⟩ ден.
+main.0013 = \sден.
+
+# [shown via hud.set_banner(…)]
+# sentence: ⟨d.get('name', TXT('main.0055')⟩! Ctrl – пукај, Tab – смени оружје.
+main.0014 = ! Ctrl – пукај, Tab – смени оружје.
+
+# [shown via hud.set_banner(…)]
+# sentence: Бензин! Резервоарот е ⟨f"{int(d['f'] * 100)}%."⟩
+main.0015 = Бензин! Резервоарот е\s
+main.0016 = Бензинот е на резерва – барај канта!
+main.0017 = Нема бензин, брат! Барај канта или украдни друга кола.
+
+# [shown via popups.add(…)]
+main.0018 = Изгаснато! Фала, пожарникари.
+
+# [shown via hud.set_banner(…)]
+main.0019 = Брзата помош те врати! Пак си жив.
+
+# [shown via popups.add(…)]
+main.0020 = Жив е!
+
+# --- function/class `main.handle_events` · data `ln_` (3 texts) ---
+# called from: main.py > main
+
+# [shown via rng.choice(…)]
+main.0021 = Ајде бре!
+main.0022 = Нема фрка.
+main.0023 = Брате!
+
+# --- function/class `main.handle_events` (30 texts) ---
+# called from: main.py > main
+
+# [shown via hud.set_banner(…)]
+main.0024 = АЈВАР! Колата е како нова.
+main.0025 = ПЉУС!
+
+# [shown via rng.choice(…)]
+main.0026 = Ај бре!
+main.0027 = Мајко моја!
+main.0028 = Грбот ми!
+main.0029 = Колено...
+
+# [shown via popups.add(…)]
+main.0030 = БУМ! Слета од мостот
+
+# [shown via rng.choice(…)]
+main.0031 = Се запали и тој!
+main.0032 = Огнот се прошири!
+main.0033 = Ќе експлодира и овој!
+
+# [shown via popups.add(…)]
+main.0034 = Украдена кола! +углед
+
+# [shown via hud.set_banner(…)]
+main.0035 = Пак си тука. Нема фрка.
+
+# --- function/class `main.handle_places` (1 texts) ---
+# called from: main.py > main
+
+# [shown via say(…)]
+main.0036 = Водич
+
+# --- function/class `main` (13 texts) ---
+# called from: main.py, build_world.py, check_slang.py, fetch_extras.py, fetch_osm.py, fetch_pois.py …
+
+# [shown via hud.set_banner(…)]
+main.0037 = Тупаници
+main.0038 = Нов лик, ист град.
+main.0039 = Играта е вчитана.
+main.0040 = Нов лик, ист град.
+
+# [shown via popups.add(…)]
+main.0041 = Вратено на патот, брате.
+
+# [shown via hud.set_banner(…)]
+main.0042 = Симулацијата падна – види logs/game.log
+
+# [shown via hud.set_banner(…)]
+# sentence: Радио: ⟨song⟩
+main.0043 = Радио:\s
+
+# --- function/class `main` · data `prompt` (5 texts) ---
+# called from: main.py, build_world.py, check_slang.py, fetch_extras.py, fetch_osm.py, fetch_pois.py …
+
+# sentence: [F] Влези во ⟨f'{b.name}'⟩⟨TXT('main.0045') if b.parked_i⟩
+main.0044 = [F] Влези во\s
+main.0045 = \s(паркирано)
+
+# sentence: [F] УКРАДИ ја колата! (⟨f'{vehicles.NAMES[c.kind]})'⟩
+main.0046 = [F] УКРАДИ ја колата! (
+main.0047 = [F] Излези
+main.0048 = [R] Почни одново
+
+# --- function/class `main` (13 texts) ---
+# called from: main.py, build_world.py, check_slang.py, fetch_extras.py, fetch_osm.py, fetch_pois.py …
+
+# [shown via font.draw_text(…)]
+# sentence: Глас: ⟨vs_⟩
+main.0049 = Глас:\s
+main.0050 = WASD вози/оди  SPACE рачна/скок  CTRL удри/пукај  F влез/излез  H труба  1-4 киоск/места  P селфи  M мапа (клик=телепорт)  T места  [ ] време  N тивко
+
+# [shown via font.button(…)]
+main.0051 = Лик (L)
+main.0052 = Мени (Esc)
+
+# --- module level (2 texts) ---
+
+# [shown via fatal_screen(…)]
+main.0053 = Скопје 242 падна
+
+# [shown via fatal_screen(…)]
+# sentence: Целиот дневник: ⟨f'{LOG_FILE}'⟩
+main.0054 = Целиот дневник:\s
+
+# --- function/class `main.handle_events` (30 texts) ---
+# called from: main.py > main
+
+# [shown via d.get(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+main.0055 = Пиштол
+
+#=============================================================================
+# SECTION: src/splash3d.py
+#   Loading screen, real 3D and endless: an infinitely scrolling street built with the game's own generators (tools/build_world: facades with the game's window text
+#=============================================================================
+
+# --- module level · data `MSG` (1 texts) ---
+# used in: splash3d.py > Splash3D._draw3d
+
+splash3d.0001 = Играта се вчитува, почекај...
+
+# --- module level · data `BUBBLES` (8 texts) ---
+# used in: splash3d.py > Splash3D._ambient
+
+splash3d.0002 = Пак ми падна интернетот!
+splash3d.0003 = Кој ми го украде тротоарот?
+splash3d.0004 = Бурек или животот?
+splash3d.0005 = Ми фали уште еден печат!
+splash3d.0006 = Мајка ми ме бара, бегај!
+splash3d.0007 = Овој град ме изеде.
+splash3d.0008 = Сè е под контрола. Не е.
+splash3d.0009 = Паркирав. Тука. Засекогаш.
+
+# --- module level · data `HONKS` (5 texts) ---
+# used in: splash3d.py > Splash3D._ambient
+
+splash3d.0010 = ТУУУТ!
+splash3d.0011 = Мрднувај, бе!
+splash3d.0012 = Ајде бе, одиј!
+splash3d.0013 = Зелено е, бре!
+splash3d.0014 = ТАКСИ! ТАКСИ!
+
+#=============================================================================
+# SECTION: src/selfie.py
+#   Selfie: key P. The camera swings round in front of the avatar at eye level, the avatar blurts a catchy phrase, and a burst of frames is saved to selfies/<date-t
+#=============================================================================
+
+# --- module level · data `PHRASES` (10 texts) ---
+# used in: selfie.py > Selfie.start
+
+selfie.0001 = Скопје, насмевни се!
+selfie.0002 = Ова е за гулабите!
+selfie.0003 = Кажи бурек!
+selfie.0004 = Јас, ти и Вардар!
+selfie.0005 = Селфи пред мостот, класика!
+selfie.0006 = Нема фрка, слика е!
+selfie.0007 = Најдобар агол во градот!
+selfie.0008 = Еве го мојот профил!
+selfie.0009 = Ајде, лајкни!
+selfie.0010 = Насмевка како во Центар!
+
+#=============================================================================
+# SECTION: src/fx.py
+#   Visual effects: particles (smoke, sparks, fire, debris, leaves), floating text pop-ups, speech bubbles.
+#=============================================================================
+
+# --- function/class `Gains.draw` · data `txt` (1 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# sentence: ⟨f'+{amt}'⟩ ден.
+fx.0001 = \sден.
+
+#=============================================================================
+# SECTION: src/strings.py
+#   Interface texts (literary Macedonian, Cyrillic). Banter, jokes and slang live in slang.py. Sources and the review status of the wording: docs/TEXT_SOURCES.md.
+#=============================================================================
+
+# --- module level · data `TITLE` (1 texts) ---
+# used in: poster.py > Posters.__init__, poster.py > Posters.title, ui.py > Loader.draw
+
+strings.0001 = СКОПЈЕ · ЧЛЕН 242
+
+# --- module level · data `RADIO_DL` (1 texts) ---
+# used in: main.py > start_radio_fetch.reader
+
+# keep placeholders: {n} {target} {title}
+strings.0002 = Радио: {n}/{target} {title}
+
+# --- module level · data `TAGLINE` (1 texts) ---
+# used in: ui.py > Loader.__init__
+
+strings.0003 = Член 242: Одземање на моторно возило. Тој што противправно ќе одземе туѓо возило, ќе помине низ Скопје.
+
+# --- module level · data `L_TOTAL` (1 texts) ---
+# used in: ui.py > Loader.draw
+# code note: ------------------------------------------------------------------ loading screen
+
+strings.0004 = Вкупно
+
+# --- module level · data `L_ELAPSED` (1 texts) ---
+# used in: ui.py > Loader.draw
+
+strings.0005 = поминато
+
+# --- module level · data `L_LEFT` (1 texts) ---
+# used in: ui.py > Loader.draw
+
+strings.0006 = уште околу
+
+# --- module level · data `L_MAP` (1 texts) ---
+# used in: ui.py > Loader._map
+
+strings.0007 = Што се презема и каде оди
+
+# --- module level · data `L_SPEED` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0008 = Брзина
+
+# --- module level · data `L_GOT` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0009 = Преземено
+
+# --- module level · data `L_WAIT` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0010 = чекање
+
+# --- module level · data `L_SERVER` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0011 = Сервер
+
+# --- module level · data `L_NOW` (1 texts) ---
+
+strings.0012 = Сега
+
+# --- module level · data `(KB, MB)` (2 texts) ---
+# used in: ui.py > Loader._net_lines, ui.py > _size
+
+strings.0013 = КБ
+strings.0014 = МБ
+
+# --- module level · data `PER_S` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0015 = /с
+
+# --- module level · data `SEC` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0016 = с
+
+# --- module level · data `LEG_PENDING` (1 texts) ---
+# used in: ui.py > Loader._map
+
+strings.0017 = чека
+
+# --- module level · data `LEG_ACTIVE` (1 texts) ---
+# used in: ui.py > Loader._map
+
+strings.0018 = се презема
+
+# --- module level · data `LEG_DONE` (1 texts) ---
+# used in: ui.py > Loader._map
+
+strings.0019 = готово
+
+# --- module level · data `LEG_CACHED` (1 texts) ---
+# used in: ui.py > Loader._map, ui.py > Loader.event
+
+strings.0020 = веќе го имам
+
+# --- module level · data `LEG_FAIL` (1 texts) ---
+# used in: ui.py > Loader._map
+
+strings.0021 = не успеа
+
+# --- module level · data `LEG_SPLIT` (1 texts) ---
+# used in: ui.py > Loader._map, ui.py > Loader.event
+
+strings.0022 = се дели на делови
+
+# --- module level · data `OBJECTS` (1 texts) ---
+# used in: ui.py > Loader.event
+
+strings.0023 = објекти
+
+# --- module level · data `CUTTING` (1 texts) ---
+# used in: ui.py > Loader._net_lines, ui.py > Loader.event
+
+strings.0024 = Го сечам Скопје од мапата на државата
+
+# --- module level · data `(C_NODES, C_WAYS, C_FOUND)` (3 texts) ---
+# used in: ui.py > Loader._net_lines, ui.py > Loader.event
+
+strings.0025 = точки
+strings.0026 = линии
+strings.0027 = објекти во градот
+
+# --- module level · data `KM` (1 texts) ---
+# used in: ui.py > Loader._where
+
+strings.0028 = км
+
+# --- module level · data `(EAST, WEST, NORTH, SOUTH, CENTRE)` (5 texts) ---
+# used in: ui.py > Loader._where
+
+strings.0029 = источно
+strings.0030 = западно
+strings.0031 = северно
+strings.0032 = јужно
+strings.0033 = центар
+
+# --- module level · data `LAYER` (6 texts) ---
+# used in: ui.py > Loader._map, ui.py > Loader._net_lines, ui.py > Loader.event
+
+# [roads]
+strings.0034 = Патишта
+
+# [buildings]
+strings.0035 = Згради
+
+# [areas]
+strings.0036 = Зеленило и води
+
+# [pois]
+strings.0037 = Знаменитости
+
+# [places]
+strings.0038 = Населби
+
+# [dem]
+strings.0039 = Висини (рељеф)
+
+# --- module level · data `STAGE` (7 texts) ---
+# used in: ui.py > Loader.draw
+
+# [osm]
+strings.0040 = Преземање на мапата (OpenStreetMap)
+
+# [dem]
+strings.0041 = Преземање на висините (рељеф)
+
+# [build]
+strings.0042 = Градење на светот
+
+# [world]
+strings.0043 = Читање на светот
+
+# [overview]
+strings.0044 = Прегледна мапа
+
+# [textures]
+strings.0045 = Текстури и 3D модели
+
+# [chunks]
+strings.0046 = Првите делови од градот
+
+# --- module level · data `BUILD` (20 texts) ---
+# used in: ui.py > Loader._build_event
+# code note: progress phases of tools/build_world.py (its English labels -> what the player reads)
+
+# [read OSM files]
+strings.0047 = Читање на податоците
+
+# [buildings -> 3D meshes]
+strings.0048 = Згради во 3D
+
+# [areas / water / rails]
+strings.0049 = Површини, води и пруга
+
+# [roads]
+strings.0050 = Патишта
+
+# [building meshes on terrain]
+strings.0051 = Згради на рељефот
+
+# [graph]
+strings.0052 = Сообраќајна мрежа
+
+# [bridge decks]
+strings.0053 = Мостови
+
+# [places]
+strings.0054 = Населби
+
+# [street furniture]
+strings.0055 = Урбана опрема
+
+# [procedural trees in parks/woods]
+strings.0056 = Дрвја во паркови
+
+# [street trees, lamps, parked cars]
+strings.0057 = Улични дрвја, лампи и паркирани коли
+
+# [3D roads]
+strings.0058 = Патишта во 3D
+
+# [ground rasters]
+strings.0059 = Растери на земјата
+
+# [tree meshes]
+strings.0060 = Модели на дрвја
+
+# [lamp meshes]
+strings.0061 = Модели на лампи
+
+# [chunk index: areas]
+strings.0062 = Индекс на делови
+
+# [spawn point]
+strings.0063 = Почетна точка
+
+# [write world]
+strings.0064 = Запишување
+
+# [write mesh blob]
+strings.0065 = Запишување на мрежите
+
+# [write world parts]
+strings.0066 = Запишување на деловите
+
+# --- module level · data `WARN` (9 texts) ---
+# used in: ui.py > Loader._net_lines, ui.py > Loader.event
+# code note: warnings by failure kind (tools/net.py)
+
+# [busy]
+strings.0067 = Серверот е зафатен – чекам ред.
+
+# [reject]
+strings.0068 = Серверот го одби барањето – го делам на помали делови.
+
+# [stall]
+strings.0069 = Преземањето запре – менувам сервер.
+
+# [timeout]
+strings.0070 = Серверот не одговара – пробувам друг.
+
+# [offline]
+strings.0071 = Нема врска со интернет.
+
+# [bad]
+strings.0072 = Добиен е неисправен одговор – повторувам.
+
+# [exhausted]
+strings.0073 = Сите сервери одбиваат – ќе пробам подоцна.
+
+# [http]
+strings.0074 = Серверот врати грешка – повторувам.
+
+# [net]
+strings.0075 = Мрежна грешка – повторувам.
+
+# --- module level · data `ATTEMPT` (1 texts) ---
+# used in: ui.py > Loader.event
+
+strings.0076 = обид
+
+# --- module level · data `REST` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0077 = пауза
+
+# --- module level · data `NO_DATA` (1 texts) ---
+# used in: ui.py > Loader._net_lines
+
+strings.0078 = Нема нови податоци веќе
+
+# --- module level · data `NOTE` (7 texts) ---
+# used in: ui.py > Loader.event
+
+# [newbox]
+strings.0079 = Зачуваните податоци се за друго подрачје – се преземаат одново.
+
+# [second_pass]
+strings.0080 = Втор обид за делови што не успеаа:
+
+# [total_limit]
+strings.0081 = Истече вкупното време – продолжувам со тоа што го имам.
+
+# [offline]
+strings.0082 = Нема врска – продолжувам со податоците што ги имам.
+
+# [busy_other]
+strings.0083 = Друго преземање веќе работи – користам што има.
+
+# [pbf_cut]
+strings.0084 = Датотеката е преземена – го исекувам Скопје од мапата на државата...
+
+# [unreachable]
+strings.0085 = Серверите не се достапни – продолжувам со тоа што го имам.
+
+# --- module level · data `PARTIAL` (1 texts) ---
+# used in: main.py > ensure_world
+
+strings.0086 = Мапата е непотполна – играта ќе работи со тоа што е преземено; следниот пат ќе го дополни.
+
+# --- module level · data `FALLBACK_DEMO` (1 texts) ---
+# used in: main.py > ensure_world
+
+strings.0087 = Нема податоци за градот – се користи демо-град.
+
+# --- module level · data `CLOSE_TO_EXIT` (1 texts) ---
+# used in: ui.py > fatal_screen
+
+strings.0088 = Затворете го прозорецот за излез.

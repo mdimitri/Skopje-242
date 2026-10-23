@@ -1,8 +1,87 @@
-# Macedonian text of src/poi.py
-# Format: key = text   (see text/README.md)
+##############################################################################
+#  3. PLACES, NEIGHBOURHOODS AND POINTS OF INTEREST
+##############################################################################
+#
+# CONTAINS: neighbourhood names (some are matched against map data!), types of places (cafe, pharmacy ...), place titles
+#
+# HOW TO READ THIS FILE (full rules: text/README.md)
+#   - Only edit the text AFTER " = ". Never change the key before it (e.g. talk.0042).
+#   - Comment lines (starting with #) tell you where the text appears in the game.
+#   - Keep placeholders such as {name}, {}, %s, %d exactly as they are.
+#   - A line marked "WARNING: lookup" is also compared with other data by the code:
+#     do not reword it without asking the developer.
+#   - "sentence:" shows how separate fragments are glued into one message in the game
+#     (the part in angle brackets is a number/name inserted by the code).
 
 
-## (module level)
+#=============================================================================
+# SECTION: src/places.py
+#   Neighbourhoods: tooltip when you enter one, and the teleport list. OSM `place` nodes are used when the map has them; otherwise the approximate centres below (ha
+#=============================================================================
+
+# --- module level · data `FALLBACK` (28 texts) ---
+# used in: places.py > Places.__init__
+# code note: name, lat, lon, cynical one-liner
+
+places.0001 = Центар
+places.0002 = Центар: статуи, гулаби и паркинг што не постои.
+places.0003 = Стара Чаршија
+places.0004 = Стара Чаршија: бурек, ќебапи и цени како за туристи.
+places.0005 = Кале
+places.0006 = Кале: најубав поглед на градот што никој не го поправи.
+places.0007 = Дебар Маало
+places.0008 = Дебар Маало: повеќе кафулиња отколку луѓе.
+places.0009 = Капиштец
+places.0010 = Капиштец: тука се гради сè, освен места за паркирање.
+places.0011 = Зелен Пазар
+places.0012 = Зелен Пазар: свеж зеленчук и свежи цени.
+places.0013 = Бит Пазар
+places.0014 = Бит Пазар: ако не го најдеш тука, не постои.
+places.0015 = Чаир
+places.0016 = Чаир: градот во градот, со свој бурек.
+places.0017 = Карпош
+places.0018 = Карпош: блокови, блокови и повеќе блокови.
+places.0019 = Кисела Вода
+places.0020 = Кисела Вода: киселата вода ја нема, но градбата ја има.
+places.0021 = Автокоманда
+places.0022 = Автокоманда: вечен собир на сообраќајни застои.
+places.0023 = Гази Баба
+places.0024 = Гази Баба: далеку од центарот, блиску до гужвата.
+places.0025 = Ѓорче Петров
+places.0026 = Ѓорче Петров: тишина, куќи и соседи.
+places.0027 = Маџари
+places.0028 = Маџари: на крајот на булеварот, на почетокот на полето.
+
+# --- module level · data `GENERIC` (4 texts) ---
+# used in: bump_lines.py > line, hood_lines.py > line, problems.py > for_arch
+
+places.0029 = Овде не се знае кој е газда на улицата.
+places.0030 = Познат реон, непознати паркинзи.
+places.0031 = Тука секој познава некој.
+places.0032 = Реон со бурек на секој агол (ако имаш врска).
+
+# --- module level · data `_CYR` (1 texts) ---
+# used in: places.py > translit
+
+# [shown via zip(…)]
+places.0033 = абвгдѓежзѕијклљмнњопрстќуфхцчџш
+
+# --- function/class `Places.update` (1 texts) ---
+# purpose: -> (name, line) the moment the player enters a new neighbourhood, else None.
+# called from: actors.py > Sim.update, gl3d.py > _ped_special, main.py > main, main.py > main.apply_cfg, main.py > main.handle_places, savegame.py > restore …
+
+places.0034 = \s(приближно)
+
+#=============================================================================
+# SECTION: src/poi.py
+#   Points of interest you can walk into: come close to a shop / bank / cafe ... and a tooltip offers 1-4 things to do. Pressing a number walks the avatar in (hidde
+#=============================================================================
+
+# --- module level · data `MENU` (144 texts) ---
+# used in: poi.py > Pois.menu
+# code note: category -> [(label, price, heal, gain, what the avatar says he did)] price = ден. paid, gain = ден. received
+
+# [cafe]
 poi.0001 = Македонско кафе
 poi.0002 = Испив кафе
 poi.0003 = Ладно пиво
@@ -11,6 +90,8 @@ poi.0005 = Сок и вода
 poi.0006 = Испив сок
 poi.0007 = Седи на тераса
 poi.0008 = Седнав на тераса
+
+# [food]
 poi.0009 = Ќебапи
 poi.0010 = Изедов ќебапи
 poi.0011 = Пица парче
@@ -19,6 +100,8 @@ poi.0013 = Салата
 poi.0014 = Изедов салата
 poi.0015 = Само прашај за цена
 poi.0016 = Прашав за цена и излегов
+
+# [school]
 poi.0017 = Купи тетратка
 poi.0018 = Купив тетратка
 poi.0019 = Прескокни час
@@ -27,6 +110,8 @@ poi.0021 = Прашај за оценки
 poi.0022 = Прашав за оценки
 poi.0023 = Донирај за школо
 poi.0024 = Дадов за школото
+
+# [health]
 poi.0025 = Аспирин
 poi.0026 = Купив аспирин
 poi.0027 = Витамини
@@ -35,6 +120,8 @@ poi.0029 = Преглед
 poi.0030 = Одев на преглед
 poi.0031 = Чекај ред
 poi.0032 = Чекав во ред
+
+# [worship]
 poi.0033 = Запали свеќа
 poi.0034 = Запалив свеќа
 poi.0035 = Молитва
@@ -43,6 +130,8 @@ poi.0037 = Дај прилог
 poi.0038 = Дадов прилог
 poi.0039 = Само седни
 poi.0040 = Се одморив внатре
+
+# [fuel]
 poi.0041 = Полни резервоар
 poi.0042 = Наполнив гориво
 poi.0043 = Грицки и кафе
@@ -51,6 +140,8 @@ poi.0045 = Миење кола
 poi.0046 = Ја измив колата
 poi.0047 = Прашај за цена
 poi.0048 = Видов колку е бензин и се исплашив
+
+# [money]
 poi.0049 = Подигни 500
 poi.0050 = Подигнав пари
 poi.0051 = Подигни 1000
@@ -59,6 +150,8 @@ poi.0053 = Провери сметка
 poi.0054 = Ја проверив сметката
 poi.0055 = Побарај кредит
 poi.0056 = Побарав кредит
+
+# [market]
 poi.0057 = Домати и пиперки
 poi.0058 = Купив зеленчук
 poi.0059 = Сирење
@@ -67,6 +160,8 @@ poi.0061 = Ајвар
 poi.0062 = Купив ајвар
 poi.0063 = Пазари се
 poi.0064 = Се пазарев и испадна добро
+
+# [police]
 poi.0065 = Пријави кражба
 poi.0066 = Пријавив нешто
 poi.0067 = Прашај за пат
@@ -75,6 +170,8 @@ poi.0069 = Плати казна
 poi.0070 = Платив казна
 poi.0071 = Донеси погача
 poi.0072 = Им однесов погача
+
+# [public]
 poi.0073 = Земи број
 poi.0074 = Чекав на шалтер
 poi.0075 = Купи марки
@@ -83,6 +180,8 @@ poi.0077 = Печат
 poi.0078 = Добив печат
 poi.0079 = Дојдете утре
 poi.0080 = Ми рекоа дојдете утре
+
+# [culture]
 poi.0081 = Билет
 poi.0082 = Гледав претстава
 poi.0083 = Музеј
@@ -91,6 +190,8 @@ poi.0085 = Сувенир
 poi.0086 = Купив сувенир
 poi.0087 = Само погледни
 poi.0088 = Погледнав и излегов
+
+# [night]
 poi.0089 = Пиј на шанк
 poi.0090 = Пиев на шанк
 poi.0091 = Танцувај
@@ -99,6 +200,8 @@ poi.0093 = Дај бакшиш
 poi.0094 = Оставив бакшиш
 poi.0095 = Играј лото
 poi.0096 = Играв лото
+
+# [transport]
 poi.0097 = Купи карта
 poi.0098 = Купив автобуска карта
 poi.0099 = Прашај за ред
@@ -107,6 +210,8 @@ poi.0101 = Купи вода
 poi.0102 = Купив вода
 poi.0103 = Седи и чекај
 poi.0104 = Чекав автобус
+
+# [shop]
 poi.0105 = Купи нешто мало
 poi.0106 = Купив нешто мало
 poi.0107 = Купи облека
@@ -115,6 +220,8 @@ poi.0109 = Дуќан-ловец
 poi.0110 = Најдов попуст и заработив
 poi.0111 = Само гледај
 poi.0112 = Гледав излози
+
+# [hotel]
 poi.0113 = Рецепција
 poi.0114 = Прашав за соба
 poi.0115 = Тераса-кафе
@@ -123,6 +230,8 @@ poi.0117 = Бања
 poi.0118 = Се одморив во бања
 poi.0119 = Бакшиш
 poi.0120 = Дадов бакшиш
+
+# [sight]
 poi.0121 = Слика
 poi.0122 = Ја разгледав знаменитоста
 poi.0123 = Гулаби
@@ -131,6 +240,8 @@ poi.0125 = Сувенир
 poi.0126 = Купив сувенир
 poi.0127 = Прочитај плоча
 poi.0128 = Прочитав за историјата
+
+# [sport]
 poi.0129 = Вежбај
 poi.0130 = Одвежбав
 poi.0131 = Тушира
@@ -139,6 +250,8 @@ poi.0133 = Протеин
 poi.0134 = Испив протеин
 poi.0135 = Тренер
 poi.0136 = Имав тренер
+
+# [play]
 poi.0137 = Лулашка
 poi.0138 = Се лулав
 poi.0139 = Тобоган
@@ -147,6 +260,10 @@ poi.0141 = Клупа
 poi.0142 = Седнав на клупа
 poi.0143 = Топка
 poi.0144 = Играв топка
+
+# --- module level · data `DEFAULT` (8 texts) ---
+# used in: poi.py > Pois.menu
+
 poi.0145 = Влези
 poi.0146 = Влегов да видам
 poi.0147 = Купи нешто
@@ -155,106 +272,224 @@ poi.0149 = Прашај
 poi.0150 = Прашав нешто
 poi.0151 = Остани малку
 poi.0152 = Се одморив малку
+
+# --- module level · data `TITLES` (18 texts) ---
+# used in: poi.py > Pois.draw
+
+# [cafe]
 poi.0153 = Кафуле
+
+# [food]
 poi.0154 = Ресторан
+
+# [school]
 poi.0155 = Школо
+
+# [health]
 poi.0156 = Здравство
+
+# [worship]
 poi.0157 = Црква / џамија
+
+# [fuel]
 poi.0158 = Бензинска
+
+# [money]
 poi.0159 = Банка
+
+# [market]
 poi.0160 = Пазар
+
+# [police]
 poi.0161 = Полиција
+
+# [public]
 poi.0162 = Јавна установа
+
+# [culture]
 poi.0163 = Култура
+
+# [night]
 poi.0164 = Ноќен клуб
+
+# [transport]
 poi.0165 = Станица
+
+# [shop]
 poi.0166 = Продавница
+
+# [hotel]
 poi.0167 = Хотел
+
+# [sight]
 poi.0168 = Знаменитост
+
+# [sport]
 poi.0169 = Спорт
+
+# [play]
 poi.0170 = Игралиште
+
+# --- module level · data `TAIL` (72 texts) ---
+# used in: poi.py > tail_for
+# code note: how each character ends the sentence (personality), picked at random
+
+# [kumplung]
 poi.0171 = Е па добро, чичко.
 poi.0172 = Не ми се лути.
 poi.0173 = Фала му на Бога.
+
+# [maca]
 poi.0174 = Дарлинг!
 poi.0175 = Минич и штикла, сѐ е во ред.
 poi.0176 = Ај, пеам за љубов.
+
+# [mile]
 poi.0177 = Најдолгата рута, нели.
 poi.0178 = Таксиметарот си тече.
 poi.0179 = Странец да ми се најде.
+
+# [stojan]
 poi.0180 = Студентски цени, молам.
 poi.0181 = Штедам за бурек.
 poi.0182 = Нема пари, ама има волја.
+
+# [influenser]
 poi.0183 = Лајкајте и следете!
 poi.0184 = Ова оди на сторис.
 poi.0185 = Следбеници, гледате ли?
+
+# [influenserka]
 poi.0186 = Тоа е за сторито!
 poi.0187 = Хаштаг благословена.
 poi.0188 = Ова е толку естетски.
+
+# [tetkica]
 poi.0189 = Бог да чува.
 poi.0190 = Да не се разболиш.
 poi.0191 = Ќе падне дожд, видов.
+
+# [baba]
 poi.0192 = Пензијата уште не стигна.
 poi.0193 = Ќе ве проколнам, ако не.
 poi.0194 = Во мое време беше поевтино.
+
+# [dedo]
 poi.0195 = Во мое време беше подобро.
 poi.0196 = Сето ова е политика.
 poi.0197 = Дај шамија, дожд иде.
+
+# [pandur]
 poi.0198 = Само опомена.
 poi.0199 = Тоа е по закон.
 poi.0200 = Слушам техно додека работам.
+
+# [doktor]
 poi.0201 = Како што и очекував.
 poi.0202 = Пациентите ме чекаат.
 poi.0203 = Богат сум, но скромен.
+
+# [mali]
 poi.0204 = Брзо, пред мама да види.
 poi.0205 = Дај уште едно!
 poi.0206 = Јас сум голем веќе.
+
+# [radnik]
 poi.0207 = Работам по 15 саати.
 poi.0208 = Фала, шефе.
 poi.0209 = Комбинезонот е прљав, ама срцето чисто.
+
+# [burek]
 poi.0210 = Со малку фил, исто.
 poi.0211 = Мирисам на маргарин.
 poi.0212 = Ноќна смена, брате.
+
+# [boza]
 poi.0213 = Без грутки, секако.
 poi.0214 = Гласно и јасно!
 poi.0215 = Бела капа, чиста совест.
+
+# [fitka]
 poi.0216 = Калории, броиме!
 poi.0217 = Слика за сторито, фитнес.
 poi.0218 = Хеланките издржаа.
+
+# [bilder]
 poi.0219 = Протеини, брат.
 poi.0220 = Воспален сум, а тоа е добро.
 poi.0221 = Кавасаки чека надвор.
+
+# [shmizla]
 poi.0222 = Спонзор, каде си?
 poi.0223 = Трепките се лажни, ама сјајот не е.
 poi.0224 = Мастика и мир.
+
+# [palavko]
 poi.0225 = Бегам пред да ме фатат!
 poi.0226 = Колена скинати, дух чист.
 poi.0227 = Ѕвонец, па трчање.
+
+# [srednoskolec]
 poi.0228 = Не кажувај на татко.
 poi.0229 = Нема да платам за автобус.
 poi.0230 = Пушам, не од чија било причина.
+
+# [vojnik]
 poi.0231 = Викенд-отсуство, слободен сум.
 poi.0232 = Бара девојка, ако има.
 poi.0233 = Подготвен за секој задача.
+
+# [navivac]
 poi.0234 = Ајде Вардаре!
 poi.0235 = Шалот е со мене.
 poi.0236 = Пеам и на улица!
+
+# [administratorka]
 poi.0237 = Дојдете утре.
 poi.0238 = Уште еден печат.
 poi.0239 = Пауза за кафе од десет.
+
+# [nastavnica]
 poi.0240 = Тишина, ве молам.
 poi.0241 = Црвено пенкало е готово.
 poi.0242 = Строг поглед, милост нема.
+
+# --- module level · data `GENERIC_TAIL` (3 texts) ---
+# used in: poi.py > tail_for
+
 poi.0243 = Ех, Скопје.
 poi.0244 = Нема фрка.
 poi.0245 = Тоа беше тоа.
 
-## update
+# --- function/class `Pois.update` (3 texts) ---
+# purpose: pick: 0..3 or None. Returns True while the avatar is inside the animation (the caller blocks controls).
+# called from: actors.py > Sim.update, gl3d.py > _ped_special, main.py > main, main.py > main.apply_cfg, main.py > main.handle_places, savegame.py > restore …
+
+# [shown via popups.add(…)]
+# sentence: ⟨f'{lab} = {price}'⟩ ден.
 poi.0246 = \sден.
+
+# [shown via popups.add(…)]
+# sentence: ⟨f' (+{gain - price}'⟩ ден.)
 poi.0247 = \sден.)
+
+# [shown via popups.add(…)]
+# sentence: ⟨f' (-{price}'⟩ ден.)
 poi.0248 = \sден.)
 
-## draw
+# --- function/class `Pois.draw` · data `tag` (3 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# sentence: ⟨f'+{gain}'⟩ ден.
 poi.0249 = \sден.
+
+# sentence: ⟨f'-{price}'⟩ ден.
 poi.0250 = \sден.
 poi.0251 = бесплатно
+
+# --- function/class `Pois.draw` · data `title` (1 texts) ---
+# called from: main.py > main, main.py > run_tool, render.py > Renderer.draw, splash3d.py > Splash3D.draw, ui.py > Loader.begin, ui.py > Loader.draw …
+
+# [shown via TITLES.get(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+poi.0252 = Место

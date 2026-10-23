@@ -31,7 +31,7 @@ for path in sorted(glob.glob(os.path.join(texts.DIR, "*.txt"))):
 used = set()
 for f in glob.glob(os.path.join(ROOT, "src", "*.py")) + glob.glob(os.path.join(ROOT, "tools", "*.py")):
     with open(f, encoding="utf-8") as fh:
-        used.update(re.findall(r'TXT\("([a-z_0-9]+\.\d+)"\)', fh.read()))
+        used.update(re.findall(r"TXT\([\"']([a-z_0-9]+\.\d+)[\"']\)", fh.read()))
 for k in sorted(used - set(table)):
     print("key used in code but missing in text/: %s" % k)
     bad += 1

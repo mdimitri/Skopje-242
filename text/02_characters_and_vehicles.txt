@@ -1,0 +1,1206 @@
+##############################################################################
+#  2. CHARACTERS, VEHICLES, PUBLIC TRANSPORT, SERVICES, RADIO, VOICE
+##############################################################################
+#
+# CONTAINS: names/descriptions of playable characters and pedestrians, car names, bus & tram, police/ambulance/etc., radio stations, speech engine
+#
+# HOW TO READ THIS FILE (full rules: text/README.md)
+#   - Only edit the text AFTER " = ". Never change the key before it (e.g. talk.0042).
+#   - Comment lines (starting with #) tell you where the text appears in the game.
+#   - Keep placeholders such as {name}, {}, %s, %d exactly as they are.
+#   - A line marked "WARNING: lookup" is also compared with other data by the code:
+#     do not reword it without asking the developer.
+#   - "sentence:" shows how separate fragments are glued into one message in the game
+#     (the part in angle brackets is a number/name inserted by the code).
+
+
+#=============================================================================
+# SECTION: src/characters.py
+#   Ликови што можеш да ги избереш на почеток (од likovi.txt). Сликите (карикатури) се во assets/likovi/<id>.png; ако некоја недостасува, се црта привремена картичк
+#=============================================================================
+
+# --- module level · data `LIKOVI` (48 texts) ---
+# used in: characters.py > apply, characters.py > image_path, main.py > main, main.py > main.hero_line, main.py > main.hero_who, menu.py > pick_character …
+# code note: id, име, статистики (според likovi.txt), почетни пари
+
+characters.0001 = Чичко Кумплунг
+characters.0002 = пцуе, вулгарен, добро вози, проќелав
+characters.0003 = Певаљка Маца
+characters.0004 = напукани усни, плавуша со црн корен, минич и штикла, вози лудо, пее фалш
+characters.0005 = Таксист Миле
+characters.0006 = мрсен, свирка по згодни женски, ќе те вози по најдолгата рута, обожава странски патници
+characters.0007 = Студент Стојан
+characters.0008 = нема пари, прифаќа секаква работа, обожава бурек, доаѓа од надвор од Скопје, сака добра забава
+characters.0009 = Инфлуенсер
+characters.0010 = вози тротинет, има 2500 следбеници
+characters.0011 = Инфлуенсерка
+characters.0012 = (статистиките уште не се дадени)
+characters.0013 = Теткица
+characters.0014 = јако тепа, загрижена за времето, побожна
+characters.0015 = Баба
+characters.0016 = споро се движи, скришно богата, чека пензија, се движи околу аптеки, фрла клетва
+characters.0017 = Дедо
+characters.0018 = знае сè за политика, нема скршен денар, се движи околу аптеки, во моево време беше подобро
+characters.0019 = Пандур
+characters.0020 = јако бате, има завршено средно, нема кривично досие, знае да даде само опомена, слуша техно
+characters.0021 = Доктор
+characters.0022 = вообразен, богат, обожава мала пажња од пациенти, вози јака кола
+characters.0023 = Мали
+characters.0024 = (статистиките уште не се дадени)
+characters.0025 = Работник Момчило
+characters.0026 = најјак шамар во градот, тивок по малку пивнат, нема пари, работи по 15 саати, прљав комбинезон
+characters.0027 = Бурек-мајстор
+characters.0028 = ноќна птица, јак момак, брашнест тен, штеди на фил, мириса на маргарин
+characters.0029 = Боза-мајстор
+characters.0030 = гласен, трпелив, рецептот никогаш не прави грутки, носи бела капа
+characters.0031 = Фитка
+characters.0032 = тесни хеланки, слика селфи во теретана, брои калории
+characters.0033 = Билдер
+characters.0034 = тесна маица, широка тренерка, изгледа воспалено, вози Кавасаки, пие суплементи
+characters.0035 = Шмизла
+characters.0036 = лажни трепки, џвака мастика, бара спонзор
+characters.0037 = Палавко
+characters.0038 = скока по клупи, ѕвони на туѓи ѕвонци и бега, скинати колена
+characters.0039 = Средношколец
+characters.0040 = не плаќа за автобус, бега од час, пуши скришно зад школо
+characters.0041 = Војник
+characters.0042 = кратко потстрижан, на викенд-отсуство, бара девојка
+characters.0043 = Навивач
+characters.0044 = шал и боксирач, пее на сред улица, лесно влегува во тепачка
+characters.0045 = Административка
+characters.0046 = „дојдете утре“, пауза за кафе од 10 до 12, бара уште еден печат
+characters.0047 = Наставничка
+characters.0048 = строг поглед, црвено пенкало, бара тишина
+
+#=============================================================================
+# SECTION: src/vehicles.py
+#   Vehicle and pedestrian catalogue: names, sizes, collision circles, spawn weights. Pure data (sim + renderer).
+#=============================================================================
+
+# --- module level · data `MK_CAR` (89 texts) ---
+# used in: vehicles.py
+# code note: ---------------------------------------------------------------------------- road users (0-8 classic, 9 = you) name, speed multiplier, spawn weight, one-liners какво гледа играчот (внатрешните имена г
+
+# [Zastava Yugo]
+vehicles.0001 = Застава Југо
+
+# [Golf Dvojka]
+vehicles.0002 = Голф Двојка
+
+# [Kombi]
+vehicles.0003 = Комби
+
+# [Lada Niva]
+vehicles.0004 = Лада Нива
+
+# [Mercedes 190]
+vehicles.0005 = Мерцедес 190
+
+# [Taxi Zlatna Zolta]
+vehicles.0006 = Такси „Златна жолта“
+
+# [Gradski Avtobus]
+vehicles.0007 = Градски автобус
+
+# [Fico]
+vehicles.0008 = Фичо
+
+# [Pikap Tovarnik]
+vehicles.0009 = Пикап товарник
+
+# [Zastava 101 Skala]
+vehicles.0010 = Застава 101 Скала
+
+# [Zastava Koral]
+vehicles.0011 = Застава Корал
+
+# [Lada Samara]
+vehicles.0012 = Лада Самара
+
+# [Lada 1500]
+vehicles.0013 = Лада 1500
+
+# [Moskvich 412]
+vehicles.0014 = Москвич 412
+
+# [Trabant 601]
+vehicles.0015 = Трабант 601
+
+# [Wartburg 353]
+vehicles.0016 = Вартбург 353
+
+# [Skoda Octavia Karavan]
+vehicles.0017 = Шкода Октавија Караван
+
+# [Pachuvka 2CV]
+vehicles.0018 = Ситроен 2CV
+
+# [Renault 4 Katrca]
+vehicles.0019 = Рено 4 „Катрца“
+
+# [Fiat 126 Peglica]
+vehicles.0020 = Фиат 126 „Пеглица“
+
+# [Fiat Punto]
+vehicles.0021 = Фиат Пунто
+
+# [Fiat Uno]
+vehicles.0022 = Фиат Уно
+
+# [Opel Kadett]
+vehicles.0023 = Опел Кадет
+
+# [Opel Astra Karavan]
+vehicles.0024 = Опел Астра Караван
+
+# [Audi 80 Bachok]
+vehicles.0025 = Ауди 80
+
+# [BMW E36 Bavarka]
+vehicles.0026 = БМВ Е36 „Баварка“
+
+# [BMW X5 Chorbadzija]
+vehicles.0027 = БМВ Х5 „Чорбаџија“
+
+# [Mercedes 124 Taksist]
+vehicles.0028 = Мерцедес 124 „Таксист“
+
+# [Mercedes S Mafijash]
+vehicles.0029 = Мерцедес S „Мафијаш“
+
+# [Mercedes G Politichar]
+vehicles.0030 = Мерцедес G „Политичар“
+
+# [Sprinter Gastarbajter]
+vehicles.0031 = Спринтер „Гастарбајтер“
+
+# [Passat Dijaspora]
+vehicles.0032 = Пасат „Дијаспора“
+
+# [Golf Trojka Gastarbajter]
+vehicles.0033 = Голф Тројка „Гастарбајтер“
+
+# [Caddy Dostava]
+vehicles.0034 = Кади „Достава“
+
+# [Transporter Kombe]
+vehicles.0035 = Транспортер комбе
+
+# [Renault Clio]
+vehicles.0036 = Рено Клио
+
+# [Toyota Corolla]
+vehicles.0037 = Тојота Королa
+
+# [Land Cruiser Lovec]
+vehicles.0038 = Ленд Крузер „Ловец“
+
+# [Nissan Qashqai]
+vehicles.0039 = Нисан Кашкај
+
+# [Dacia Duster]
+vehicles.0040 = Дачиа Дастер
+
+# [Dacia Logan]
+vehicles.0041 = Дачиа Логан
+
+# [Kia Picanto]
+vehicles.0042 = Киа Пиканто
+
+# [Tesla Elon]
+vehicles.0043 = Тесла „Илон“
+
+# [Hummer Patriot]
+vehicles.0044 = Хамер „Патриот“
+
+# [Smart Sitnichka]
+vehicles.0045 = Смарт „Ситничка“
+
+# [Cayenne od Germanija]
+vehicles.0046 = Кајен од Германија
+
+# [Range Rover Ortak]
+vehicles.0047 = Ренџ Ровер „Ортак“
+
+# [Policiska Skoda]
+vehicles.0048 = Полициско возило
+
+# [Brza Pomosh]
+vehicles.0049 = Брза помош
+
+# [Pozharna]
+vehicles.0050 = Пожарна
+
+# [Smetar Kamion]
+vehicles.0051 = Комунален камион
+
+# [Betonjerka]
+vehicles.0052 = Бетоњерка
+
+# [Pajak Vlechna Sluzhba]
+vehicles.0053 = Влечна служба
+
+# [Burek Dostava]
+vehicles.0054 = Бурек достава
+
+# [Makedonska Posta]
+vehicles.0055 = Македонска пошта
+
+# [Traktor Belarus]
+vehicles.0056 = Трактор Беларус
+
+# [Svadbarska Limuzina]
+vehicles.0057 = Свадбарска лимузина
+
+# [Avtobus Skopje-Ohrid]
+vehicles.0058 = Автобус Скопје–Охрид
+
+# [Sladoled Kombe]
+vehicles.0059 = Сладолед комбе
+
+# [Golf Petka TDI]
+vehicles.0060 = Голф Петка TDI „Само 180 илјади“
+
+# [Golf Shestka Uvezen]
+vehicles.0061 = Голф Шестка „Увезен, од доктор“
+
+# [Passat B5 Karavan]
+vehicles.0062 = Пасат Б5 Караван „Тркалото на семејството“
+
+# [Passat B6 TDI]
+vehicles.0063 = Пасат Б6 „Со германски таблички“
+
+# [Audi A4 Avant Shvajcarska]
+vehicles.0064 = Ауди А4 Авант „Од Швајцарија, не е возен“
+
+# [Audi A6 Nemachka]
+vehicles.0065 = Ауди А6 „Германецот ја возеше само недела“
+
+# [BMW E46 Tjunirana]
+vehicles.0066 = БМВ Е46 „Тјунирана, со ксенони“
+
+# [BMW E39 520d]
+vehicles.0067 = БМВ Е39 „Дизелче, троши 5 литри, тврди газдата“
+
+# [Mercedes C Klasa W203]
+vehicles.0068 = Мерцедес C „Увоз од Италија“
+
+# [Mercedes E Klasa W211]
+vehicles.0069 = Мерцедес E „Кумот ја донесе“
+
+# [Opel Astra G]
+vehicles.0070 = Опел Астра G „Со нова лимарија“
+
+# [Opel Corsa C]
+vehicles.0071 = Опел Корса „Прва кола на ќерката“
+
+# [Opel Zafira Familijarna]
+vehicles.0072 = Опел Зафира „Седум седишта, пет деца“
+
+# [Renault Megane Scenic]
+vehicles.0073 = Рено Сценик „Чека делови од Бугарија“
+
+# [Peugeot 206]
+vehicles.0074 = Пежо 206 „Светлото за мотор секогаш свети“
+
+# [Peugeot 307 SW]
+vehicles.0075 = Пежо 307 Караван
+
+# [Citroen Berlingo]
+vehicles.0076 = Ситроен Берлинго „Мајстор на повик“
+
+# [Fiat Stilo]
+vehicles.0077 = Фиат Стило „Ретка птица“
+
+# [Fiat Multipla]
+vehicles.0078 = Фиат Мултипла „Најгрдата, најверната“
+
+# [Skoda Fabia]
+vehicles.0079 = Шкода Фабија „Од баба во Германија“
+
+# [Skoda Octavia Taksi]
+vehicles.0080 = Шкода Октавија Такси
+
+# [Seat Leon Kupra]
+vehicles.0081 = Сеат Леон „Купра, со дупнат ауспух“
+
+# [Hyundai Getz]
+vehicles.0082 = Хјундаи Гец „Не се расипува, не се продава“
+
+# [Toyota Yaris]
+vehicles.0083 = Тојота Јарис
+
+# [Ford Focus Karavan]
+vehicles.0084 = Форд Фокус Караван „Километражата е вратена“
+
+# [Ford Transit Shverc]
+vehicles.0085 = Форд Транзит „Шверц линија Скопје–Минхен“
+
+# [Volvo V70 Dedov]
+vehicles.0086 = Волво V70 „Дедото на сите кола“
+
+# [Golf Chetvorka Bez Registracija]
+vehicles.0087 = Голф Четворка „Регистрацијата истече лани“
+
+# [JSP Dvokatnik]
+vehicles.0088 = ЈСП двокатен автобус
+
+# [JSP Zglobni]
+vehicles.0089 = ЈСП зглобен автобус
+
+# --- module level · data `MK_PED` (40 texts) ---
+# used in: vehicles.py
+
+# [Chichko]
+vehicles.0090 = Чичко
+
+# [Baba]
+vehicles.0091 = Баба
+
+# [Biznismen]
+vehicles.0092 = Бизнисмен
+
+# [Student]
+vehicles.0093 = Студент
+
+# [Navivach]
+vehicles.0094 = Навивач
+
+# [Dete]
+vehicles.0095 = Дете
+
+# [Rabotnik]
+vehicles.0096 = Работник
+
+# [Devojka]
+vehicles.0097 = Девојка
+
+# [Buregdzija]
+vehicles.0098 = Бурегџија
+
+# [Ti]
+vehicles.0099 = Ти
+
+# [Pandur]
+vehicles.0100 = Пандур
+
+# [Parkingar]
+vehicles.0101 = Паркинг-чувар
+
+# [Pop]
+vehicles.0102 = Поп
+
+# [Hipster]
+vehicles.0103 = Хипстер
+
+# [Influenser]
+vehicles.0104 = Инфлуенсер
+
+# [Telefonash]
+vehicles.0105 = Со телефон
+
+# [Penzioner]
+vehicles.0106 = Пензионер
+
+# [Kafana Chicko]
+vehicles.0107 = Кафеански чичко
+
+# [Turist]
+vehicles.0108 = Турист
+
+# [Gastarbajter]
+vehicles.0109 = Гастарбајтер
+
+# [Majka so Kolichka]
+vehicles.0110 = Мајка со количка
+
+# [Partiski Aktivist]
+vehicles.0111 = Партиски активист
+
+# [Advokat]
+vehicles.0112 = Адвокат
+
+# [Teretana Brat]
+vehicles.0113 = Теретанец
+
+# [Kiosk Chika]
+vehicles.0114 = Продавач од киоск
+
+# [Ribar]
+vehicles.0115 = Рибар
+
+# [Golabar]
+vehicles.0116 = Гулабар
+
+# [Komunalec]
+vehicles.0117 = Комунален инспектор
+
+# [Nevesta]
+vehicles.0118 = Невеста
+
+# [Dostavuvach]
+vehicles.0119 = Доставувач
+
+# [Velosipedist]
+vehicles.0120 = Велосипедист
+
+# [Dedo na Kolo]
+vehicles.0121 = Дедо на велосипед
+
+# [Moped Tomos]
+vehicles.0122 = Мопед Томос
+
+# [Glovo Skuter]
+vehicles.0123 = Скутер за достава
+
+# [Trotinet Dete]
+vehicles.0124 = Дете на тротинет
+
+# [E-Trotinet Hipster]
+vehicles.0125 = Хипстер на тротинет
+
+# [Skejter]
+vehicles.0126 = Скејтер
+
+# [Rolerash]
+vehicles.0127 = Ролер
+
+# [Kocija]
+vehicles.0128 = Кочијаш
+
+# [Jogger]
+vehicles.0129 = Џогер
+
+# --- module level · data `MK_LINES` (116 texts) ---
+# used in: vehicles.py
+
+# [Chichko]
+vehicles.0130 = Ех, кафе би ми дошло добро.
+vehicles.0131 = Пазарот е скап, брате.
+
+# [Baba]
+vehicles.0132 = Внук ми не ја носи кесата!
+vehicles.0133 = Не во моево време, бре!
+vehicles.0134 = Ајварот не се купува, се прави!
+
+# [Biznismen]
+vehicles.0135 = Имам состанок, бре!
+vehicles.0136 = Времето е пари.
+vehicles.0137 = Каде ми е такситото?
+
+# [Student]
+vehicles.0138 = Утре имам испит...
+vehicles.0139 = Нема Wi-Fi, брате.
+vehicles.0140 = Ајде на кафе пред предавање.
+
+# [Navivach]
+vehicles.0141 = ВАРДАР! ВАРДАР!
+vehicles.0142 = Ајде, Вардаре!
+vehicles.0143 = Судијата е купен!
+
+# [Dete]
+vehicles.0144 = Мамо, бурек!
+vehicles.0145 = Ајде да трчаме!
+vehicles.0146 = Гледај, кола!
+
+# [Rabotnik]
+vehicles.0147 = Пауза е до десет.
+vehicles.0148 = Оваа дупка ја копав вчера.
+vehicles.0149 = Не ми смета, работам!
+
+# [Devojka]
+vehicles.0150 = Ајде бре, доцнам.
+vehicles.0151 = Каде е ова кафе?
+vehicles.0152 = Што си толку брз, бре!
+
+# [Buregdzija]
+vehicles.0153 = Бурек врел! Врел бурек!
+vehicles.0154 = Имам и со сирење, и со месо!
+vehicles.0155 = Јогурт бесплатно до десет!
+
+# [Pandur]
+vehicles.0156 = Документи, бре!
+vehicles.0157 = Паркирањето е забрането. Освен за мене.
+vehicles.0158 = Нема казна... ако има бурек.
+
+# [Parkingar]
+vehicles.0159 = Дај 50 денари, бре!
+vehicles.0160 = Ова е мое место, ортак.
+vehicles.0161 = Има место. За 200.
+
+# [Pop]
+vehicles.0162 = Бог да прости. Дај донација.
+vehicles.0163 = Амин. Паркингот е грев.
+vehicles.0164 = Светецот ти помага, не GPS.
+
+# [Hipster]
+vehicles.0165 = Ова кафе е премногу мејнстрим.
+vehicles.0166 = Морам да имам Wi-Fi.
+vehicles.0167 = Брате, ова е винтиџ.
+
+# [Influenser]
+vehicles.0168 = Ајде, лајкни бре!
+vehicles.0169 = Денешна дестинација: Плоштад!
+vehicles.0170 = Не гледај, снимам!
+
+# [Telefonash]
+vehicles.0171 = Секунда, пишувам...
+vehicles.0172 = Гледам, гледам... (не гледам).
+vehicles.0173 = Ај, не ме туркај, бре!
+
+# [Penzioner]
+vehicles.0174 = Во моево време...
+vehicles.0175 = Ова не е Југославија.
+vehicles.0176 = Пензијата не стигнува ни за кафе.
+
+# [Kafana Chicko]
+vehicles.0177 = Ортак, седни на кафе.
+vehicles.0178 = Ракија пред ручек е здравје.
+vehicles.0179 = Сè време имаме, бре.
+
+# [Turist]
+vehicles.0180 = Каде е Скопје 2014?!
+vehicles.0181 = И ова е статуа?
+vehicles.0182 = Зошто толку многу статуи?
+
+# [Gastarbajter]
+vehicles.0183 = Во Германија е поинаку.
+vehicles.0184 = Овде сè е евтино!
+vehicles.0185 = Мерцедесот остана дома.
+
+# [Majka so Kolichka]
+vehicles.0186 = Не вози брзо, има бебе!
+vehicles.0187 = Полека, бре, лудак!
+vehicles.0188 = Тротоарот не е патиште!
+
+# [Partiski Aktivist]
+vehicles.0189 = Гласај за нас! Има бурек!
+vehicles.0190 = Ветуваме сè. Сè!
+vehicles.0191 = Мостот ќе го изградиме... пак.
+
+# [Advokat]
+vehicles.0192 = Имам врска.
+vehicles.0193 = Ќе те тужам, бре!
+vehicles.0194 = Без адвокат не зборувам.
+
+# [Teretana Brat]
+vehicles.0195 = Сила, бре!
+vehicles.0196 = Протеинот е живот.
+vehicles.0197 = Не е дебело, е маса.
+
+# [Kiosk Chika]
+vehicles.0198 = Цигари, весници, лото!
+vehicles.0199 = Добитна комбинација, само кај мене!
+vehicles.0200 = Нема кусур, бре.
+
+# [Ribar]
+vehicles.0201 = Тука има риба... тврдат.
+vehicles.0202 = Вардар е чист. Скоро.
+vehicles.0203 = Не ми ги плаши рибите!
+
+# [Golabar]
+vehicles.0204 = Гу-гу, мили мои.
+vehicles.0205 = Гулабите ги знаат сите.
+vehicles.0206 = Плоштадот е нивни.
+
+# [Komunalec]
+vehicles.0207 = Казна! 5000 денари.
+vehicles.0208 = Имате ли дозвола за ова дишење?
+vehicles.0209 = Пријави, ќе гледаме.
+
+# [Nevesta]
+vehicles.0210 = Здраво за младоженецот!
+vehicles.0211 = Каде е кумот, бре?!
+vehicles.0212 = Фотограф, брзо!
+
+# [Dostavuvach]
+vehicles.0213 = Достава за 30 минути, гарантирано!
+vehicles.0214 = Каде е влезот? Пак.
+vehicles.0215 = Бурекот е студен, грев мој.
+
+# [Velosipedist]
+vehicles.0216 = Ѕвонче, бре! Ѕвонче!
+vehicles.0217 = Има ли велоалеја? Нема.
+vehicles.0218 = Ајде, на тротоар, бре!
+
+# [Dedo na Kolo]
+vehicles.0219 = Овој велосипед е од 1974.
+vehicles.0220 = Не ми треба бензин, бре.
+vehicles.0221 = Ѕвонче нема, има глас!
+
+# [Moped Tomos]
+vehicles.0222 = Без кацига, без фрка!
+vehicles.0223 = Томос живее вечно!
+vehicles.0224 = Брм-брм, дај пат!
+
+# [Glovo Skuter]
+vehicles.0225 = Нарачка на Плоштад, брзо!
+vehicles.0226 = Пет ѕвезди или ништо!
+vehicles.0227 = Бурекот е топол... беше.
+
+# [Trotinet Dete]
+vehicles.0228 = Возам брзо како тато!
+vehicles.0229 = Мамо, гледај, без раце!
+vehicles.0230 = Ајде, стигни ме!
+
+# [E-Trotinet Hipster]
+vehicles.0231 = Еко-мобилност, брате.
+vehicles.0232 = Без паркирање, без фрка.
+vehicles.0233 = Батеријата ми е 3%.
+
+# [Skejter]
+vehicles.0234 = Кикфлип! (скоро)
+vehicles.0235 = Ова е парк, не е тротоар.
+vehicles.0236 = Внимавај, паѓам!
+
+# [Rolerash]
+vehicles.0237 = Да ги имав сопирачките...
+vehicles.0238 = Ај, пази се, немам стоп!
+vehicles.0239 = Ретро е крал.
+
+# [Kocija]
+vehicles.0240 = Ајде, Шаро, ајде!
+vehicles.0241 = Коњот не троши гориво.
+vehicles.0242 = Свежа зелка, свежа!
+
+# [Jogger]
+vehicles.0243 = Петти круг, петти!
+vehicles.0244 = Не зборувај, трчам.
+vehicles.0245 = Овој воздух е... загаден.
+
+# --- module level · data `KIOSK_MENU` (4 texts) ---
+# used in: actors.py > Sim.buy, hud.py > Hud._menu
+
+vehicles.0246 = Бурек со јогурт
+vehicles.0247 = Тулумба
+vehicles.0248 = Ќебапи
+vehicles.0249 = Сендвич со ајвар
+
+#=============================================================================
+# SECTION: src/actors.py
+#   Simulation: car physics with damage, traffic, pedestrians, on-foot play, hijacking, pickups.
+#=============================================================================
+
+# --- module level · data `WEAPONS` (6 texts) ---
+# used in: actors.py > Sim._shoot, actors.py > Sim._spawn_weapons, actors.py > Sim.attack, actors.py > Sim.update, actors.py > Walker.give, hud.py > Hud.draw …
+# code note: weapons: key -> (Macedonian name, seconds between shots, damage, pellets, spread rad, range m, ammo per pickup)
+
+# [pistol]
+actors.0001 = Пиштол
+
+# [uzi]
+actors.0002 = Узи
+
+# [shotgun]
+actors.0003 = Пумпарица
+
+# [kalash]
+actors.0004 = Калаш
+
+# [bat]
+actors.0005 = Палка
+
+# [zolja]
+actors.0006 = Зоља
+
+# --- module level · data `PLAYER_NAME` (1 texts) ---
+# used in: actors.py > Sim.__init__
+
+actors.0007 = Црвена молња
+
+# --- function/class `Peds.update` (4 texts) ---
+# called from: actors.py > Sim.update, gl3d.py > _ped_special, main.py > main, main.py > main.apply_cfg, main.py > main.handle_places, savegame.py > restore …
+
+# [shown via rng.choice(…)]
+actors.0008 = Бегај бре, бегај!
+actors.0009 = Само да те фатам некогаш...
+actors.0010 = Ај, нема ти фајде да бегаш!
+actors.0011 = Ќе се видиме пак!
+
+#=============================================================================
+# SECTION: src/transit.py
+#   ЈСП city buses on the real lines from OpenStreetMap (data/osm/transit.json, written by the Geofabrik download). Each line's ways are chained into one polyline; 
+#=============================================================================
+
+# --- function/class `Line.__init__` · data `name` (2 texts) ---
+# called from: settings.py > Settings.__init__, splash3d.py > Splash3D.__init__, net.py > Fail.__init__
+
+# [shown via (rec.get('name') or '').replace(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+transit.0001 = Насока:
+
+# [shown via (rec.get('name') or '').replace(TXT('tra(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+transit.0002 = Насока
+
+# --- function/class `Line.__init__` (1 texts) ---
+# called from: settings.py > Settings.__init__, splash3d.py > Splash3D.__init__, net.py > Fail.__init__
+
+transit.0003 = \sдо\s
+
+# --- function/class `Line.__init__` · data `self.dest` (1 texts) ---
+# called from: settings.py > Settings.__init__, splash3d.py > Splash3D.__init__, net.py > Fail.__init__
+
+transit.0004 = Центар
+
+# --- function/class `load` (1 texts) ---
+# called from: main.py > main, main.py > plan_needs, menu.py > pick_character, menu.py > run, poi_vendors.py > _cache, poi_vendors.py > _sub …
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+transit.0005 = јсп
+
+# --- function/class `Transit._spawn` · data `b.name` (1 texts) ---
+# called from: transit.py > Transit.update
+
+# sentence: ЈСП ⟨f'{ln.ref} → {ln.dest}'⟩
+transit.0006 = ЈСП\s
+
+# --- function/class `Transit._drive` (2 texts) ---
+# purpose: Pure pursuit along the line, slowing for curves and stops; physics does the rest.
+# called from: transit.py > Transit.update
+
+# [shown via self.sim.ev(…) · argument `text`]
+# sentence: Линија ⟨f'{ln.ref} – {nm}.'⟩
+transit.0007 = Линија\s
+
+# [shown via self.sim.ev(…) · argument `who`]
+transit.0008 = ЈСП
+
+#=============================================================================
+# SECTION: src/services.py
+#   Emergency services: an ambulance drives to a run-over / dead person (or the player) and revives them, a fire engine drives to a burning or burnt-out car and put
+#=============================================================================
+
+# --- function/class `Services._step` (16 texts) ---
+# called from: services.py > Services.update
+
+# [shown via self.rng.choice(…)]
+services.0001 = Брза помош! Место!
+services.0002 = Тргнете се!
+services.0003 = Има ли пулс?
+
+# [shown via sim.ev(…) · argument `who`]
+services.0004 = Брза помош
+
+# [shown via self.rng.choice(…)]
+services.0005 = Пожар! Тргнете се!
+services.0006 = Водата е на пат!
+services.0007 = Гаси го, брате!
+
+# [shown via sim.ev(…) · argument `who`]
+services.0008 = Пожарникар
+
+# [shown via self.rng.choice(…)]
+services.0009 = Еден, два, три, четири...
+services.0010 = Дишај, брате, дишај!
+services.0011 = Не оди никаде, држи се!
+
+# [shown via sim.ev(…) · argument `who`]
+services.0012 = Брза помош
+
+# [shown via self.rng.choice(…)]
+services.0013 = Жив е! Ајде, стани.
+services.0014 = Пулсот е тука. Бурекот ќе го врати.
+services.0015 = Нема фрка, ќе поживее.
+
+# [shown via sim.ev(…) · argument `who`]
+services.0016 = Брза помош
+
+#=============================================================================
+# SECTION: src/radio.py
+#   Car radio: plays whatever the user drops into the music/ folder. Stations = sub-folders of music/ (loose files are split into a few stations). Every station "ch
+#=============================================================================
+
+# --- module level · data `NAMES` (7 texts) ---
+# used in: actors.py, main.py > main, radio.py > scan, showcase.py > Showcase.draw, splash3d.py > Splash3D._draw3d
+
+radio.0001 = Радио Чаршија
+radio.0002 = Радио Вардар
+radio.0003 = Радио Кале
+radio.0004 = Радио Каменик
+radio.0005 = Радио Треска
+radio.0006 = Радио Водно
+radio.0007 = Радио Таксист
+
+# --- module level · data `HINT` (1 texts) ---
+# used in: radio.py > Radio.__init__
+
+radio.0008 = Тука стави своја музика (mp3, ogg, wav, flac) – играта ја вчитува целата.\nPut your own music here (mp3, ogg, wav, flac; m4a/aac/opus are not supported by the engine).\nEvery sub-folder becomes a radio station named after the folder; loose files are shared out between a few stations.\nIn a vehicle: Q / E (or , / .) change station, the last step is radio off.\n
+
+# --- function/class `Radio.rescan` · data `self.hint` (1 texts) ---
+# called from: radio.py > Radio.__init__, radio.py > Radio._collect, radio.py > Radio.step, radio.py > Radio.update
+
+radio.0009 = Радио: тишина – ставај музика во папката music
+
+# --- function/class `Radio.label` (2 texts) ---
+# purpose: Persistent HUD line for the current station.
+# called from: bake.py > bake_overview.pass_, font.py > button, hud.py > Hud.draw, main.py > main, menu.py > Row.__init__, menu.py > _layout …
+
+radio.0010 = Радио: исклучено   [Q/E]
+
+# sentence: Радио: ⟨f'{nm}'⟩⟨f' – {self.now}' if self.now e⟩ [Q/E]
+radio.0011 = Радио:\s
+
+# --- function/class `Radio.step` (2 texts) ---
+# purpose: Change station by d (wraps, with an 'off' slot at the end). Returns a banner text.
+# called from: bake.py > bake_overview.pass_, gfx.py > disc, main.py > main, menu.py > run, render.py > Renderer._overview, build_world.py > main …
+
+radio.0012 = Радио: исклучено
+
+# sentence: Радио: ⟨self.stations[self.sel][0]⟩
+radio.0013 = Радио:\s
+
+#=============================================================================
+# SECTION: src/speech.py
+#   Procedural Macedonian-ish speech: a small formant synthesiser driven by the Latin-script text the game shows. Text -> phoneme list (letters / digraphs map one-t
+#=============================================================================
+
+# --- module level · data `_FOLD` (2 texts) ---
+# used in: speech.py > _parse, speech.py > latin_to_mk
+
+# [shown via str.maketrans(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0001 = ѓ
+
+# [shown via str.maketrans(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0002 = ќ
+
+# --- module level · data `_C2L` (33 texts) ---
+# used in: speech.py > cyr_to_latin
+# code note: Cyrillic (the game's own script) -> the Latin spelling the formant synthesiser works with
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0003 = а
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0004 = б
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0005 = в
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0006 = г
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0007 = д
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0008 = ѓ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0009 = е
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0010 = ѐ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0011 = ж
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0012 = з
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0013 = ѕ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0014 = и
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0015 = ѝ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0016 = ј
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0017 = к
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0018 = л
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0019 = љ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0020 = м
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0021 = н
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0022 = њ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0023 = о
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0024 = п
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0025 = р
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0026 = с
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0027 = т
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0028 = ќ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0029 = у
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0030 = ф
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0031 = х
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0032 = ц
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0033 = ч
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0034 = џ
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0035 = ш
+
+# --- module level · data `_FEMALE` (17 texts) ---
+# used in: speech.py > profile
+# code note: --- who speaks: gender, age and temper decide pitch / tempo / loudness / roughness (names are the ones the game shows)
+
+speech.0036 = баба
+speech.0037 = мајка
+speech.0038 = девојка
+speech.0039 = невеста
+speech.0040 = инфлуенсерка
+speech.0041 = киоск
+speech.0042 = маца
+speech.0043 = теткица
+speech.0044 = туристка
+speech.0045 = продавачка
+speech.0046 = дама
+speech.0047 = комшика
+speech.0048 = студентка
+speech.0049 = фитка
+speech.0050 = шмизла
+speech.0051 = административка
+speech.0052 = наставничка
+
+# --- module level · data `_CHILD` (3 texts) ---
+# used in: speech.py > profile
+
+speech.0053 = дете
+speech.0054 = мали
+speech.0055 = палавко
+
+# --- module level · data `_ROUGH` (28 texts) ---
+# used in: speech.py > profile
+
+speech.0056 = чичко
+speech.0057 = кумплунг
+speech.0058 = работник
+speech.0059 = пандур
+speech.0060 = навивач
+speech.0061 = теретанец
+speech.0062 = рибар
+speech.0063 = дедо
+speech.0064 = кочијаш
+speech.0065 = гастарбајтер
+speech.0066 = паркинг
+speech.0067 = комунален
+speech.0068 = мафија
+speech.0069 = таксист
+speech.0070 = бизнисмен
+speech.0071 = бурегџија
+speech.0072 = скејтер
+speech.0073 = доставувач
+speech.0074 = велосипедист
+speech.0075 = пензионер
+speech.0076 = џогер
+speech.0077 = ролер
+speech.0078 = стојан
+speech.0079 = билдер
+speech.0080 = војник
+speech.0081 = бурек-мајстор
+speech.0082 = боза-мајстор
+speech.0083 = средношколец
+
+# --- module level · data `_SOFT` (18 texts) ---
+# used in: fx.py > Particles.draw, speech.py > profile
+
+speech.0084 = поп
+speech.0085 = студент
+speech.0086 = хипстер
+speech.0087 = инфлуенс
+speech.0088 = доктор
+speech.0089 = девојка
+speech.0090 = невеста
+speech.0091 = мајка
+speech.0092 = теткица
+speech.0093 = туристка
+speech.0094 = водич
+speech.0095 = маца
+speech.0096 = адвокат
+speech.0097 = голубар
+speech.0098 = гулабар
+speech.0099 = фитка
+speech.0100 = шмизла
+speech.0101 = административка
+
+# --- module level · data `_OLD` (7 texts) ---
+# used in: speech.py > profile
+
+speech.0102 = баба
+speech.0103 = дедо
+speech.0104 = пензионер
+speech.0105 = чичко
+speech.0106 = поп
+speech.0107 = кафеански
+speech.0108 = боза-мајстор
+
+# --- function/class `profile` (2 texts) ---
+# purpose: -> dict: gender 'f'/'m'/'c', k pitch factor of the (female) Suze voice, rate delta, vol, rough 0..1, soft 0..1, vib.
+# called from: speech.py > SuzeVoice.synth, speech.py > voice_for
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0109 = баба
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0110 = теткица
+
+# --- module level · data `_MK_DI` (10 texts) ---
+# used in: speech.py > latin_to_mk
+# code note: ----------------------------------------------------------------------------------- Suze (RHVoice) voice
+
+speech.0111 = џ
+speech.0112 = ѕ
+speech.0113 = љ
+speech.0114 = њ
+speech.0115 = ѓ
+speech.0116 = ќ
+speech.0117 = ш
+speech.0118 = ч
+speech.0119 = ж
+speech.0120 = ѓ
+
+# --- module level · data `_MK_1` (26 texts) ---
+# used in: speech.py > latin_to_mk
+
+# [a]
+speech.0121 = а
+
+# [b]
+speech.0122 = б
+
+# [c]
+speech.0123 = ц
+
+# [d]
+speech.0124 = д
+
+# [e]
+speech.0125 = е
+
+# [f]
+speech.0126 = ф
+
+# [g]
+speech.0127 = г
+
+# [h]
+speech.0128 = х
+
+# [i]
+speech.0129 = и
+
+# [j]
+speech.0130 = ј
+
+# [k]
+speech.0131 = к
+
+# [l]
+speech.0132 = л
+
+# [m]
+speech.0133 = м
+
+# [n]
+speech.0134 = н
+
+# [o]
+speech.0135 = о
+
+# [p]
+speech.0136 = п
+
+# [r]
+speech.0137 = р
+
+# [s]
+speech.0138 = с
+
+# [t]
+speech.0139 = т
+
+# [u]
+speech.0140 = у
+
+# [v]
+speech.0141 = в
+
+# [z]
+speech.0142 = з
+
+# [q]
+speech.0143 = к
+
+# [w]
+speech.0144 = в
+
+# [x]
+speech.0145 = кс
+
+# [y]
+speech.0146 = и
+
+# --- function/class `latin_to_mk` (4 texts) ---
+# purpose: Latin-script Macedonian (as the game writes it) -> Cyrillic, which the neural model expects.
+
+# [shown via any(…)]
+# code note: already Cyrillic: keep letters and pauses
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0147 = Ѐ
+
+# [shown via any(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0148 = ӿ
+
+# [shown via ''.join(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0149 = а
+
+# [shown via ''.join(…)]
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+speech.0150 = џ
+
+# --- function/class `SuzeVoice.load` · data `(self.state, self.note)` (3 texts) ---
+# purpose: Call on the thread that will synthesise (COM is per thread).
+# called from: main.py > main, main.py > plan_needs, menu.py > pick_character, menu.py > run, poi_vendors.py > _cache, poi_vendors.py > _sub …
+
+speech.0151 = Сузе не е инсталирана - стартувај run.bat повторно
+speech.0152 = Сузе (RHVoice) е подготвена
+
+# sentence: Сузе не работи: ⟨f'{str(e)[:80]}'⟩
+speech.0153 = Сузе не работи:\s
+
+# --- module level · data `(pcm, sr)` (1 texts) ---
+# used in: audio.py > Audio.speak, audio.py > _save, radio.py > _static, radio.py > cut_fragment, speech.py, speech.py > SpeechWorker.request
+
+# [shown via sv.synth(…)]
+speech.0154 = Добредојде во Скопје, брате! Ајде, вози.

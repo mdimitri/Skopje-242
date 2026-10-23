@@ -174,7 +174,7 @@ class Pois:
         if self.state is not None or self.cur is None or sim.walker is None:
             return
         vt, menu = self.menu_of(self.cur)
-        title = f"{self.cur[3]}  ·  {vt or TITLES.get(self.cur[2], 'Место')}"
+        title = f"{self.cur[3]}  ·  {vt or TITLES.get(self.cur[2], TXT("poi.0252"))}"
         w, h = 470, 44 + 28 * len(menu)
         x, y = sw // 2 - w // 2, sh - h - 150
         rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.08, 6, rl.Color(10, 10, 14, 215))

@@ -1,6 +1,0 @@
-# Macedonian text of src/fx.py
-# Format: key = text   (see text/README.md)
-
-
-## draw
-fx.0001 = \sден.

@@ -1,0 +1,275 @@
+##############################################################################
+#  8. TOOLS: poster captions, junk/furniture names, radio fetcher
+##############################################################################
+#
+# CONTAINS: text used by the build tools (posters, street junk objects baked into the world, radio station list)
+#
+# HOW TO READ THIS FILE (full rules: text/README.md)
+#   - Only edit the text AFTER " = ". Never change the key before it (e.g. talk.0042).
+#   - Comment lines (starting with #) tell you where the text appears in the game.
+#   - Keep placeholders such as {name}, {}, %s, %d exactly as they are.
+#   - A line marked "WARNING: lookup" is also compared with other data by the code:
+#     do not reword it without asking the developer.
+#   - "sentence:" shows how separate fragments are glued into one message in the game
+#     (the part in angle brackets is a number/name inserted by the code).
+
+
+#=============================================================================
+# SECTION: tools/make_posters.py
+#   Draws the loading-screen posters (flat retro style, Pillow only) and writes assets/posters/posters.json. Run once by the developer: python tools/make_posters.py
+#=============================================================================
+
+# --- function/class `p_lions` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via speech(…)]
+make_posters_tool.0001 = Хакуна матата!
+
+# --- function/class `p_warrior` (2 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0002 = Воин на коњ
+make_posters_tool.0003 = (и сите знаат кој е)
+
+# --- function/class `p_smog` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0004 = ВИДЛИВОСТ: 20 м
+
+# --- function/class `p_burek` (2 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0005 = бурек
+make_posters_tool.0006 = + јогурт
+
+# --- function/class `p_parking` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via speech(…)]
+make_posters_tool.0007 = Само пет минути!
+
+# --- function/class `p_tavce` (2 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0008 = ПЛАНИРАНО: 20 мин
+make_posters_tool.0009 = ГОТОВО: 20 мин
+
+# --- function/class `p_cross` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0010 = Милениумски крст
+
+# --- function/class `p_ajvar` (3 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0011 = ајвар
+make_posters_tool.0012 = есен → пролет
+make_posters_tool.0013 = ветувања → ∞
+
+# --- function/class `p_bridge` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0014 = XV век
+
+# --- function/class `p_pigeon` (2 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0015 = ГРАДЕЖНА ДОЗВОЛА
+make_posters_tool.0016 = не е потребна
+
+# --- function/class `p_permit` (2 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0017 = ГРАДЕЖНА ДОЗВОЛА
+make_posters_tool.0018 = ВО ТЕК
+
+# --- function/class `p_rush` (1 texts) ---
+# called from: make_posters.py
+
+# [shown via p.text(…)]
+make_posters_tool.0019 = ШПИЦ
+
+# --- module level · data `POSTERS` (17 texts) ---
+# used in: make_posters.py > main
+# code note: (file, drawing function, Macedonian caption = the joke)
+
+make_posters_tool.0020 = Часовникот на старата железничка станица во Скопје е запрен на 5:17 од 1963 година. Градежните кранови, за разлика од него, не застануваат.
+make_posters_tool.0021 = Лавовите на мостот ги чекаат Тимон и Пумба. Хакуна матата, ортак!
+make_posters_tool.0022 = Ајде бре, не прашувај кој е – официјално тоа е „Воин на коњ“.
+make_posters_tool.0023 = Зимата во Скопје: Водно постои, ветуваме – само не се гледа од смогот.
+make_posters_tool.0024 = Бурек без јогурт е како Вардар без Камен мост – може, ама нема смисла.
+make_posters_tool.0025 = Од Кале се гледа целиот град – и сѐ што сѐ уште не е завршено.
+make_posters_tool.0026 = Вардар е единствениот во Скопје што секогаш тече по план.
+make_posters_tool.0027 = „Само пет минути!“ – последни зборови пред паркирање на тротоар.
+make_posters_tool.0028 = Едно кафе во Скопје трае колку градежен проект: подолго од планираното.
+make_posters_tool.0029 = Тавче гравче – националното јадење и единствениот проект што секогаш се завршува навреме.
+make_posters_tool.0030 = Милениумскиот крст на Водно се гледа од секаде – освен кога го крие смогот.
+make_posters_tool.0031 = Ајварот се вари наесен и трае до пролет. Ветувањата траат уште подолго.
+make_posters_tool.0032 = Камен мост е постар од сите наши планови заедно.
+make_posters_tool.0033 = Гулабите на Плоштад не бараат градежна дозвола. Едноставно се качуваат на статуата.
+make_posters_tool.0034 = Градежна дозвола: статус „во тек“ од памтивек.
+make_posters_tool.0035 = Во шпиц, најбрз во Скопје е пешакот.
+make_posters_tool.0036 = Скопје ноќе е тивко само додека не помине свадба со зурли и тапан.
+
+# --- function/class `title_poster` (2 texts) ---
+# called from: make_posters.py > main
+
+# [shown via p.text(…)]
+make_posters_tool.0037 = Скопје · Член 242
+make_posters_tool.0038 = одземање на моторно возило
+
+#=============================================================================
+# SECTION: tools/junk.py
+#   Junk, garbage and debris that pollute the city (round 10): 200+ named object types on pavements, in empty lots, by the containers and on flat roofs. Built from 
+#=============================================================================
+
+# --- module level · data `_BASE` (81 texts) ---
+# used in: junk.py
+
+junk_tool.0001 = картонска кутија
+junk_tool.0002 = кутии од банани
+junk_tool.0003 = пластична гајба
+junk_tool.0004 = гајби од пиво
+junk_tool.0005 = палета
+junk_tool.0006 = палети наредени
+junk_tool.0007 = кеси со ѓубре
+junk_tool.0008 = купче шут
+junk_tool.0009 = купче цигли
+junk_tool.0010 = купче песок
+junk_tool.0011 = стари гуми
+junk_tool.0012 = гума
+junk_tool.0013 = метално буре
+junk_tool.0014 = пластично буре
+junk_tool.0015 = ѓубриште-контејнер
+junk_tool.0016 = стар кауч
+junk_tool.0017 = фотелја
+junk_tool.0018 = пластичен стол
+junk_tool.0019 = дрвен стол
+junk_tool.0020 = маса од кафана
+junk_tool.0021 = кујнска маса
+junk_tool.0022 = фрижидер
+junk_tool.0023 = машина за перење
+junk_tool.0024 = шпорет
+junk_tool.0025 = бојлер
+junk_tool.0026 = стар телевизор
+junk_tool.0027 = монитор
+junk_tool.0028 = количка од маркет
+junk_tool.0029 = бебешка количка
+junk_tool.0030 = рачна количка
+junk_tool.0031 = сателитска антена
+junk_tool.0032 = мала сателитска
+junk_tool.0033 = ТВ антена
+junk_tool.0034 = рибја коска антена
+junk_tool.0035 = резервоар за вода
+junk_tool.0036 = соларен бојлер
+junk_tool.0037 = соларен панел
+junk_tool.0038 = гулабарник
+junk_tool.0039 = барака од лим
+junk_tool.0040 = кучешка куќичка
+junk_tool.0041 = сушилка за алишта
+junk_tool.0042 = велосипед без тркало
+junk_tool.0043 = стар мопед
+junk_tool.0044 = тротинет
+junk_tool.0045 = стара врата
+junk_tool.0046 = стар душек
+junk_tool.0047 = лимена табла
+junk_tool.0048 = стар тепих
+junk_tool.0049 = хауба од кола
+junk_tool.0050 = врата од кола
+junk_tool.0051 = стиропор
+junk_tool.0052 = цевки
+junk_tool.0053 = штици
+junk_tool.0054 = арматура
+junk_tool.0055 = бетонски столб
+junk_tool.0056 = чунак
+junk_tool.0057 = исушена новогодишна елка
+junk_tool.0058 = саксија со суво цвеќе
+junk_tool.0059 = стара WC шолја
+junk_tool.0060 = када
+junk_tool.0061 = напуштена Застава
+junk_tool.0062 = 'ржосан Голф
+junk_tool.0063 = скеле
+junk_tool.0064 = клима уред
+junk_tool.0065 = вентилатор на покрив
+junk_tool.0066 = оџак од печка
+junk_tool.0067 = вентилационен оџак
+junk_tool.0068 = падната билборд табла
+junk_tool.0069 = табла ПРОДАВАМ
+junk_tool.0070 = шишиња и лименки
+junk_tool.0071 = PET шишиња
+junk_tool.0072 = скршена гранка
+junk_tool.0073 = исечени гранки
+junk_tool.0074 = паднато стебло
+junk_tool.0075 = пенушка
+junk_tool.0076 = купче лисја
+junk_tool.0077 = купче суви лисја
+junk_tool.0078 = суви гранки
+junk_tool.0079 = исечени трупци
+junk_tool.0080 = расфрлани кеси
+junk_tool.0081 = расфрлани хартии
+
+# --- module level · data `_VARIANTS` (4 texts) ---
+# used in: junk.py
+
+junk_tool.0082 = \s(голем)
+junk_tool.0083 = \s(мал)
+junk_tool.0084 = \s(избледен)
+junk_tool.0085 = \s(изгорен)
+
+# --- module level (1 texts) ---
+
+# WARNING: lookup – this text is also compared/looked up by the code; do not reword without the developer
+junk_tool.0086 = \s(мал)
+
+#=============================================================================
+# SECTION: tools/fetch_radio.py
+#   Downloads freely licensed Macedonian music for the car radio from Wikimedia Commons. python tools/fetch_radio.py [--target 100] [--max-mb 12] [--list] * finds a
+#=============================================================================
+
+# --- module level · data `SEED_CATS` (4 texts) ---
+# used in: fetch_radio.py > main
+
+fetch_radio_tool.0001 = Македонска музика
+fetch_radio_tool.0002 = Македонски пејачи
+fetch_radio_tool.0003 = Македонски музичари
+fetch_radio_tool.0004 = Македонски пејачки
+
+# --- module level · data `SEARCHES` (8 texts) ---
+# used in: fetch_radio.py > main
+
+fetch_radio_tool.0005 = македонска музика filetype:audio
+fetch_radio_tool.0006 = македонски пејач filetype:audio
+fetch_radio_tool.0007 = македонска песна filetype:audio
+fetch_radio_tool.0008 = македонска народна музика filetype:audio
+fetch_radio_tool.0009 = македонски пејачи filetype:audio
+fetch_radio_tool.0010 = македонски музичари filetype:audio
+fetch_radio_tool.0011 = пејачка македонија filetype:audio
+fetch_radio_tool.0012 = македонско оро filetype:audio
+
+# --- module level · data `RELEVANT` (1 texts) ---
+# used in: fetch_radio.py > judge
+
+# [shown via re.compile(…)]
+fetch_radio_tool.0013 = пејач|музичар|македон|macedon|makedon|македон|skopje|скопје|ohrid|bitola|oro\\b|tose|proeski|kaliopi|vardar
+
+# --- module level · data `NOT_SONG` (1 texts) ---
+# used in: fetch_radio.py > ia_tracks, fetch_radio.py > judge, fetch_radio.py > main
+# code note: songs only: no speeches, interviews, field recordings, sound effects, anthems read aloud ...
+
+# [shown via re.compile(…)]
+fetch_radio_tool.0014 = speech|говор|interview|интервју|lecture|predavan|предавање|spoken|poem|poetry|поезија|reading|pronunciation|изговор|sound effect|sfx|ambien|field recording|noise|bird|ptic|bell|ѕвон|church|crowd|traffic|recording of|test tone|jingle|announcement|news|вести|radio show|podcast|wikipedia|spoken word|audiobook|anthem|химна|ringtone|alarm|siren
+
+# --- module level · data `SONG` (1 texts) ---
+# used in: fetch_radio.py > judge
+
+# [shown via re.compile(…)]
+fetch_radio_tool.0015 = song|песна|pesna|pop|поп|music|музик|singer|пејач|band|бенд|album|албум|single|сингл|vocal|chorus|melod|hit\\b|eurovision|евровизија|dance|track|cover|remix|ballad|rock|folk|oro|оро

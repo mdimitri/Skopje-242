@@ -1,7 +1,0 @@
-# Macedonian text of src/savegame.py
-# Format: key = text   (see text/README.md)
-
-
-## summary
-savegame.0001 = празно
-savegame.0002 = \sден.  \s

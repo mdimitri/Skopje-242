@@ -1,7 +1,0 @@
-# Macedonian text of src/showcase.py
-# Format: key = text   (see text/README.md)
-
-
-## (module level)
-showcase.0001 = ВОЗИЛА
-showcase.0002 = ЛИКОВИ
