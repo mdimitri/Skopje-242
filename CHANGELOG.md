@@ -2,7 +2,7 @@
 
 Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.jpg`), roads (`roads.jpg`), night headlights (`night.jpg`), weapons (`weapons.jpg`), POI shop menu (`poi.jpg`), selfie sky (`selfie.jpg`), driving, kiosk and Vardar, all from the real game at 1280x720.
 
-## v1.3 – walking, bumping, muffled car music, joined roads
+## v2.0 – walking, bumping, muffled car music, joined roads
 
 - **Walk animation:** longer strides, bigger leg and arm swing and a forward lean (strong when running) for the avatar and pedestrians, so the heading reads from above.
 - **Speech:** your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x, default 1x = as before).
@@ -11,7 +11,7 @@ Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.j
 - **Combat:** much more ammo per pickup; a swung bat also smashes props; animated score pop-ups (sparks, bigger and hotter numbers for bigger payouts).
 - **Roads (world version 12, rebuilds automatically):** roads that continue, bend, widen or narrow share one cross-section (same vertices, smooth width taper); pavements join into curved corners at junctions; tiny height offsets stop coplanar road pieces from z-fighting (flicker).
 
-## v1.3b – slang bible
+## v2.0 – slang bible
 
 - All pedestrian talk now draws on `docs/Skopje_slang_bible.txt` (421 terms): `src/bible_lines.py` has per-character-style lines (old, woman, kid, tough, posh, youth, sport, priest, vendor, cop) for idle, hit, panic, fight, KO and the bump escalation, plus topic pools, neighbourhood lines and extra lines for all 24 playable characters.
 - Language level 2 ("Без цензура") is now unhinged: much more and much harsher cursing, adapted to the character.
