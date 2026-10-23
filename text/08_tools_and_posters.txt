@@ -124,7 +124,7 @@ make_posters_tool.0036 = Скопје ноќе е тивко само додек
 # called from: make_posters.py > main
 
 # [shown via p.text(…)]
-make_posters_tool.0037 = Скопје · Член 242
+make_posters_tool.0037 = Скопје · 242
 make_posters_tool.0038 = одземање на моторно возило
 
 #=============================================================================

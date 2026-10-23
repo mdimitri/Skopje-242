@@ -158,7 +158,7 @@ menu.0057 = Не успеав да зачувам.
 # called from: actors.py > Walker.__init__, actors.py > Walker.update, gl3d.py > _phase, main.py > main, render.py > Renderer._gait, terrain.py > make_deck …
 
 # [shown via font.draw_text(…)]
-menu.0058 = СКОПЈЕ · ЧЛЕН 242
+menu.0058 = СКОПЈЕ · 242
 menu.0059 = Одземање на моторно возило
 menu.0060 = ВКЛ
 menu.0061 = ИСКЛ
@@ -358,8 +358,8 @@ main.0001 = : исклучено по повторени грешки (види 
 # called from: main.py, build_world.py, check_slang.py, fetch_extras.py, fetch_osm.py, fetch_pois.py …
 
 # [shown via rl.init_window(…)]
-main.0002 = Скопје · Член 242
-main.0003 = Скопје · Член 242
+main.0002 = Скопје · 242
+main.0003 = Скопје · 242
 
 # --- function/class `main.handle_events` (30 texts) ---
 # called from: main.py > main
@@ -586,7 +586,7 @@ fx.0001 = \sден.
 # --- module level · data `TITLE` (1 texts) ---
 # used in: poster.py > Posters.__init__, poster.py > Posters.title, ui.py > Loader.draw
 
-strings.0001 = СКОПЈЕ · ЧЛЕН 242
+strings.0001 = СКОПЈЕ · 242
 
 # --- module level · data `RADIO_DL` (1 texts) ---
 # used in: main.py > start_radio_fetch.reader
@@ -597,7 +597,7 @@ strings.0002 = Радио: {n}/{target} {title}
 # --- module level · data `TAGLINE` (1 texts) ---
 # used in: ui.py > Loader.__init__
 
-strings.0003 = Член 242: Одземање на моторно возило. Тој што противправно ќе одземе туѓо возило, ќе помине низ Скопје.
+strings.0003 = Одземање на моторно возило. Тој што противправно ќе одземе туѓо возило, ќе помине низ Скопје.
 
 # --- module level · data `L_TOTAL` (1 texts) ---
 # used in: ui.py > Loader.draw
