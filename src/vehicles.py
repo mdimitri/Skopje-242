@@ -4,7 +4,7 @@
 from texts import TXT
 _STYLE = {"hatch": (0.40, 0.95, 1.38), "sedan": (0.40, 0.98, 1.38), "taxi": (0.40, 0.98, 1.38), "mini": (0.38, 0.92, 1.36),
           "suv": (0.58, 1.10, 1.68), "van": (0.45, 1.00, 1.95), "pickup": (0.55, 1.10, 1.78), "bus": (0.50, 1.00, 3.10),
-          "wagon": (0.40, 0.97, 1.42), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
+          "bike": (0.0, 0.55, 1.05), "wagon": (0.40, 0.97, 1.42), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
 BLACK, WHITE_, SILVER = (30, 30, 34), (236, 236, 240), (190, 192, 198)
 
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
@@ -100,6 +100,11 @@ _V = [
     ("Golf Chetvorka Bez Registracija", "hatch", 4.15, 1.73, None, 5, None, ""),
     ("JSP Dvokatnik", "bus", 10.8, 2.55, 4.30, 0, (200, 32, 36), "jsp"),
     ("JSP Zglobni", "bus", 12.0, 2.55, 3.10, 0, (200, 32, 36), "jsp"),
+    # ---- two-wheelers: only ever got by knocking an NPC rider off (traffic weight 0)
+    ("Velosiped", "bike", 1.75, 0.55, 1.05, 0, (200, 40, 40), "bike"),
+    ("Moped Tomos", "bike", 1.80, 0.65, 1.10, 0, (210, 90, 30), "moped"),
+    ("Glovo Skuter", "bike", 1.85, 0.70, 1.10, 0, (255, 208, 0), "scooter"),
+    ("E-Trotinet", "bike", 1.20, 0.50, 1.05, 0, (30, 30, 34), "kick"),
 ]
 N = len(_V)
 IDS = [v[0] for v in _V]
@@ -129,6 +134,7 @@ N_COLORS = 16
 # name, speed multiplier, spawn weight, one-liners
 # какво гледа играчот (внатрешните имена горе остануваат за табелите со перформанси)
 MK_CAR = {
+    "Velosiped": TXT("vehicles.0300"), "Moped Tomos": TXT("vehicles.0301"), "Glovo Skuter": TXT("vehicles.0302"), "E-Trotinet": TXT("vehicles.0303"),
     "Zastava Yugo": TXT("vehicles.0001"), "Golf Dvojka": TXT("vehicles.0002"), "Kombi": TXT("vehicles.0003"), "Lada Niva": TXT("vehicles.0004"), "Mercedes 190": TXT("vehicles.0005"),
     "Taxi Zlatna Zolta": TXT("vehicles.0006"), "Gradski Avtobus": TXT("vehicles.0007"), "Fico": TXT("vehicles.0008"), "Pikap Tovarnik": TXT("vehicles.0009"),
     "Zastava 101 Skala": TXT("vehicles.0010"), "Zastava Koral": TXT("vehicles.0011"), "Lada Samara": TXT("vehicles.0012"), "Lada 1500": TXT("vehicles.0013"),
@@ -268,6 +274,11 @@ PED_COUNT = len(_P)
 PLAYER = 9
 RIDERS = {"Velosipedist", "Dedo na Kolo", "Moped Tomos", "Glovo Skuter", "Trotinet Dete", "E-Trotinet Hipster", "Skejter",
           "Rolerash", "Kocija"}
+# NPC riders you can knock off and ride away on: ped name -> two-wheeler vehicle name
+JACK_BIKE = {"Velosipedist": "Velosiped", "Dedo na Kolo": "Velosiped", "Moped Tomos": "Moped Tomos", "Glovo Skuter": "Glovo Skuter",
+             "E-Trotinet Hipster": "E-Trotinet"}
+JACK_KIND = {i: IDS.index(JACK_BIKE[n]) for i, n in enumerate(PED_IDS) if n in JACK_BIKE}
+BIKES = {i for i in range(N) if STYLE[i] == "bike"}
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility
 WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS]
 
@@ -275,7 +286,7 @@ WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDE
 _PERF_STYLE = {"hatch": (35, 10.5, 0.68, 9.5, 1.0), "sedan": (40, 12.0, 0.62, 9.5, 1.1), "taxi": (38, 11.0, 0.62, 9.5, 1.1),
                "mini": (28, 8.0, 0.75, 9.0, 0.7), "suv": (36, 10.0, 0.56, 8.5, 1.5), "van": (31, 8.0, 0.62, 8.5, 1.6),
                "pickup": (33, 9.0, 0.60, 8.5, 1.5), "bus": (24, 4.5, 0.66, 8.0, 5.0), "wagon": (36, 10.5, 0.60, 9.5, 1.2),
-               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5)}
+               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5), "bike": (9, 5.0, 0.95, 8.0, 0.2)}
 _PERF_NAME = {
     "Zastava Yugo": (29, 7.5), "Golf Dvojka": (37, 11), "Mercedes 190": (44, 13), "Fico": (24, 6, 0.80), "Zastava 101 Skala": (32, 9),
     "Zastava Koral": (30, 8.5), "Lada Samara": (33, 9), "Lada 1500": (32, 8.5), "Moskvich 412": (29, 7), "Trabant 601": (25, 5.5),
@@ -284,6 +295,7 @@ _PERF_NAME = {
     "BMW X5 Chorbadzija": (52, 15), "Mercedes 124 Taksist": (41, 11), "Mercedes S Mafijash": (52, 14), "Mercedes G Politichar": (40, 10, 0.5),
     "Tesla Elon": (58, 24, 0.66, 11), "Hummer Patriot": (38, 9, 0.45), "Cayenne od Germanija": (55, 18, 0.64, 11),
     "Range Rover Ortak": (46, 12), "Policiska Skoda": (48, 16, 0.66, 10.5), "Brza Pomosh": (40, 11), "Smart Sitnichka": (27, 7, 0.9),
+    "Moped Tomos": (17, 7.5, 0.90, 8.5, 0.3), "Glovo Skuter": (21, 9, 0.90, 9.0, 0.35), "E-Trotinet": (11, 6, 0.95, 8.0, 0.2),
     "Lada Niva": (32, 9, 0.6, 10), "Land Cruiser Lovec": (40, 10), "Pajak Vlechna Sluzhba": (34, 9),
 }
 PERF = []

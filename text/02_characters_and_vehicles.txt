@@ -668,6 +668,20 @@ vehicles.0243 = Петти круг, петти!
 vehicles.0244 = Не зборувај, трчам.
 vehicles.0245 = Овој воздух е... загаден.
 
+# --- module level · two-wheelers you can take off NPC riders (4 names, 6 shouts) ---
+# used in: vehicles.py (names), actors.py > Sim.try_enter (the shouts of a rider knocked off their bike)
+
+vehicles.0300 = Велосипед
+vehicles.0301 = Мопед Томос
+vehicles.0302 = Глово скутер
+vehicles.0303 = Е-тротинет
+vehicles.0310 = Бре, велосипедот ми го зеде!
+vehicles.0311 = Ај, мопедот ми го зеде!
+vehicles.0312 = Стој, бре, скутерот не е твој!
+vehicles.0313 = Ќе те пријавам, ѓубре едно!
+vehicles.0314 = Ма јас сум на нарачка, бре!
+vehicles.0315 = Аууу, грбот, грбот!
+
 # --- module level · data `KIOSK_MENU` (4 texts) ---
 # used in: actors.py > Sim.buy, hud.py > Hud._menu
 

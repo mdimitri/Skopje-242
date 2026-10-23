@@ -766,6 +766,11 @@ def main():
             elif kind == "stolen":
                 b = d["body"]
                 popups.add(TXT("main.0034"), b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
+            elif kind == "door" or kind == "door_shut":
+                aud.play("punch", 0.35 if kind == "door" else 0.7, 0.6 if kind == "door" else 0.75)
+            elif kind == "slam" or kind == "knock_off":
+                aud.play("punch", 0.9, 0.8)
+                particles.emit("c", d["x"], d["y"], 0.3, 0, 0, 1.2, 8, 0.3, 0.6, (150, 140, 120), 1.0, 0.6, 0.5)
             elif kind == "enter":
                 b = d["body"]
                 popups.add(b.name, b.x, b.y, 3.4, 1.8, (200, 240, 255), 20)

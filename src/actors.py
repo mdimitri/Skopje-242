@@ -77,6 +77,7 @@ class Body:
         self.roll = 0.0
         self.ignite = 0.0            # 0..1: heat soaked up from burning neighbours (1 -> catches fire)
         self.fire_lvl = 1.0          # flames left (the fire brigade brings it down to 0)
+        self.door = 0.0              # driver's door: 0 shut .. 1 wide open (carjack animation, drawn by the renderer)
 
     @property
     def speed(self):
@@ -468,6 +469,7 @@ class Ped:
         self.shirt = 0
         self.x = self.y = self.h = 0.0
         self.gz = None               # height of the surface they stand on (terrain or bridge deck)
+        self.ko_land = False         # thrown out of a car / off a bike: lands unconscious instead of dead
 
     @property
     def dead(self):
@@ -710,7 +712,11 @@ class Peds:
                 if p.mode == "air":
                     p.hy += p.hv * dt
                     p.hv -= 14.0 * dt
-                    if p.hy <= 0:
+                    if p.hy <= 0 and p.ko_land:
+                        p.hy, p.mode, p.t, p.ko_land = 0.0, "ko", rng.uniform(7.0, 11.0), False
+                        p.vx *= 0.3
+                        p.vy *= 0.3
+                    elif p.hy <= 0:
                         p.hy, p.mode = 0.0, "dead"
                         p.vx *= 0.4
                         p.vy *= 0.4
@@ -1213,6 +1219,7 @@ class Sim:
         self.respawn_t = 0.0
         self.pickups = []
         self.money = 250
+        self.jack = None                     # carjack in progress (see _start_jack)
         self.riding = None                   # the city bus you ride as a passenger (Ctrl takes it over)
         self.shots = projectiles.Projectiles(self)
         import chaos
@@ -1536,18 +1543,38 @@ class Sim:
             d = math.hypot(wk.x - c.x, wk.y - c.y)
             if d < 3.4 and d < bd:
                 best, bd, kind = c, d, "ai"
+        for p in self.peds.list:                                   # cyclists, mopeds, scooters
+            if p.mode in ("walk", "flee") and p.arch in vehicles.JACK_KIND:
+                d = math.hypot(wk.x - p.x, wk.y - p.y)
+                if d < 2.6 and d < bd:
+                    best, bd, kind = p, d, "rider"
         if best is None:
             return False
+        if getattr(self, "jack", None) is not None:
+            return False
+        if kind == "rider":
+            p = best
+            b = Body(p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], 0)
+            b.az = p.gz
+            self.bodies.append(b)
+            dx, dy = p.x - wk.x, p.y - wk.y
+            d = math.hypot(dx, dy) or 1.0
+            p.mode, p.t, p.hy, p.hv, p.ko_land = "air", 5.0, 0.4, 3.0, True   # shoved off: the bike stays, the rider flies
+            p.vx, p.vy = dx / d * 4.5, dy / d * 4.5
+            p.spin = 0.0
+            self.ev("shout", text=TXT("vehicles.%04d" % self.rng.randrange(310, 316)), x=p.x, y=p.y)
+            self.ev("knock_off", x=p.x, y=p.y)
+            self.stats["stolen"] += 1
+            self._start_jack(b, None, 0.55, True)
+            return True
         if kind == "ai":
             c = best
             b = self.traffic.make_body(c)
             self.traffic.cars.remove(c)
             self.bodies.append(b)
-            lx, ly = math.sin(b.h), -math.cos(b.h)
-            p = self.peds.eject(b.x + lx * 1.9, b.y + ly * 1.9, b.h + math.pi / 2, gz=b.az)
-            self.ev("shout", text=self.rng.choice(slang.DRIVER_RAGE), x=p.x, y=p.y)
             self.stats["stolen"] += 1
-            self.ev("stolen", body=b)
+            self._start_jack(b, "driver", 1.25)
+            return True
         elif getattr(b_ := best, "bus_line", None) and not b_.empty and getattr(self, "transit", None) is not None \
                 and any(bus.body is b_ for bus in self.transit.buses):
             self.riding = b_                                       # hop on as a passenger: the driver keeps driving
@@ -1563,7 +1590,69 @@ class Sim:
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
                 b.parked_idx = None
-            self.ev("enter", body=b)
+            self._start_jack(b, None, 0.5 if b.kind in vehicles.BIKES else 0.9)
+            return True
+        self._board(b)
+        return True
+
+    # carjack: the door swings open, the driver is slammed out onto the asphalt (out cold), you get in, the door shuts
+    def _start_jack(self, b, victim, dur, stolen=False):
+        wk = self.walker
+        b.empty, b.ctl = False, None
+        self.jack = {"b": b, "t": 0.0, "dur": dur, "victim": victim, "x0": wk.x, "y0": wk.y, "in": False,
+                     "door": b.kind not in vehicles.BIKES, "stolen": stolen or victim is not None}
+        if self.jack["door"]:
+            self.ev("door", body=b)
+
+    def _seat_point(self, b, out):
+        L, W = CIRC[b.kind][0], CIRC[b.kind][1]
+        lx, ly = math.sin(b.h), -math.cos(b.h)
+        fx, fy = math.cos(b.h), math.sin(b.h)
+        return b.x + lx * (W + out) + fx * L * 0.1, b.y + ly * (W + out) + fy * L * 0.1
+
+    def _tick_jack(self, dt):
+        j = self.jack
+        b, wk = j["b"], self.walker
+        if b not in self.bodies or not b.alive or (wk is None and not j["in"]) or (wk is not None and wk.health <= 0):
+            b.door, self.jack = 0.0, None
+            return
+        j["t"] += dt
+        t, T = j["t"], j["dur"]
+        if j["door"]:
+            if j["in"]:
+                b.door = max(0.0, b.door - dt / 0.3)
+                if b.door <= 0:
+                    self.ev("door_shut", body=b)
+                    self.jack = None
+                return
+            b.door = min(1.0, t / 0.35)
+        elif j["in"]:
+            self.jack = None
+            return
+        if j["victim"] == "driver" and t >= 0.38:                  # out you go
+            j["victim"] = None
+            lx, ly = math.sin(b.h), -math.cos(b.h)
+            sx, sy = self._seat_point(b, -0.2)
+            p = self.peds.eject(sx, sy, b.h + math.pi / 2, gz=b.az)
+            p.mode, p.t, p.hy, p.hv, p.ko_land = "air", 5.0, 0.7, 2.5, True
+            p.vx, p.vy = lx * 7.5, ly * 7.5
+            self.ev("shout", text=self.rng.choice(slang.DRIVER_RAGE), x=p.x, y=p.y)
+            self.ev("slam", x=p.x, y=p.y)
+        k = min(1.0, max(0.0, (t - (0.45 if j["door"] else 0.15)) / max(0.1, T - (0.45 if j["door"] else 0.15))))
+        tx, ty = self._seat_point(b, 0.35) if j["door"] else (b.x, b.y)
+        wk.x, wk.y = j["x0"] + (tx - j["x0"]) * k, j["y0"] + (ty - j["y0"]) * k
+        wk.vx = wk.vy = 0.0
+        if 0 < k < 1:
+            wk.moving = True
+            wk.anim += dt * 3.0
+            wk.h = math.atan2(ty - j["y0"], tx - j["x0"])
+        if t >= T:
+            j["in"] = True
+            wk.moving = False
+            self.ev("stolen" if j["stolen"] else "enter", body=b)
+            self._board(b)
+
+    def _board(self, b):
         if self.car is not None and self.car is not b:
             self.car.player_car = False
         self.car = b
@@ -1571,7 +1660,6 @@ class Sim:
         b.skid = None
         self.mode = "car"
         self.walker = None
-        return True
 
     def take_bus(self):
         """Ctrl while riding: throw the driver out and drive the bus yourself."""
@@ -1623,6 +1711,9 @@ class Sim:
         self.clock.update(dt)
         self.traffic.target = max(6, int(self.base_cars * self.clock.traffic * self.dens_traffic))
         self.peds.target = max(6, int(self.base_peds * self.clock.peds * self.dens_peds))
+        if getattr(self, "jack", None) is not None:              # the carjack plays out; the controls wait
+            self._tick_jack(dt)
+            inp = dict(inp, move=(0, 0), attack=False, jump=False)
         # ---------------- player
         if self.mode == "car" and getattr(self, "riding", None) is not None:
             if self.riding not in self.bodies or not self.riding.alive:

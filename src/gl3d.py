@@ -405,6 +405,56 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
         box(cx - 2.0, roof, 0, 1.6, 0.25, 1.4, (190, 192, 196))
 
 
+def _bike_parts(ex, body_c, A, box, quad, parts):
+    """Two-wheelers (x forward, y up, z right), no rider. ex = bike | moped | scooter | kick."""
+    dark, steel, tyre, hub = (36, 36, 40), (150, 152, 158), A((24, 24, 26)), A((170, 170, 176))
+    bc = tuple(body_c)
+
+    def wheel(x, r, wd):
+        v, c = _cyl(x, r, 0.0, r, wd, tyre, hub)
+        parts.append((v, c, False))
+
+    if ex == "bike":
+        wheel(0.62, 0.34, 0.05)
+        wheel(-0.62, 0.34, 0.05)
+        box(0.0, 0.58, 0, 1.0, 0.045, 0.045, bc)                  # top tube
+        box(-0.12, 0.34, 0, 0.95, 0.04, 0.04, bc)                 # down tube / chain stay
+        box(-0.3, 0.34, 0, 0.04, 0.34, 0.04, bc)                  # seat tube
+        box(0.46, 0.34, 0, 0.04, 0.30, 0.04, steel)               # fork
+        box(0.5, 0.88, 0, 0.05, 0.05, 0.5, dark)                  # handlebar
+        box(0.5, 0.64, 0, 0.04, 0.26, 0.04, steel)                # stem
+        box(-0.3, 0.86, 0, 0.26, 0.07, 0.12, dark)                # saddle
+        box(0.02, 0.28, 0, 0.18, 0.18, 0.05, steel)               # chainring
+        quad((0.66, 0.74, -0.06), (0, 0, 0.12), (0, 0.1, 0), (1, 0, 0), (255, 244, 180))
+    elif ex == "kick":
+        wheel(0.46, 0.14, 0.05)
+        wheel(-0.46, 0.14, 0.05)
+        box(0.0, 0.14, 0, 0.95, 0.07, 0.24, dark)                 # deck
+        box(0.44, 0.60, 0, 0.05, 0.9, 0.05, steel)                # column
+        box(0.44, 1.02, 0, 0.05, 0.05, 0.5, dark)                 # bars
+        box(-0.5, 0.22, 0, 0.18, 0.04, 0.2, bc)                   # brake plate
+        quad((0.48, 0.92, -0.06), (0, 0, 0.12), (0, 0.08, 0), (1, 0, 0), (255, 244, 180))
+    else:
+        mo = ex == "moped"
+        r = 0.27 if mo else 0.24
+        wheel(0.68, r, 0.1)
+        wheel(-0.68, r, 0.1)
+        box(-0.05, 0.28, 0, 1.0, 0.1, 0.34, dark)                 # floor / frame
+        box(-0.5, 0.55, 0, 0.65, 0.34, 0.3, bc)                   # rear body
+        box(0.5, 0.58, 0, 0.12, 0.55, 0.34, bc)                   # leg shield
+        box(0.0, 0.76 if mo else 0.7, 0, 0.58, 0.1, 0.26, dark)   # seat
+        box(0.55, 0.98, 0, 0.1, 0.07, 0.62, dark)                 # handlebar
+        box(0.62, 0.96, 0, 0.12, 0.14, 0.2, bc)                   # headlight housing
+        quad((0.685, 0.9, -0.08), (0, 0, 0.16), (0, 0.1, 0), (1, 0, 0), (255, 244, 180))
+        quad((-0.835, 0.55, -0.1), (0, 0, 0.2), (0, 0.1, 0), (-1, 0, 0), (210, 30, 30))
+        box(-0.82, 0.44, 0, 0.1, 0.12, 0.2, (236, 236, 230))      # plate
+        if mo:
+            box(0.0, 0.5, 0.26, 0.5, 0.2, 0.1, steel)              # engine cover
+        else:
+            box(-0.82, 0.84, 0, 0.3, 0.36, 0.38, bc)               # delivery box
+            box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
+
+
 def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
     """Vertices/colours of a car in local space (x forward, y up, z right); dents = [(lx, lz, nx, nz, mag)]."""
     kind = kind % V.N
@@ -439,6 +489,10 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
     def box(cx_, cy_, cz_, sx, sy, sz, col, deform=True, lst=None):
         for name, (v, n) in box_faces(cx_, cy_, cz_, sx, sy, sz).items():
             (parts if lst is None else lst).append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), deform))
+
+    if st == "bike":
+        _bike_parts(ex, body_c, A, box, quad, parts)
+        return _finish_arrays(parts, dents, burnt, belt)
 
     # ---- lower body
     def body_col(name, v, n):
@@ -574,6 +628,11 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)))
             parts.append((v, c, False))
 
+    return _finish_arrays(parts, dents, burnt, belt)
+
+
+def _finish_arrays(parts, dents, burnt, belt):
+    """Join the parts, push the dents in, scorch the paint."""
     pos = np.concatenate([p[0] for p in parts])
     col = np.concatenate([p[1] for p in parts]).astype(np.float32)
     deform = np.concatenate([np.full(len(p[0]), p[2]) for p in parts])
@@ -594,6 +653,37 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
     rgba[:, :3] = col
     rgba[:, 3] = 255
     return pos.astype(np.float32), np.zeros((len(pos), 2), np.float32), rgba
+
+
+def door_geom(kind):
+    """Driver's door: (hinge x, door length) in car-local space, from the cabin layout used by car_arrays."""
+    L = V.DIMS[kind][0]
+    cl_f, cx_f = _CAB[V.STYLE[kind]][:2]
+    cl, cx = L * cl_f, L * cx_f
+    front, rear = cx + cl * 0.30, cx - cl * 0.20
+    if V.STYLE[kind] in ("bus", "truck", "tractor", "pickup"):
+        rear = front - min(1.0, cl * 0.5)
+    return front, max(0.6, front - rear)
+
+
+def door_model(kind, color):
+    """The swinging door panel; hinge at the origin, panel along -x, outer face toward -z."""
+    L, W, y0, belt, roof = V.DIMS[kind]
+    _hx, dl = door_geom(kind)
+    fixed = V.FIXED[kind]
+    two = color >= 12 and fixed is None
+    ci = (color * 5 + 3) % 12 if two else color % 12
+    bc = (206, 36, 36) if color < 0 else (fixed if fixed else CAR_COLORS[ci])
+    H = (belt + 1.5 if V.STYLE[kind] == "truck" else roof) - belt
+    parts = []
+    for y_, h_, c_, t_ in ((y0 + 0.1, belt - y0 - 0.1, bc, 0.07), (belt, 0.75 * H, GLASS, 0.03), (belt + 0.75 * H, 0.05, bc, 0.05)):
+        for name, (v, n) in box_faces(-dl / 2, y_, 0, dl, h_, t_).items():
+            parts.append((v, np.tile(np.array(c_, np.float32) * _shade(np.array(n, np.float32)), (len(v), 1))))
+    pos = np.concatenate([q[0] for q in parts]).astype(np.float32)
+    rgba = np.empty((len(pos), 4), np.uint8)
+    rgba[:, :3] = np.clip(np.concatenate([q[1] for q in parts]), 0, 255)
+    rgba[:, 3] = 255
+    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
 
 
 def car_model(kind, color, dents=(), burnt=0.0, player=False):
@@ -1169,6 +1259,13 @@ def _hero(i, frame):
 def ped_arrays(arch, tone, frame, skin=0):
     """arch = archetype (see vehicles.PED_NAMES), tone 0..2 = colour variant, frame 0/1 walk, 2 lying, 3 arms up, 4 punch, 5 kick."""
     if arch >= 100:
+        if frame == 13:                                # riding a two-wheeler: knees forward, lowered onto the seat, leaning in
+            pos, uv, rgba = _hero(arch - 100, 12)
+            y = pos[:, 1].copy()
+            low = np.clip((0.84 - y) / 0.84, 0, 1)
+            pos[:, 0] += 0.5 * low + 0.12 * np.clip((y - 0.8) / 0.8, 0, 1)
+            pos[:, 1] = np.where(y < 0.84, y * 0.55 + 0.34, y - 0.06)
+            return pos, uv, rgba
         return _hero(arch - 100, frame)
     if arch >= 10:
         return _ped_special(arch, tone, frame, skin)

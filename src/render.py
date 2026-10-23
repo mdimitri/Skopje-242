@@ -332,7 +332,7 @@ class Renderer:
                 if m is not None:
                     rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
         # cars
-        cars = []
+        cars, doors = [], []
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll))
@@ -342,6 +342,8 @@ class Renderer:
                 tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
                 gy = b.az if b.az is not None else w.ground_y(b.x, b.y)
                 cars.append((b.x, b.y, b.h, self.car_model(b), tint, gy, b.pitch, b.roll))
+                if b.door > 0.01:
+                    doors.append((b, gy))
                 hl = vehicles.HALF_L[b.kind] + 0.1
                 sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
         # peds
@@ -369,6 +371,12 @@ class Renderer:
                 peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean))
                 if p.mode not in ("dead", "ko"):
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
+        cb = sim.car
+        if sim.mode == "car" and cb is not None and cb.kind in vehicles.BIKES and getattr(sim, "riding", None) is None:
+            gy = cb.az if cb.az is not None else w.ground_y(cb.x, cb.y)       # you, sitting on (or standing on) the two-wheeler
+            seat = vehicles.EXTRA[cb.kind] != "kick"
+            peds.append((cb.x - math.cos(cb.h) * (0.3 if seat else 0.0), gy + (0.0 if seat else 0.2), cb.y - math.sin(cb.h) * (0.3 if seat else 0.0),
+                         cb.h, 100 + getattr(sim, "lik", 0), 0, 13 if seat else 12, 3))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 12
@@ -411,6 +419,23 @@ class Renderer:
                 m.transform = M
                 rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
                 m.transform = old
+        for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
+            key = ("door", b.kind, b.color)
+            m = self.car_models.get(key)
+            if m is None:
+                m = self.car_models[key] = gl3d.door_model(b.kind, b.color)
+            if m is None:
+                continue
+            hx, _dl = gl3d.door_geom(b.kind)
+            W = vehicles.DIMS[b.kind][1]
+            ang = -1.25 * b.door * (1.0 - 0.15 * (1.0 - b.door))
+            M = rl.matrix_multiply(rl.matrix_rotate_y(ang), rl.matrix_translate(hx, 0.0, -(W / 2 + 0.03)))
+            M = rl.matrix_multiply(M, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(b.roll), rl.matrix_rotate_z(b.pitch)),
+                                                                          rl.matrix_rotate_y(-b.h)), rl.matrix_translate(b.x, gy, b.y)))
+            old = m.transform
+            m.transform = M
+            rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+            m.transform = old
         for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
             if pm is not None:
