@@ -373,16 +373,17 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
             rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
-        font.draw_text(TXT("menu.0058"), x0, 20, 40, GOLD, bold=True)
-        font.draw_text(TXT("menu.0059"), x0 + 310, 34, 24, rl.Color(190, 190, 190, 255))
+        font.draw_text(TXT("menu.0058"), x0, 14, 34, GOLD, bold=True)
+        font.draw_text(TXT("menu.0059"), x0, 50, 18, rl.Color(190, 190, 190, 255))
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab
             rl.draw_rectangle(tx + 2, 72, tw - 4, 34, rl.Color(48, 54, 72, 255) if on_t else rl.Color(26, 30, 40, 255))
             if on_t:
                 rl.draw_rectangle(tx + 2, 104, tw - 4, 3, GOLD)
-            lw = font.measure_text(name, 20, on_t)
-            font.draw_text(name, tx + (tw - lw) // 2, 78, 20, GOLD if on_t else rl.Color(190, 190, 195, 255), bold=on_t)
+            sz = 20 if font.measure_text(name, 20, on_t) <= tw - 8 else 16
+            lw = font.measure_text(name, sz, on_t)
+            font.draw_text(name, tx + (tw - lw) // 2, 78, sz, GOLD if on_t else rl.Color(190, 190, 195, 255), bold=on_t)
         y = y0
         for i, r in enumerate(rows):
             if r.kind == "head":

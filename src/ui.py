@@ -322,7 +322,7 @@ class Loader:
                     except Exception:  # noqa: BLE001
                         pass
         y = m
-        font.draw_text(T.TITLE, rx, y, 34, GOLD, bold=True)
+        font.draw_text(T.TITLE, rx, y, 28, GOLD, bold=True)
         y += 46
         ov = self.overall()
         el = now - self.t0
