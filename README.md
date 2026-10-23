@@ -1,4 +1,4 @@
-# Скопје 242 – Skopje GTA (v1.2)
+# Скопје 242 – Skopje GTA (v2.0)
 
 A top-down, real-3D, GTA-1-style sandbox of **Skopje, North Macedonia**, in Macedonian Cyrillic and Skopje slang.
 An 11 × 7 km map around the Stone Bridge is built from **OpenStreetMap** and open elevation data; everything the map
