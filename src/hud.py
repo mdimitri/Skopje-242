@@ -141,7 +141,7 @@ class Hud:
         # ---- stats (right)
         x = sw - 270
         clk = sim.clock
-        rl.draw_rectangle_rounded(rl.Rectangle(x - 10, 8, 268, 190), 0.1, 6, rl.Color(10, 10, 14, 150))
+        rl.draw_rectangle_rounded(rl.Rectangle(x - 10, 8, 268, 200), 0.1, 6, rl.Color(10, 10, 14, 150))
         font.draw_text(clk.label(), x + 150, 14, 26, rl.Color(255, 255, 255, 235))
         if clk.rush:
             font.draw_text(TXT("hud.0002"), x + 150, 42, 18, rl.Color(255, 120, 90, 255))
@@ -151,8 +151,8 @@ class Hud:
         font.draw_text((f'{sim.money}' + TXT("hud.0004")), x, 14 - int(pz * 3), 24 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
         for i, (lbl, val) in enumerate(((TXT("hud.0005"), st["burek"]), (TXT("hud.0006"), st["peds"]), (TXT("hud.0007"), st.get("ko", 0)),
                                        (TXT("hud.0008"), st["stolen"]), (TXT("hud.0009"), st["boom"]), (TXT("hud.0010"), st["deaths"]))):
-            i += 1.4
-            font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22), 20, rl.Color(250, 225, 120, 255) if i == 1.4 else rl.Color(235, 235, 235, 255))
+            i += 2.1
+            font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22), 20, rl.Color(250, 225, 120, 255) if i == 2.1 else rl.Color(235, 235, 235, 255))
         # ---- vehicle panel
         c = sim.car
         if sim.mode == "car":
@@ -176,7 +176,8 @@ class Hud:
                 self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
-                font.draw_text((TXT("hud.0016") + f'{int(max(0, wk.health))}%   {gun}'), sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
+                font.draw_text((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
+                font.draw_text(font.fit(gun, 18, 196), sw - 196, sh - 160, 18, rl.Color(255, 230, 140, 255))
                 self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))

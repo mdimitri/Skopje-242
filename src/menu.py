@@ -188,7 +188,7 @@ def pick_character(cfg, aud=None):
         if armed and rl.is_key_pressed(rl.KEY_L):
             pick_character.load = True
             return done(sel)
-        if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 230 <= m.x < W - 20 and 20 <= m.y < 60:
+        if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 230 <= m.x < W - 20 and 56 <= m.y < 96:
             pick_character.load = True
             return done(sel)
         if armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE)):
@@ -200,7 +200,8 @@ def pick_character(cfg, aud=None):
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
         rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
-        font.draw_text(TXT("menu.0051"), 24, 20, 40, GOLD, bold=True)
+        font.seal(52, 40, 24)
+        font.draw_text(TXT("menu.0051"), 90, 20, 40, GOLD, bold=True)
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
             cx, cy = pos(i)
             on = i == sel
@@ -226,8 +227,8 @@ def pick_character(cfg, aud=None):
         font.draw_text((f'{name}  –  {money}' + TXT("menu.0052")), 24, by, 26, GOLD, bold=True)
         for k, ln in enumerate(font.wrap(stats, 19, W - 48)[:2]):
             font.draw_text(ln, 24, by + 36 + k * 25, 19, rl.Color(225, 225, 230, 255))
-        rl.draw_rectangle(W - 230, 20, 210, 40, rl.Color(48, 54, 72, 255))
-        font.draw_text(TXT("menu.0053"), W - 214, 28, 22, GOLD, bold=True)
+        rl.draw_rectangle_rounded(rl.Rectangle(W - 230, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
+        font.draw_text(TXT("menu.0053"), W - 214, 64, 22, GOLD, bold=True)
         font.draw_text(TXT("menu.0054"), 24, H - 26, 16, rl.Color(150, 150, 160, 255))
         font.exit_button()
         rl.end_drawing()
@@ -373,8 +374,11 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
             rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
-        font.draw_text(TXT("menu.0058"), x0, 14, 34, GOLD, bold=True)
-        font.draw_text(TXT("menu.0059"), x0, 50, 18, rl.Color(190, 190, 190, 255))
+        rl.draw_rectangle_rounded(rl.Rectangle(x0 - 24, 6, pw + 48, H - 12), 0.02, 6, rl.Color(14, 16, 24, 235))
+        rl.draw_rectangle(x0 - 24, 6, pw + 48, 4, GOLD)
+        font.seal(x0 + 24, 40, 22)
+        font.draw_text(TXT("menu.0058"), x0 + 60, 14, 30, GOLD, bold=True)
+        font.draw_text(TXT("menu.0059"), x0 + 60, 48, 17, rl.Color(190, 190, 190, 255))
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab

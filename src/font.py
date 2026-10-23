@@ -93,13 +93,23 @@ def wrap(text, size, width, bold=False):
 
 # ---------------------------------------------------------------------------- clickable buttons (menu / exit)
 def button(label, x, y, w, h, size=18):
-    """Draw a button; True on the frame it is clicked."""
+    """Flat button with a gold edge on the left; True on the frame it is clicked."""
     m = rl.get_mouse_position()
+    x, y, w, h = int(x), int(y), int(w), int(h)
     on = x <= m.x < x + w and y <= m.y < y + h
-    rl.draw_rectangle(int(x), int(y), int(w), int(h), rl.Color(60, 40, 40, 235) if on else rl.Color(20, 22, 30, 215))
-    rl.draw_rectangle_lines(int(x), int(y), int(w), int(h), rl.Color(255, 205, 90, 255) if on else rl.Color(120, 120, 130, 255))
-    draw_text(label, int(x + (w - measure_text(label, size, True)) / 2), int(y + (h - size) / 2 - 1), size, rl.WHITE, bold=True)
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.25, 6, rl.Color(70, 46, 40, 240) if on else rl.Color(18, 20, 30, 225))
+    rl.draw_rectangle_lines(x, y, w, h, rl.Color(255, 205, 90, 255) if on else rl.Color(110, 112, 128, 255))
+    rl.draw_rectangle(x + 6, y + 8, 3, h - 16, rl.Color(240, 200, 60, 255))
+    draw_text(label, int(x + 9 + (w - 9 - measure_text(label, size, True)) / 2), int(y + (h - size) / 2 - 1), size, rl.WHITE, bold=True)
     return on and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)
+
+
+def seal(x, y, r=26):
+    """The "§ 242" court stamp, used next to titles."""
+    rl.draw_circle_lines(int(x), int(y), r, rl.Color(240, 200, 60, 255))
+    rl.draw_circle_lines(int(x), int(y), r - 4, rl.Color(240, 200, 60, 160))
+    t = "242"
+    draw_text(t, int(x - measure_text(t, int(r * 0.7), True) / 2), int(y - r * 0.38), int(r * 0.7), rl.Color(240, 200, 60, 255), bold=True)
 
 
 def confirm_quit(in_frame=False):
