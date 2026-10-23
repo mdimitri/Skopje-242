@@ -141,7 +141,7 @@ class Renderer:
         """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
         if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
             return int(anim * 2.2) & 1
-        return ((8, 10, 9, 11) if run else (0, 6, 1, 7))[int(anim * 4.4) & 3]
+        return ((8, 10, 9, 11) if run else (0, 6, 1, 7))[int(anim * (2.6 if run else 2.4)) & 3]
 
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)

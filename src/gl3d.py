@@ -1042,6 +1042,7 @@ def _hero(i, frame):
     hand = (24, 24, 26) if "gloves" in ex else sk
     holds_r = any(k in ex for k in ("mic", "selfie", "phone", "phones", "burek", "pin", "cane"))      # a held prop keeps that arm still
     holds_l = any(k in ex for k in ("bag", "paper", "bottle"))
+    a_arm = {1: 0.0, -1: 0.0}
     for sg, z in ((-1, -0.34), (1, 0.34)):
         if strike == 4:                                 # punching: both arms are drawn by _strike
             continue
@@ -1049,7 +1050,8 @@ def _hero(i, frame):
             add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
             add(0.0, 1.8, z, 0.12, 0.12, 0.11, hand)
         else:
-            a = 0.0 if (holds_r if sg > 0 else holds_l) else sg * th * 1.1
+            a = sg * th * (0.45 if (holds_r if sg > 0 else holds_l) else 1.1)      # an arm holding a prop swings less, the prop with it
+            a_arm[sg] = a
             i0 = len(parts)
             add(-st, 1.0, z, 0.14, 0.36, 0.13, arm_c)
             _swing(parts, i0, -st, 1.36, a)
@@ -1060,6 +1062,7 @@ def _hero(i, frame):
             _swing(parts, i1, -st + 0.36 * math.sin(a), 1.36 - 0.36 * math.cos(a), 0.2 + 0.4 * abs(a))     # elbow bend
     if frame not in (2, 3):
         R = asw - st
+        j0 = len(parts)
         if "mic" in ex:
             add(R + 0.12, 0.8, 0.34, 0.05, 0.22, 0.05, (30, 30, 34))
             add(R + 0.14, 1.0, 0.34, 0.08, 0.08, 0.08, (160, 160, 166))
@@ -1074,6 +1077,8 @@ def _hero(i, frame):
             add(R + 0.1, 0.66, 0.34, 0.08, 0.08, 0.5, (190, 140, 80))
         if "cane" in ex:
             add(R + 0.12, 0.0, 0.34, 0.04, 0.66, 0.04, (120, 80, 50))
+        _swing(parts, j0, -st, 1.36, a_arm[1])
+        j0 = len(parts)
         if "bag" in ex:
             add(-asw - st, 0.4, -0.38, 0.22, 0.24, 0.06, (240, 240, 240))
             add(-asw - st, 0.5, -0.385, 0.08, 0.08, 0.065, (40, 170, 70))
@@ -1081,6 +1086,7 @@ def _hero(i, frame):
             add(-asw - st + 0.06, 0.7, -0.4, 0.22, 0.3, 0.03, (226, 222, 210))
         if "bottle" in ex:
             add(-asw - st + 0.04, 0.6, -0.38, 0.06, 0.24, 0.06, (40, 110, 50))
+        _swing(parts, j0, -st, 1.36, a_arm[-1])
     # head: skull, nose, ears, eyes, brows, mouth
     hx, hy = 0.02 - st * 1.6, 1.46
     add(hx, hy, 0, 0.28, 0.3, 0.27, sk)
