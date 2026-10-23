@@ -195,9 +195,14 @@ class Hud:
         t, s = self.banner
         if s > 0:
             a = int(255 * min(1.0, s / 0.5))
-            wpx = font.measure_text(t, 40)
-            font.draw_text(t, sw // 2 - wpx // 2 + 2, int(sh * 0.2) + 2, 40, rl.Color(0, 0, 0, a))
-            font.draw_text(t, sw // 2 - wpx // 2, int(sh * 0.2), 40, rl.Color(255, 230, 90, a))
+            bs = 40
+            wpx = font.measure_text(t, bs)
+            if wpx > sw - 60:                                   # long (radio track) titles: shrink, then cut
+                bs = max(22, int(bs * (sw - 60) / wpx))
+                t = font.fit(t, bs, sw - 60)
+                wpx = font.measure_text(t, bs)
+            font.draw_text(t, sw // 2 - wpx // 2 + 2, int(sh * 0.2) + 2, bs, rl.Color(0, 0, 0, a))
+            font.draw_text(t, sw // 2 - wpx // 2, int(sh * 0.2), bs, rl.Color(255, 230, 90, a))
         pn, pl, ps = self.place
         if ps > 0:
             a = int(255 * min(1.0, ps / 0.6, (5.0 - ps) / 0.4 + 0.01))
