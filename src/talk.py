@@ -6,16 +6,18 @@ say(p, sim) ја бира репликата за пешакот p. Нивоа �
 Сè е оригинален текст, непроверен од мајчин говорител (docs/TEXT_SOURCES.md)."""
 import random
 
+import bible_lines
 import peds_lines
 import problems
 
 # ---------------------------------------------------------------------------------------- words that mark a level
 RUDE = ("сељак", "сељаци", "ѓубре", "ебате", "мајмун", "говедо", "кретен", "дебил", "шупак", "магаре", "идиот",
-        "мрш", "копиљ", "клошар", "шмизл", "буљ", "пеер")
+        "мрш", "копиљ", "клошар", "шмизл", "буљ", "пеер", "папак", "шупелк", "абдал", "глупер", "затупан", "лигуш", "копук", "тапа ")
 NSFW = ["Пичка ти материна!", "Ебем ти мајката!", "Ај у курац, бре!", "Ебем ти сè живо!", "Шупак еден!",
         "Ај у пизда материна!", "Мајката ти ебам, со кола ли ме удри?!", "Курац ќе ти платам паркинг!",
         "Ебем ти и колата и регистрацијата!", "Ебем ти државата, па и тебе!", "Мрш, бре, шупак!",
         "Ебем ти семафорот!", "Ебате, каков кретен!", "Ај бе, пичко, вози!", "Ебем ти и бурекот!"]
+NSFW += bible_lines.NSFW_MAX                         # (ниво 2: уште погруби, од речникот и пошироко)
 POLITE_INSULT = ["Срамота!", "Каков човек, леле!", "Нема култура, нема ништо.", "Е па баш си безобразен.",
                  "Ќе те пријавам, да знаеш!", "Што е ова однесување?!"]
 STREET_INSULT = ["Сељак еден!", "Не биди сељак, бре!", "Ѓубре едно!", "Мајмун, бре!", "Кретен!", "Говедо со кола!",
@@ -358,6 +360,12 @@ def say(p, sim, rng=random):
     aggro = getattr(sim, "aggro", 1)
     a = vehicles.PED_IDS[p.arch]
     r = rng.random()
+    if rng.random() < 0.34:                                 # речник на скопски сленг: по стил на лик (bible_lines.py)
+        t = bible_lines.idle(a, lang, rng) if rng.random() < 0.6 else bible_lines.topic_line(a, rng)
+        if t and allowed(t, lang):
+            return t
+    if lang >= 2 and rng.random() < 0.05 + 0.03 * aggro:       # ниво 2: цуваат без сопирачки
+        return rng.choice(bible_lines.NSFW_MAX)
     if aggro >= 2 and r < 0.08 * aggro:                     # nervous city: random cursing at nobody in particular
         return wchoice(NSFW if lang >= 2 else (STREET_INSULT if lang == 1 else POLITE_INSULT), rng)
     if rng.random() < 0.3:                                 # people with problems
@@ -391,6 +399,15 @@ def react(kind, arch, sim, base, rng=random):
     """Hit / panic / fight / KO lines filtered by the language level, with more insults when aggressive."""
     lang = getattr(sim, "lang", 1)
     aggro = getattr(sim, "aggro", 1)
+    try:
+        import vehicles
+        b = bible_lines.react(kind, vehicles.PED_IDS[arch], lang, rng)
+    except Exception:  # noqa: BLE001 - arch outside the table
+        b = None
+    if b and allowed(b, lang) and rng.random() < (0.6 if lang < 2 else 0.78):
+        return b
+    if lang >= 2 and kind in ("hit", "fight") and rng.random() < 0.3:
+        return rng.choice(bible_lines.NSFW_MAX)
     lines = pool(base, lang)
     if kind == "fight" and rng.random() < 0.4:
         lines = pool(FIGHT_TALK, lang)

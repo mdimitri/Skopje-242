@@ -2,6 +2,7 @@
 import math
 import random
 
+import bible_lines
 import bump_lines
 import clock
 import peds_lines
@@ -674,7 +675,9 @@ class Peds:
         p.h = math.atan2(dy, dx)                                  # turns on the player
         p.x -= dx / d * 0.12
         p.y -= dy / d * 0.12
-        text = talk.wchoice(talk.pool([bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)], lang), rng)
+        text = bible_lines.bump(vehicles.PED_IDS[p.arch], stage, lang, rng) or bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
+        if not talk.allowed(text, lang):
+            text = bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
         ev("shout", text=text, x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
         if stage == 3:
             if kid:                                               # children shout, then run to mama

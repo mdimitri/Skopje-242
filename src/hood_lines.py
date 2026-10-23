@@ -5,6 +5,7 @@ NSFW lines (list X) only at level 2. Names that have no own list get the {n} tem
 native-speaker reviewed; jokes are about places and habits, never about ethnic groups."""
 import random
 
+import bible_lines
 import talk
 
 T = {

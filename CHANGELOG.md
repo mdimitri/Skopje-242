@@ -11,6 +11,13 @@ Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.j
 - **Combat:** much more ammo per pickup; a swung bat also smashes props; animated score pop-ups (sparks, bigger and hotter numbers for bigger payouts).
 - **Roads (world version 12, rebuilds automatically):** roads that continue, bend, widen or narrow share one cross-section (same vertices, smooth width taper); pavements join into curved corners at junctions; tiny height offsets stop coplanar road pieces from z-fighting (flicker).
 
+## v1.3b – slang bible
+
+- All pedestrian talk now draws on `docs/Skopje_slang_bible.txt` (421 terms): `src/bible_lines.py` has per-character-style lines (old, woman, kid, tough, posh, youth, sport, priest, vendor, cop) for idle, hit, panic, fight, KO and the bump escalation, plus topic pools, neighbourhood lines and extra lines for all 24 playable characters.
+- Language level 2 ("Без цензура") is now unhinged: much more and much harsher cursing, adapted to the character.
+- `python tools/check_slang.py --missing` shows which bible terms the game text does not use yet.
+- Limbs are rigged: legs swing from hip and knee, arms from shoulder and elbow, four-pose walk cycle and a bigger run cycle.
+
 ## v1.2 – collisions, combat, shops and radio
 
 - **Collisions:** oriented-box (SAT) collisions for every car with a grid broadphase; traffic brakes for sideways cars; exact walker-vs-car push-out; careful driving.
