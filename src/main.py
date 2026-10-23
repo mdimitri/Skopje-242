@@ -381,6 +381,7 @@ def main():
     loader.tick(1.0, "sound")
     aud = audio_mod.Audio(mute=a.mute)
     car_radio = radio_mod.Radio(aud)
+    cabin_music = radio_mod.CabinMusic(aud, car_radio)
     spk = SpeechWorker()
     night = Night(world)
     places = Places(world)
@@ -416,6 +417,7 @@ def main():
         spk.set_engine(c["voice"])
         spk.set_speed(settings_mod.SPEECH_SPEEDS[c["speech_speed"] % len(settings_mod.SPEECH_SPEEDS)])
         sim.aggro, sim.lang = c["aggro"], c["lang"]
+        sim.speech_freq = settings_mod.SPEECH_FREQ[c["speech_freq"] % len(settings_mod.SPEECH_FREQ)]
         if getattr(sim, "places", None) is not None:
             sim.places.lang = c["lang"]
         d = c["detail"]
@@ -520,7 +522,6 @@ def main():
     ft_hist = []
     last_crash_txt = 0.0
     tip_t = 25.0
-    hero_t = 14.0
     want_menu = False
     want_chars = False
 
@@ -667,9 +668,9 @@ def main():
             if kind == "shout":
                 say(d["text"], d["x"], d["y"], d.get("who"))
             elif kind == "shout_self":
-                if rng.random() < 0.35:
-                    d["text"] = hero_line() or d["text"]
-                say(d["text"], fxs, fys, hero_who(), True)
+                ln_ = hero_line() or rng.choice(("Ајде бре!", "Нема фрка.", "Брате!"))
+                d["text"] = ln_
+                say(ln_, fxs, fys, hero_who(), True)
         for kind, d in sim.events:
             if kind == "crash":
                 b, imp = d["body"], d["impact"]
@@ -706,8 +707,8 @@ def main():
             elif kind == "shout":
                 popups.add((d["who"] + ": " if d.get("who") else "") + d["text"], d["x"], d["y"], 2.6, 2.4, (255, 255, 255), 18)
             elif kind == "shout_self":
-                if sim.walker:
-                    popups.add(d["text"], sim.walker.x, sim.walker.y, 2.6, 1.6, (160, 255, 200), 20)
+                if sim.walker and d.get("text"):
+                    popups.add(d["text"], sim.walker.x, sim.walker.y, 2.6, 3.0, (160, 255, 200), 20)
             elif kind == "horn":
                 b = d["body"]
                 popups.add(rng.choice(slang.HORN), b.x, b.y, 3.2, 1.4, (255, 240, 120), 24)
@@ -878,6 +879,19 @@ def main():
         else:
             for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "screech"):
                 aud.loop(nm, 0.0)
+        near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
+        for c in sim.traffic.cars:
+            if c.v > 0.5 and abs(c.x - fx_) < nd and abs(c.y - fy_) < nd:
+                d_ = math.hypot(c.x - fx_, c.y - fy_)
+                if d_ < nd:
+                    near_c, nd = c, d_
+        for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
+            if near_c is not None and vehicles.ENGINE_SOUND[near_c.kind] == nm:
+                fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
+                k_ = (1.0 - nd / 45.0) ** 2
+                aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), (0.55 + 1.5 * fr_) if nm != "engine_ev" else (0.6 + 1.4 * fr_), "engine")
+            else:
+                aud.loop("ai_" + nm, 0.0, 1.0, "engine")
         best = {}
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:
@@ -1093,14 +1107,6 @@ def main():
         sim.money_pulse = gains.pulse
         hud.update(dt)
         shake *= math.exp(-6 * dt)
-        hero_t -= dt
-        if hero_t < 0:
-            hero_t = rng.uniform(20.0, 42.0)                 # your own character thinks out loud now and then
-            ln_ = hero_line()
-            if ln_:
-                fx0, fy0, _, _ = sim.focus()
-                say(ln_, fx0, fy0, hero_who(), False)
-                popups.add(ln_, fx0, fy0, 2.8, 3.2, (160, 255, 200), 20)
         tip_t -= dt
         if tip_t < 0:
             tip_t = 40.0
@@ -1119,6 +1125,7 @@ def main():
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
             hud.set_banner("Радио: " + song, 2.0)
+        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted, cfg["vol_radio"])
         res = spk.poll()
         if res is not None:
             key, pcm, sr_ = res
@@ -1236,6 +1243,7 @@ def main():
             break
     spk.dead = True
     if aud.ok:
+        cabin_music.close()
         car_radio.close()
         for p_ in RADIO_PROC:
             if p_.poll() is None:

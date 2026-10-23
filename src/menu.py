@@ -57,6 +57,7 @@ def _rows(in_game, slots=()):
         (3, Row("choice", "Брзина на времето", "time_speed", spd, bar=True, note="колку брзо тече денот")),
         (3, Row("choice", "Густина на сообраќај", "traffic", dens, bar=True)),
         (3, Row("choice", "Густина на пешаци", "peds", dens, bar=True)),
+        (3, Row("choice", "Колку често зборуваат пешаците", "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note="1x е нормално")),
         (3, Row("choice", "Агресивност", "aggro", S.AGGRO, bar=True, note="колку брзо се караат и тепаат")),
         (3, Row("choice", "Јазик", "lang", S.LANGUAGE, bar=True, note="пцовки и груби зборови")),
         (3, Row("toggle", "Брзата помош ги оживува паднатите", "ambulance")),

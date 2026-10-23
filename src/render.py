@@ -136,6 +136,13 @@ class Renderer:
             m = self.car_models[key] = gl3d.car_model(kind, color)
         return m
 
+    @staticmethod
+    def _gait(arch, anim, run):
+        """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
+        if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
+            return int(anim * 2.2) & 1
+        return ((8, 10, 9, 11) if run else (0, 6, 1, 7))[int(anim * 4.4) & 3]
+
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)
         m = self.ped_models.get(key)
@@ -345,11 +352,11 @@ class Renderer:
                 elif p.mode == "ko":
                     frame, y = 2, 0.0
                 elif p.mode == "fight":
-                    frame, y = (p.atk_kind if p.atk_t > 0 else int(p.anim * 2.2) & 1), 0.0
+                    frame, y = (p.atk_kind if p.atk_t > 0 else self._gait(p.arch, p.anim, True)), 0.0
                 elif p.mode == "rage":
                     frame, y = (3 if int(p.anim) & 1 else 0), 0.0
                 else:
-                    frame, y = int(p.anim * 2.2) & 1, 0.0
+                    frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), 0.0
                 lean = 0.0
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
@@ -361,7 +368,7 @@ class Renderer:
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
-            frame = int(wk.anim * 2.4) & 1 if wk.moving else 0
+            frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 0
             if wk.atk_t > 0:
                 frame = wk.atk_kind
             if wk.z > 0.05:

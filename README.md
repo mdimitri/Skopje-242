@@ -26,7 +26,7 @@ Double-click **`run.bat`**. First start sets up Python and libraries, downloads 
 | `Shift` | – | run |
 | `1`–`4` | – | buy kiosk food (burek, tulumba, kebapi, ajvar sandwich) |
 | `F` / `Enter` | get out | enter / steal a car, board a city bus (40 ден.) |
-| `H` | horn / siren toggle | shout |
+| `H` | horn / siren toggle | your character says something (only when pressed) |
 | `Q` / `E` (or `,` `.`) | change radio station (last step = off) | – |
 | `P` | – | take a selfie |
 | `M` / `Tab` | map, click to teleport | same |

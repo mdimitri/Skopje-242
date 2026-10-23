@@ -194,7 +194,17 @@ class Gains:
                 k = age / 0.55
                 px = start[0] + math.sin(age * 38 + seed) * 6 * (1 - k)
                 py = start[1] - 34 * math.sin(k * 1.57)
-                size = int(20 + 18 * math.sin(min(1.0, age / 0.18) * 1.57) - 6 * k)
+                big = min(18.0, amt ** 0.5 * 1.6)                                      # bigger pay, bigger number
+                over = 1.0 + 0.45 * math.sin(min(1.0, age / 0.3) * 3.14) * (1 - k)     # overshoot "pop" that settles
+                size = int((20 + big + 18 * math.sin(min(1.0, age / 0.18) * 1.57)) * over - 6 * k)
+                if age < 0.4:                                                          # burst of sparks around the hit
+                    kb = age / 0.4
+                    for j in range(8):
+                        an = seed + j * 0.785
+                        r0, r1 = 10 + 26 * kb, 18 + 40 * kb
+                        rl.draw_line_ex(rl.Vector2(px + math.cos(an) * r0, py + math.sin(an) * r0),
+                                        rl.Vector2(px + math.cos(an) * r1, py + math.sin(an) * r1), 3 * (1 - kb) + 1,
+                                        rl.Color(255, 230, 120, int(230 * (1 - kb))))
             else:                                        # swoop into the counter on a curve
                 k = min(1.0, (age - 0.55) / 1.0)
                 e = k * k * (3 - 2 * k)
@@ -213,4 +223,5 @@ class Gains:
             w = font.measure_text(txt, size, True)
             a = 255 if age < 1.4 else int(255 * (1.6 - age) / 0.2)
             font.draw_text(txt, int(px - w / 2) + 2, int(py) + 2, size, rl.Color(0, 0, 0, a // 2), bold=True)
-            font.draw_text(txt, int(px - w / 2), int(py), size, rl.Color(250, 215, 70, a), bold=True)
+            hot = min(1.0, amt / 60.0)                                                  # small pay is gold, big pay glows orange-red
+            font.draw_text(txt, int(px - w / 2), int(py), size, rl.Color(255, int(215 - 110 * hot), int(70 - 30 * hot), a), bold=True)

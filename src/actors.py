@@ -2,6 +2,8 @@
 import math
 import random
 
+import bible_lines
+import bump_lines
 import clock
 import peds_lines
 import talk
@@ -12,9 +14,9 @@ import vehicles
 _LINES = {}
 
 # weapons: key -> (Macedonian name, seconds between shots, damage, pellets, spread rad, range m, ammo per pickup)
-WEAPONS = {"pistol": ("Пиштол", 0.28, 45, 1, 0.0, 40, 36), "uzi": ("Узи", 0.09, 22, 1, 0.06, 32, 120),
-           "shotgun": ("Пумпарица", 0.85, 30, 6, 0.16, 18, 24), "kalash": ("Калаш", 0.12, 40, 1, 0.03, 60, 90),
-           "bat": ("Палка", 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": ("Зоља", 1.6, 400, 1, 0.0, 90, 6)}
+WEAPONS = {"pistol": ("Пиштол", 0.28, 45, 1, 0.0, 40, 90), "uzi": ("Узи", 0.09, 22, 1, 0.06, 32, 300),
+           "shotgun": ("Пумпарица", 0.85, 30, 6, 0.16, 18, 60), "kalash": ("Калаш", 0.12, 40, 1, 0.03, 60, 240),
+           "bat": ("Палка", 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": ("Зоља", 1.6, 400, 1, 0.0, 90, 14)}
 MELEE = ("bat",)                # swung, not fired: no tracer, no ammo used
 WEAPON_ORDER = ["fist", "bat", "pistol", "uzi", "shotgun", "kalash", "zolja"]
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
@@ -451,6 +453,9 @@ class Ped:
         self.atk_kind = 4
         self.looted = False
         self.foe = None              # the other pedestrian in a street brawl
+        self.bumps = 0               # times the player walked into them (they cuss, then fight)
+        self.bump_cd = 0.0
+        self.bump_t = 0.0
         self.far_t = 0.0             # seconds spent far from the player while chasing them
         self.pose = None             # emergency crews: "spray" (hose out) / "cpr" (kneeling over a patient)
         self.say_t = random.uniform(4, 18)
@@ -653,6 +658,34 @@ class Peds:
             x.mode, x.t, x.foe, x.atk_cd = "brawl", rng.uniform(7, 14), y, rng.uniform(0.2, 0.9)
         ev("shout", text=talk.react("fight", a.arch, self.sim, lines("fight", a.arch), rng), x=a.x, y=a.y,
            who=vehicles.PED_NAMES[a.arch])
+
+    def _bumped(self, p, wk, ev):
+        """The player shoved past p: first a grumble, then insults and threats; after a few bumps p goes for them."""
+        rng = self.rng
+        p.bumps += 1
+        p.bump_cd, p.bump_t = 1.4, 0.0
+        aggro = getattr(self.sim, "aggro", 1) if self.sim else 1
+        lang = getattr(self.sim, "lang", 1) if self.sim else 1
+        temper = vehicles.FIGHT[p.arch][1]
+        limit = max(3, (5 if temper < 0.3 else 4) + (1, 0, -1, -1)[aggro % 4])
+        kid = vehicles.FIGHT[p.arch][0] <= 16
+        stage = min(2, p.bumps - 1) if p.bumps < limit else 3
+        dx, dy = wk.x - p.x, wk.y - p.y
+        d = math.hypot(dx, dy) or 1e-6
+        p.h = math.atan2(dy, dx)                                  # turns on the player
+        p.x -= dx / d * 0.12
+        p.y -= dy / d * 0.12
+        text = bible_lines.bump(vehicles.PED_IDS[p.arch], stage, lang, rng) or bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
+        if not talk.allowed(text, lang):
+            text = bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
+        ev("shout", text=text, x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+        if stage == 3:
+            if kid:                                               # children shout, then run to mama
+                p.mode, p.t = "flee", 4.0
+                p.vx, p.vy = -dx / d * 3.4, -dy / d * 3.4
+            else:
+                p.mode, p.t, p.atk_cd, p.far_t = "fight", 14.0, 0.4, 0.0
+                p.bumps = 0
 
     def update(self, dt, fx, fy, bodies, ev):
         w, rng = self.w, self.rng
@@ -869,6 +902,16 @@ class Peds:
                 if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 320 ** 2:
                     out.append(p)
                 continue
+            # ------------- the player walks into them: grumble, insult, threaten, then fight
+            wk_ = self.walker
+            if p.mode == "walk" and wk_ is not None and wk_.health > 0:
+                p.bump_cd = max(0.0, p.bump_cd - dt)
+                if p.bumps:
+                    p.bump_t += dt
+                    if p.bump_t > 30.0:                           # calms down after a while
+                        p.bumps = 0
+                if p.bump_cd <= 0 and wk_.z < 0.5 and wk_.speed > 1.0 and (wk_.x - p.x) ** 2 + (wk_.y - p.y) ** 2 < 0.85 ** 2:
+                    self._bumped(p, wk_, ev)
             # ------------- walking along the graph
             e = w.edges[p.e]
             vv = p.v
@@ -901,7 +944,7 @@ class Peds:
             p.gz = w.level(p.x, p.y, 1e9 if e["bridge"] else -1e9)      # on the deck of a bridge edge, else on the ground
             p.say_t -= dt
             if p.say_t <= 0:
-                p.say_t = rng.uniform(10, 28)
+                p.say_t = rng.uniform(10, 28) / max(0.05, getattr(self.sim, "speech_freq", 1.0))
                 if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 22 ** 2:
                     ev("shout", text=talk.say(p, self.sim, rng) if self.sim else rng.choice(lines("idle", p.arch)), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
             if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 300 ** 2:
@@ -914,9 +957,10 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab")
 
     def __init__(self):
+        self.cab = random.random() < 0.1        # one in ten has its radio on (heard muffled from outside)
         self.stuck = 0.0
         self.ghost = 0.0
         self.braking = False
@@ -1350,8 +1394,6 @@ class Sim:
                 p.mode, p.t = "flee", 3.0
                 p.vx, p.vy = fx * 3.4, fy * 3.4
                 self.ev("shout", text=talk.react("hit", p.arch, self, lines("hit", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
-        if rng.random() < 0.35:
-            self.ev("shout_self", text=rng.choice(slang.KICK if kick else slang.PUNCH))
 
     def _knock_out(self, p):
         p.mode, p.t = "ko", self.rng.uniform(6.0, 9.0)
@@ -1372,6 +1414,7 @@ class Sim:
         fx, fy = math.cos(wk.h), math.sin(wk.h)
         if wk.weapon in MELEE:
             self._ray(wk, wk.h, dmg, rng_m, False)
+            self.chaos.punch(wk, True)                      # a swung bat also smashes whatever stands in front of it
         else:
             kind = "rocket" if wk.weapon == "zolja" else ("pellet" if pellets > 1 else "bullet")
             for _ in range(pellets):
@@ -1650,7 +1693,7 @@ class Sim:
                 if inp.get("buy") is not None:
                     self.buy(inp["buy"])
                 if inp["horn"]:
-                    ev("shout_self", text=rng.choice(("Ајде бре!", "Нема фрка.", "Брате!")))
+                    ev("shout_self", text="")                  # H: your own character says something (main.py picks the line)
                 sf = w.surface(wk.x, wk.y)
                 if wk.land_v > 0:                                  # landed: hard falls hurt, water cushions them
                     v, wk.land_v = wk.land_v, 0.0
