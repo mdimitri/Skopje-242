@@ -606,6 +606,43 @@ SKIN = [(236, 190, 160), (200, 150, 110), (150, 105, 80), (240, 205, 180)]
 HAIR = [(50, 36, 28), (190, 150, 80), (20, 20, 22), (120, 70, 40)]
 
 
+def _swing(parts, i0, px, py, ang):
+    """Rotate the boxes parts[i0:] about the pivot (px, py) in the walking plane (x forward, y up): a limb swings from its joint."""
+    if abs(ang) < 1e-4:
+        return
+    c, s_ = math.cos(ang), math.sin(ang)
+    for k in range(i0, len(parts)):
+        v, col = parts[k]
+        v = np.asarray(v, np.float32)
+        x, y = v[:, 0] - px, v[:, 1] - py
+        v2 = v.copy()
+        v2[:, 0] = px + x * c - y * s_
+        v2[:, 1] = py + x * s_ + y * c
+        parts[k] = (v2, col)
+
+
+def _phase(frame):
+    """Walk / run cycle frames: 0 and 1 are the stride extremes, 6 and 7 the passing poses, 8..11 the same for running.
+    -> (base frame, leg swing angle, forward lean as a shear)."""
+    run = frame >= 8
+    if run:
+        frame = {8: 0, 9: 1, 10: 6, 11: 7}[frame]
+    amp = 0.8 if run else 0.55
+    th = amp if frame == 0 else (-amp if frame == 1 else 0.0)
+    lean = 0.0
+    if frame in (0, 1, 6, 7):
+        lean = 0.4 if run else 0.1
+    if frame in (6, 7):
+        frame = 0
+    return frame, th, lean
+
+
+def _lean(pos, lean):
+    """Upper body (above the hips) leans forward: shear x with height."""
+    if lean:
+        pos[:, 0] += np.maximum(pos[:, 1] - 0.8, 0.0) * lean
+
+
 def _strike(add, kind, sk, legc, shoe, arm=None):
     """The fight poses. The caller leaves out the limbs that move (both arms for 4, the right leg for 5), so these
     replace them instead of growing on top of them. 4 = punch: right arm thrown straight out, left in guard;
@@ -754,7 +791,11 @@ def _ped_special(arch, tone, frame, skin):
         D.update(torso=(130, 100, 70), legs=(60, 56, 50), rider="cart"); hat = ("brim", (150, 130, 80))
     scale, torso, legc = D["scale"], D["torso"], D["legs"]
     rider = D["rider"]
-    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame] * D["stride"]
+    frame, th, lean = _phase(frame)
+    if strike:
+        th = lean = 0.0
+    th *= D["stride"]
+    sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame] * D["stride"]          # (riders: pedalling / horse legs)
     sit = rider in ("road", "old", "moped", "courier", "cart") and frame < 2
     Y = -0.2 if sit else 0.0                                 # upper body lowered when seated
     bx = -0.05 if sit else 0.0
@@ -810,24 +851,30 @@ def _ped_special(arch, tone, frame, skin):
             add(0.3 if rider != "cart" else 0.15, 0.6, s * 0.11, 0.42, 0.15, 0.15, legc)
             add(0.5 + ph, 0.1, s * 0.11, 0.15, 0.55, 0.15, legc)
     elif D["skirt"]:
-        add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk)
-        if strike != 5:
-            add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
+        for z_, sg in ((-0.09, 1), (0.09, -1)):
+            if strike == 5 and sg < 0:
+                continue
+            i0 = len(parts)
+            add(0.0, 0.0, z_, 0.14, 0.45, 0.12, sk)
+            _swing(parts, i0, 0.0, 0.45, th * sg)
         add(0.0, 0.3, 0, 0.36, 0.6, 0.48, D["skirt"])
     else:
         lc2 = D["legs"]
-        for s, o in ((-1, sw), (1, -sw)):
+        for s in (-1, 1):
             if strike == 5 and s > 0:
                 continue
+            o = 0.0
+            i0 = len(parts)
             if D["shorts"]:
                 add(o, 0.0, s * 0.11, 0.2, 0.5, 0.16, sk); add(o, 0.5, s * 0.11, 0.22, 0.32, 0.17, lc2)
             else:
                 add(o, 0.0, s * 0.11, 0.2, 0.82, 0.16, lc2)
             add(o + 0.04, 0.0, s * 0.11, 0.26 + (0.1 if rider == "blades" else 0), 0.1, 0.17, D["shoe"])
+            _swing(parts, i0, 0.0, 0.82, -s * th)
     # ---------------- torso, arms, head
     wd = 0.5 + D["wide"]
     add(bx, 0.8 + Y, 0, 0.26 + D["belly"], 0.62, wd, torso)
-    asw = sw * 1.15
+    asw = 0.0
     ac = A(torso) * 0.92 if not D["shorts"] or name == "Teretana Brat" else A(torso) * 0.92
     if frame == 3 or D["arms_up"]:
         add(0.0, 1.0 + Y, -0.36 - D["wide"] / 2, 0.14, 0.7, 0.12, sk)
@@ -838,11 +885,15 @@ def _ped_special(arch, tone, frame, skin):
             add(0.5, 0.95 + Y, s * 0.2, 0.1, 0.1, 0.1, sk)
     else:
         z = 0.34 + D["wide"] / 2
-        if strike != 4:
-            add(-asw, 0.8, -z, 0.14, 0.6, 0.12, ac); add(asw, 0.8, z, 0.14, 0.6, 0.12, ac)
-            add(-asw, 0.74, -z, 0.12, 0.1, 0.1, sk); add(asw, 0.74, z, 0.12, 0.1, 0.1, sk)
-        for (sx, sy, sz, col, yy, zz) in held:                                # props carried in the right hand
-            add(asw + 0.02, yy if yy else 0.1, z + 0.08 + zz, sx, sy, sz, col)
+        for zz_, sg in ((-z, -1), (z, 1)):
+            i0 = len(parts)
+            if strike != 4:
+                add(0.0, 0.8, zz_, 0.14, 0.6, 0.12, ac)
+                add(0.0, 0.74, zz_, 0.12, 0.1, 0.1, sk)
+            if sg > 0:
+                for (sx, sy, sz, col, yy, zz) in held:                        # props carried in the right hand swing with the arm
+                    add(0.02, yy if yy else 0.1, z + 0.08 + zz, sx, sy, sz, col)
+            _swing(parts, i0, 0.0, 1.38, sg * th * 1.1)
     for (x, y, z, sx, sy, sz, col) in extra:
         if frame == 2 and y < 0.3:
             continue
@@ -873,8 +924,8 @@ def _ped_special(arch, tone, frame, skin):
         _strike(add, strike, sk, D["legs"], D["shoe"], ac)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
-    if rider == "cart" and frame < 2:
-        pos[:, 0] -= 0.0
+    if not rider:
+        _lean(pos, lean)
     pos *= scale
     if frame == 2:
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
@@ -933,17 +984,26 @@ def _hero(i, frame):
     hc, hs = d["hair"]
     legc = d.get("legs") or sk
     shoe, belly, st = d["shoe"], d.get("belly", 0.0), d.get("stoop", 0.0)
-    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame]
-    # legs: thigh + shin, knee, shoes with a sole
-    for s_, z in ((sw, -0.11), (-sw, 0.11)):
+    frame, th, lean = _phase(frame)
+    if strike:
+        th = lean = 0.0
+    # legs: thigh swings from the hip, shin from the knee (the knee bends when the leg trails), foot with a sole
+    for sg, z in ((1, -0.11), (-1, 0.11)):
         if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
             continue
-        add(s_ * 0.7, 0.42, z, 0.19, 0.42, 0.16, legc)
-        add(s_, 0.06, z, 0.17, 0.38, 0.14, legc if d.get("legs") else sk)
-        add(s_ + 0.05, 0.0, z, 0.28, 0.08, 0.17, shoe)
-        add(s_ + 0.05, 0.0, z, 0.29, 0.02, 0.18, (24, 22, 22))
+        a = th * sg
+        i0 = len(parts)
+        add(0.0, 0.42, z, 0.19, 0.42, 0.16, legc)
+        _swing(parts, i0, 0.0, 0.84, a)
+        i1 = len(parts)
+        add(0.0, 0.06, z, 0.17, 0.38, 0.14, legc if d.get("legs") else sk)
+        add(0.05, 0.0, z, 0.28, 0.08, 0.17, shoe)
+        add(0.05, 0.0, z, 0.29, 0.02, 0.18, (24, 22, 22))
         if "heels" in ex:
-            add(s_ - 0.06, 0.0, z, 0.04, 0.12, 0.05, shoe)
+            add(-0.06, 0.0, z, 0.04, 0.12, 0.05, shoe)
+        _swing(parts, i1, 0.0, 0.84, a)
+        flex = 0.9 * max(0.0, -a) + 0.15 * max(0.0, a)
+        _swing(parts, i1, 0.4 * math.sin(a), 0.84 - 0.4 * math.cos(a), -flex)
     if d.get("skirt") or d.get("legs") is None:
         add(0.0, 0.5, 0, 0.36, 0.34, 0.44, d.get("skirt") or top)                 # skirt / dress
     # body: hips, belly, chest, shoulders, neck
@@ -977,19 +1037,27 @@ def _hero(i, frame):
     if "backpack" in ex:
         add(-0.24, 0.9, 0, 0.16, 0.44, 0.36, (70, 60, 50) if i == 3 else (30, 30, 34))
     # arms: upper, forearm, hand; frame 3 = arms up
-    asw = sw * 1.15
+    asw = 0.0
     arm_c = A(top) * 0.92 if "coat" not in ex else A((240, 240, 240))
     hand = (24, 24, 26) if "gloves" in ex else sk
-    for s_, z in ((-asw, -0.34), (asw, 0.34)):
+    holds_r = any(k in ex for k in ("mic", "selfie", "phone", "phones", "burek", "pin", "cane"))      # a held prop keeps that arm still
+    holds_l = any(k in ex for k in ("bag", "paper", "bottle"))
+    for sg, z in ((-1, -0.34), (1, 0.34)):
         if strike == 4:                                 # punching: both arms are drawn by _strike
             continue
         if frame == 3:
             add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
             add(0.0, 1.8, z, 0.12, 0.12, 0.11, hand)
         else:
-            add(s_ * 0.5 - st, 1.0, z, 0.14, 0.36, 0.13, arm_c)
-            add(s_ - st, 0.74, z, 0.13, 0.3, 0.12, arm_c if "crop" not in ex and i not in (1,) else sk)
-            add(s_ - st, 0.62, z, 0.12, 0.12, 0.1, hand)
+            a = 0.0 if (holds_r if sg > 0 else holds_l) else sg * th * 1.1
+            i0 = len(parts)
+            add(-st, 1.0, z, 0.14, 0.36, 0.13, arm_c)
+            _swing(parts, i0, -st, 1.36, a)
+            i1 = len(parts)
+            add(-st, 0.74, z, 0.13, 0.3, 0.12, arm_c if "crop" not in ex and i not in (1,) else sk)
+            add(-st, 0.62, z, 0.12, 0.12, 0.1, hand)
+            _swing(parts, i1, -st, 1.36, a)
+            _swing(parts, i1, -st + 0.36 * math.sin(a), 1.36 - 0.36 * math.cos(a), 0.2 + 0.4 * abs(a))     # elbow bend
     if frame not in (2, 3):
         R = asw - st
         if "mic" in ex:
@@ -1073,6 +1141,7 @@ def _hero(i, frame):
         _strike(add, strike, A(sk), legc, shoe, arm_c)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
+    _lean(pos, lean)
     pos *= d.get("scale", 1.0)
     if frame == 2:
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
@@ -1124,20 +1193,28 @@ def ped_arrays(arch, tone, frame, skin=0):
         legc = (60, 70, 100) if tone != 1 else (50, 50, 54)
     elif arch == 9:
         legc = (46, 52, 78)
-    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame] * (0.7 if arch == 1 else 1.0)
+    frame, th, lean = _phase(frame)
+    if strike:
+        th = lean = 0.0
+    th *= 0.7 if arch == 1 else 1.0
     if arch in (1, 7):                                       # skirt / dress instead of legs
-        add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk)
-        if strike != 5:
-            add(-sw * 0.4, 0.0, 0.09, 0.14, 0.45, 0.12, sk)
+        for z_, sg in ((-0.09, 1), (0.09, -1)):
+            if strike == 5 and sg < 0:
+                continue
+            i0 = len(parts)
+            add(0.0, 0.0, z_, 0.14, 0.45, 0.12, sk)
+            _swing(parts, i0, 0.0, 0.45, th * sg)
         add(0.0, 0.42, 0, 0.34, 0.46, 0.46, torso if arch == 7 else (90, 70, 60))
     else:
-        add(sw, 0.0, -0.11, 0.2, 0.82, 0.16, legc)
-        add(sw + 0.04, 0.0, -0.11, 0.26, 0.1, 0.17, shoe)
-        if strike != 5:                                       # (the kicking leg is drawn by _strike)
-            add(-sw, 0.0, 0.11, 0.2, 0.82, 0.16, legc)
-            add(-sw + 0.04, 0.0, 0.11, 0.26, 0.1, 0.17, shoe)
+        for sg, z_ in ((1, -0.11), (-1, 0.11)):
+            if strike == 5 and sg < 0:                       # (the kicking leg is drawn by _strike)
+                continue
+            i0 = len(parts)
+            add(0.0, 0.0, z_, 0.2, 0.82, 0.16, legc)
+            add(0.04, 0.0, z_, 0.26, 0.1, 0.17, shoe)
+            _swing(parts, i0, 0.0, 0.82, th * sg)
     add(0, 0.8, 0, 0.26, 0.62, 0.5, torso)                    # torso
-    asw = sw * 1.15
+    asw = 0.0
     arms_c = A(torso) * 0.92
     if arch == 4:
         add(0.0, 1.30, 0, 0.30, 0.12, 0.54, (230, 230, 232) if tone != 1 else (20, 20, 20))      # scarf
@@ -1152,15 +1229,16 @@ def ped_arrays(arch, tone, frame, skin=0):
         add(0.0, 1.0, -0.36, 0.14, 0.7, 0.12, sk)
         add(0.0, 1.0, 0.36, 0.14, 0.7, 0.12, sk)
     else:
-        if strike != 4:                                       # (punching: both arms are drawn by _strike)
-            add(-asw, 0.8, -0.34, 0.14, 0.6, 0.12, arms_c)
-            add(asw, 0.8, 0.34, 0.14, 0.6, 0.12, arms_c)
-            add(-asw, 0.74, -0.34, 0.12, 0.1, 0.1, sk)
-            add(asw, 0.74, 0.34, 0.12, 0.1, 0.1, sk)
-        if arch == 2:
-            add(asw, 0.55, 0.40, 0.08, 0.22, 0.34, (110, 70, 40))                                  # briefcase
-        if arch == 1:
-            add(asw, 0.5, 0.42, 0.18, 0.26, 0.2, (180, 60, 60))                                    # shopping bag
+        for z_, sg in ((-0.34, -1), (0.34, 1)):
+            i0 = len(parts)
+            if strike != 4:                                   # (punching: both arms are drawn by _strike)
+                add(0.0, 0.8, z_, 0.14, 0.6, 0.12, arms_c)
+                add(0.0, 0.74, z_, 0.12, 0.1, 0.1, sk)
+            if sg > 0 and arch == 2:
+                add(0.0, 0.55, 0.40, 0.08, 0.22, 0.34, (110, 70, 40))                              # briefcase
+            if sg > 0 and arch == 1:
+                add(0.0, 0.5, 0.42, 0.18, 0.26, 0.2, (180, 60, 60))                                # shopping bag
+            _swing(parts, i0, 0.0, 1.38, sg * th * 1.1)
         if arch == 8:
             add(0.16, 0.9, 0, 0.3, 0.05, 0.5, (210, 170, 110))                                     # burek tray
     add(0.02, 1.42, 0, 0.26, 0.26, 0.24, sk)                  # head
@@ -1193,6 +1271,7 @@ def ped_arrays(arch, tone, frame, skin=0):
         _strike(add, strike, sk, legc, shoe, arms_c)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
+    _lean(pos, lean)
     pos *= scale
     if frame == 2:                                          # lie on the back: rotate about z
         x, y = pos[:, 0].copy(), pos[:, 1].copy()

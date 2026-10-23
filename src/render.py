@@ -136,6 +136,13 @@ class Renderer:
             m = self.car_models[key] = gl3d.car_model(kind, color)
         return m
 
+    @staticmethod
+    def _gait(arch, anim, run):
+        """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
+        if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
+            return int(anim * 2.2) & 1
+        return ((8, 10, 9, 11) if run else (0, 6, 1, 7))[int(anim * 4.4) & 3]
+
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)
         m = self.ped_models.get(key)
@@ -345,16 +352,12 @@ class Renderer:
                 elif p.mode == "ko":
                     frame, y = 2, 0.0
                 elif p.mode == "fight":
-                    frame, y = (p.atk_kind if p.atk_t > 0 else int(p.anim * 2.2) & 1), 0.0
+                    frame, y = (p.atk_kind if p.atk_t > 0 else self._gait(p.arch, p.anim, True)), 0.0
                 elif p.mode == "rage":
                     frame, y = (3 if int(p.anim) & 1 else 0), 0.0
                 else:
-                    frame, y = int(p.anim * 2.2) & 1, 0.0
+                    frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), 0.0
                 lean = 0.0
-                if p.mode == "walk":                               # lean into the walk, more when hurrying
-                    lean = -0.1 - 0.05 * min(2.0, p.v)
-                elif p.mode in ("flee", "rage", "fight", "brawl"):
-                    lean = -0.38                                   # running: a clear forward lean so the heading reads from above
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
                 elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
@@ -365,7 +368,7 @@ class Renderer:
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
-            frame = int(wk.anim * 2.4) & 1 if wk.moving else 0
+            frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 0
             if wk.atk_t > 0:
                 frame = wk.atk_kind
             if wk.z > 0.05:
@@ -375,10 +378,7 @@ class Renderer:
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
                 pass                                       # flicker while hurt
             else:
-                wl_ = 0.0
-                if wk.moving and wk.z < 0.05 and wk.health > 0 and wk.atk_t <= 0:
-                    wl_ = -0.4 if wk.speed > 6.0 else -0.13       # run leans well forward
-                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, wl_))
+                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
             if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
                 wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
                 if wm is not None:
