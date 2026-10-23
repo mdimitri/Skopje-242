@@ -26,7 +26,7 @@ SIDEWALK = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassifi
 MARK = {"primary", "secondary", "tertiary", "trunk", "motorway", "unclassified", "residential"}
 FOOT = {"pedestrian", "footway", "path", "steps", "cycleway", "track"}
 SW_W, SW_H = 2.0, 0.16
-Y_BASE, Y_STEP = 0.05, 0.012
+Y_BASE, Y_STEP = 0.05, 0.016
 PIECE = 24.0                                             # longest ribbon piece (also keeps pieces inside their chunk)
 SAG = 0.012                                              # allowed gap between a flat piece and the curved terrain (m)
 _T = None                                                # terrain used by the piece splitter (set by build)
@@ -53,10 +53,14 @@ def rank_of(cls):
     return RANK.get(_base(cls), 0)
 
 
+_MICRO = {}                                              # id(edge) -> tiny height offset: coplanar ribbons of one rank never z-fight
+
+
 def y_of(e):
+    mc = _MICRO.get(id(e), 0.0)
     if _base(e["cls"]) in FOOT:
-        return 0.04
-    return Y_BASE + Y_STEP * rank_of(e["cls"]) + (0.01 if e["bridge"] else 0.0)
+        return 0.04 + mc
+    return Y_BASE + Y_STEP * rank_of(e["cls"]) + (0.01 if e["bridge"] else 0.0) + mc
 
 
 # ----------------------------------------------------------------------------------------- smoothing
@@ -297,23 +301,217 @@ def _hull(P):
     return lo[:-1] + hi[:-1]
 
 
-def _junctions(out, edges):
-    """One seamless asphalt plate over every junction where roads of different classes (or 3+ roads) meet: no steps
-    between their heights, no gutter lines or end caps showing, one colour (that of the most important road)."""
+def _cut_d(L, maxhw):
+    """How far from a junction node the roads' own ribbons / pavements stop and the junction plate takes over."""
+    return min(L * 0.45, maxhw * 1.15 + 1.0, 9.0)
+
+
+def _away(e, end):
+    """Unit direction leaving the node along edge e (end 0 = starts there, 1 = ends there)."""
+    pts = e["pts"]
+    cum = _cum(pts)
+    L = cum[-1]
+    s = min(2.5, L * 0.5)
+    p = pts[0] if end == 0 else pts[-1]
+    q = _at(pts, cum, s if end == 0 else L - s)
+    d = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
+    return ((q[0] - p[0]) / d, (q[1] - p[1]) / d)
+
+
+def _plate_nodes(edges, joints):
+    """node -> ([(edge, end)], widest half width) for every junction that gets an asphalt plate."""
     inc = {}
     for i, e in enumerate(edges):
         if e["drive"] and not e["bridge"] and len(e["pts"]) >= 2 and _base(e["cls"]) not in FOOT:
             inc.setdefault(e["a"], []).append((i, 0))
             inc.setdefault(e["b"], []).append((i, 1))
-    n = 0
+    res = {}
     for node, lst in inc.items():
-        ranks = {rank_of(edges[i]["cls"]) for i, _ in lst}
-        if len(lst) < 2 or (len(lst) == 2 and len(ranks) == 1 and
-                            abs(edges[lst[0][0]]["w"] - edges[lst[1][0]]["w"]) < 0.6):
+        if len(lst) < 2 or (len(lst) == 2 and all(q in joints for q in lst)):
             continue
+        res[node] = (lst, max(edges[i]["w"] / 2 for i, _ in lst))
+    return res
+
+
+def _joints(edges):
+    """Nodes where exactly two ribbons of the same rank meet end to end (road continues, bends, widens or narrows).
+    Both get the SAME cross-section there (bisector normal, mean half width), so asphalt and pavements share vertices."""
+    inc = {}
+    for i, e in enumerate(edges):
+        if (e["drive"] or e["walk"]) and not e["bridge"] and len(e["pts"]) >= 2:
+            inc.setdefault(e["a"], []).append((i, 0))
+            inc.setdefault(e["b"], []).append((i, 1))
+    J = {}
+    for node, lst in inc.items():
+        if len(lst) != 2 or lst[0][0] == lst[1][0]:
+            continue
+        (i, ei), (j, ej) = lst
+        A, B = edges[i], edges[j]
+        if (_base(A["cls"]) in FOOT) != (_base(B["cls"]) in FOOT) or rank_of(A["cls"]) != rank_of(B["cls"]):
+            continue
+        dA, dB = _away(A, ei), _away(B, ej)
+        tx, ty = dB[0] - dA[0], dB[1] - dA[1]
+        tl = math.hypot(tx, ty)
+        if tl < 0.6:                                      # a hairpin: leave it to the plate
+            continue
+        T = (tx / tl, ty / tl)
+        hwn = (A["w"] + B["w"]) / 4.0
+        out = {}
+        for (k, ek, d) in ((i, ei, dA), (j, ej, dB)):
+            t = T if ((ek == 1) if k == i else (ek == 0)) else (-T[0], -T[1])     # travel direction of that edge at the node
+            n = (-t[1], t[0])
+            seg = d if ek == 0 else (-d[0], -d[1])                              # direction of its own end segment
+            c = n[0] * -seg[1] + n[1] * seg[0]
+            if c < 0.6:
+                out = None
+                break
+            out[(k, ek)] = (n, 1.0 / c, hwn)
+        if out:
+            J.update(out)
+    return J
+
+
+def _ribbon(e, i, J, plates):
+    """The edge's centreline with extra vertices where its width tapers to a shared joint and where it stops at a
+    junction plate.  -> (pts, per-vertex half widths, frames, first vertex of the pavement run, last vertex)."""
+    pts = e["pts"]
+    cum = _cum(pts)
+    L = cum[-1]
+    hw = e["w"] / 2
+    marks = []
+    taper = {}
+    for end in (0, 1):
+        j = J.get((i, end))
+        if j and abs(j[2] - hw) > 0.05:
+            T = min(14.0, L * 0.4)
+            taper[end] = (T, j[2])
+            marks.append(T if end == 0 else L - T)
+    cut = {}
+    for end in (0, 1):
+        node = e["a"] if end == 0 else e["b"]
+        pl = plates.get(node)
+        if pl and (i, end) in pl[0] and _base(e["cls"]) in SIDEWALK:
+            d = _cut_d(L, pl[1])
+            cut[end] = d
+            marks.append(d if end == 0 else L - d)
+    ss = list(cum)
+    for m in sorted(marks):
+        if 0.1 < m < L - 0.1:
+            k = min(range(len(ss)), key=lambda q: abs(ss[q] - m))
+            if abs(ss[k] - m) > 0.15:
+                ss.append(m)
+    ss = sorted(set(ss))
+    P = [pts[0] if abs(s_) < 1e-9 else (pts[-1] if abs(s_ - L) < 1e-9 else _at(pts, cum, s_)) for s_ in ss]
+    hwv = []
+    for s_ in ss:
+        h = hw
+        if 0 in taper:
+            T, hn = taper[0]
+            h = hn + (hw - hn) * min(1.0, s_ / T)
+        if 1 in taper:
+            T, hn = taper[1]
+            h = min(h, hn + (hw - hn) * min(1.0, (L - s_) / T)) if 0 in taper else hn + (hw - hn) * min(1.0, (L - s_) / T)
+        hwv.append(h)
+    fr = _frames(P)
+    for end, k in ((0, 0), (1, len(P) - 1)):
+        j = J.get((i, end))
+        if j:
+            fr[k] = (j[0], j[1])
+    k0 = min(range(len(ss)), key=lambda q: abs(ss[q] - cut[0])) if 0 in cut else 0
+    k1 = min(range(len(ss)), key=lambda q: abs(ss[q] - (L - cut[1]))) if 1 in cut else len(P) - 1
+    return P, hwv, fr, k0, k1
+
+
+def _offset_v(P, fr, hwv, side, extra=0.0):
+    return [(p[0] + f[0][0] * (h + extra) * side * f[1], p[1] + f[0][1] * (h + extra) * side * f[1]) for p, f, h in zip(P, fr, hwv)]
+
+
+def _bez(a, c, b, n=6):
+    return [((1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1])
+            for t in (k / n for k in range(n + 1))]
+
+
+def _isect(p, d, q, e):
+    """Intersection of the lines p + d*t and q + e*u, or None when (nearly) parallel."""
+    den = d[0] * e[1] - d[1] * e[0]
+    if abs(den) < 0.12:
+        return None
+    t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den
+    return (p[0] + d[0] * t, p[1] + d[1] * t)
+
+
+def _corners(out, edges, plates, ribs):
+    """Curb corners at every junction: the pavements of neighbouring roads join in a smooth arc (shared vertices at both
+    ends), with asphalt filling the space between the arc and the junction plate."""
+    for node, (lst, maxhw) in plates.items():
+        ent = []
+        for i, end in lst:
+            e = edges[i]
+            da = _away(e, end)
+            ang0 = math.atan2(da[1], da[0])
+            P, hwv, fr, k0, k1 = ribs[i]
+            kk = k0 if end == 0 else k1
+            if _base(e["cls"]) not in SIDEWALK or not ((end == 0 and k0 > 0) or (end == 1 and k1 < len(P) - 1)):
+                ent.append(dict(a=ang0, ok=False))             # no pavement on this road: the corner next to it stays open
+                continue
+            (nx, ny), sc = fr[kk]
+            if end == 1:
+                nx, ny = -nx, -ny                                   # "left" of the direction leaving the node
+            h = hwv[kk]
+            p = P[kk]
+            ent.append(dict(i=i, a=ang0, d=da, p=p, l=(nx, ny), sc=sc, h=h, ok=True))
+        order = sorted(ent, key=lambda q: q["a"])
+        if len(order) < 2:
+            continue
+        cx = cz = None
+        for i, end in lst:
+            pe = edges[i]["pts"]
+            cx, cz = pe[0] if end == 0 else pe[-1]
+            break
+        yv = max(y_of(edges[i]) for i, _ in lst) + 0.012
         top = max(lst, key=lambda q: (rank_of(edges[q[0]]["cls"]), edges[q[0]]["w"]))
-        maxhw = max(edges[i]["w"] / 2 for i, _ in lst)
-        y = max(y_of(edges[i]) for i, _ in lst) + 0.006
+        col = FILL.get(_base(edges[top[0]]["cls"]), (100, 102, 108))
+        n = len(order)
+        for k in range(n):
+            X, Y = order[k], order[(k + 1) % n]
+            if not (X["ok"] and Y["ok"]):
+                continue
+            ang = (Y["a"] - X["a"]) % (2 * math.pi)
+            sx, sy = X["sc"], Y["sc"]
+            A = (X["p"][0] + X["l"][0] * X["h"] * sx, X["p"][1] + X["l"][1] * X["h"] * sx)
+            B = (Y["p"][0] - Y["l"][0] * Y["h"] * sy, Y["p"][1] - Y["l"][1] * Y["h"] * sy)
+            A2 = (X["p"][0] + X["l"][0] * (X["h"] + SW_W) * sx, X["p"][1] + X["l"][1] * (X["h"] + SW_W) * sx)
+            B2 = (Y["p"][0] - Y["l"][0] * (Y["h"] + SW_W) * sy, Y["p"][1] - Y["l"][1] * (Y["h"] + SW_W) * sy)
+            Q = Q2 = None
+            if ang < math.radians(172):
+                Q = _isect(A, X["d"], B, Y["d"])
+                Q2 = _isect(A2, X["d"], B2, Y["d"])
+                lim = 3.0 * (math.hypot(A[0] - B[0], A[1] - B[1]) + 1.0)
+                if Q and math.hypot(Q[0] - A[0], Q[1] - A[1]) > lim:
+                    Q = None
+                if Q2 and math.hypot(Q2[0] - A2[0], Q2[1] - A2[1]) > lim:
+                    Q2 = None
+            if Q and Q2:
+                I, O = _bez(A, Q, B), _bez(A2, Q2, B2)
+                for j in range(len(I) - 1):                        # asphalt between the plate's straight edge and the arc
+                    out.quad((A[0], yv, A[1]), (I[j][0], yv, I[j][1]), (I[j + 1][0], yv, I[j + 1][1]), (I[j + 1][0], yv, I[j + 1][1]), col)
+                    out.quad((A[0], yv, A[1]), (I[j + 1][0], yv, I[j + 1][1]), (I[j][0], yv, I[j][1]), (I[j][0], yv, I[j][1]), col)
+            else:
+                I, O = [A, B], [A2, B2]
+            pc = (178, 174, 166)
+            for j in range(len(I) - 1):
+                out.quad((I[j][0], SW_H, I[j][1]), (I[j + 1][0], SW_H, I[j + 1][1]), (O[j + 1][0], SW_H, O[j + 1][1]), (O[j][0], SW_H, O[j][1]), pc)
+                out.quad((I[j][0], yv - 0.012, I[j][1]), (I[j + 1][0], yv - 0.012, I[j + 1][1]), (I[j + 1][0], SW_H, I[j + 1][1]),
+                         (I[j][0], SW_H, I[j][1]), (150, 148, 142), 0.78)
+
+
+def _junctions(out, edges, plates):
+    """One seamless asphalt plate over every junction where roads of different classes (or 3+ roads) meet: no steps
+    between their heights, no gutter lines or end caps showing, one colour (that of the most important road)."""
+    n = 0
+    for node, (lst, maxhw) in plates.items():
+        top = max(lst, key=lambda q: (rank_of(edges[q[0]]["cls"]), edges[q[0]]["w"]))
+        y = max(y_of(edges[i]) for i, _ in lst) + 0.012
         col = FILL.get(_base(edges[top[0]]["cls"]), (100, 102, 108))
         P = []
         for i, end in lst:
@@ -322,7 +520,7 @@ def _junctions(out, edges):
             cum = _cum(pts)
             L = cum[-1]
             hw = e["w"] / 2
-            d = min(L * 0.45, maxhw * 1.15 + 1.0, 9.0)
+            d = _cut_d(L, maxhw)
             s0 = d if end == 0 else L - d
             q = _at(pts, cum, s0)
             q2 = _at(pts, cum, min(L, s0 + 0.5) if end == 0 else max(0.0, s0 - 0.5))
@@ -362,6 +560,12 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     global _T
     _T = T
     cov = Cover(edges)
+    _MICRO.clear()
+    for i_, e_ in enumerate(edges):
+        _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
+    joints = _joints(edges)
+    plates = _plate_nodes(edges, joints)
+    ribs = {}
     out = Out(chunk_of, T)
     pout = Out(chunk_of)                                   # piers: absolute heights
     piers = []
@@ -377,16 +581,21 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         fr = _frames(pts)
         y = y_of(e)
         hw = w / 2
+        if e["bridge"]:
+            ribs[i] = (pts, [hw] * len(pts), fr, 0, len(pts) - 1)
+        else:
+            ribs[i] = _ribbon(e, i, joints, plates)
+        RP, RH, RF, RK0, RK1 = ribs[i]
         deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
         out.deck = deck
         foot = cls in FOOT
         jit = 0 if foot else (i * 7 % 9) - 4
         base = FILL.get(cls, (100, 102, 108))
         col = tuple(max(0, min(255, c + jit)) for c in base)
-        L, R = offset(pts, fr, hw), offset(pts, fr, -hw)
+        L, R = _offset_v(RP, RF, RH, 1), _offset_v(RP, RF, RH, -1)
         if not foot:                                           # gutter strips + the asphalt itself
             g = 0.42
-            L2, R2 = offset(pts, fr, hw - g), offset(pts, fr, -(hw - g))
+            L2, R2 = _offset_v(RP, RF, RH, 1, -g), _offset_v(RP, RF, RH, -1, -g)
             dark = tuple(c * 0.8 for c in col)
             _strip(out, L, L2, y, dark)
             _strip(out, R2, R, y, dark)
@@ -394,7 +603,9 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         else:
             _strip(out, L, R, y, col)
         # round fill at both ends so mitred junctions have no gaps
-        for p in (pts[0], pts[-1]):
+        for p, end_ in ((pts[0], 0), (pts[-1], 1)):
+            if (i, end_) in joints:                            # shared cross-section: nothing to fill
+                continue
             r = hw - (0.0 if foot else 0.0)
             ring = [(p[0] + math.cos(a * math.pi / 6) * r, p[1] + math.sin(a * math.pi / 6) * r) for a in range(12)]
             for k in range(0, 12, 2):
@@ -403,12 +614,12 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         # pavements with a curb face
         if cls in SIDEWALK and not e["bridge"]:
             for side in (1, -1):
-                inner = offset(pts, fr, side * hw)
-                outer = offset(pts, fr, side * (hw + SW_W))
+                inner = _offset_v(RP, RF, RH, side)
+                outer = _offset_v(RP, RF, RH, side, SW_W)
                 piece = 0
-                for k in range(len(pts) - 1):
-                    ln = math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1])
-                    nsub = _pieces(ln, pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1], 10.0)
+                for k in range(RK0, RK1):                       # from the plate's cut to the plate's cut (or the shared joint)
+                    ln = math.hypot(RP[k + 1][0] - RP[k][0], RP[k + 1][1] - RP[k][1])
+                    nsub = _pieces(ln, RP[k][0], RP[k][1], RP[k + 1][0], RP[k + 1][1], 10.0)
                     for s in range(nsub):
                         t0, t1 = s / nsub, (s + 1) / nsub
                         i0 = (inner[k][0] + (inner[k + 1][0] - inner[k][0]) * t0, inner[k][1] + (inner[k + 1][1] - inner[k][1]) * t0)
@@ -434,7 +645,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                 pier_done.add(e["road"])
                 _piers(pout, piers, deck, T)
         out.deck = None
-    _junctions(out, edges)
+    _junctions(out, edges, plates)
+    _corners(out, edges, plates, ribs)
     for x, yy, ax, ay, w, *_r in xwalks:                      # zebra crossings + stop lines
         _zebra(out, x, yy, ax, ay, w)
     out.flush(add, mat)

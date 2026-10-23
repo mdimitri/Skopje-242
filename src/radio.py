@@ -5,6 +5,8 @@ raylib streams mp3 / ogg / wav / flac (m4a, aac, opus, wma are NOT supported and
 import os
 import random
 import tempfile
+import threading
+import wave
 
 import numpy as np
 
@@ -24,17 +26,55 @@ HINT = ("Тука стави своја музика (mp3, ogg, wav, flac) – �
         "In a vehicle: Q / E (or , / .) change station, the last step is radio off.\n")
 
 
-def _static(sr=audio_mod.SR, dur=0.7):
-    """Tuning noise: hiss with a few whistles, fading in and out."""
+def _static(sr=audio_mod.SR, dur=0.3):
+    """Short, quiet tuning blip: soft hiss fading in and out."""
     rng = np.random.default_rng(7)
     n = int(sr * dur)
     t = np.arange(n) / sr
     x = rng.standard_normal(n) * 0.5
-    x = x - np.convolve(x, np.ones(6) / 6, mode="same") * 0.6                  # brighter hiss
-    x *= 1.0 + 0.6 * np.sign(np.sin(2 * np.pi * 23 * t))                         # crackle gating
-    x += 0.12 * np.sin(2 * np.pi * (900 + 1400 * t / dur) * t)
+    x = x - np.convolve(x, np.ones(6) / 6, mode="same") * 0.6
     x *= np.minimum(1.0, np.minimum(t, dur - t) * 30)
-    return x / max(np.abs(x).max(), 1e-6) * 0.7
+    return x / max(np.abs(x).max(), 1e-6) * 0.5
+
+
+def cut_fragment(path, out_wav, frag, muffle=False):
+    """Decode path completely (raylib's decoder, verified bit-exact against ffmpeg), cut `frag` s from a random point,
+    fade the ends and write a 16-bit wav.  Runs in a worker thread.  Returns True on success."""
+    rl = audio_mod.rl
+    with open(path, "rb") as f:                        # from memory: raylib's own fopen mangles Cyrillic paths on Windows
+        raw = f.read()
+    w = rl.load_wave_from_memory(os.path.splitext(path)[1].lower(), raw, len(raw))
+    try:
+        if w.frameCount <= 0:
+            return False
+        if w.sampleSize not in (16, 32):
+            rl.wave_format(w, 48000, 16, w.channels)
+        ch, sr, n_all = w.channels, w.sampleRate, w.frameCount
+        if w.sampleSize == 32:
+            a = np.frombuffer(rl.ffi.buffer(rl.ffi.cast("float *", w.data), n_all * ch * 4), dtype=np.float32)
+        else:
+            a = np.frombuffer(rl.ffi.buffer(rl.ffi.cast("short *", w.data), n_all * ch * 2), dtype=np.int16).astype(np.float32) / 32768.0
+        n = min(n_all, int(frag * sr))
+        st = random.randint(0, max(0, n_all - n - sr)) if n_all > n + sr else 0
+        seg = np.array(a[st * ch:(st + n) * ch], dtype=np.float32).reshape(n, ch)
+        fi, fo = min(n // 2, int(0.25 * sr)), min(n // 2, int(0.9 * sr))
+        seg[:fi] *= np.linspace(0, 1, fi, dtype=np.float32)[:, None]
+        seg[n - fo:] *= np.linspace(1, 0, fo, dtype=np.float32)[:, None]
+        if muffle:                                     # heard through a closed car body: low-pass ~500 Hz, quieter
+            fq = np.fft.rfftfreq(n, 1.0 / sr)
+            gain = 1.0 / np.sqrt(1.0 + (fq / 500.0) ** 6)
+            for c_ in range(ch):
+                seg[:, c_] = np.fft.irfft(np.fft.rfft(seg[:, c_]) * gain, n)
+            seg *= 0.7
+        pcm = (np.clip(seg, -1, 1) * 32000).astype("<i2")
+        with wave.open(out_wav, "wb") as f:
+            f.setnchannels(ch)
+            f.setsampwidth(2)
+            f.setframerate(sr)
+            f.writeframes(pcm.tobytes())
+        return True
+    finally:
+        rl.unload_wave(w)
 
 
 def scan(base=MUSIC):
@@ -60,11 +100,14 @@ def scan(base=MUSIC):
 
 
 class Radio:
+    """Plays pre-cut fragments as in-memory sounds (no streaming: streamed mp3 under a slow frame rate underran and
+    crackled).  A worker thread prepares the next fragment while the current one plays."""
+
     def __init__(self, aud):
         self.aud = aud
         self.stations = []
         self.sel = 0                   # station index; == len(stations) means "radio off"
-        self.music = None
+        self.snd = None
         self.cur = None
         self.state = "off"             # off | static | play
         self.t = 0.0
@@ -76,6 +119,11 @@ class Radio:
         self.hint = ""
         self.user_off = False
         self._scan_t = 0.0
+        self._dir = None
+        self._job = None               # running worker: dict(station, thread, out, title, path, ok)
+        self._ready = None             # finished job for the current station
+        self._seq = 0
+        self._burst_len = 0.3
         if not aud.ok:
             return
         try:
@@ -84,7 +132,8 @@ class Radio:
             if not os.path.exists(hp):
                 with open(hp, "w", encoding="utf-8") as f:
                     f.write(HINT)
-            p = os.path.join(tempfile.mkdtemp(prefix="skopje_radio_"), "static.wav")
+            self._dir = tempfile.mkdtemp(prefix="skopje_radio_")
+            p = os.path.join(self._dir, "static.wav")
             audio_mod._save(p, _static())
             self.static = audio_mod.rl.load_sound(p)
         except Exception:  # noqa: BLE001
@@ -127,63 +176,92 @@ class Radio:
         n = len(self.stations) + 1
         self.sel = (self.sel + d) % n
         self.user_off = self.sel >= len(self.stations)
+        self._ready = None
         if self.user_off:
             self._silence()
             return "Радио: исклучено"
         self._burst()
         return "Радио: " + self.stations[self.sel][0]
 
-    def _next(self):
-        """Chop into a random part of a random song of the current station."""
-        rl = self._rl()
-        self._stop_music()
+    # ---- fragment preparation (worker thread)
+    def _prepare(self):
+        """Start cutting the next fragment for the current station unless one is ready / running."""
+        if self._ready is not None or self._job is not None or self.off or not self._dir:
+            return
         pool = list(self.stations[self.sel][1])
         random.shuffle(pool)
         if self.cur in pool and len(pool) > 1:
             pool.remove(self.cur)
-        for p in pool:
-            try:
-                m = rl.load_music_stream(p)
-                if not rl.is_music_valid(m):
+        self._seq += 1
+        job = {"station": self.sel, "out": os.path.join(self._dir, f"frag{self._seq % 3}.wav"), "ok": False, "done": False, "path": None}
+
+        def work():
+            for p in pool[:6]:
+                try:
+                    if cut_fragment(p, job["out"], random.uniform(*FRAG)):
+                        job["ok"], job["path"] = True, p
+                        print(f"[radio] playing a part of {p}", flush=True)
+                        break
+                except Exception as e:  # noqa: BLE001
+                    print(f"[radio] FAILED {p}: {e}", flush=True)
                     continue
-                self.music, self.cur, self.t = m, p, 0.0
-                self.now = os.path.splitext(os.path.basename(p))[0].replace("_", " ")
-                self.frag = random.uniform(*FRAG)
-                rl.play_music_stream(m)
-                ln = rl.get_music_time_length(m)
-                if ln > self.frag + 6:
-                    rl.seek_music_stream(m, random.uniform(0.0, ln - self.frag - 4))
-                elif ln > 6:
-                    self.frag = max(5.0, ln - 1.0)
-                self.state = "play"
-                return True
-            except Exception:  # noqa: BLE001
-                pass
-        self.state = "off"
-        return False
+                print(f"[radio] cannot decode {p}", flush=True)
+            job["done"] = True
+
+        job["thread"] = threading.Thread(target=work, daemon=True)
+        self._job = job
+        job["thread"].start()
+
+    def _collect(self):
+        j = self._job
+        if j is not None and j["done"]:
+            self._job = None
+            if j["station"] == self.sel and not self.off:
+                if j["ok"]:
+                    self._ready = j
+                else:
+                    self.rescan()
+                    self._ready = None
+
+    def _start_play(self):
+        rl = self._rl()
+        j, self._ready = self._ready, None
+        try:
+            snd = rl.load_sound(j["out"])
+            if not rl.is_sound_valid(snd):
+                return False
+            self.snd, self.cur, self.t = snd, j["path"], 0.0
+            self.now = os.path.splitext(os.path.basename(j["path"]))[0].replace("_", " ")
+            rl.set_sound_volume(snd, self.volume * self.aud.master)
+            rl.play_sound(snd)
+            self.state = "play"
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def _stop_music(self):
-        if self.music is not None:
+        if self.snd is not None:
             try:
-                self._rl().stop_music_stream(self.music)
-                self._rl().unload_music_stream(self.music)
+                self._rl().stop_sound(self.snd)
+                self._rl().unload_sound(self.snd)
             except Exception:  # noqa: BLE001
                 pass
-            self.music = None
+            self.snd = None
 
-    def _burst(self, dur=0.55):
+    def _burst(self, dur=0.3):
         rl = self._rl()
         self._stop_music()
         self.state, self.t, self.now = "static", 0.0, ""
         self._burst_len = dur
         try:
-            rl.set_sound_volume(self.static, 0.5 * self.volume * self.aud.master)
+            rl.set_sound_volume(self.static, 0.25 * self.volume * self.aud.master)
             rl.play_sound(self.static)
         except Exception:  # noqa: BLE001
             pass
 
     def _silence(self):
         self._stop_music()
+        self._ready = None
         try:
             self._rl().stop_sound(self.static)
         except Exception:  # noqa: BLE001
@@ -200,7 +278,7 @@ class Radio:
         if not on:
             if self.state != "off":
                 self._silence()
-            if in_vehicle and self.user_off is False and not self.stations:
+            if in_vehicle and not self.stations:
                 self._scan_t += dt
                 if self._scan_t > 5.0:                       # music dropped in while playing
                     self._scan_t = 0.0
@@ -209,23 +287,130 @@ class Radio:
         if self.state == "off":                      # just got in: rescan (files may have been added), tune in
             self.rescan()
             if not self.off:
-                self._burst(0.4)
+                self._burst(0.3)
             return None
         self.t += dt
+        self._collect()
+        self._prepare()
         if self.state == "static":
-            if self.t > self._burst_len and self._next():
+            if self.t > self._burst_len and self._ready is not None and self._start_play():
                 return self.now
+            if self.t > self._burst_len and not rl.is_sound_playing(self.static) and self.t < 30:
+                if self._ready is None:                       # still decoding: keep a faint hiss going
+                    rl.set_sound_volume(self.static, 0.12 * volume * self.aud.master)
+                    rl.play_sound(self.static)
             return None
         try:
-            rl.update_music_stream(self.music)
-            fade = min(1.0, self.t / 0.3, max(0.0, (self.frag - self.t) / 0.8))
-            rl.set_music_volume(self.music, volume * self.aud.master * fade)
-            ended = (not rl.is_music_stream_playing(self.music)) or rl.get_music_time_played(self.music) >= rl.get_music_time_length(self.music) - 0.05
-            if ended or self.t > self.frag:
-                self._burst(random.uniform(0.2, 0.4))
+            rl.set_sound_volume(self.snd, volume * self.aud.master)
+            if not rl.is_sound_playing(self.snd):
+                self._burst(random.uniform(0.15, 0.3))
         except Exception:  # noqa: BLE001
             self._burst()
         return None
 
     def close(self):
         self._stop_music()
+
+
+class CabinMusic:
+    """Some traffic cars (about 1 in 10, at most one near you) play the radio inside: heard from outside only as a quiet,
+    muffled (low-passed) thump.  A fragment is cut ahead of time by a worker thread from the same music/ folder."""
+
+    RANGE = 34.0
+
+    def __init__(self, aud, radio):
+        self.aud, self.radio = aud, radio
+        self.car = None
+        self.snd = None
+        self.ready = None                  # path of a finished muffled fragment
+        self.job = None
+        self.n = 0
+        self.t = 0.0
+
+    def _rl(self):
+        return audio_mod.rl
+
+    def _prepare(self):
+        if self.ready is not None or self.job is not None or not self.radio._dir:
+            return
+        files = [p for _n, ps in self.radio.stations for p in ps]
+        if not files:
+            return
+        self.n += 1
+        job = {"out": os.path.join(self.radio._dir, f"cab{self.n % 2}.wav"), "ok": False, "done": False}
+        pick = random.sample(files, min(4, len(files)))
+
+        def work():
+            for p in pick:
+                try:
+                    if cut_fragment(p, job["out"], random.uniform(20.0, 38.0), muffle=True):
+                        job["ok"] = True
+                        break
+                except Exception:  # noqa: BLE001
+                    continue
+            job["done"] = True
+
+        self.job = job
+        threading.Thread(target=work, daemon=True).start()
+
+    def _stop(self):
+        if self.snd is not None:
+            try:
+                self._rl().stop_sound(self.snd)
+                self._rl().unload_sound(self.snd)
+            except Exception:  # noqa: BLE001
+                pass
+            self.snd = None
+        self.car = None
+
+    def update(self, dt, cars, fx, fy, active, volume):
+        """cars: traffic cars; active: False while e.g. the player's own radio plays or the game is muted."""
+        if not self.aud.ok or not active or volume <= 0.01 or not self.radio.stations:
+            if self.snd is not None:
+                self._stop()
+            return
+        rl = self._rl()
+        if self.job is not None and self.job["done"]:
+            self.ready = self.job["out"] if self.job["ok"] else None
+            self.job = None
+            if self.ready is None:
+                self.t = -30.0             # decoding failed: do not hammer the disk
+        if self.snd is None:
+            self.t += dt
+            if self.t >= 0:
+                self._prepare()
+            if self.ready is None:
+                return
+            best, bd = None, self.RANGE * 0.8
+            for c in cars:
+                if c.cab and abs(c.x - fx) < bd and abs(c.y - fy) < bd:
+                    d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5
+                    if d < bd:
+                        best, bd = c, d
+            if best is None:
+                return
+            try:
+                snd = rl.load_sound(self.ready)
+                self.ready = None
+                if not rl.is_sound_valid(snd):
+                    return
+                self.snd, self.car = snd, best
+                best.cab = False           # one song per car
+                rl.play_sound(snd)
+            except Exception:  # noqa: BLE001
+                self.snd = None
+            return
+        c = self.car
+        d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5 if c is not None else 1e9
+        try:
+            if c not in cars or d > self.RANGE or not rl.is_sound_playing(self.snd):
+                self._stop()
+                self.t = -8.0              # a pause before the next one
+                return
+            k = 1.0 - d / self.RANGE
+            rl.set_sound_volume(self.snd, 0.5 * k * k * volume * self.aud.master)
+        except Exception:  # noqa: BLE001
+            self._stop()
+
+    def close(self):
+        self._stop()

@@ -2,6 +2,15 @@
 
 Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.jpg`), roads (`roads.jpg`), night headlights (`night.jpg`), weapons (`weapons.jpg`), POI shop menu (`poi.jpg`), selfie sky (`selfie.jpg`), driving, kiosk and Vardar, all from the real game at 1280x720.
 
+## v1.3 – walking, bumping, muffled car music, joined roads
+
+- **Walk animation:** longer strides, bigger leg and arm swing and a forward lean (strong when running) for the avatar and pedestrians, so the heading reads from above.
+- **Speech:** your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x, default 1x = as before).
+- **Bumping:** walk into a pedestrian and they grumble, insult you, threaten you ("ќе ти врзам шамар", "гитла бе", "мрш", "фаќај магла" ...) and after a few bumps fight you. Lines depend on the character type (`src/bump_lines.py`).
+- **Cars:** about 1 in 10 traffic cars plays the music from `music/` inside the cabin; only one at a time is heard, low-passed (muffled) and quiet. Nearby traffic now has an engine hum.
+- **Combat:** much more ammo per pickup; a swung bat also smashes props; animated score pop-ups (sparks, bigger and hotter numbers for bigger payouts).
+- **Roads (world version 12, rebuilds automatically):** roads that continue, bend, widen or narrow share one cross-section (same vertices, smooth width taper); pavements join into curved corners at junctions; tiny height offsets stop coplanar road pieces from z-fighting (flicker).
+
 ## v1.2 – collisions, combat, shops and radio
 
 - **Collisions:** oriented-box (SAT) collisions for every car with a grid broadphase; traffic brakes for sideways cars; exact walker-vs-car push-out; careful driving.

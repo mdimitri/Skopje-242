@@ -351,6 +351,10 @@ class Renderer:
                 else:
                     frame, y = int(p.anim * 2.2) & 1, 0.0
                 lean = 0.0
+                if p.mode == "walk":                               # lean into the walk, more when hurrying
+                    lean = -0.1 - 0.05 * min(2.0, p.v)
+                elif p.mode in ("flee", "rage", "fight", "brawl"):
+                    lean = -0.38                                   # running: a clear forward lean so the heading reads from above
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
                 elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
@@ -371,7 +375,10 @@ class Renderer:
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
                 pass                                       # flicker while hurt
             else:
-                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
+                wl_ = 0.0
+                if wk.moving and wk.z < 0.05 and wk.health > 0 and wk.atk_t <= 0:
+                    wl_ = -0.4 if wk.speed > 6.0 else -0.13       # run leans well forward
+                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, wl_))
             if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
                 wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
                 if wm is not None:

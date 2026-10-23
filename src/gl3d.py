@@ -754,7 +754,7 @@ def _ped_special(arch, tone, frame, skin):
         D.update(torso=(130, 100, 70), legs=(60, 56, 50), rider="cart"); hat = ("brim", (150, 130, 80))
     scale, torso, legc = D["scale"], D["torso"], D["legs"]
     rider = D["rider"]
-    sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame] * D["stride"]
+    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame] * D["stride"]
     sit = rider in ("road", "old", "moped", "courier", "cart") and frame < 2
     Y = -0.2 if sit else 0.0                                 # upper body lowered when seated
     bx = -0.05 if sit else 0.0
@@ -827,7 +827,7 @@ def _ped_special(arch, tone, frame, skin):
     # ---------------- torso, arms, head
     wd = 0.5 + D["wide"]
     add(bx, 0.8 + Y, 0, 0.26 + D["belly"], 0.62, wd, torso)
-    asw = sw * 0.8
+    asw = sw * 1.15
     ac = A(torso) * 0.92 if not D["shorts"] or name == "Teretana Brat" else A(torso) * 0.92
     if frame == 3 or D["arms_up"]:
         add(0.0, 1.0 + Y, -0.36 - D["wide"] / 2, 0.14, 0.7, 0.12, sk)
@@ -933,7 +933,7 @@ def _hero(i, frame):
     hc, hs = d["hair"]
     legc = d.get("legs") or sk
     shoe, belly, st = d["shoe"], d.get("belly", 0.0), d.get("stoop", 0.0)
-    sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame]
+    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame]
     # legs: thigh + shin, knee, shoes with a sole
     for s_, z in ((sw, -0.11), (-sw, 0.11)):
         if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
@@ -977,7 +977,7 @@ def _hero(i, frame):
     if "backpack" in ex:
         add(-0.24, 0.9, 0, 0.16, 0.44, 0.36, (70, 60, 50) if i == 3 else (30, 30, 34))
     # arms: upper, forearm, hand; frame 3 = arms up
-    asw = sw * 0.8
+    asw = sw * 1.15
     arm_c = A(top) * 0.92 if "coat" not in ex else A((240, 240, 240))
     hand = (24, 24, 26) if "gloves" in ex else sk
     for s_, z in ((-asw, -0.34), (asw, 0.34)):
@@ -1124,7 +1124,7 @@ def ped_arrays(arch, tone, frame, skin=0):
         legc = (60, 70, 100) if tone != 1 else (50, 50, 54)
     elif arch == 9:
         legc = (46, 52, 78)
-    sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame] * (0.7 if arch == 1 else 1.0)
+    sw = {0: 0.46, 1: -0.46, 2: 0.0, 3: 0.0}[frame] * (0.7 if arch == 1 else 1.0)
     if arch in (1, 7):                                       # skirt / dress instead of legs
         add(sw * 0.4, 0.0, -0.09, 0.14, 0.45, 0.12, sk)
         if strike != 5:
@@ -1137,7 +1137,7 @@ def ped_arrays(arch, tone, frame, skin=0):
             add(-sw, 0.0, 0.11, 0.2, 0.82, 0.16, legc)
             add(-sw + 0.04, 0.0, 0.11, 0.26, 0.1, 0.17, shoe)
     add(0, 0.8, 0, 0.26, 0.62, 0.5, torso)                    # torso
-    asw = sw * 0.8
+    asw = sw * 1.15
     arms_c = A(torso) * 0.92
     if arch == 4:
         add(0.0, 1.30, 0, 0.30, 0.12, 0.54, (230, 230, 232) if tone != 1 else (20, 20, 20))      # scarf

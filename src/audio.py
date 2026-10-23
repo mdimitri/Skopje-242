@@ -58,6 +58,8 @@ def build():
     ev = np.sin(2 * np.pi * 400 * t) * 0.6 + np.sin(2 * np.pi * 800 * t) * 0.25 + np.sin(2 * np.pi * 1200 * t) * 0.1
     S["engine_ev"] = ev / np.abs(ev).max() * 0.35                           # electric whine: Tesla
     S["engine"] = S["engine_i4"]
+    for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
+        S["ai_" + nm] = S[nm]                                                # traffic engines: own sound instance so the player's engine is not shared
     # horn
     t = _t(0.55)
     x = (np.sin(2 * np.pi * 415 * t) + 0.6 * np.sin(2 * np.pi * 523 * t) + 0.3 * np.sign(np.sin(2 * np.pi * 415 * t))) * np.minimum(1, t / 0.02) * np.minimum(1, (0.55 - t) / 0.05)
@@ -188,7 +190,7 @@ def _loopify(x, fade=0.25):
 
 
 class Audio:
-    LOOPS = ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "siren_police", "siren_amb",
+    LOOPS = ("ai_engine_i4", "ai_engine_small", "ai_engine_v8", "ai_engine_diesel", "ai_engine_truck", "ai_engine_ev", "engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "city", "birds", "crickets", "crowd", "traffic", "wind")
 
     def __init__(self, mute=False):
