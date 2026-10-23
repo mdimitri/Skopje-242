@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Скопје 242. Newest first.
+All notable changes to Скопје · Член 242. Newest first.
 
 ## Необјавено · Член 242
 
@@ -9,57 +9,57 @@ All notable changes to Скопје 242. Newest first.
 - Променливите на околината се `SK242_*`, а exe-датотеката се вика `Skopje242`.
 - Сите македонски текстови се во `text/*.txt` (5552 низи, вчитани преку `src/texts.py`), проверка со `tools/check_text.py`.
 
-## v2.0 – people that move and talk like Skopje
+## v2.0 – луѓе што се движат и зборуваат како во Скопје
 
-### Animation
-- Rigged limbs: legs swing from hip and knee, arms from shoulder and elbow, for the avatar and every pedestrian.
-- Eight-phase walk and run cycle at a real pace (one stride per about 1.5 m walking and 2.6 m running), forward lean when running, arms down when standing. Arms holding a prop swing with it.
+### Анимација
+- Скелет со нозе од колк и колено и раце од рамо и лакт, за твојот лик и за секој пешак.
+- Осумфазен циклус на одење и трчање со реална брзина (еден чекор на околу 1,5 м при одење и 2,6 м при трчање), навалување напред при трчање и раце долу кога стои. Рацете што држат предмет се лулаат со него.
 
-### Speech and slang
-- All pedestrian, hero and neighbourhood lines are written against `docs/Skopje_slang_bible.txt` (421 terms) and adapted to each character type (old, woman, kid, tough, posh, youth, sport, priest, vendor, cop) and all 24 playable characters.
-- Language level 2 ("Без цензура") is now unhinged.
-- Your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x).
-- **Bumping:** walk into a pedestrian and they grumble, insult you, threaten you ("ќе ти врзам шамар", "гитла бе", "мрш", "фаќај магла"), and after a few bumps they fight you.
-- `python tools/check_slang.py --missing` lists bible terms the game does not use yet.
+### Говор и сленг
+- Сите реплики на пешаците, јунаците и населбите се пишувани според `docs/Skopje_slang_bible.txt` (421 збор) и прилагодени на секој тип (стар, жена, дете, кер, префинет, млад, спортист, свештеник, продавач, полицаец) и на сите 24 лика за играње.
+- Јазичното ниво 2 („Без цензура“) е сега без сопирачки.
+- Твојот лик зборува само кога ќе притиснеш `H` пешки. Нов ред во менито „Колку често зборуваат пешаците“ (0,1x–2x).
+- **Удирање:** удри во пешак и ќе мрмори, ќе те псуе, ќе ти се заканува („ќе ти врзам шамар“, „гитла бе“, „мрш“, „фаќај магла“), а по неколку удари ќе се тепа.
+- `python tools/check_slang.py --missing` ги листа зборовите од алманахот што играта сè уште не ги користи.
 
-### Cars and sound
-- About 1 in 10 traffic cars plays music from `music/` in its cabin. It is muffled and quiet, and only one is heard at a time.
-- Nearby traffic has an engine hum.
+### Коли и звук
+- Околу една од десет коли во сообраќајот пушта музика од `music/` во кабината. Приглушена е и тивка, а се слуша само една одеднаш.
+- Блиските коли имаат шум од мотор.
 
-### Combat
-- Much more ammo per pickup; a swung bat smashes props; animated score pop-ups that grow with the payout.
+### Борба
+- Многу повеќе муниција по подигање; замавнатата палка ги крши предметите; скокачки бројки за поени што растат со наградата.
 
-### Roads (world version 12, rebuilds automatically)
-- Roads that continue, bend, widen or narrow share one cross-section with a smooth taper. Pavements join in curved corners at junctions. Small height offsets stop road pieces from flickering (z-fighting).
+### Улици (верзија на свет 12, се гради сам)
+- Улици што продолжуваат, свиваат, се шират или се стеснуваат делат ист пресек со мазен премин. Тротоарите се спојуваат во заоблени агли на раскрсници. Мали височински разлики го прекинуваат трепкањето (z-fighting).
 
-### Docs
-- Reorganised README with gallery and project layout; refreshed screenshots (drive, kiosk, roads, night) from the real map.
+### Документација
+- Преуреден README со галерија и распоред на проектот; нови слики (возење, киоск, улици, ноќ) од вистинската мапа.
 
-## v1.2 – collisions, combat, shops and radio
+## v1.2 – судири, борба, продавници и радио
 
-- **Collisions:** oriented-box (SAT) collisions for every car with a grid broadphase; traffic brakes for sideways cars; exact walker-vs-car push-out; careful driving.
-- **Chaos:** punchable props that fly and break, blast waves, chain fires and explosions between cars; punches and kicks use the real limbs.
-- **Money:** rewards for punches, props, car hits, run-overs and explosions.
-- **Shops and places (POI):** walk in to cafes, food, schools, health, worship, fuel, banks, markets, police and more via 1–4 menus, with spoken lines.
-- **Selfies** (`P`), weapon models, more road detail.
-- **Radio:** plays local music from `music/` with station switching (`Q` / `E`); no more radio downloads.
-- **Services:** reworked first responders (spray pose, CPR kneel, more jobs); chasers give up at distance; clogged junction spawn block.
+- **Судири:** судири на ориентирани кутии (SAT) за секоја кола со мрежа за груба проверка; сообраќајот сопира за коли настрана; точно туркање пешак–кола; внимателно возење.
+- **Хаос:** предмети што се удираат, летаат и се кршат, ударни бранови, верижни пожари и експлозии меѓу коли; ударите и клоцањата ги користат вистинските екстремитети.
+- **Пари:** награди за удари, предмети, удирање коли, прегазување и експлозии.
+- **Продавници и места (POI):** влези во кафулиња, храна, училишта, здравство, молитвени места, пумпи, банки, маркети, полиција и повеќе преку менија 1–4, со изговорени реплики.
+- **Селфи** (`P`), модели на оружје, повеќе детали по улиците.
+- **Радио:** пушта локална музика од `music/` со менување станици (`Q` / `E`); нема повеќе симнување радио.
+- **Служби:** преработени први одговарачи (поза со распрскување, клекнување за реанимација, повеќе задачи); гонителите се откажуваат од далеку; блок за создавање на запушени раскрсници.
 
-## v1.1 – polish and 3D splash
+## v1.1 – дотерување и 3D екран за вчитување
 
-- **3D loading splash:** endless street with the game's own buildings, furniture, cars and characters, jokes and sun shadows.
-- **11 new characters (likovi):** administratorka, bilder, boza, burek, fitka, nastavnica, navivac, palavko, shmizla, srednoskolec, vojnik; extended showcase and hero lines.
-- **Round 15:** you start as a walker beside your car (`--car` starts inside it); the first neighbourhood is not announced; pop-ups and banners stay as long as their text needs; dead-end roads within 7 m are joined to nearby roads (world version 11, rebuilds automatically).
-- **Fixes:** standing on a bridge deck no longer counts as being in the river; crash when teleporting fixed; culling fix so people and cars are not drawn as bare shadows; the whole-city overview model is only drawn when a ground chunk is missing; shared, budgeted car models and freed dented-car models.
+- **3D екран за вчитување:** бесконечна улица со сопствените згради, опрема, коли и ликови на играта, шеги и сенки од сонце.
+- **11 нови лика:** администраторка, билдер, бозаџија, бурекџија, фитка, наставничка, навивач, палавко, шмизла, средношколец, војник; проширени реплики за приказот и јунаците.
+- **Круг 15:** почнуваш како пешак до својата кола (`--car` почнува внатре); првата населба не се најавува; скокачките натписи траат колку што му треба на текстот; слепите улици во 7 м се спојуваат со блиски улици (верзија на свет 11, се гради сам).
+- **Поправки:** стоење на мост веќе не се смета за во река; поправен пад при телепорт; поправено исфрлање од приказот така што луѓето и колите не се цртаат како голи сенки; моделот на целиот град се црта само кога недостасува парче од земјата; заеднички модели на коли со буџет и ослободени модели на удрени коли.
 
-## v1.0 – first public version (all work so far)
+## v1.0 – прва јавна верзија (сè до тогаш)
 
-- **Round 1–2:** top-down raylib prototype of Skopje from OSM; procedural buildings, trees, traffic, pedestrians; 59 vehicles, 39 road users, kiosks, pickups, slang signs and graffiti.
-- **Round 3:** 3D roads with markings and crossings, day/night cycle and lighting, fighting, jumping, hijacking, synthesised sound and speech.
-- **Round 4:** 11×7 km map, real terrain and slope physics, bridges with decks and falling, ambulance and fire brigade, options menu, neighbourhood names.
-- **Round 5:** everything in Macedonian Cyrillic; download splash with a live map of pieces and honest speed; hardened downloads with mirrors and timeouts; Geofabrik PBF route; joke posters.
-- **Round 6–8:** car radio (open-licence songs, shuffle, static); Suze voice as the only voice (RHVoice via SAPI).
-- **Round 9–10:** working traffic lights with a green wave, smog, real projectiles and weapons, bullet holes and scorch marks.
-- **Round 11–13:** kerbs and breakable props, hero avatars with 52 lines each, real bus stops, JSP buses on real lines that you can ride or take over, kids at playgrounds and school yards.
-- **Round 14:** quit confirmation, `L` character switch, per-speaker Suze profiles, "people with problems" lines, showcase splash (cars and characters).
-- **Settings and saves:** tabbed settings menu, save / load slots, character select.
+- **Круг 1–2:** прототип одозгора во raylib на Скопје од OSM; генерирани згради, дрвја, сообраќај, пешаци; 59 возила, 39 учесници во сообраќајот, киосци, подигања, натписи на сленг и графити.
+- **Круг 3:** 3D улици со ознаки и пешачки, ден и ноќ со осветлување, тепачка, скокање, одземање возила, синтетизиран звук и говор.
+- **Круг 4:** мапа 11×7 км, вистински терен и физика на падини, мостови со патека и паѓање, брза помош и пожарна, мени со опции, имиња на населби.
+- **Круг 5:** сè на македонска кирилица; екран за симнување со жива мапа од парчиња и чесна брзина; зацврстено симнување со огледала и рокови; Geofabrik PBF патека; постери со шеги.
+- **Круг 6–8:** радио во колата (песни со отворена лиценца, мешање, шум); гласот Суџе како единствен глас (RHVoice преку SAPI).
+- **Круг 9–10:** семафори со зелен бран, смог, вистински проектили и оружје, дупки од куршуми и црни дамки.
+- **Круг 11–13:** тротоарски рабници и предмети што се кршат, јунаци со по 52 реплики, вистински автобуски постојки, ЈСП автобуси на вистински линии што можеш да ги возиш или одземеш, деца на игралишта и училишни дворови.
+- **Круг 14:** потврда за излез, менување лик со `L`, профили на Суџе по говорник, реплики „луѓе со проблеми“, екран за приказ (коли и ликови).
+- **Поставки и зачувување:** мени со табови, слотови за зачувување и вчитување, избор на лик.

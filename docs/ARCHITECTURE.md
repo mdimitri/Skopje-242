@@ -1,139 +1,68 @@
-# Architecture
+# Архитектура · Скопје · Член 242
 
-## Data pipeline (`tools/`)
-1. `fetch_osm.py` - 4 Overpass queries (roads, buildings, areas/water/rail, POIs) for the bbox, `out geom`,
-   mirrors + retries, cached as `data/osm/*.json`.
-2. `build_world.py` - projects lat/lon to local metres (origin = centre, +x east, +y south), then:
-   - buildings (incl. multipolygons with courtyards): earcut triangulation, height from `height` /
-     `building:levels` or procedural from footprint area + seeded RNG, procedural roof/wall colours;
-   - areas (parks, woods, water, plazas, parking, landuse) triangulated; waterways, rails;
-   - roads: width/speed per class, bridges, one-ways; **routing graph** split at junctions;
-   - procedural props: trees (parks/woods + street trees), lamps, parked cars, all rejected against a
-     2 m occupancy raster; 2 m surface mask (ground / water / bridge / road) for gameplay;
-   - **chunk index** (120 m chunks): which buildings/areas/road segments/props touch each chunk.
-   Output: one pickle (`data/cache/world.pkl`). Deterministic (seeded by OSM ids).
-3. `make_synthetic_osm.py` - fake Overpass data (grid city + river) used as offline demo / test fixture.
+## Тек на податоци (`tools/`)
+1. `fetch_osm.py` – 4 Overpass барања (улици, згради, површини/води/пруги, места) за рамката, `out geom`, огледала и повторувања, кеширано како `data/osm/*.json`.
+2. `build_world.py` – ги проектира географските координати во локални метри (почеток = центар, +x исток, +y југ), потоа:
+   - згради (и мултиполигони со дворови): триангулација со earcut, висина од `height` / `building:levels` или генерирана од површината на основата и RNG со семе, генерирани бои на покриви и ѕидови;
+   - површини (паркови, шуми, води, плоштади, паркинзи, намена на земјиште) триангулирани; водотеци и пруги;
+   - улици: ширина и брзина по класа, мостови, еднонасочни; **граф за рутирање** поделен на раскрсници;
+   - генерирани предмети: дрвја (паркови и шуми + улични), лампи, паркирани коли, сите одбиени според растер на зафатеност од 2 м; маска на површина од 2 м (земја / вода / мост / улица) за играта;
+   - **индекс на парчиња** (парчиња од 120 м): кои згради, површини, делови улици и предмети го допираат секое парче.
+   Излез: еден pickle (`data/cache/world.pkl`). Детерминистички (семе од OSM ид-ја).
+3. `make_synthetic_osm.py` – лажни Overpass податоци (град на мрежа + река) за демо без интернет и за тестови.
 
-## Rendering (`src/render.py`, `src/bake.py`, `src/gl3d.py`)
-- **Real 3D, top-down camera**: perspective camera high above the car with a slight tilt; buildings (walls with
-  procedural window textures, roofs, pyramid roofs on houses, rooftop boxes), trees and lamp posts are real meshes,
-  generated offline by `build_world.py` into `meshes.bin` (one blob, per chunk and material). Nothing 3D is rebuilt at runtime.
-- **Streaming**: a 120 m chunk = one ground texture (roads, parks, water, building shadows; baked on the GPU, mipmapped)
-  + up to 4 meshes uploaded from the memory-mapped blob. LRU caches, nearest-first, per-frame time budget, frustum culling.
-- **LOD**: a 4096 px overview of the whole city is always drawn under the chunks and replaces them when zoomed out;
-  it is also the minimap / full map (cached as PNG with an integrity check).
-- **Decals** (skid marks, blood, scorch) are drawn straight into the ground chunk textures and replayed when a chunk is re-baked.
-- **Cars**: procedural subdivided meshes; impacts displace vertices (dents) and darken them; a new model is built only when
-  the car is hit. Undamaged cars share cached models. Pedestrians/pickups are small procedural meshes.
+## Цртање (`src/render.py`, `src/bake.py`, `src/gl3d.py`)
+- **Вистинско 3D, камера одозгора:** перспективна камера високо над колата со лек наклон; зградите (ѕидови со генерирани текстури на прозорци, покриви, пирамидални покриви на куќи, кутии на покриви), дрвјата и лампите се вистински мрежи, генерирани однапред од `build_world.py` во `meshes.bin` (еден блок, по парче и материјал). Ништо 3D не се гради за време на играње.
+- **Стримување:** парче од 120 м = една текстура на земја (улици, паркови, води, сенки на згради; печена на GPU, со mipmap) + до 4 мрежи од мапираниот блок. LRU кешови, најблиското прво, буџет на време по слика, отсекување надвор од погледот.
+- **LOD:** преглед на целиот град од 4096 px секогаш се црта под парчињата и ги заменува кога е оддалечено; тоа е и мини-мапата и целата мапа (кеширана како PNG со проверка на целост).
+- **Белези** (траги од гуми, крв, чад) се цртаат директно во текстурите на земјата и се повторуваат кога парчето се пече повторно.
+- **Коли:** генерирани поделени мрежи; ударите ги поместуваат темињата (вдлабнатини) и ги затемнуваат; нов модел се гради само кога колата е удрена. Неоштетените коли делат кеширани модели. Пешаците и подигањата се мали генерирани мрежи.
 
-## Simulation (`src/actors.py`)
-- Player: arcade top-down car (throttle/brake, speed-dependent steering, lateral grip, handbrake drift,
-  off-road drag); 3 collision circles against a hashed grid of building/parked-car edges; water = respawn.
-- Traffic: cars follow the road graph (right-hand traffic, lane offset), brake for anything ahead via a
-  spatial hash (cars, player, pedestrians), slow for junctions, spawn/despawn in a ring around the player.
-  Cars the player hits become physical wrecks. Known limitation: no junction right-of-way logic, no lights.
-- Pedestrians walk sidewalks/footways of the same graph; getting hit knocks them down.
+## Симулација (`src/actors.py`)
+- Играч: аркадна кола одозгора (гас/кочница, управување зависно од брзина, странично држење, рачна со дрифт, влечење надвор од пат); 3 круга на судир наспроти хеш-мрежа од рабови на згради и паркирани коли; вода = повторно појавување.
+- Сообраќај: колите го следат графот на улици (десно движење, поместување по лента), сопираат за сè пред нив преку просторен хеш (коли, играч, пешаци), забавуваат на раскрсници, се појавуваат и исчезнуваат во прстен околу играчот. Колите што ги удира играчот стануваат физички олупини.
+- Пешаци: одат по тротоари и патеки од истиот граф; кога ќе бидат удрени, паѓаат.
 
-## Robustness
-`Guard` wraps each subsystem (sim, streaming, rendering, HUD ...): errors are logged, repeated failures disable only that
-subsystem. World loading verifies file sizes, rebuilds corrupt data, falls back to the demo city. The overview falls back to
-smaller sizes; failed chunks are skipped.
+## Цврстина
+`Guard` го обвиткува секој подсистем (симулација, стримување, цртање, HUD …): грешките се запишуваат, а повторени пад исклучуваат само тој подсистем. Вчитувањето на светот ги проверува големините на датотеките, ги гради повторно оштетените податоци и паѓа назад на демо градот. Прегледот паѓа на помали големини; неуспешните парчиња се прескокнуваат.
 
-## Ideas for next steps
-Traffic lights, police/wanted level, enterable cars, day/night + headlights, sound, mission system,
-building interiors/roof detail, shader-based night lighting, moving baking to a worker thread.
+## Идеи за натаму
+Полициска потера, влегување во згради, шејдерско ноќно осветлување, печење во посебна нишка, мисии.
 
-## Vehicles, people and street furniture
-`src/vehicles.py` is the catalogue (names, sizes, collision circles, traffic weights, pedestrian archetypes).
-`gl3d.car_arrays` builds each car from boxes plus decal quads (windows, lights, plates, wheel arches); the lower body
-and cabin are subdivided so dents can displace vertices. `gl3d.ped_arrays(arch, tone, frame, skin)` builds people.
-`tools/furniture.py` runs at world build time over the routing graph and writes static meshes plus `posts`
-(collision circles) and `xwalks` (zebra crossings, drawn into the ground textures by `bake._crosswalk`).
-Bridge parapets only appear where the water mask is under the bridge. `python tools/model_sheet.py out.png`
-renders a contact sheet of all models.
+## Возила, луѓе и улична опрема
+`src/vehicles.py` е каталогот (имиња, големини, кругови на судир, тежини во сообраќајот, архетипови на пешаци). `gl3d.car_arrays` ја гради секоја кола од кутии и налепници (прозорци, светла, таблички, лаци на тркала); долниот дел и кабината се поделени за вдлабнатините да ги поместуваат темињата. `gl3d.ped_arrays(arch, tone, frame, skin)` ги гради луѓето. `tools/furniture.py` работи при градење на светот над графот за рутирање и пишува статични мрежи плус `posts` (кругови на судир) и `xwalks` (пешачки, цртани во текстурите на земјата со `bake._crosswalk`). Оградите на мостовите се појавуваат само каде што маската на водата е под мостот. `python tools/model_sheet.py out.png` црта лист со сите модели.
 
-## Round 3: 3D roads, time of day, combat, sound
+## Круг 3: 3D улици, време од денот, борба, звук
+- **`tools/roads3d.py`** ја гради уличната мрежа од *графот за рутирање* (не од суровите OSM линии): рабовите се измазнуваат (квадратни Безие агли, краевите фиксни за раскрсниците да останат спојени), па се извлекуваат во лентички (асфалт + потемни одводи), заоблени краеви, тротоари од 2 м издигнати 0,16 м со рабник (шаховски бои), ознаки (испрекинати средишни и лентни линии, двојна жолта на широки улици, полна рабна линија) и пешачки. Лентичките се сечат на парчиња до 24 м за да паднат во точното парче од 120 м. Хешот `Cover` околу раскрсници ги отстранува деловите од тротоар и ознаки под асфалтот на друга улица (повисокиот ранг победува). Висини: асфалт 0,05 + 0,012 x ранг, ознаки +0,025, пешачка 0,134, тротоар 0,16. Сè е материјал 3 (бои по теме), стримувано како зградите. Знамето `roads3d` во манифестот му кажува на `bake.py` да престане да ги црта улиците во текстурите; прегледот и мини-мапата ги задржуваат 2D улиците. `hgt` (zlib мрежа, 0 земја / 1 асфалт / 2 тротоар) му дава на `World.ground_y` каде стојат луѓето и колите.
+- **`src/clock.py`** време од денот (22 вистински минути за ден): криви на густина на сообраќај и пешаци со гужви, темнина. `[` / `]` го поместуваат часовникот за час.
+- **`src/night.py`** по 3D проодот: множечка боја, па собирни светлосни кругови (лампи, фарови, стоп светла, запалени олупини, трепкачки црвено-сини светла на полиција, брза помош и пожарна).
+- **Борба** (`Sim.attack`, режими `fight`/`ko` кај `Peds`): Ctrl = удар, удар, клоца со конус од 60 степени, одбивање, hp и шанса за возврат по архетип (`vehicles.FIGHT`); нокаутираните пушуваат пари. Пешакот има hp, нокаутирана состојба (околу 4,5 с, па станува со 35 hp загубил 40 % од парите) и скок.
+- **`src/audio.py`** ги синтетизира сите ефекти со numpy и ги пушта преку raylib (нема уред → тишина). **`src/speech.py`** е формантен синтетизатор што работи во позадинска нишка и е кеширан; еден глас по име на говорник.
+- **`src/places.py`** натписи на населби и листата за телепорт со `T` (OSM place јазли, рачно составена резервна листа).
 
-- **`tools/roads3d.py`** builds the road network from the *routing graph* (not the raw OSM ways): edges are smoothed
-  (quadratic Bézier corners, endpoints fixed so junctions stay connected), then extruded to mitred ribbons (asphalt +
-  darker gutters), round end fills, 2 m pavements raised 0.16 m with a curb face (chequered paving colours), lane
-  markings (dashed centre/lane lines, double yellow on wide roads, solid edge lines) and zebra crossings. Ribbons are cut
-  into <= 24 m pieces so each lands in the correct 120 m chunk. A `Cover` hash around junctions removes pavement and
-  marking pieces that lie under another road's asphalt (higher rank wins). Heights: asphalt 0.05 + 0.012 x rank,
-  markings +0.025, zebra 0.134, pavement 0.16. Everything is material 3 (vertex colours), streamed like buildings.
-  The manifest flag `roads3d` tells `bake.py` to stop drawing roads into the ground textures; the overview/minimap keep
-  the 2D roads. `hgt` (zlib grid, 0 ground / 1 asphalt / 2 pavement) gives `World.ground_y` so people and cars stand on
-  the right surface. Skids, blood and scorch (decals) are redrawn as flat quads above the road (`Renderer._decals`).
-- **`src/clock.py`** time of day (22 real minutes per day): traffic/pedestrian density curves with rush hours, darkness.
-  `Sim.update` scales the agent targets and culls the farthest surplus agents; `[`/`]` shift the clock by an hour.
-- **`src/night.py`** after the 3D pass: a multiply tint, then additive light pools (lamps, headlights, brake lights,
-  burning wrecks, flashing red/blue light bars on police/ambulance/fire kinds 47-49).
-- **Combat** (`Sim.attack`, `Peds` modes `fight`/`ko`): Ctrl = punch, punch, kick with a 60 degree cone, knock-back,
-  per-archetype hp and fight-back chance (`vehicles.FIGHT`); KO'd peds drop cash. The walker has hp, a knocked-out state
-  (about 4.5 s, then wakes at 35 hp having lost 40 % of the money) and jump (`z`, `vz`) - walker/car collisions are
-  circle based and ignored while the player is above roof height, damage scales with closing speed.
-- **`src/audio.py`** synthesises all effects with numpy and plays them through raylib (no device -> silent).
-  **`src/speech.py`** is a formant synthesiser (harmonic source shaped by 3 formant resonances + band noise for
-  fricatives/bursts) run on a background thread and cached; one voice per speaker name.
-- **`src/places.py`** neighbourhood tooltips and the `T` teleport list (OSM place nodes, hand-placed fallback list).
+## Круг 4: поголема мапа, мени, служби за спасување, терен, нивоа на мостови
+- **Рамка на светот** 11 x 7 км (`tools/geo.py` HX/HY). Overpass се презема во 6 плочки.
+- **`src/settings.py`, `src/menu.py`** опции (`settings.json`), применети веднаш (`main.apply_cfg`); `src/ui.py` `Loader` е екранот за вчитување со дневник.
+- **`src/services.py`** брза помош (оживува) и пожарна (гаси): `Sim._dispatch` ги бара, се појавуваат 240–380 м подалеку, возат по графот (Dijkstra) и екипата се `Ped(mode="svc")`.
+- **Терен** (`tools/terrain.py`): float32 мрежа со точки на 10 м, билинеарно `Terrain.h` (градење) и `World.th` (игра) се иста функција. `build_world.py` го вдлабнува коритото на реката, ги дига зградите и дрвјата, лампите и опремата според висината под центарот. Улиците, тротоарите и ознаките се креваат по теме; лентичките се делат адаптивно за да остане рамно парче во 1,2 см од закривената земја.
+- **Цртање на земја:** секое парче добива мрежа од 4 м со печената текстура; далечниот преглед е мрежа на терен од 40 м под текстурата на прегледот.
+- **Мостови** (`terrain.make_deck`): краевите се среќаваат со теренот; каде што мостот преминува улица (4,4 м) или патека (3,0 м) монотон кубен профил го крева за да помине. `roads3d` додава греди, долна страна и столбови; `furniture` ги става оградите на висина на мостот. `World.deck_h`, `World.level(x, y, wy)` и `World.wet(x, y, wy)` одлучуваат дали стоиш на мост, на земја или во вода. Кругови на судир носат височински прозорец, па ограда на мост не го блокира патот под него.
+- **Вертикално движење:** `Walker.az/vz` и `actors.settle()` за коли: залепени за површината; кога таа ќе заврши паѓаат (g = 16 м/с² за аркадниот скок, 9,81 за коли), штета при слетување `(v - 8,5) * 8` за пешакот, `(v - 5) * 5` за колите, прскање ако е мокро. Гравитација по падина, рачна кочница, наклон и превртување (`Body.pitch/roll`), брзина на одење по Тоблер.
+- Не е моделирано: пролаз на возила под ниски мостови (колите минуваат под секој мост), рампи надвор од краевите, тунели, потпорни ѕидови.
 
-## Round 4: bigger map, menu, rescue services, terrain, bridge levels
+## Круг 5: кирилица, чесен екран за вчитување, зацврстено симнување, постери
+- **Кирилица насекаде.** Основниот фонт на raylib нема кирилица, па секој повик за текст оди преку `src/font.py` (DejaVu Sans + Bold во `assets/fonts`, експлицитни кодни точки; слободна лиценца). Сите текстови се на литературен македонски, сега во `text/*.txt` и се вчитуваат преку `src/texts.py`; внатрешните латински ид-ја остануваат клучеви. Имињата на населбите доаѓаат право од OSM `name`. `speech.py` ја претвора кирилицата во фонеми за синтетизаторот и ја предава непроменета на неуралниот глас. Извори и статус на преглед: `docs/TEXT_SOURCES.md`.
+- **Протокол на настани.** Со `SK242_EVENTS=1` алатките печатат ASCII редови `@@{json}`: `plan`, `cell`, `net`, `warn`, `note`, `prog`, `done`. `main.run_tool` ги чита и ги дава на `ui.Loader.event`. `tools/net.py` ги испраќа за секое барање, еднаш во секунда.
+- **Loader (`src/ui.py`).** Фазите се планираат однапред (`main.plan_needs`). Вкупната лента е збир на фазите и никогаш не оди наназад. Фазата на градење ги користи фазите на `tools/build_world.py` со тежини од минатото градење (`data/cache/build_times.json`). Панелот ја црта рамката од 11 x 7 км, со бои за чека / активно / готово / кеширано / неуспешно / поделено, плус вистинската брзина, бајти, време на чекање, сервер и предупредувања.
+- **Зацврстено симнување** (`tools/net.py`, `fetch_osm.py`, `fetch_terrain.py`): работна нишка + надгледувач, рокови за прв бајт и застој, видови грешки, оценување и ладење на огледала, проверка на Overpass `/status`, `Retry-After`, делење ќелија на четвртини, продолжување од `data/osm/parts`, рокови по ќелија и вкупно, втор проод, излезни кодови 0 добро / 2 делумно но употребливо / 1 ништо. `run_tool` ја убива алатката што ќе го надмине роковите (osm 62 мин, терен 20 мин, градење 60 мин).
+- **Постери.** `tools/make_posters.py` (само Pillow) црта 17 постери со шеги и `title.png` во `assets/posters/` и пишува `posters.json`. `src/poster.py` ги вчитува по случаен редослед со преливање; насловниот постер е првиот екран на loader-от и позадина на почетното мени. Повторно со `python tools/make_posters.py`.
 
-- **World box** 11 x 7 km (`tools/geo.py` HX/HY; `World.hx/hy/ncx/ncy`; overview texture is rectangular). Overpass is fetched in 6 tiles.
-- **`src/settings.py`, `src/menu.py`** options (`settings.json`), applied live (`main.apply_cfg`); `src/ui.py` `Loader` is the splash screen with a log.
-- **`src/services.py`** ambulance (revive) and fire engine (extinguish): `Sim._dispatch` requests them, they spawn 240-380 m away, route over the
-  graph (Dijkstra), drive by pure pursuit through `Body.ctl`, crew are `Ped(mode="svc")`.
-- **Terrain** (`tools/terrain.py`): float32 grid, 10 m posts, bilinear `Terrain.h` (build) and `World.th` (run time) are the same function.
-  `build_world.py` carves the river bed (`carve_water`), lifts buildings (mean height under the footprint + a skirt down to the lowest corner),
-  and lifts trees / lamps / furniture by the height under their centre. Roads/pavements/markings (`roads3d.Out`) are lifted per vertex in
-  `flush()`; ribbon pieces are split adaptively (`_pieces`) so a flat piece stays within 1.2 cm of the curved ground.
-  World part `terrain.pkl` holds the grid and the bridge decks. `hgt` bit 2 = ground-level water (also under bridges).
-- **Ground rendering:** each streamed chunk gets a 4 m grid mesh textured with its baked ground texture (`Streamer._ground_model`); the far-LOD
-  overview is a 40 m min-pooled terrain mesh under the overview texture. The camera focus height is smoothed (`cam_h`).
-- **Bridge decks** (`terrain.make_deck`): ends meet the terrain; where the deck crosses a road (4.4 m) or footpath (3.0 m) a monotone cubic
-  (PCHIP) profile lifts it to clear it (not within 24 m of an end). `roads3d` adds girders, underside and piers; `furniture` puts the parapets
-  at deck height. Run time: `World.deck_h` (nearest centreline point), `World.level(x, y, wy)` picks the deck when the feet are on / above it,
-  otherwise the ground; `World.wet(x, y, wy)` is ground-level water. Collision circles carry a height window (x, y, r, lo, hi), so a parapet
-  on the deck does not block the path below and a pier does not block the deck.
-- **Vertical motion:** `Walker.az/vz` (feet height) and `actors.settle()` for cars: glued to the surface; when it ends they fall (g = 16 m/s2 for
-  the walker's arcade jump, 9.81 for cars), landing damage `(v - 8.5) * 8` for the walker, `(v - 5) * 5` for cars, splash if the landing is wet.
-  Car gravity along the slope, parking brake, pitch/roll (`Body.pitch/roll`, drawn with a model matrix), Tobler walking speed.
-- Not modelled: vehicle clearance under low decks (cars pass under any deck; the clearance is 4.4 m by construction), deck ramps beyond the bridge ends
-  (so humpback bridges can be steep), tunnels, retaining walls.
+## Круг 6 – радио во колата
+`src/radio.py` (raylib музички текови, мешање, генериран шум), `tools/fetch_radio.py`, поставка `vol_radio`.
 
-## Round 5: Cyrillic, honest loading screen, hardened downloads, posters
-
-- **Cyrillic everywhere.** raylib's default font has no Cyrillic, so every text call goes through `src/font.py` (DejaVu Sans + Bold in
-  `assets/fonts`, explicit code points: ASCII, Latin-1/Ext-A, U+0400-04FF, punctuation, arrows; free licence). All interface strings are
-  literary Macedonian: `src/strings.py` (interface), `src/slang.py` (banter, shop names, graffiti), `vehicles.py` (`MK_CAR`, `MK_PED`,
-  `MK_LINES`, kiosk menu; internal Latin ids stay as keys: `IDS`, `PED_IDS`), `places.py`. Neighbourhood names come straight from the OSM
-  `name` tag (Cyrillic); the old transliteration is gone. `speech.py` turns Cyrillic into the formant synth's phonemes (`cyr_to_latin`) and
-  hands Cyrillic untouched to the neural voice. Sources and review status: `docs/TEXT_SOURCES.md`.
-- **Event protocol.** With `SK242_EVENTS=1` the tools print ASCII lines `@@{json}`: `plan` (cells with their rectangle in local metres),
-  `cell` (state active / done / cached / fail / split), `net` (bytes, bytes per second, seconds waiting, mirror; state wait / recv / done /
-  rest), `warn` (failure kind per mirror), `note`, `prog` (build phase label, n, total), `done`. `main.run_tool` parses them and feeds
-  `ui.Loader.event`. `tools/net.py` emits them for every request, once a second.
-- **Loader (`src/ui.py`).** Stages are planned before anything starts (`main.plan_needs`: osm, dem, build, world, overview, textures,
-  chunks). The overall bar is the weighted sum of stage fractions and can never move backwards (`max()` clamp). Download stages count finished
-  cells; the build stage uses the phases of `tools/build_world.py` (`progress.Bar` / `progress.phase`) weighted by the seconds each phase
-  took on the last real build (`data/cache/build_times.json`, never written for the demo city; defaults until then). The map panel draws
-  the 11 x 7 km box: per tile five stripes (roads, buildings, areas, places of interest, neighbourhoods), terrain tiles as tinted frames;
-  colours pending / active / done / cached / failed / split; plus the real speed, bytes, waiting time, server and the warnings.
-- **Hardened download** (`tools/net.py`, `fetch_osm.py`, `fetch_terrain.py`): worker thread + supervisor, first-byte and stall timeouts,
-  error kinds (busy / reject / stall / timeout / offline / bad / exhausted / http), mirror scoring and cool-down, Overpass `/status`
-  slot check, `Retry-After`, splitting a cell into quarters on reject / timeout, resume from `data/osm/parts`, per-cell and total deadlines,
-  second pass, exit codes 0 ok / 2 partial but usable / 1 nothing usable. `run_tool` also kills a tool that overruns its limit (osm 62 min,
-  terrain 20 min, build 60 min). A partial download is retried at the next start only after an hour (`box.json`: complete, missing, t).
-- **Posters.** `tools/make_posters.py` (Pillow only) draws 17 joke posters and `title.png` into `assets/posters/` and writes `posters.json`
-  (file + the Macedonian joke). `src/poster.py` loads them at random (each once before any repeat) with a cross-fade; the title poster is the
-  first screen of the loader and the backdrop of the start menu. Regenerate with `python tools/make_posters.py` (`file.png` to redo one).
-
-## Round 6 - car radio
-src/radio.py (raylib music streams, shuffle bag, generated static), tools/fetch_radio.py (Commons API, licence filter), setting vol_radio.
-
-## Round 15 (polish)
-- World VERSION 11: `connect_roads()` in tools/build_world.py joins dead ends that stop within 7 m of another road (same level, pointing at it) to the nearest vertex or a new junction node. Needs a world rebuild (automatic: build_world.py is newer than the manifest).
-- Pop-ups, banners and place names stay visible in proportion to their length (`fx.read_time`).
-- Start: the player stands next to the car (`--car` starts inside it, `--walker` forces it in `--test`); the starting neighbourhood is not announced.
-- `World.wet()` is false while standing on a bridge deck (deck ends dip to bank level and used to count as river).
-- Renderer: the whole-city overview model is only drawn when a ground chunk is missing; plain cars/bodies use the shared, budgeted models; dented-car models are freed when the car is gone; a person is never drawn as just a shadow.
+## Круг 15 (дотерување)
+- Верзија на свет 11: `connect_roads()` во `tools/build_world.py` ги спојува слепите улици во 7 м со најблиската улица. Бара повторно градење на светот (автоматски).
+- Натписите траат пропорционално на должината (`fx.read_time`).
+- Почеток: играчот стои до колата (`--car` почнува внатре); почетната населба не се најавува.
+- `World.wet()` е неточно додека стоиш на мост.
+- Цртање: прегледот на целиот град се црта само кога недостасува парче земја; обичните коли користат заеднички модели со буџет; моделите на удрени коли се ослободуваат; лик никогаш не се црта само како сенка.
