@@ -1,5 +1,6 @@
 """Loading screen: one monotone overall bar, a map of what is being downloaded and where it goes, the real transfer
 speed, warnings when a server stalls or rejects, and a random poster that illustrates the joke under the bar."""
+from texts import TXT
 import collections
 import json
 import os
@@ -371,7 +372,7 @@ class Loader:
     def hold(self, min_s=1.5, max_s=None):
         """Loading is done: keep the showcase on screen until a key / click (after `min_s`) or `max_s`."""
         t0 = time.time()
-        self.hint = "Готово! Притисни било кое копче за да продолжиш"
+        self.hint = TXT("ui.0001")
         while max_s is None or time.time() - t0 < max_s:
             self.draw(force=True)
             if time.time() - t0 > min_s and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):

@@ -3,6 +3,9 @@
 Run once by the developer:  python tools/make_posters.py      (the game itself only loads the PNG files)
 Each poster illustrates one joke; the Macedonian text of the joke is the caption the game shows beside it.
 Facts the jokes lean on are listed in docs/TEXT_SOURCES.md.  Pillow is the only dependency."""
+import os as _os, sys as _sys
+_sys.path.append(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "src"))
+from texts import TXT  # noqa: E402
 import json
 import math
 import os
@@ -319,7 +322,7 @@ def p_lions():
     for x in (130, 830):
         p.rect(x - 38, 336, x + 38, 408, STONE)
         lion(p, x, 296, 0.95)
-    speech(p, 300, 70, 360, 70, "Хакуна матата!", 34, (-40, 36))
+    speech(p, 300, 70, 360, 70, TXT("make_posters_tool.0001"), 34, (-40, 36))
     # Timon (meerkat, upright) and Pumbaa (warthog) on the bridge rail between the lions
     p.ell(352, 352, 388, 412, (196, 150, 98))
     p.circ(370, 338, 16, (206, 160, 106))
@@ -350,8 +353,8 @@ def p_warrior():
     p.rect(430, 220, 530, 240, (150, 140, 120))
     statue_horse(p, 480, 222, 1.15)
     p.rect(150, 90, 400, 160, CREAM, 6)                                  # museum-style label
-    p.text(275, 114, "Воин на коњ", 30, INK, "mm")
-    p.text(275, 142, "(и сите знаат кој е)", 16, BRICK, "mm")
+    p.text(275, 114, TXT("make_posters_tool.0002"), 30, INK, "mm")
+    p.text(275, 142, TXT("make_posters_tool.0003"), 16, BRICK, "mm")
     for x in (120, 800, 860):
         person(p, x, 560, (80, 100, 140), 1.2)
     p.save(os.path.join(OUT, "warrior.png"), 3)
@@ -368,7 +371,7 @@ def p_smog():
     for x in (120, 340, 600):
         p.circ(x, 120, 24, (222, 216, 200))                              # the sun trying its best
     p.haze((200, 192, 184), 120, 0, 400)
-    p.text(480, 560, "ВИДЛИВОСТ: 20 м", 36, GOLD, "mm")
+    p.text(480, 560, TXT("make_posters_tool.0004"), 36, GOLD, "mm")
     p.save(os.path.join(OUT, "smog.png"), 4)
 
 
@@ -380,8 +383,8 @@ def p_burek():
     burek(p, 420, 430, 120)
     glass_yogurt(p, 600, 360, 70, 130)
     bridge_stone(p, 270, 40, 920, 7, (220, 196, 150), (170, 140, 100))
-    p.text(480, 60, "бурек", 70, CREAM, "mm")
-    p.text(560, 570, "+ јогурт", 32, CREAM, "mm")
+    p.text(480, 60, TXT("make_posters_tool.0005"), 70, CREAM, "mm")
+    p.text(560, 570, TXT("make_posters_tool.0006"), 32, CREAM, "mm")
     p.save(os.path.join(OUT, "burek.png"), 5)
 
 
@@ -431,7 +434,7 @@ def p_parking():
     p.rect(120, 220, 126, 400, INK)                                      # "P" sign
     p.rect(80, 190, 166, 250, (40, 90, 200), 6)
     p.text(123, 220, "P", 48, (255, 255, 255), "mm")
-    speech(p, 560, 120, 330, 66, "Само пет минути!", 30, (-20, 40))
+    speech(p, 560, 120, 330, 66, TXT("make_posters_tool.0007"), 30, (-20, 40))
     car(p, 700, 530, (240, 200, 60), 1.4)
     p.save(os.path.join(OUT, "parking.png"), 8)
 
@@ -465,8 +468,8 @@ def p_tavce():
         p.circ(x, 394 + (x % 7), 9, (200, 60, 40))
     p.rect(700, 360, 880, 380, (150, 100, 70), 6)                         # handle
     p.rect(300, 90, 660, 150, CREAM, 8)
-    p.text(480, 120, "ПЛАНИРАНО: 20 мин", 28, INK, "mm")
-    p.text(480, 200, "ГОТОВО: 20 мин", 34, GREEN, "mm")
+    p.text(480, 120, TXT("make_posters_tool.0008"), 28, INK, "mm")
+    p.text(480, 200, TXT("make_posters_tool.0009"), 34, GREEN, "mm")
     for dx in (-80, 0, 80):
         p.line([(480 + dx, 320), (470 + dx, 290), (490 + dx, 262)], (250, 240, 230), 5)
     p.save(os.path.join(OUT, "tavce.png"), 10)
@@ -484,7 +487,7 @@ def p_cross():
     for x in range(60, 900, 150):
         cloud(p, x, 60 + (x % 5) * 8, 0.8)
     p.haze((200, 190, 184), 150, 300, 500, 0)
-    p.text(480, 560, "Милениумски крст", 28, CREAM, "mm")
+    p.text(480, 560, TXT("make_posters_tool.0010"), 28, CREAM, "mm")
     p.save(os.path.join(OUT, "cross.png"), 11)
 
 
@@ -495,13 +498,13 @@ def p_ajvar():
         p.rect(x - 70, 250, x + 70, 420, (190, 40, 30), 22)
         p.rect(x - 80, 226, x + 80, 262, (210, 180, 90), 10)
         p.rect(x - 58, 300, x + 58, 372, CREAM, 8)
-        p.text(x, 336, "ајвар", 30, BRICK, "mm")
+        p.text(x, 336, TXT("make_posters_tool.0011"), 30, BRICK, "mm")
         p.line([(x - 56, 270), (x - 56, 400)], (240, 120, 100), 5)
     for x in range(80, 900, 150):                                         # peppers
         p.ell(x - 22, 470, x + 22, 540, (210, 50, 36))
         p.line([(x, 470), (x + 6, 450)], GREEN, 5)
-    p.text(480, 80, "есен → пролет", 46, CREAM, "mm")
-    p.text(480, 150, "ветувања → ∞", 46, GOLD, "mm")
+    p.text(480, 80, TXT("make_posters_tool.0012"), 46, CREAM, "mm")
+    p.text(480, 150, TXT("make_posters_tool.0013"), 46, GOLD, "mm")
     p.save(os.path.join(OUT, "ajvar.png"), 12)
 
 
@@ -512,7 +515,7 @@ def p_bridge():
     skyline(p, 360, (150, 116, 130), 16, hmin=30, hmax=100)
     river(p, 440, H, (96, 130, 160), (50, 76, 118))
     bridge_stone(p, 420, 20, 940, 7, STONE, (110, 102, 92))
-    p.text(480, 560, "XV век", 40, CREAM, "mm")
+    p.text(480, 560, TXT("make_posters_tool.0014"), 40, CREAM, "mm")
     for x, c in ((220, (120, 60, 60)), (420, (70, 100, 150)), (700, (80, 130, 90))):
         person(p, x, 394, c, 1.0, 5)
     p.save(os.path.join(OUT, "bridge.png"), 13)
@@ -531,8 +534,8 @@ def p_pigeon():
     for x, y, s, f in ((420, 140, 1.4, 1), (580, 230, 1.2, 1), (340, 520, 1.5, 1), (620, 540, 1.3, 1), (180, 500, 1.2, 1), (780, 510, 1.6, 1)):
         pigeon(p, x, y, s * f)
     p.rect(120, 330, 300, 400, CREAM, 6)
-    p.text(210, 352, "ГРАДЕЖНА ДОЗВОЛА", 15, INK, "mm")
-    p.text(210, 380, "не е потребна", 18, BRICK, "mm")
+    p.text(210, 352, TXT("make_posters_tool.0015"), 15, INK, "mm")
+    p.text(210, 380, TXT("make_posters_tool.0016"), 18, BRICK, "mm")
     p.save(os.path.join(OUT, "pigeons.png"), 14)
 
 
@@ -542,9 +545,9 @@ def p_permit():
     p.rect(180, 80, 780, 500, CREAM, 8)                                   # a form
     for i in range(7):
         p.rect(220, 130 + i * 44, 740 - (i % 3) * 90, 138 + i * 44, (190, 184, 170))
-    p.text(480, 104, "ГРАДЕЖНА ДОЗВОЛА", 28, INK, "mm")
+    p.text(480, 104, TXT("make_posters_tool.0017"), 28, INK, "mm")
     p.ell(560, 300, 800, 420, None, BRICK, 8)
-    p.text(680, 360, "ВО ТЕК", 42, BRICK, "mm")
+    p.text(680, 360, TXT("make_posters_tool.0018"), 42, BRICK, "mm")
     p.line([(560, 300), (800, 420)], (0, 0, 0, 0), 1)
     # hourglass
     p.poly([(60, 140), (150, 140), (105, 230)], (240, 220, 160))
@@ -570,7 +573,7 @@ def p_rush():
         car(p, 60 + i * 175, 560, cols[(i + 2) % 6], 1.0)
     for i in range(7):                                                    # the pedestrian overtakes everybody
         person(p, 60 + i * 130, 335, (50, 60, 90), 1.15, 6 if i % 2 else -6)
-    p.text(480, 60, "ШПИЦ", 70, GOLD, "mm")
+    p.text(480, 60, TXT("make_posters_tool.0019"), 70, GOLD, "mm")
     p.save(os.path.join(OUT, "rush.png"), 16)
 
 
@@ -599,23 +602,23 @@ def p_wedding():
 
 # (file, drawing function, Macedonian caption = the joke)
 POSTERS = [
-    ("clock.png", p_clock, "Часовникот на старата железничка станица во Скопје е запрен на 5:17 од 1963 година. Градежните кранови, за разлика од него, не застануваат."),
-    ("lions.png", p_lions, "Лавовите на мостот ги чекаат Тимон и Пумба. Хакуна матата, ортак!"),
-    ("warrior.png", p_warrior, "Ајде бре, не прашувај кој е – официјално тоа е „Воин на коњ“."),
-    ("smog.png", p_smog, "Зимата во Скопје: Водно постои, ветуваме – само не се гледа од смогот."),
-    ("burek.png", p_burek, "Бурек без јогурт е како Вардар без Камен мост – може, ама нема смисла."),
-    ("kale.png", p_kale, "Од Кале се гледа целиот град – и сѐ што сѐ уште не е завршено."),
-    ("vardar.png", p_vardar, "Вардар е единствениот во Скопје што секогаш тече по план."),
-    ("parking.png", p_parking, "„Само пет минути!“ – последни зборови пред паркирање на тротоар."),
-    ("coffee.png", p_coffee, "Едно кафе во Скопје трае колку градежен проект: подолго од планираното."),
-    ("tavce.png", p_tavce, "Тавче гравче – националното јадење и единствениот проект што секогаш се завршува навреме."),
-    ("cross.png", p_cross, "Милениумскиот крст на Водно се гледа од секаде – освен кога го крие смогот."),
-    ("ajvar.png", p_ajvar, "Ајварот се вари наесен и трае до пролет. Ветувањата траат уште подолго."),
-    ("bridge.png", p_bridge, "Камен мост е постар од сите наши планови заедно."),
-    ("pigeons.png", p_pigeon, "Гулабите на Плоштад не бараат градежна дозвола. Едноставно се качуваат на статуата."),
-    ("permit.png", p_permit, "Градежна дозвола: статус „во тек“ од памтивек."),
-    ("rush.png", p_rush, "Во шпиц, најбрз во Скопје е пешакот."),
-    ("wedding.png", p_wedding, "Скопје ноќе е тивко само додека не помине свадба со зурли и тапан."),
+    ("clock.png", p_clock, TXT("make_posters_tool.0020")),
+    ("lions.png", p_lions, TXT("make_posters_tool.0021")),
+    ("warrior.png", p_warrior, TXT("make_posters_tool.0022")),
+    ("smog.png", p_smog, TXT("make_posters_tool.0023")),
+    ("burek.png", p_burek, TXT("make_posters_tool.0024")),
+    ("kale.png", p_kale, TXT("make_posters_tool.0025")),
+    ("vardar.png", p_vardar, TXT("make_posters_tool.0026")),
+    ("parking.png", p_parking, TXT("make_posters_tool.0027")),
+    ("coffee.png", p_coffee, TXT("make_posters_tool.0028")),
+    ("tavce.png", p_tavce, TXT("make_posters_tool.0029")),
+    ("cross.png", p_cross, TXT("make_posters_tool.0030")),
+    ("ajvar.png", p_ajvar, TXT("make_posters_tool.0031")),
+    ("bridge.png", p_bridge, TXT("make_posters_tool.0032")),
+    ("pigeons.png", p_pigeon, TXT("make_posters_tool.0033")),
+    ("permit.png", p_permit, TXT("make_posters_tool.0034")),
+    ("rush.png", p_rush, TXT("make_posters_tool.0035")),
+    ("wedding.png", p_wedding, TXT("make_posters_tool.0036")),
 ]
 
 
@@ -641,8 +644,8 @@ def title_poster():
     car(p, 360, 960, (230, 64, 56), 2.4)
     car(p, 1260, 1000, GOLD, 2.0)
     p.haze((12, 8, 24), 0, 0, 560, 190)
-    p.text(w // 2, 150, "Скопје:", 230, GOLD, "mm")
-    p.text(w // 2, 340, "проектот никогаш не завршува", 100, CREAM, "mm")
+    p.text(w // 2, 150, TXT("make_posters_tool.0037"), 230, GOLD, "mm")
+    p.text(w // 2, 340, TXT("make_posters_tool.0038"), 100, CREAM, "mm")
     p.line([(480, 430), (1440, 430)], ROSE, 8)
     p.save_big = True
     im = p.im.resize((1920, 1080), Image.LANCZOS)

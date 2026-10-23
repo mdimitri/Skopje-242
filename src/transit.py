@@ -4,6 +4,7 @@ Each line's ways are chained into one polyline; a few buses drive near the playe
 other vehicle (pure-pursuit steering along the line, never teleported while visible), stop every ~450 m and announce
 the line. Without transit.json (Overpass download, demo city) there are simply no city buses.
 """
+from texts import TXT
 import json
 import math
 import os
@@ -50,12 +51,12 @@ def _chain(ways):
 class Line:
     def __init__(self, rec):
         self.ref = rec.get("ref") or "?"
-        name = (rec.get("name") or "").replace("Насока:", "").replace("Насока", "").strip()
+        name = (rec.get("name") or "").replace(TXT("transit.0001"), "").replace(TXT("transit.0002"), "").strip()
         dest = rec.get("to") or ""
-        for sep in (" до ", " - ", "-", "→"):
+        for sep in (TXT("transit.0003"), " - ", "-", "→"):
             if not dest and sep in name:
                 dest = name.split(sep)[-1].strip()
-        self.dest = (dest if dest and dest != self.ref else "Центар")[:28]
+        self.dest = (dest if dest and dest != self.ref else TXT("transit.0004"))[:28]
         self.pts = _chain(rec.get("ways", []))
         self.cum = [0.0]
         for a, b in zip(self.pts, self.pts[1:]):
@@ -76,7 +77,7 @@ def load(osm_dir):
     lines = []
     for r in recs:
         op = (r.get("operator") or "").lower()
-        if not ("jsp" in op or "јсп" in op or "skopje:local" in op) or not r.get("ref"):
+        if not ("jsp" in op or TXT("transit.0005") in op or "skopje:local" in op) or not r.get("ref"):
             continue
         ln = Line(r)
         if len(ln.pts) > 10 and ln.length > 1500:
@@ -175,7 +176,7 @@ class Transit:
         b = actors.Body(x, y, h, self.rng.choice(self.kinds), 0)
         b.empty = False
         b.ctl = (0.0, 0.0, True)
-        b.name = f"ЈСП {ln.ref} → {ln.dest}"[:60]
+        b.name = (TXT("transit.0006") + f'{ln.ref} → {ln.dest}')[:60]
         b.bus_line = ln.ref
         sim.bodies.append(b)
         self.buses.append(Bus(ln, b, k + 1))
@@ -223,7 +224,7 @@ class Transit:
                     break
             bus.wait = self.rng.uniform(6.0, 10.0)
             nm = self.stops[k][6] if k is not None and self.stops[k][6] else ln.dest
-            self.sim.ev("shout", text=f"Линија {ln.ref} – {nm}."[:80], x=b.x, y=b.y, who="ЈСП")
+            self.sim.ev("shout", text=(TXT("transit.0007") + f'{ln.ref} – {nm}.')[:80], x=b.x, y=b.y, who=TXT("transit.0008"))
             self._at_stop(bus, k)
             return
         to_stop = bus.next_stop - s_bus

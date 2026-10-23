@@ -1,0 +1,69 @@
+# Macedonian text of tools/make_posters.py
+# Format: key = text   (see text/README.md)
+
+
+## p_lions
+make_posters_tool.0001 = Хакуна матата!
+
+## p_warrior
+make_posters_tool.0002 = Воин на коњ
+make_posters_tool.0003 = (и сите знаат кој е)
+
+## p_smog
+make_posters_tool.0004 = ВИДЛИВОСТ: 20 м
+
+## p_burek
+make_posters_tool.0005 = бурек
+make_posters_tool.0006 = + јогурт
+
+## p_parking
+make_posters_tool.0007 = Само пет минути!
+
+## p_tavce
+make_posters_tool.0008 = ПЛАНИРАНО: 20 мин
+make_posters_tool.0009 = ГОТОВО: 20 мин
+
+## p_cross
+make_posters_tool.0010 = Милениумски крст
+
+## p_ajvar
+make_posters_tool.0011 = ајвар
+make_posters_tool.0012 = есен → пролет
+make_posters_tool.0013 = ветувања → ∞
+
+## p_bridge
+make_posters_tool.0014 = XV век
+
+## p_pigeon
+make_posters_tool.0015 = ГРАДЕЖНА ДОЗВОЛА
+make_posters_tool.0016 = не е потребна
+
+## p_permit
+make_posters_tool.0017 = ГРАДЕЖНА ДОЗВОЛА
+make_posters_tool.0018 = ВО ТЕК
+
+## p_rush
+make_posters_tool.0019 = ШПИЦ
+
+## (module level)
+make_posters_tool.0020 = Часовникот на старата железничка станица во Скопје е запрен на 5:17 од 1963 година. Градежните кранови, за разлика од него, не застануваат.
+make_posters_tool.0021 = Лавовите на мостот ги чекаат Тимон и Пумба. Хакуна матата, ортак!
+make_posters_tool.0022 = Ајде бре, не прашувај кој е – официјално тоа е „Воин на коњ“.
+make_posters_tool.0023 = Зимата во Скопје: Водно постои, ветуваме – само не се гледа од смогот.
+make_posters_tool.0024 = Бурек без јогурт е како Вардар без Камен мост – може, ама нема смисла.
+make_posters_tool.0025 = Од Кале се гледа целиот град – и сѐ што сѐ уште не е завршено.
+make_posters_tool.0026 = Вардар е единствениот во Скопје што секогаш тече по план.
+make_posters_tool.0027 = „Само пет минути!“ – последни зборови пред паркирање на тротоар.
+make_posters_tool.0028 = Едно кафе во Скопје трае колку градежен проект: подолго од планираното.
+make_posters_tool.0029 = Тавче гравче – националното јадење и единствениот проект што секогаш се завршува навреме.
+make_posters_tool.0030 = Милениумскиот крст на Водно се гледа од секаде – освен кога го крие смогот.
+make_posters_tool.0031 = Ајварот се вари наесен и трае до пролет. Ветувањата траат уште подолго.
+make_posters_tool.0032 = Камен мост е постар од сите наши планови заедно.
+make_posters_tool.0033 = Гулабите на Плоштад не бараат градежна дозвола. Едноставно се качуваат на статуата.
+make_posters_tool.0034 = Градежна дозвола: статус „во тек“ од памтивек.
+make_posters_tool.0035 = Во шпиц, најбрз во Скопје е пешакот.
+make_posters_tool.0036 = Скопје ноќе е тивко само додека не помине свадба со зурли и тапан.
+
+## title_poster
+make_posters_tool.0037 = Скопје:
+make_posters_tool.0038 = проектот никогаш не завршува

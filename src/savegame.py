@@ -1,4 +1,5 @@
 """Save slots (saves/slot<N>.json): player, car, money, time of day, pickups, stats.  Traffic and pedestrians respawn."""
+from texts import TXT
 import json
 import os
 import time
@@ -49,11 +50,10 @@ def summary(n):
     """One line for the menu: 'dd.mm HH:MM  лик  пари  час' or 'празно'."""
     d = read(n)
     if not d:
-        return "празно"
+        return TXT("savegame.0001")
     import characters
     h = d.get("hour", 0.0)
-    return (f"{time.strftime('%d.%m %H:%M', time.localtime(d['t']))}   {characters.LIKOVI[d['lik'] % len(characters.LIKOVI)][1]}"
-            f"   {d['money']} ден.   {int(h):02d}:{int((h % 1) * 60):02d}")
+    return ((f"{time.strftime('%d.%m %H:%M', time.localtime(d['t']))}   {characters.LIKOVI[d['lik'] % len(characters.LIKOVI)][1]}   {d['money']}" + TXT("savegame.0002") + f'{int(h):02d}:{int(h % 1 * 60):02d}'))
 
 
 def restore(sim, cfg, d):

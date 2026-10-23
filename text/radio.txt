@@ -1,0 +1,24 @@
+# Macedonian text of src/radio.py
+# Format: key = text   (see text/README.md)
+
+
+## (module level)
+radio.0001 = Радио Чаршија
+radio.0002 = Радио Вардар
+radio.0003 = Радио Кале
+radio.0004 = Радио Каменик
+radio.0005 = Радио Треска
+radio.0006 = Радио Водно
+radio.0007 = Радио Таксист
+radio.0008 = Тука стави своја музика (mp3, ogg, wav, flac) – играта ја вчитува целата.\nPut your own music here (mp3, ogg, wav, flac; m4a/aac/opus are not supported by the engine).\nEvery sub-folder becomes a radio station named after the folder; loose files are shared out between a few stations.\nIn a vehicle: Q / E (or , / .) change station, the last step is radio off.\n
+
+## rescan
+radio.0009 = Радио: тишина – ставај музика во папката music
+
+## label
+radio.0010 = Радио: исклучено   [Q/E]
+radio.0011 = Радио:\s
+
+## step
+radio.0012 = Радио: исклучено
+radio.0013 = Радио:\s

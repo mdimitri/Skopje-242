@@ -1,0 +1,6 @@
+# Macedonian text of src/ui.py
+# Format: key = text   (see text/README.md)
+
+
+## hold
+ui.0001 = Готово! Притисни било кое копче за да продолжиш

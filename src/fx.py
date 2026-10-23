@@ -1,4 +1,5 @@
 """Visual effects: particles (smoke, sparks, fire, debris, leaves), floating text pop-ups, speech bubbles."""
+from texts import TXT
 import math
 import random
 
@@ -219,7 +220,7 @@ class Gains:
                     qx = (1 - e2) ** 2 * sx + 2 * (1 - e2) * e2 * cx + e2 * e2 * tx
                     qy = (1 - e2) ** 2 * sy + 2 * (1 - e2) * e2 * cy + e2 * e2 * ty
                     rl.draw_circle(int(qx), int(qy), 6 - j, rl.Color(250, 210, 60, 200 - j * 50))
-            txt = f"+{amt} ден."
+            txt = (f'+{amt}' + TXT("fx.0001"))
             w = font.measure_text(txt, size, True)
             a = 255 if age < 1.4 else int(255 * (1.6 - age) / 0.2)
             font.draw_text(txt, int(px - w / 2) + 2, int(py) + 2, size, rl.Color(0, 0, 0, a // 2), bold=True)

@@ -1,4 +1,5 @@
 """Simulation: car physics with damage, traffic, pedestrians, on-foot play, hijacking, pickups."""
+from texts import TXT
 import math
 import random
 
@@ -14,9 +15,9 @@ import vehicles
 _LINES = {}
 
 # weapons: key -> (Macedonian name, seconds between shots, damage, pellets, spread rad, range m, ammo per pickup)
-WEAPONS = {"pistol": ("Пиштол", 0.28, 45, 1, 0.0, 40, 90), "uzi": ("Узи", 0.09, 22, 1, 0.06, 32, 300),
-           "shotgun": ("Пумпарица", 0.85, 30, 6, 0.16, 18, 60), "kalash": ("Калаш", 0.12, 40, 1, 0.03, 60, 240),
-           "bat": ("Палка", 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": ("Зоља", 1.6, 400, 1, 0.0, 90, 14)}
+WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT("actors.0002"), 0.09, 22, 1, 0.06, 32, 300),
+           "shotgun": (TXT("actors.0003"), 0.85, 30, 6, 0.16, 18, 60), "kalash": (TXT("actors.0004"), 0.12, 40, 1, 0.03, 60, 240),
+           "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14)}
 MELEE = ("bat",)                # swung, not fired: no tracer, no ammo used
 WEAPON_ORDER = ["fist", "bat", "pistol", "uzi", "shotgun", "kalash", "zolja"]
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
@@ -35,7 +36,7 @@ def lines(kind, arch):
 # collision circle layout per body kind: (offset along axis, radius)
 CIRC = vehicles.CIRC
 CAR_NAMES = vehicles.NAMES
-PLAYER_NAME = "Црвена молња"
+PLAYER_NAME = TXT("actors.0007")
 
 
 # ===================================================================== cars with physics & damage
@@ -836,7 +837,7 @@ class Peds:
                         p.far_t = 0.0
                         p.mode, p.t, p.vx, p.vy = "flee", 0.05, 0.0, 0.0
                         if rng.random() < 0.5:
-                            ev("shout", text=rng.choice(("Бегај бре, бегај!", "Само да те фатам некогаш...", "Ај, нема ти фајде да бегаш!", "Ќе се видиме пак!")),
+                            ev("shout", text=rng.choice((TXT("actors.0008"), TXT("actors.0009"), TXT("actors.0010"), TXT("actors.0011"))),
                                x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
                         out.append(p)
                         continue

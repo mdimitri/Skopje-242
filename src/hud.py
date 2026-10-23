@@ -1,4 +1,5 @@
 """HUD: speed/health, stats, minimap, full map, floating slang labels, banners, streaming bar."""
+from texts import TXT
 import math
 import random
 
@@ -47,7 +48,7 @@ def build_labels(world, seed=5):
         x, y = project(lat, lon)
         if abs(x) < world.hx and abs(y) < world.hy:
             out.append((name + " - " + note, x, 30.0, y, "land"))
-    out.append(("Водно – крстот свети над градот", 0.0, 30.0, world.hy - 60, "land"))
+    out.append((TXT("hud.0001"), 0.0, 30.0, world.hy - 60, "land"))
     return out
 
 
@@ -143,13 +144,13 @@ class Hud:
         rl.draw_rectangle_rounded(rl.Rectangle(x - 10, 8, 268, 190), 0.1, 6, rl.Color(10, 10, 14, 150))
         font.draw_text(clk.label(), x + 150, 14, 26, rl.Color(255, 255, 255, 235))
         if clk.rush:
-            font.draw_text("ШПИЦ", x + 150, 42, 18, rl.Color(255, 120, 90, 255))
+            font.draw_text(TXT("hud.0002"), x + 150, 42, 18, rl.Color(255, 120, 90, 255))
         elif clk.dark > 0.5:
-            font.draw_text("НОЌ", x + 150, 42, 18, rl.Color(150, 170, 255, 255))
+            font.draw_text(TXT("hud.0003"), x + 150, 42, 18, rl.Color(150, 170, 255, 255))
         pz = getattr(sim, "money_pulse", 0.0)                          # swells when flying денари land
-        font.draw_text(f"{sim.money} ден.", x, 14 - int(pz * 3), 24 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
-        for i, (lbl, val) in enumerate((("Бурек", st["burek"]), ("Удрени пешаци", st["peds"]), ("Нокаути", st.get("ko", 0)),
-                                       ("Украдени коли", st["stolen"]), ("Експлозии", st["boom"]), ("Готов си", st["deaths"]))):
+        font.draw_text((f'{sim.money}' + TXT("hud.0004")), x, 14 - int(pz * 3), 24 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
+        for i, (lbl, val) in enumerate(((TXT("hud.0005"), st["burek"]), (TXT("hud.0006"), st["peds"]), (TXT("hud.0007"), st.get("ko", 0)),
+                                       (TXT("hud.0008"), st["stolen"]), (TXT("hud.0009"), st["boom"]), (TXT("hud.0010"), st["deaths"]))):
             i += 1.4
             font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22), 20, rl.Color(250, 225, 120, 255) if i == 1.4 else rl.Color(235, 235, 235, 255))
         # ---- vehicle panel
@@ -157,7 +158,7 @@ class Hud:
         if sim.mode == "car":
             kmh = int(c.speed * 3.6)
             font.draw_text(f"{kmh}", sw - 190, sh - 78, 54, rl.Color(250, 220, 80, 255))
-            font.draw_text("км/ч", sw - 78, sh - 52, 20, rl.Color(250, 220, 80, 255))
+            font.draw_text(TXT("hud.0011"), sw - 78, sh - 52, 20, rl.Color(250, 220, 80, 255))
             if self.radio_line:
                 font.draw_text(font.fit(self.radio_line, 17, 520), sw - 540, sh - 24, 17, rl.Color(190, 235, 255, 230))
             hp = max(0.0, c.health) / 100.0
@@ -165,23 +166,23 @@ class Hud:
             font.draw_text(f"{c.name}  {int(max(0, c.health))}%", sw - 260, sh - 128, 18, rl.Color(255, 255, 255, 230))
             fu = max(0.0, getattr(c, "fuel", 1.0))
             self._bar(sw - 260, sh - 150, 240, 10, fu, rl.Color(230, 90, 60, 255) if fu < 0.15 else rl.Color(240, 170, 40, 255))
-            font.draw_text(f"Гориво {int(fu * 100)}%" + ("  – ПРАЗНО!" if fu <= 0 else ""), sw - 260, sh - 170, 16,
+            font.draw_text((TXT("hud.0012") + f'{int(fu * 100)}%') + (TXT("hud.0013") if fu <= 0 else ""), sw - 260, sh - 170, 16,
                            rl.Color(255, 120, 90, 255) if fu < 0.15 else rl.Color(255, 255, 255, 220))
         else:
             wk = sim.walker
-            font.draw_text("ПЕШКИ", sw - 190, sh - 60, 34, rl.Color(250, 220, 80, 255))
+            font.draw_text(TXT("hud.0014"), sw - 190, sh - 60, 34, rl.Color(250, 220, 80, 255))
             if wk is not None:
                 hp = max(0.0, wk.health) / 100.0
                 self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
                 import actors as _a
-                gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "Тупаници [Ctrl]") + "  [Tab]"
-                font.draw_text(f"Здравје {int(max(0, wk.health))}%   {gun}", sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
+                gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
+                font.draw_text((TXT("hud.0016") + f'{int(max(0, wk.health))}%   {gun}'), sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
                 self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
                 if wk.health <= 0 and wk.cause == "fight":
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(0, 0, 0, 170))
-                    txt = "НОКАУТ..."
+                    txt = TXT("hud.0017")
                     font.draw_text(txt, sw // 2 - font.measure_text(txt, 80) // 2, sh // 2 - 50, 80, rl.Color(255, 230, 90, 255))
                 k = sim.near_kiosk(wk.x, wk.y) if wk.health > 0 else None
                 if k is not None:
@@ -211,7 +212,7 @@ class Hud:
             if tot > 0 and n < tot:
                 bw = 220
                 self._bar(sw // 2 - bw // 2, sh - 24, bw, 8, n / tot, rl.Color(120, 190, 250, 255))
-                font.draw_text(f"Се вчитува мапата {n}/{tot}", sw // 2 - bw // 2, sh - 44, 14, rl.Color(200, 200, 200, 220))
+                font.draw_text((TXT("hud.0018") + f'{n}/{tot}'), sw // 2 - bw // 2, sh - 44, 14, rl.Color(200, 200, 200, 220))
         # ---- minimap / map
         fx, fy, _a, _b = sim.focus()
         N, NH = self.ov.width, self.ov.height
@@ -284,19 +285,19 @@ class Hud:
                 font.draw_text(name, int(qx) + 7, int(qy) - 8, 16, rl.Color(120, 30, 30, 255))
             qx, qy = to_big(fx, fy)
             rl.draw_circle(int(qx), int(qy), 7, rl.Color(230, 40, 40, 255))
-            font.draw_text("Скопје – 11 x 7 км   КЛИКНИ за телепорт   (M за затворање)", mx, my - 30, 22, rl.Color(255, 255, 255, 255))
+            font.draw_text(TXT("hud.0019"), mx, my - 30, 22, rl.Color(255, 255, 255, 255))
 
     def _menu(self, sim, sw, sh):
         items = vehicles.KIOSK_MENU
         w, h = 430, 40 + 30 * len(items)
         x, y = sw // 2 - w // 2, sh - h - 140
         rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.08, 6, rl.Color(10, 10, 14, 215))
-        font.draw_text("КИОСК – скопски специјалитети", x + 14, y + 8, 22, rl.Color(250, 214, 80, 255))
+        font.draw_text(TXT("hud.0020"), x + 14, y + 8, 22, rl.Color(250, 214, 80, 255))
         for i, (name, price, heal) in enumerate(items):
             ok = sim.money >= price
             col = rl.Color(235, 235, 235, 255) if ok else rl.Color(150, 150, 150, 255)
             font.draw_text(f"[{i + 1}] {name}", x + 14, y + 40 + i * 30, 20, col)
-            font.draw_text(f"{price} ден.  +{heal}", x + w - 140, y + 40 + i * 30, 20, rl.Color(130, 230, 140, 255) if ok else col)
+            font.draw_text((f'{price}' + TXT("hud.0021") + f'{heal}'), x + w - 140, y + 40 + i * 30, 20, rl.Color(130, 230, 140, 255) if ok else col)
 
     @staticmethod
     def weapon_icon(kind, x, y, h):

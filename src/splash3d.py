@@ -3,6 +3,7 @@
 bins, bus shelters) and the game's own car / character models.  Cars and characters appear in random order, each with a
 joke or an unhinged quote; characters walk, fight, shoot, chase or rage.  Sun shadows are drawn like in the game.
 The loader shows it as the big panel; progress is the small window beside it."""
+from texts import TXT
 import math
 import os
 import random
@@ -20,14 +21,14 @@ import vehicles
 V3 = rl.Vector3
 UP = V3(0, 1, 0)
 ONE = V3(1, 1, 1)
-MSG = "Играта се вчитува, почекај..."
+MSG = TXT("splash3d.0001")
 SPEED = {"car": 9.0, "walk": 2.4, "fight": 0.0, "shoot": 0.0, "chase": 5.5, "rage": 0.0}
 CH = 40.0                                     # street chunk length (m)
 SHADOW = (0.5625, 0.5)                        # shadow shift per metre of height (the game's sun)
 ASPH, PAVE, KERB = (96, 98, 104), (188, 182, 170), (160, 160, 164)
-BUBBLES = ["Пак ми падна интернетот!", "Кој ми го украде тротоарот?", "Бурек или животот?", "Ми фали уште еден печат!",
-           "Мајка ми ме бара, бегај!", "Овој град ме изеде.", "Сè е под контрола. Не е.", "Паркирав. Тука. Засекогаш."]
-HONKS = ["ТУУУТ!", "Мрднувај, бе!", "Ајде бе, одиј!", "Зелено е, бре!", "ТАКСИ! ТАКСИ!"]
+BUBBLES = [TXT("splash3d.0002"), TXT("splash3d.0003"), TXT("splash3d.0004"), TXT("splash3d.0005"),
+           TXT("splash3d.0006"), TXT("splash3d.0007"), TXT("splash3d.0008"), TXT("splash3d.0009")]
+HONKS = [TXT("splash3d.0010"), TXT("splash3d.0011"), TXT("splash3d.0012"), TXT("splash3d.0013"), TXT("splash3d.0014")]
 
 
 def _hull(pts):

@@ -1,100 +1,101 @@
 """Interface texts (literary Macedonian, Cyrillic).  Banter, jokes and slang live in slang.py.
 Sources and the review status of the wording: docs/TEXT_SOURCES.md."""
 
-TITLE = "СКОПЈЕ GTA"
-RADIO_DL = "Радио: {n}/{target} {title}"
-TAGLINE = "Скопје: проектот никогаш не завршува"
+from texts import TXT
+TITLE = TXT("strings.0001")
+RADIO_DL = TXT("strings.0002")
+TAGLINE = TXT("strings.0003")
 
 # ------------------------------------------------------------------ loading screen
-L_TOTAL = "Вкупно"
-L_ELAPSED = "поминато"
-L_LEFT = "уште околу"
-L_MAP = "Што се презема и каде оди"
-L_SPEED = "Брзина"
-L_GOT = "Преземено"
-L_WAIT = "чекање"
-L_SERVER = "Сервер"
-L_NOW = "Сега"
+L_TOTAL = TXT("strings.0004")
+L_ELAPSED = TXT("strings.0005")
+L_LEFT = TXT("strings.0006")
+L_MAP = TXT("strings.0007")
+L_SPEED = TXT("strings.0008")
+L_GOT = TXT("strings.0009")
+L_WAIT = TXT("strings.0010")
+L_SERVER = TXT("strings.0011")
+L_NOW = TXT("strings.0012")
 
-KB, MB = "КБ", "МБ"
-PER_S = "/с"
-SEC = "с"
+KB, MB = TXT("strings.0013"), TXT("strings.0014")
+PER_S = TXT("strings.0015")
+SEC = TXT("strings.0016")
 
-LEG_PENDING = "чека"
-LEG_ACTIVE = "се презема"
-LEG_DONE = "готово"
-LEG_CACHED = "веќе го имам"
-LEG_FAIL = "не успеа"
-LEG_SPLIT = "се дели на делови"
+LEG_PENDING = TXT("strings.0017")
+LEG_ACTIVE = TXT("strings.0018")
+LEG_DONE = TXT("strings.0019")
+LEG_CACHED = TXT("strings.0020")
+LEG_FAIL = TXT("strings.0021")
+LEG_SPLIT = TXT("strings.0022")
 
-OBJECTS = "објекти"
-CUTTING = "Го сечам Скопје од мапата на државата"
-C_NODES, C_WAYS, C_FOUND = "точки", "линии", "објекти во градот"
-KM = "км"
-EAST, WEST, NORTH, SOUTH, CENTRE = "источно", "западно", "северно", "јужно", "центар"
+OBJECTS = TXT("strings.0023")
+CUTTING = TXT("strings.0024")
+C_NODES, C_WAYS, C_FOUND = TXT("strings.0025"), TXT("strings.0026"), TXT("strings.0027")
+KM = TXT("strings.0028")
+EAST, WEST, NORTH, SOUTH, CENTRE = TXT("strings.0029"), TXT("strings.0030"), TXT("strings.0031"), TXT("strings.0032"), TXT("strings.0033")
 LAYER = {
-    "roads": "Патишта", "buildings": "Згради", "areas": "Зеленило и води", "pois": "Знаменитости",
-    "places": "Населби", "dem": "Висини (рељеф)",
+    "roads": TXT("strings.0034"), "buildings": TXT("strings.0035"), "areas": TXT("strings.0036"), "pois": TXT("strings.0037"),
+    "places": TXT("strings.0038"), "dem": TXT("strings.0039"),
 }
 
 STAGE = {
-    "osm": "Преземање на мапата (OpenStreetMap)",
-    "dem": "Преземање на висините (рељеф)",
-    "build": "Градење на светот",
-    "world": "Читање на светот",
-    "overview": "Прегледна мапа",
-    "textures": "Текстури и 3D модели",
-    "chunks": "Првите делови од градот",
+    "osm": TXT("strings.0040"),
+    "dem": TXT("strings.0041"),
+    "build": TXT("strings.0042"),
+    "world": TXT("strings.0043"),
+    "overview": TXT("strings.0044"),
+    "textures": TXT("strings.0045"),
+    "chunks": TXT("strings.0046"),
 }
 
 # progress phases of tools/build_world.py (its English labels -> what the player reads)
 BUILD = {
-    "read OSM files": "Читање на податоците",
-    "buildings -> 3D meshes": "Згради во 3D",
-    "areas / water / rails": "Површини, води и пруга",
-    "roads": "Патишта",
-    "building meshes on terrain": "Згради на рељефот",
-    "graph": "Сообраќајна мрежа",
-    "bridge decks": "Мостови",
-    "places": "Населби",
-    "street furniture": "Урбана опрема",
-    "procedural trees in parks/woods": "Дрвја во паркови",
-    "street trees, lamps, parked cars": "Улични дрвја, лампи и паркирани коли",
-    "3D roads": "Патишта во 3D",
-    "ground rasters": "Растери на земјата",
-    "tree meshes": "Модели на дрвја",
-    "lamp meshes": "Модели на лампи",
-    "chunk index: areas": "Индекс на делови",
-    "spawn point": "Почетна точка",
-    "write world": "Запишување",
-    "write mesh blob": "Запишување на мрежите",
-    "write world parts": "Запишување на деловите",
+    "read OSM files": TXT("strings.0047"),
+    "buildings -> 3D meshes": TXT("strings.0048"),
+    "areas / water / rails": TXT("strings.0049"),
+    "roads": TXT("strings.0050"),
+    "building meshes on terrain": TXT("strings.0051"),
+    "graph": TXT("strings.0052"),
+    "bridge decks": TXT("strings.0053"),
+    "places": TXT("strings.0054"),
+    "street furniture": TXT("strings.0055"),
+    "procedural trees in parks/woods": TXT("strings.0056"),
+    "street trees, lamps, parked cars": TXT("strings.0057"),
+    "3D roads": TXT("strings.0058"),
+    "ground rasters": TXT("strings.0059"),
+    "tree meshes": TXT("strings.0060"),
+    "lamp meshes": TXT("strings.0061"),
+    "chunk index: areas": TXT("strings.0062"),
+    "spawn point": TXT("strings.0063"),
+    "write world": TXT("strings.0064"),
+    "write mesh blob": TXT("strings.0065"),
+    "write world parts": TXT("strings.0066"),
 }
 
 # warnings by failure kind (tools/net.py)
 WARN = {
-    "busy": "Серверот е зафатен – чекам ред.",
-    "reject": "Серверот го одби барањето – го делам на помали делови.",
-    "stall": "Преземањето запре – менувам сервер.",
-    "timeout": "Серверот не одговара – пробувам друг.",
-    "offline": "Нема врска со интернет.",
-    "bad": "Добиен е неисправен одговор – повторувам.",
-    "exhausted": "Сите сервери одбиваат – ќе пробам подоцна.",
-    "http": "Серверот врати грешка – повторувам.",
-    "net": "Мрежна грешка – повторувам.",
+    "busy": TXT("strings.0067"),
+    "reject": TXT("strings.0068"),
+    "stall": TXT("strings.0069"),
+    "timeout": TXT("strings.0070"),
+    "offline": TXT("strings.0071"),
+    "bad": TXT("strings.0072"),
+    "exhausted": TXT("strings.0073"),
+    "http": TXT("strings.0074"),
+    "net": TXT("strings.0075"),
 }
-ATTEMPT = "обид"
-REST = "пауза"
-NO_DATA = "Нема нови податоци веќе"
+ATTEMPT = TXT("strings.0076")
+REST = TXT("strings.0077")
+NO_DATA = TXT("strings.0078")
 NOTE = {
-    "newbox": "Зачуваните податоци се за друго подрачје – се преземаат одново.",
-    "second_pass": "Втор обид за делови што не успеаа:",
-    "total_limit": "Истече вкупното време – продолжувам со тоа што го имам.",
-    "offline": "Нема врска – продолжувам со податоците што ги имам.",
-    "busy_other": "Друго преземање веќе работи – користам што има.",
-    "pbf_cut": "Датотеката е преземена – го исекувам Скопје од мапата на државата...",
-    "unreachable": "Серверите не се достапни – продолжувам со тоа што го имам.",
+    "newbox": TXT("strings.0079"),
+    "second_pass": TXT("strings.0080"),
+    "total_limit": TXT("strings.0081"),
+    "offline": TXT("strings.0082"),
+    "busy_other": TXT("strings.0083"),
+    "pbf_cut": TXT("strings.0084"),
+    "unreachable": TXT("strings.0085"),
 }
-PARTIAL = "Мапата е непотполна – играта ќе работи со тоа што е преземено; следниот пат ќе го дополни."
-FALLBACK_DEMO = "Нема податоци за градот – се користи демо-град."
-CLOSE_TO_EXIT = "Затворете го прозорецот за излез."
+PARTIAL = TXT("strings.0086")
+FALLBACK_DEMO = TXT("strings.0087")
+CLOSE_TO_EXIT = TXT("strings.0088")

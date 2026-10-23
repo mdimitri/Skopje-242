@@ -1,6 +1,7 @@
 """Emergency services: an ambulance drives to a run-over / dead person (or the player) and revives them, a fire engine
 drives to a burning or burnt-out car and puts it out.  Routes are planned on the drivable road graph (Dijkstra) and the
 vehicles are ordinary physics Bodies steered by a small pure-pursuit controller (their `ctl` = (throttle, steer, handbrake))."""
+from texts import TXT
 import heapq
 import math
 import random
@@ -327,10 +328,10 @@ class Services:
                 b.ctl = (0.0, 0.0, True)
                 if j.kind == "amb":
                     self._crew(j, 2, 8, 0)
-                    sim.ev("shout", text=self.rng.choice(("Брза помош! Место!", "Тргнете се!", "Има ли пулс?")), x=b.x, y=b.y, who="Брза помош")
+                    sim.ev("shout", text=self.rng.choice((TXT("services.0001"), TXT("services.0002"), TXT("services.0003"))), x=b.x, y=b.y, who=TXT("services.0004"))
                 else:
                     self._crew(j, 3, 6, 0)
-                    sim.ev("shout", text=self.rng.choice(("Пожар! Тргнете се!", "Водата е на пат!", "Гаси го, брате!")), x=b.x, y=b.y, who="Пожарникар")
+                    sim.ev("shout", text=self.rng.choice((TXT("services.0005"), TXT("services.0006"), TXT("services.0007"))), x=b.x, y=b.y, who=TXT("services.0008"))
         elif j.state == "work":
             j.work_t += dt
             b.ctl = (0.0, 0.0, True)
@@ -383,12 +384,12 @@ class Services:
                 sim.ev("cpr", x=tgt.x, y=tgt.y)
             if j.work_t > 0.6 and not j.said:
                 j.said = True
-                sim.ev("shout", text=self.rng.choice(("Еден, два, три, четири...", "Дишај, брате, дишај!", "Не оди никаде, држи се!")), x=tgt.x, y=tgt.y, who="Брза помош")
+                sim.ev("shout", text=self.rng.choice((TXT("services.0009"), TXT("services.0010"), TXT("services.0011"))), x=tgt.x, y=tgt.y, who=TXT("services.0012"))
             if j.work_t > 5.5:
                 for c in j.crew:
                     c.pose = None
                 self._revive(tgt)
-                sim.ev("shout", text=self.rng.choice(("Жив е! Ајде, стани.", "Пулсот е тука. Бурекот ќе го врати.", "Нема фрка, ќе поживее.")), x=tgt.x, y=tgt.y, who="Брза помош")
+                sim.ev("shout", text=self.rng.choice((TXT("services.0013"), TXT("services.0014"), TXT("services.0015"))), x=tgt.x, y=tgt.y, who=TXT("services.0016"))
                 self._leave(j)
         elif j.state == "leave":
             if self._ctl(j, dt, 13.0, False) or math.hypot(b.x - sim.focus()[0], b.y - sim.focus()[1]) > 330:
