@@ -4,6 +4,7 @@ Text -> phoneme list (letters / digraphs map one-to-one in Macedonian) -> per-sa
 tracks -> harmonic source shaped by three formant resonances plus band-shaped noise for fricatives and bursts.
 It is deliberately robotic; it only needs to be recognisably 'someone saying this'.  numpy only.
 """
+from texts import TXT
 import os
 import hashlib
 import queue
@@ -44,13 +45,13 @@ PH.update({
 })
 _DIGRAPH = {"sh": "sh", "ch": "ch", "zh": "zh", "dz": "dz", "dj": "dj", "gj": "dj", "kj": "ch"}
 _PAUSE = {",": 0.14, ".": 0.26, "!": 0.3, "?": 0.3, "-": 0.1, ":": 0.14, ";": 0.14, " ": 0.04}
-_FOLD = str.maketrans({"é": "e", "è": "e", "á": "a", "à": "a", "ć": "ch", "č": "ch", "š": "sh", "ž": "zh", "ѓ": "dj", "ќ": "ch"})
+_FOLD = str.maketrans({"é": "e", "è": "e", "á": "a", "à": "a", "ć": "ch", "č": "ch", "š": "sh", "ž": "zh", TXT("speech.0001"): "dj", TXT("speech.0002"): "ch"})
 
 
 # Cyrillic (the game's own script) -> the Latin spelling the formant synthesiser works with
-_C2L = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "ѓ": "dj", "е": "e", "ѐ": "e", "ж": "zh", "з": "z", "ѕ": "dz", "и": "i", "ѝ": "i",
-        "ј": "j", "к": "k", "л": "l", "љ": "lj", "м": "m", "н": "n", "њ": "nj", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "ќ": "kj",
-        "у": "u", "ф": "f", "х": "h", "ц": "c", "ч": "ch", "џ": "dj", "ш": "sh"}
+_C2L = {TXT("speech.0003"): "a", TXT("speech.0004"): "b", TXT("speech.0005"): "v", TXT("speech.0006"): "g", TXT("speech.0007"): "d", TXT("speech.0008"): "dj", TXT("speech.0009"): "e", TXT("speech.0010"): "e", TXT("speech.0011"): "zh", TXT("speech.0012"): "z", TXT("speech.0013"): "dz", TXT("speech.0014"): "i", TXT("speech.0015"): "i",
+        TXT("speech.0016"): "j", TXT("speech.0017"): "k", TXT("speech.0018"): "l", TXT("speech.0019"): "lj", TXT("speech.0020"): "m", TXT("speech.0021"): "n", TXT("speech.0022"): "nj", TXT("speech.0023"): "o", TXT("speech.0024"): "p", TXT("speech.0025"): "r", TXT("speech.0026"): "s", TXT("speech.0027"): "t", TXT("speech.0028"): "kj",
+        TXT("speech.0029"): "u", TXT("speech.0030"): "f", TXT("speech.0031"): "h", TXT("speech.0032"): "c", TXT("speech.0033"): "ch", TXT("speech.0034"): "dj", TXT("speech.0035"): "sh"}
 
 
 def cyr_to_latin(text):
@@ -185,14 +186,14 @@ def synth(text, f0=125.0, speed=1.0, formant=1.0):
 
 
 # --- who speaks: gender, age and temper decide pitch / tempo / loudness / roughness (names are the ones the game shows)
-_FEMALE = ("баба", "мајка", "девојка", "невеста", "инфлуенсерка", "киоск", "маца", "теткица", "туристка", "продавачка", "дама", "комшика",
-           "студентка", "фитка", "шмизла", "административка", "наставничка", "baba", "majka", "devojka", "nevesta", "maca", "tetkica")
-_CHILD = ("дете", "мали", "палавко", "dete", "mali")
-_ROUGH = ("чичко", "кумплунг", "работник", "пандур", "навивач", "теретанец", "рибар", "дедо", "кочијаш", "гастарбајтер", "паркинг", "комунален",
-          "мафија", "таксист", "бизнисмен", "бурегџија", "скејтер", "доставувач", "велосипедист", "пензионер", "џогер", "ролер", "стојан", "билдер", "војник", "бурек-мајстор", "боза-мајстор", "средношколец")
-_SOFT = ("поп", "студент", "хипстер", "инфлуенс", "доктор", "девојка", "невеста", "мајка", "теткица", "туристка", "водич", "маца",
-         "адвокат", "голубар", "гулабар", "фитка", "шмизла", "административка")
-_OLD = ("баба", "дедо", "пензионер", "чичко", "поп", "кафеански", "боза-мајстор", "baba", "dedo")
+_FEMALE = (TXT("speech.0036"), TXT("speech.0037"), TXT("speech.0038"), TXT("speech.0039"), TXT("speech.0040"), TXT("speech.0041"), TXT("speech.0042"), TXT("speech.0043"), TXT("speech.0044"), TXT("speech.0045"), TXT("speech.0046"), TXT("speech.0047"),
+           TXT("speech.0048"), TXT("speech.0049"), TXT("speech.0050"), TXT("speech.0051"), TXT("speech.0052"), "baba", "majka", "devojka", "nevesta", "maca", "tetkica")
+_CHILD = (TXT("speech.0053"), TXT("speech.0054"), TXT("speech.0055"), "dete", "mali")
+_ROUGH = (TXT("speech.0056"), TXT("speech.0057"), TXT("speech.0058"), TXT("speech.0059"), TXT("speech.0060"), TXT("speech.0061"), TXT("speech.0062"), TXT("speech.0063"), TXT("speech.0064"), TXT("speech.0065"), TXT("speech.0066"), TXT("speech.0067"),
+          TXT("speech.0068"), TXT("speech.0069"), TXT("speech.0070"), TXT("speech.0071"), TXT("speech.0072"), TXT("speech.0073"), TXT("speech.0074"), TXT("speech.0075"), TXT("speech.0076"), TXT("speech.0077"), TXT("speech.0078"), TXT("speech.0079"), TXT("speech.0080"), TXT("speech.0081"), TXT("speech.0082"), TXT("speech.0083"))
+_SOFT = (TXT("speech.0084"), TXT("speech.0085"), TXT("speech.0086"), TXT("speech.0087"), TXT("speech.0088"), TXT("speech.0089"), TXT("speech.0090"), TXT("speech.0091"), TXT("speech.0092"), TXT("speech.0093"), TXT("speech.0094"), TXT("speech.0095"),
+         TXT("speech.0096"), TXT("speech.0097"), TXT("speech.0098"), TXT("speech.0099"), TXT("speech.0100"), TXT("speech.0101"))
+_OLD = (TXT("speech.0102"), TXT("speech.0103"), TXT("speech.0104"), TXT("speech.0105"), TXT("speech.0106"), TXT("speech.0107"), TXT("speech.0108"), "baba", "dedo")
 
 
 def profile(who):
@@ -209,7 +210,7 @@ def profile(who):
         p = dict(g="c", k=1.28 + j, rate=2, vol=0.95, rough=0.0, soft=0.0)
     elif female:
         p = dict(g="f", k=1.0 + j * 0.6, rate=0, vol=0.9, rough=0.0, soft=0.0)
-        if "баба" in w or "baba" in w or "теткица" in w:
+        if TXT("speech.0109") in w or "baba" in w or TXT("speech.0110") in w:
             p["k"] -= 0.06
     else:
         p = dict(g="m", k=0.8 + j * 0.7, rate=0, vol=0.95, rough=0.0, soft=0.0)
@@ -234,16 +235,16 @@ def voice_for(who):
 
 
 # ----------------------------------------------------------------------------------- Suze (RHVoice) voice
-_MK_DI = (("dzh", "џ"), ("dz", "ѕ"), ("lj", "љ"), ("nj", "њ"), ("gj", "ѓ"), ("kj", "ќ"), ("sh", "ш"), ("ch", "ч"), ("zh", "ж"), ("dj", "ѓ"))
-_MK_1 = {"a": "а", "b": "б", "c": "ц", "d": "д", "e": "е", "f": "ф", "g": "г", "h": "х", "i": "и", "j": "ј", "k": "к", "l": "л",
-         "m": "м", "n": "н", "o": "о", "p": "п", "r": "р", "s": "с", "t": "т", "u": "у", "v": "в", "z": "з", "q": "к", "w": "в",
-         "x": "кс", "y": "и"}
+_MK_DI = (("dzh", TXT("speech.0111")), ("dz", TXT("speech.0112")), ("lj", TXT("speech.0113")), ("nj", TXT("speech.0114")), ("gj", TXT("speech.0115")), ("kj", TXT("speech.0116")), ("sh", TXT("speech.0117")), ("ch", TXT("speech.0118")), ("zh", TXT("speech.0119")), ("dj", TXT("speech.0120")))
+_MK_1 = {"a": TXT("speech.0121"), "b": TXT("speech.0122"), "c": TXT("speech.0123"), "d": TXT("speech.0124"), "e": TXT("speech.0125"), "f": TXT("speech.0126"), "g": TXT("speech.0127"), "h": TXT("speech.0128"), "i": TXT("speech.0129"), "j": TXT("speech.0130"), "k": TXT("speech.0131"), "l": TXT("speech.0132"),
+         "m": TXT("speech.0133"), "n": TXT("speech.0134"), "o": TXT("speech.0135"), "p": TXT("speech.0136"), "r": TXT("speech.0137"), "s": TXT("speech.0138"), "t": TXT("speech.0139"), "u": TXT("speech.0140"), "v": TXT("speech.0141"), "z": TXT("speech.0142"), "q": TXT("speech.0143"), "w": TXT("speech.0144"),
+         "x": TXT("speech.0145"), "y": TXT("speech.0146")}
 
 
 def latin_to_mk(text):
     """Latin-script Macedonian (as the game writes it) -> Cyrillic, which the neural model expects."""
-    if any("\u0400" <= ch <= "\u04ff" for ch in text):          # already Cyrillic: keep letters and pauses
-        return "".join(ch for ch in text.lower() if ("\u0430" <= ch <= "\u045f") or ch in " ,.!?-:;").strip()
+    if any(TXT("speech.0147") <= ch <= TXT("speech.0148") for ch in text):          # already Cyrillic: keep letters and pauses
+        return "".join(ch for ch in text.lower() if (TXT("speech.0149") <= ch <= TXT("speech.0150")) or ch in " ,.!?-:;").strip()
     s = text.lower().translate(_FOLD)
     out, i = [], 0
     while i < len(s):
@@ -283,13 +284,13 @@ class SuzeVoice:
             toks = v.GetVoices()
             tok = next((toks.Item(i) for i in range(toks.Count) if self.NAME.lower() in toks.Item(i).GetDescription().lower()), None)
             if tok is None:
-                self.state, self.note = "missing", "Сузе не е инсталирана - стартувај run.bat повторно"
+                self.state, self.note = "missing", TXT("speech.0151")
                 return
             v.Voice = tok
             self._v, self._cc = v, cc
-            self.state, self.note = "ready", "Сузе (RHVoice) е подготвена"
+            self.state, self.note = "ready", TXT("speech.0152")
         except Exception as e:  # noqa: BLE001 - not Windows / no SAPI: formant voice
-            self.state, self.note = "error", f"Сузе не работи: {str(e)[:80]}"
+            self.state, self.note = "error", (TXT("speech.0153") + f'{str(e)[:80]}')
 
     def synth(self, text, who="", speed=1.0):
         """-> (int16 array, sample rate) or None.  Suze is a female voice: males are pitched down, children up, and
@@ -406,7 +407,7 @@ if __name__ == "__main__":                       # setup.ps1: prove that Suze sp
     print("[voice]", sv.state, sv.note)
     if sv.state != "ready":
         sys.exit(1)
-    pcm, sr = sv.synth("Добредојде во Скопје, брате! Ајде, вози.", "test")
+    pcm, sr = sv.synth(TXT("speech.0154"), "test")
     out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "voice_test.wav")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with wave.open(out, "wb") as f:

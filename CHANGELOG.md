@@ -2,6 +2,10 @@
 
 All notable changes to Скопје 242. Newest first.
 
+## Unreleased
+
+- All Macedonian text moved out of the code into `text/*.txt` (5553 strings, loaded by `src/texts.py`); `tools/check_text.py` validates it. Behaviour unchanged.
+
 ## v2.0 – people that move and talk like Skopje
 
 ### Animation

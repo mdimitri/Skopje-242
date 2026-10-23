@@ -1,5 +1,6 @@
 """Екран за вчитување: приказна за возилата и ликовите.  Блок од возила што возат низ лажна улица (со шега за секое),
 па сите ликови со лудни изјави, па пак возила од каде што запре, и така во круг.  Само црта (pyray), без состојба од играта."""
+from texts import TXT
 import math
 import random
 import time
@@ -261,5 +262,5 @@ class Showcase:
             font.draw_text(ln, bx + 14, ty, 19, rl.Color(30, 30, 40, a), bold=True)
             ty += 24
 
-L_CARS = "ВОЗИЛА"
-L_CHARS = "ЛИКОВИ"
+L_CARS = TXT("showcase.0001")
+L_CHARS = TXT("showcase.0002")

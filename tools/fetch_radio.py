@@ -8,6 +8,9 @@
 * writes assets/radio/ATTRIBUTION.md (title, author, licence, source URL for every track kept);
 * never fails the game start: exits 0 even when offline.  If fewer than --target tracks exist it says so.
 """
+import os as _os, sys as _sys
+_sys.path.append(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "src"))
+from texts import TXT  # noqa: E402
 import argparse
 import json
 import os
@@ -26,26 +29,22 @@ EXT = {"audio/ogg": ".ogg", "application/ogg": ".ogg", "audio/mpeg": ".mp3", "au
        "audio/flac": ".flac", "audio/x-flac": ".flac"}
 SEED_CATS = ["Music of North Macedonia", "Macedonian music", "Macedonian folk music", "Folk music of North Macedonia",
              "Macedonian songs", "Songs in Macedonian", "Macedonian-language songs", "Macedonian pop music",
-             "Audio files of North Macedonia", "Macedonian singers", "Macedonian musicians", "Macedonian dances", "Македонска музика", "Македонски пејачи", "Македонски музичари", "Македонски пејачки",
+             "Audio files of North Macedonia", "Macedonian singers", "Macedonian musicians", "Macedonian dances", TXT("fetch_radio_tool.0001"), TXT("fetch_radio_tool.0002"), TXT("fetch_radio_tool.0003"), TXT("fetch_radio_tool.0004"),
              "Macedonian female singers", "Macedonian male singers",
              "Music of the Republic of Macedonia", "Macedonian music by genre", "Sound of North Macedonia",
              "Eurovision Song Contest entries of North Macedonia", "Eurovision Song Contest entries of Macedonia"]
 SEARCHES = ["Macedonian folk filetype:audio", "Macedonian song filetype:audio", "Macedonia folk music filetype:audio",
             "makedonska filetype:audio", "Skopje music filetype:audio", "oro Macedonian filetype:audio",
-            "Macedonian pop filetype:audio", "Eurovision Macedonia filetype:audio", "македонска музика filetype:audio",
-            "македонски пејач filetype:audio", "македонска песна filetype:audio", "македонска народна музика filetype:audio",
-            "македонски пејачи filetype:audio", "македонски музичари filetype:audio", "пејачка македонија filetype:audio",
-            "македонско оро filetype:audio", "Macedonian singer filetype:audio", "Macedonian musicians filetype:audio",
+            "Macedonian pop filetype:audio", "Eurovision Macedonia filetype:audio", TXT("fetch_radio_tool.0005"),
+            TXT("fetch_radio_tool.0006"), TXT("fetch_radio_tool.0007"), TXT("fetch_radio_tool.0008"),
+            TXT("fetch_radio_tool.0009"), TXT("fetch_radio_tool.0010"), TXT("fetch_radio_tool.0011"),
+            TXT("fetch_radio_tool.0012"), "Macedonian singer filetype:audio", "Macedonian musicians filetype:audio",
             "Macedonian traditional filetype:audio", "Ohrid song filetype:audio", "Tose Proeski filetype:audio"]
-RELEVANT = re.compile(r"пејач|музичар|македон|macedon|makedon|македон|skopje|скопје|ohrid|bitola|oro\b|tose|proeski|kaliopi|vardar", re.I)
+RELEVANT = re.compile(TXT("fetch_radio_tool.0013"), re.I)
 GOOD = re.compile(r"^(cc0|cc[- ]by(-sa)?\b|public domain|pd\b|pd-|attribution|cc[- ]zero)", re.I)
 # songs only: no speeches, interviews, field recordings, sound effects, anthems read aloud ...
-NOT_SONG = re.compile(r"speech|говор|interview|интервју|lecture|predavan|предавање|spoken|poem|poetry|поезија|reading|"
-                      r"pronunciation|изговор|sound effect|sfx|ambien|field recording|noise|bird|ptic|bell|ѕвон|church|"
-                      r"crowd|traffic|recording of|test tone|jingle|announcement|news|вести|radio show|podcast|"
-                      r"wikipedia|spoken word|audiobook|anthem|химна|ringtone|alarm|siren", re.I)
-SONG = re.compile(r"song|песна|pesna|pop|поп|music|музик|singer|пејач|band|бенд|album|албум|single|сингл|vocal|"
-                  r"chorus|melod|hit\b|eurovision|евровизија|dance|track|cover|remix|ballad|rock|folk|oro|оро", re.I)
+NOT_SONG = re.compile(TXT("fetch_radio_tool.0014"), re.I)
+SONG = re.compile(TXT("fetch_radio_tool.0015"), re.I)
 IA = "https://archive.org"
 IA_QUERIES = [  # Internet Archive netlabels: whole CC pop songs (no NC / ND)
     'mediatype:audio AND (subject:(macedonian pop) OR subject:(balkan pop) OR subject:(makedonska) OR subject:(turbofolk))',

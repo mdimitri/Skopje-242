@@ -1,4 +1,5 @@
 """Options / pause menu.  Keyboard (arrows, Enter, Esc) and mouse (hover, click, drag sliders)."""
+from texts import TXT
 import os
 import time
 
@@ -27,50 +28,50 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = ["Приказ", "Камера", "Звук", "Свет", "Мапа", "Игра"]
+TABS = [TXT("menu.0001"), TXT("menu.0002"), TXT("menu.0003"), TXT("menu.0004"), TXT("menu.0005"), TXT("menu.0006")]
 
 
 def _rows(in_game, slots=()):
     """-> list of (tab, Row)."""
     pct = lambda v: f"{int(v * 100)}%"
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
-    spd = ["запрено", "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
+    spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     R = [
-        (0, Row("choice", "Големина на прозорецот", "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
-        (0, Row("toggle", "Цел екран", "fullscreen")),
-        (0, Row("choice", "Детали", "detail", S.DETAIL, note="сенки, натписи, честички, светла")),
-        (0, Row("toggle", "Смог", "smog", note="скопскиот воздух, најгуст наутро и навечер")),
-        (0, Row("toggle", "Имиња на улици и места", "labels")),
-        (1, Row("slider", "Зум кога пешачиш", "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note="колесцето на глувчето го менува привремено")),
-        (1, Row("slider", "Зум кога возиш", "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
-        (1, Row("slider", "Тресење на екранот", "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (2, Row("slider", "Општа јачина", "vol_master", fmt=pct)),
-        (2, Row("slider", "Ефекти", "vol_sfx", fmt=pct)),
-        (2, Row("slider", "Мотори", "vol_engine", fmt=pct)),
-        (2, Row("slider", "Амбиент", "vol_ambient", fmt=pct)),
-        (2, Row("slider", "Говор", "vol_speech", fmt=pct)),
-        (2, Row("slider", "Радио", "vol_radio", fmt=pct)),
-        (2, Row("choice", "Гласовен мотор", "voice", S.VOICES)),
-        (2, Row("choice", "Брзина на говорот", "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
-        (3, Row("slider", "Време од денот", "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
-        (3, Row("choice", "Брзина на времето", "time_speed", spd, bar=True, note="колку брзо тече денот")),
-        (3, Row("choice", "Густина на сообраќај", "traffic", dens, bar=True)),
-        (3, Row("choice", "Густина на пешаци", "peds", dens, bar=True)),
-        (3, Row("choice", "Колку често зборуваат пешаците", "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note="1x е нормално")),
-        (3, Row("choice", "Агресивност", "aggro", S.AGGRO, bar=True, note="колку брзо се караат и тепаат")),
-        (3, Row("choice", "Јазик", "lang", S.LANGUAGE, bar=True, note="пцовки и груби зборови")),
-        (3, Row("toggle", "Брзата помош ги оживува паднатите", "ambulance")),
-        (3, Row("toggle", "Пожарникарите гаснат запалени коли", "fire")),
-        (4, Row("choice", "Извор при преземање", "osm_source", S.MAP_SOURCES, note="важи за следното преземање")),
+        (0, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
+        (0, Row("toggle", TXT("menu.0009"), "fullscreen")),
+        (0, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
+        (0, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
+        (0, Row("toggle", TXT("menu.0014"), "labels")),
+        (1, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
+        (1, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
+        (1, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
+        (2, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
+        (2, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
+        (2, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
+        (2, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
+        (2, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
+        (2, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
+        (2, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
+        (2, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (3, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
+        (3, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
+        (3, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
+        (3, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
+        (3, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
+        (3, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
+        (3, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
+        (3, Row("toggle", TXT("menu.0038"), "ambulance")),
+        (3, Row("toggle", TXT("menu.0039"), "fire")),
+        (4, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
     ]
-    g = [Row("action", "Продолжи" if in_game else "Играј", "play")]
+    g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
     if in_game:
-        g += [Row("head", "Зачувај"), *[Row("action", f"Слот {n}:  {slots[n - 1]}", f"save{n}") for n in range(1, len(slots) + 1)]]
-    g += [Row("head", "Вчитај"), *[Row("action", f"Слот {n}:  {slots[n - 1]}", f"load{n}") for n in range(1, len(slots) + 1)]]
+        g += [Row("head", TXT("menu.0044")), *[Row("action", (TXT("menu.0045") + f'{n}:  {slots[n - 1]}'), f"save{n}") for n in range(1, len(slots) + 1)]]
+    g += [Row("head", TXT("menu.0046")), *[Row("action", (TXT("menu.0047") + f'{n}:  {slots[n - 1]}'), f"load{n}") for n in range(1, len(slots) + 1)]]
     if in_game:
-        g += [Row("head", ""), Row("action", "Назад на избор на лик", "chars")]
-    g += [Row("action", "Излез од играта", "quit")]
+        g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars")]
+    g += [Row("action", TXT("menu.0049"), "quit")]
     return R + [(5, r) for r in g]
 
 
@@ -85,7 +86,7 @@ def _title_card(seconds=6.0):
         rl.clear_background(rl.Color(10, 12, 18, 255))
         poster.draw_fit(_title(), 0, 0, W, H, 255, cover=True)
         if (time.time() - t0) % 1.6 < 1.1:
-            txt = "Притисни било кое копче"
+            txt = TXT("menu.0050")
             font.draw_text(txt, (W - font.measure_text(txt, 22)) // 2, H - 48, 22, rl.Color(255, 245, 210, 235))
         font.exit_button()
         rl.end_drawing()
@@ -199,7 +200,7 @@ def pick_character(cfg, aud=None):
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
         rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
-        font.draw_text("Избери лик", 24, 20, 40, GOLD, bold=True)
+        font.draw_text(TXT("menu.0051"), 24, 20, 40, GOLD, bold=True)
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
             cx, cy = pos(i)
             on = i == sel
@@ -222,12 +223,12 @@ def pick_character(cfg, aud=None):
         name, stats, money = C.LIKOVI[sel][1], C.LIKOVI[sel][2], C.LIKOVI[sel][3]
         by = H - 118
         rl.draw_rectangle(0, by - 8, W, 126, rl.Color(8, 10, 14, 200))
-        font.draw_text(f"{name}  –  {money} ден. на старт", 24, by, 26, GOLD, bold=True)
+        font.draw_text((f'{name}  –  {money}' + TXT("menu.0052")), 24, by, 26, GOLD, bold=True)
         for k, ln in enumerate(font.wrap(stats, 19, W - 48)[:2]):
             font.draw_text(ln, 24, by + 36 + k * 25, 19, rl.Color(225, 225, 230, 255))
         rl.draw_rectangle(W - 230, 20, 210, 40, rl.Color(48, 54, 72, 255))
-        font.draw_text("L  Вчитај игра", W - 214, 28, 22, GOLD, bold=True)
-        font.draw_text("Стрелки / глушец избери   Enter потврди   L вчитај зачувана игра", 24, H - 26, 16, rl.Color(150, 150, 160, 255))
+        font.draw_text(TXT("menu.0053"), W - 214, 28, 22, GOLD, bold=True)
+        font.draw_text(TXT("menu.0054"), 24, H - 26, 16, rl.Color(150, 150, 160, 255))
         font.exit_button()
         rl.end_drawing()
 
@@ -349,11 +350,11 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
                 if savegame.read(int(k[4:])):
                     cfg.save()
                     return k
-                flash, flash_t = "Слотот е празен.", time.time()
+                flash, flash_t = TXT("menu.0055"), time.time()
             elif k.startswith("save") and save_fn is not None:
                 n = int(k[4:])
                 ok = save_fn(n)
-                flash, flash_t = ("Зачувано во слот %d." % n) if ok else "Не успеав да зачувам.", time.time()
+                flash, flash_t = (TXT("menu.0056") % n) if ok else TXT("menu.0057"), time.time()
                 slots = [savegame.summary(i) for i in range(1, savegame.SLOTS + 1)]
                 allrows = _rows(in_game, slots)
                 rows = [x for t, x in allrows if t == tab]
@@ -372,8 +373,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
             rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
-        font.draw_text("СКОПЈЕ GTA", x0, 20, 40, GOLD, bold=True)
-        font.draw_text("Опции", x0 + 310, 34, 24, rl.Color(190, 190, 190, 255))
+        font.draw_text(TXT("menu.0058"), x0, 20, 40, GOLD, bold=True)
+        font.draw_text(TXT("menu.0059"), x0 + 310, 34, 24, rl.Color(190, 190, 190, 255))
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab
@@ -404,7 +405,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
                 if r.kind == "choice" and not r.bar:
                     font.draw_text(f"<  {r.options[cfg[r.key]]}  >", vx, y + 4, 20, GOLD if on else col)
                 elif r.kind == "toggle":
-                    font.draw_text("ВКЛ" if cfg[r.key] else "ИСКЛ", vx, y + 4, 20, rl.Color(120, 220, 120, 255) if cfg[r.key] else rl.Color(220, 120, 120, 255))
+                    font.draw_text(TXT("menu.0060") if cfg[r.key] else TXT("menu.0061"), vx, y + 4, 20, rl.Color(120, 220, 120, 255) if cfg[r.key] else rl.Color(220, 120, 120, 255))
                 else:
                     if r.kind == "choice":
                         f, txt = cfg[r.key] / max(1, len(r.options) - 1), r.options[cfg[r.key]]
@@ -418,7 +419,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
             font.draw_text(rows[sel].note, x0, H - 56, 17, rl.Color(170, 190, 220, 255))
         if flash and time.time() - flash_t < 2.5:
             font.draw_text(flash, x0 + pw - font.measure_text(flash, 20, True), 24, 20, rl.Color(120, 220, 120, 255), bold=True)
-        font.draw_text("Tab табови   Горе/Долу избери   Лево/Десно промени   Enter потврди   глувче   Esc продолжи",
+        font.draw_text(TXT("menu.0062"),
                      x0, H - 30, 15, rl.Color(150, 150, 160, 255))
         font.exit_button()
         rl.end_drawing()

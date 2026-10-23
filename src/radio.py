@@ -2,6 +2,7 @@
 Stations = sub-folders of music/ (loose files are split into a few stations).  Every station "chops" into a random part
 of a random song, plays a short fragment, a blip of static, then jumps into another song - like a real radio.
 raylib streams mp3 / ogg / wav / flac (m4a, aac, opus, wma are NOT supported and are skipped)."""
+from texts import TXT
 import os
 import random
 import tempfile
@@ -19,11 +20,8 @@ EXTS = (".mp3", ".ogg", ".oga", ".wav", ".flac")
 UNSUPPORTED = (".m4a", ".aac", ".opus", ".wma")
 FRAG = (14.0, 40.0)                                # random fragment length (s) before the next chop
 SPLIT = 4                                          # loose files in music/ become up to this many stations
-NAMES = ["Радио Чаршија", "Радио Вардар", "Радио Кале", "Радио Каменик", "Радио Треска", "Радио Водно", "Радио Таксист"]
-HINT = ("Тука стави своја музика (mp3, ogg, wav, flac) – играта ја вчитува целата.\n"
-        "Put your own music here (mp3, ogg, wav, flac; m4a/aac/opus are not supported by the engine).\n"
-        "Every sub-folder becomes a radio station named after the folder; loose files are shared out between a few stations.\n"
-        "In a vehicle: Q / E (or , / .) change station, the last step is radio off.\n")
+NAMES = [TXT("radio.0001"), TXT("radio.0002"), TXT("radio.0003"), TXT("radio.0004"), TXT("radio.0005"), TXT("radio.0006"), TXT("radio.0007")]
+HINT = (TXT("radio.0008"))
 
 
 def _static(sr=audio_mod.SR, dur=0.3):
@@ -150,7 +148,7 @@ class Radio:
         except Exception:  # noqa: BLE001
             self.stations = []
         self.sel = min(self.sel, len(self.stations))
-        self.hint = "" if self.stations else "Радио: тишина – ставај музика во папката music"
+        self.hint = "" if self.stations else TXT("radio.0009")
 
     def _rl(self):
         return audio_mod.rl
@@ -164,9 +162,9 @@ class Radio:
         if self.hint:
             return self.hint
         if self.off:
-            return "Радио: исклучено   [Q/E]"
+            return TXT("radio.0010")
         nm = self.stations[self.sel][0]
-        return f"Радио: {nm}" + (f" – {self.now}" if self.now else "") + "   [Q/E]"
+        return (TXT("radio.0011") + f'{nm}') + (f" – {self.now}" if self.now else "") + "   [Q/E]"
 
     def step(self, d):
         """Change station by d (wraps, with an 'off' slot at the end).  Returns a banner text."""
@@ -179,9 +177,9 @@ class Radio:
         self._ready = None
         if self.user_off:
             self._silence()
-            return "Радио: исклучено"
+            return TXT("radio.0012")
         self._burst()
-        return "Радио: " + self.stations[self.sel][0]
+        return TXT("radio.0013") + self.stations[self.sel][0]
 
     # ---- fragment preparation (worker thread)
     def _prepare(self):

@@ -1,0 +1,21 @@
+# Macedonian text of src/services.py
+# Format: key = text   (see text/README.md)
+
+
+## _step
+services.0001 = Брза помош! Место!
+services.0002 = Тргнете се!
+services.0003 = Има ли пулс?
+services.0004 = Брза помош
+services.0005 = Пожар! Тргнете се!
+services.0006 = Водата е на пат!
+services.0007 = Гаси го, брате!
+services.0008 = Пожарникар
+services.0009 = Еден, два, три, четири...
+services.0010 = Дишај, брате, дишај!
+services.0011 = Не оди никаде, држи се!
+services.0012 = Брза помош
+services.0013 = Жив е! Ајде, стани.
+services.0014 = Пулсот е тука. Бурекот ќе го врати.
+services.0015 = Нема фрка, ќе поживее.
+services.0016 = Брза помош

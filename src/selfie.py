@@ -1,6 +1,7 @@
 """Selfie: key P.  The camera swings round in front of the avatar at eye level, the avatar blurts a catchy phrase,
 and a burst of frames is saved to selfies/<date-time>/frame_NNN.png.  The world is drawn with a short view distance
 (cheap city overview beyond it), over a procedural sky: clouds by day, stars and moon at night."""
+from texts import TXT
 import math
 import os
 import random
@@ -18,8 +19,8 @@ SHOTS = 10
 FOVY = 68.0
 VIEW = 150.0                                         # metres of full-detail world around the avatar
 
-PHRASES = ["Скопје, насмевни се!", "Ова е за гулабите!", "Кажи бурек!", "Јас, ти и Вардар!", "Селфи пред мостот, класика!",
-           "Нема фрка, слика е!", "Најдобар агол во градот!", "Еве го мојот профил!", "Ајде, лајкни!", "Насмевка како во Центар!"]
+PHRASES = [TXT("selfie.0001"), TXT("selfie.0002"), TXT("selfie.0003"), TXT("selfie.0004"), TXT("selfie.0005"),
+           TXT("selfie.0006"), TXT("selfie.0007"), TXT("selfie.0008"), TXT("selfie.0009"), TXT("selfie.0010")]
 
 
 def _mix(a, b, k):

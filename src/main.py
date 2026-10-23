@@ -1,4 +1,5 @@
 """Skopje GTA - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
+from texts import TXT
 import argparse
 import json
 import math
@@ -93,7 +94,7 @@ class Guard:
                 log(f"[guard] {name} failed ({n}):\n" + traceback.format_exc())
             if n >= 8:
                 self.disabled.add(name)
-                self.msg(f"{name}: исклучено по повторени грешки (види logs/game.log)")
+                self.msg((f'{name}' + TXT("main.0001")))
             return None
 
 
@@ -308,10 +309,10 @@ def main():
     rl.set_trace_log_level(rl.LOG_WARNING)
     flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | rl.FLAG_MSAA_4X_HINT
     rl.set_config_flags(flags)
-    rl.init_window(W, H, "Скопје GTA")
+    rl.init_window(W, H, TXT("main.0002"))
     if not rl.is_window_ready():                       # fallback: no MSAA / vsync
         rl.set_config_flags(rl.FLAG_WINDOW_RESIZABLE)
-        rl.init_window(W, H, "Скопје GTA")
+        rl.init_window(W, H, TXT("main.0003"))
     rl.rl_disable_backface_culling()
     font.load()
     if font.ERR or not font._fonts:
@@ -569,7 +570,7 @@ def main():
                 particles.emit("b", d["x"], d["y"], 1.0, 0, 0, 1.5, 4, 0.18, 0.5, (190, 20, 24), 2.0, 0.8, -6.0)
             elif kind == "ko":
                 aud.play("punch", 0.8, 0.7)
-                popups.add("НОКАУТ!", d["x"], d["y"], 2.6, 1.8, (255, 230, 90), 26)
+                popups.add(TXT("main.0004"), d["x"], d["y"], 2.6, 1.8, (255, 230, 90), 26)
             elif kind == "gunfire":
                 aud.play("boom" if d["kind"] == "zolja" else "shot", 0.6 if d["kind"] == "zolja" else 0.75,
                          {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7}.get(d["kind"], 1.0))
@@ -587,14 +588,14 @@ def main():
                 if rng.random() < 0.7:
                     particles.smoke(d["x"], d["y"], 0.3, 1, 1.1, 0, 0, 0.5)
             elif kind == "weapons_new":
-                hud.set_banner("Ново утро, ново оружје на улиците (види мапа - M)", 4.0)
+                hud.set_banner(TXT("main.0005"), 4.0)
             elif kind == "pay":
                 gains.add(d["amount"], d["x"], d["y"])
                 aud.play("cash", 0.35, 1.0 + min(0.5, d["amount"] / 80.0))
             elif kind == "board":
-                hud.set_banner(f"Во автобус си (билет {d['fare']} ден.)  –  Ctrl: преземи го воланот,  F: излези", 5.0)
+                hud.set_banner((TXT("main.0006") + f"{d['fare']}" + TXT("main.0007")), 5.0)
             elif kind == "alight":
-                hud.set_banner("Слезе од автобусот.", 2.0)
+                hud.set_banner(TXT("main.0008"), 2.0)
             elif kind == "ped_shot":
                 streamer.add_decal(("d", d["x"], d["y"], 0.8, (150, 20, 24, 200)))
             elif kind == "shot":
@@ -611,29 +612,29 @@ def main():
             elif kind == "knocked_out":
                 hud.set_banner(rng.choice(slang.KO_SELF), 3.5)
                 if d["lost"]:
-                    popups.add(f"-{d['lost']} ден. (некој ти ги зеде)", sim.walker.x, sim.walker.y, 3.0, 3.0, (255, 150, 140), 22)
+                    popups.add((f"-{d['lost']}" + TXT("main.0009")), sim.walker.x, sim.walker.y, 3.0, 3.0, (255, 150, 140), 22)
             elif kind == "wake":
-                hud.set_banner("Се разбуди. Главата боли.", 2.5)
+                hud.set_banner(TXT("main.0010"), 2.5)
             elif kind == "bought":
                 aud.play("eat", 0.8)
-                popups.add(f"{d['item']}  +{d['heal']} здравје", sim.walker.x, sim.walker.y, 2.8, 2.4, (255, 220, 120), 22)
+                popups.add((f"{d['item']}  +{d['heal']}" + TXT("main.0011")), sim.walker.x, sim.walker.y, 2.8, 2.4, (255, 220, 120), 22)
                 hud.set_banner(rng.choice(slang.BOUGHT), 2.0)
             elif kind == "broke":
-                popups.add(f"{d['item']} = {d['price']} ден.", sim.walker.x, sim.walker.y, 2.8, 2.0, (255, 150, 140), 20)
+                popups.add((f"{d['item']} = {d['price']}" + TXT("main.0012")), sim.walker.x, sim.walker.y, 2.8, 2.0, (255, 150, 140), 20)
                 hud.set_banner(rng.choice(slang.BROKE), 2.0)
             elif kind == "cash":
                 aud.play("cash", 0.8)
-                popups.add(f"+{d['amt']} ден.", d["x"], d["y"], 2.0, 1.8, (140, 255, 150), 22)
+                popups.add((f"+{d['amt']}" + TXT("main.0013")), d["x"], d["y"], 2.0, 1.8, (140, 255, 150), 22)
             elif kind == "gun":
                 aud.play("chime", 0.8, 1.4)
-                hud.set_banner(f"{d.get('name', 'Пиштол').upper()}! Ctrl – пукај, Tab – смени оружје.", 2.4)
+                hud.set_banner((f"{d.get('name', 'Пиштол').upper()}" + TXT("main.0014")), 2.4)
             elif kind == "fuel":
                 aud.play("chime", 0.6, 0.9)
-                hud.set_banner(f"Бензин! Резервоарот е {int(d['f'] * 100)}%.", 2.0)
+                hud.set_banner((TXT("main.0015") + f"{int(d['f'] * 100)}%."), 2.0)
             elif kind == "fuel_low":
-                hud.set_banner("Бензинот е на резерва – барај канта!", 3.0)
+                hud.set_banner(TXT("main.0016"), 3.0)
             elif kind == "fuel_out":
-                hud.set_banner("Нема бензин, брат! Барај канта или украдни друга кола.", 3.5)
+                hud.set_banner(TXT("main.0017"), 3.5)
             elif kind == "teleport":
                 aud.play("chime", 0.5, 0.7)
             elif kind == "spray":
@@ -642,13 +643,13 @@ def main():
                 particles.emit("w", d["x0"], d["y0"], 1.3, dxs / ls * 9, dys / ls * 9, 1.5, 3, 0.22, 0.7, (170, 210, 255), 0.6, 0.8, -4.0)
             elif kind == "extinguished":
                 particles.smoke(d["x"], d["y"], 0.0, 6, 0.8, 0, 0, 1.6)
-                popups.add("Изгаснато! Фала, пожарникари.", d["x"], d["y"], 3.0, 3.0, (170, 220, 255), 22)
+                popups.add(TXT("main.0018"), d["x"], d["y"], 3.0, 3.0, (170, 220, 255), 22)
             elif kind in ("revived", "revived_ped"):
                 aud.play("revive", 0.9)
                 if kind == "revived":
-                    hud.set_banner("Брзата помош те врати! Пак си жив.", 3.0)
+                    hud.set_banner(TXT("main.0019"), 3.0)
                 else:
-                    popups.add("Жив е!", d["x"], d["y"], 2.4, 2.0, (170, 255, 190), 24)
+                    popups.add(TXT("main.0020"), d["x"], d["y"], 2.4, 2.0, (170, 255, 190), 24)
             if kind == "crash":
                 aud.play("crash", min(1.0, d["impact"] / 14.0) * (1.0 if near(d["x"], d["y"]) else 0.0), 1.0 + rng.uniform(-0.1, 0.1))
             elif kind == "horn":
@@ -668,7 +669,7 @@ def main():
             if kind == "shout":
                 say(d["text"], d["x"], d["y"], d.get("who"))
             elif kind == "shout_self":
-                ln_ = hero_line() or rng.choice(("Ајде бре!", "Нема фрка.", "Брате!"))
+                ln_ = hero_line() or rng.choice((TXT("main.0021"), TXT("main.0022"), TXT("main.0023")))
                 d["text"] = ln_
                 say(ln_, fxs, fys, hero_who(), True)
         for kind, d in sim.events:
@@ -718,17 +719,17 @@ def main():
             elif kind == "ajvar":
                 popups.add(rng.choice(slang.AJVAR), d["x"], d["y"], 2.5, 2.4, (255, 120, 100), 22)
                 particles.emit("c", d["x"], d["y"], 0.8, 0, 0, 3, 14, 0.25, 0.9, (220, 40, 30), 3.0, 0.9, -6)
-                hud.set_banner("АЈВАР! Колата е како нова.", 2.0)
+                hud.set_banner(TXT("main.0024"), 2.0)
             elif kind == "splash":
                 popups.add(rng.choice(slang.SPLASH), d["x"], d["y"], 3.0, 2.8, (160, 210, 255), 22)
                 particles.emit("w", d["x"], d["y"], 0.6, 0, 0, 4, 18, 0.35, 0.9, (140, 190, 240), 4.0, 0.9, -8)
-                hud.set_banner("ПЉУС!", 1.6)
+                hud.set_banner(TXT("main.0025"), 1.6)
             elif kind == "hurt_fall":
-                popups.add(rng.choice(("Ај бре!", "Мајко моја!", "Грбот ми!", "Колено...")), sim.walker.x, sim.walker.y, 3.0, 1.8, (255, 160, 160), 22)
+                popups.add(rng.choice((TXT("main.0026"), TXT("main.0027"), TXT("main.0028"), TXT("main.0029"))), sim.walker.x, sim.walker.y, 3.0, 1.8, (255, 160, 160), 22)
             elif kind == "fall":
                 b = d["body"]
                 particles.debris(b.x, b.y, (120, 120, 120), 10, 0.4)
-                popups.add("БУМ! Слета од мостот", b.x, b.y, 3.2, 2.2, (255, 220, 160), 22)
+                popups.add(TXT("main.0030"), b.x, b.y, 3.2, 2.2, (255, 220, 160), 22)
             elif kind == "kerb":                                     # clunk over the kerb
                 if d["body"].player_car:
                     aud.play("crash", min(0.35, d["speed"] / 40.0), 1.6)
@@ -754,7 +755,7 @@ def main():
                 particles.emit("c", d["x"], d["y"], 1.2, 0, 0, 1.5, 1, 0.3, 0.9, (255, 110, 150), 2.0, 0.8, 0.6)
             elif kind == "car_ignite":
                 b = d["body"]
-                popups.add(rng.choice(("Се запали и тој!", "Огнот се прошири!", "Ќе експлодира и овој!")), b.x, b.y, 3.0, 2.2, (255, 170, 90))
+                popups.add(rng.choice((TXT("main.0031"), TXT("main.0032"), TXT("main.0033"))), b.x, b.y, 3.0, 2.2, (255, 170, 90))
             elif kind == "explode":
                 b = d["body"]
                 particles.explosion(b.x, b.y)
@@ -764,7 +765,7 @@ def main():
                 popups.add(rng.choice(slang.EXPLODE), b.x, b.y, 4.5, 3.0, (255, 190, 80), 26)
             elif kind == "stolen":
                 b = d["body"]
-                popups.add("Украдена кола! +углед", b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
+                popups.add(TXT("main.0034"), b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
             elif kind == "enter":
                 b = d["body"]
                 popups.add(b.name, b.x, b.y, 3.4, 1.8, (200, 240, 255), 20)
@@ -774,7 +775,7 @@ def main():
                 if sim.walker:
                     streamer.add_decal(("d", sim.walker.x, sim.walker.y, 1.0, (150, 20, 24, 200)))
             elif kind == "respawn":
-                hud.set_banner("Пак си тука. Нема фрка.", 2.0)
+                hud.set_banner(TXT("main.0035"), 2.0)
             elif kind == "free_model":
                 pass                      # the renderer owns the model and frees it in _free_orphans (freeing here too = double free, heap crash)
         sim.events.clear()
@@ -844,7 +845,7 @@ def main():
         t_places["seen"] = True
         if r and not first_call:                            # the starting neighbourhood is not called out
             hud.set_place(r[0], r[1], 5.0)
-            say(r[1], fx_, fy_, "Водич", True)
+            say(r[1], fx_, fy_, TXT("main.0036"), True)
 
     t_places = {"seen": False}
     amb_state = {"next": 8.0, "dens": 0.3}
@@ -1021,7 +1022,7 @@ def main():
             if rl.is_key_pressed(rl.KEY_TAB) and sim.mode == "foot" and sim.walker is not None:   # Tab: next weapon
                 import actors as _a
                 wname = sim.walker.cycle()
-                hud.set_banner(_a.WEAPONS[wname][0] if wname in _a.WEAPONS else "Тупаници", 1.2)
+                hud.set_banner(_a.WEAPONS[wname][0] if wname in _a.WEAPONS else TXT("main.0037"), 1.2)
             if rl.is_key_pressed(rl.KEY_M):
                 show_map = not show_map
             if rl.is_key_pressed(rl.KEY_F3):
@@ -1040,26 +1041,26 @@ def main():
                         if menu_mod.pick_character(cfg, aud):
                             break
                         savegame.new_character(sim, cfg["lik"])
-                        hud.set_banner("Нов лик, ист град.", 3.0)
+                        hud.set_banner(TXT("main.0038"), 3.0)
                     elif res_.startswith("load"):
                         d_ = savegame.read(int(res_[4:]))
                         if d_:
                             savegame.restore(sim, cfg, d_)
                             apply_cfg(cfg, True)
                             snap = True
-                            hud.set_banner("Играта е вчитана.", 3.0)
+                            hud.set_banner(TXT("main.0039"), 3.0)
             if rl.is_key_pressed(rl.KEY_L) or want_chars:                  # L: switch character without opening the menu
                 want_chars = False
                 if menu_mod.pick_character(cfg, aud):
                     break
                 savegame.new_character(sim, cfg["lik"])
-                hud.set_banner("Нов лик, ист град.", 3.0)
+                hud.set_banner(TXT("main.0040"), 3.0)
             if rl.is_key_pressed(rl.KEY_R) and sim.mode == "car":
                 p = world.nearest_drive_point(sim.car.x, sim.car.y)
                 if p:
                     sim.car.x, sim.car.y, sim.car.h = p
                     sim.car.vx = sim.car.vy = 0.0
-                    popups.add("Вратено на патот, брате.", p[0], p[1], 3, 2)
+                    popups.add(TXT("main.0041"), p[0], p[1], 3, 2)
             user_zoom = max(0.35, min(2.4, user_zoom * (1.12 ** rl.get_mouse_wheel_move())))
         inp_last.clear()
         inp_last.update(inp)
@@ -1096,7 +1097,7 @@ def main():
                 guard.run("enter", sim.try_enter)
         # ------------------------------------------------ simulation
         if guard.run("sim", sim.update, dt, inp, 2) is None and "sim" in guard.disabled:
-            hud.set_banner("Симулацијата падна – види logs/game.log", 4)
+            hud.set_banner(TXT("main.0042"), 4)
         guard.run("events", handle_events)
         guard.run("effects", effects, dt)
         guard.run("exhaust", exhaust, dt)
@@ -1124,7 +1125,7 @@ def main():
         hud.radio_line = car_radio.label() if sim.mode == "car" and car_radio.aud.ok else ""
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
-            hud.set_banner("Радио: " + song, 2.0)
+            hud.set_banner(TXT("main.0043") + song, 2.0)
         guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted, cfg["vol_radio"])
         res = spk.poll()
         if res is not None:
@@ -1194,17 +1195,17 @@ def main():
             if sim.mode == "foot" and sim.walker and sim.walker.health > 0:
                 for b in sim.bodies:
                     if b.alive and math.hypot(b.x - fx, b.y - fy) < 4.0:
-                        prompt = f"[F] Влези во {b.name}" + (" (паркирано)" if b.parked_idx is not None else "")
+                        prompt = (TXT("main.0044") + f'{b.name}') + (TXT("main.0045") if b.parked_idx is not None else "")
                         break
                 else:
                     for c in sim.traffic.cars:
                         if math.hypot(c.x - fx, c.y - fy) < 3.4:
-                            prompt = f"[F] УКРАДИ ја колата! ({vehicles.NAMES[c.kind]})"
+                            prompt = (TXT("main.0046") + f'{vehicles.NAMES[c.kind]})')
                             break
             elif sim.mode == "car" and sim.car.speed < 2.0:
-                prompt = "[F] Излези"
+                prompt = TXT("main.0047")
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
-                prompt = "[R] Почни одново"
+                prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
             if sf_on:
                 selfie.overlay(sw, sh)
@@ -1216,9 +1217,9 @@ def main():
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()
             if vs_:
-                font.draw_text("Глас: " + vs_, 16, 62, 16, rl.Color(255, 220, 150, 220))
+                font.draw_text(TXT("main.0049") + vs_, 16, 62, 16, rl.Color(255, 220, 150, 220))
             if not a.test:
-                font.draw_text("WASD вози/оди  SPACE рачна/скок  CTRL удри/пукај  F влез/излез  H труба  1-4 киоск/места  P селфи  M мапа (клик=телепорт)  T места  [ ] време  N тивко",
+                font.draw_text(TXT("main.0050"),
                              16, sh - 30 if False else 36, 16, rl.Color(255, 255, 255, 170))
             if show_dbg:
                 font.draw_text(f"{rl.get_fps()} fps  {dt_real * 1000:.1f} ms | ground {renderer.drawn_chunks}/{len(streamer.ground)} "
@@ -1227,9 +1228,9 @@ def main():
                              f"parts {len(particles.p)} | ppm {ppm:.1f} err {sum(guard.errors.values())}", 12, 10, 16, rl.Color(255, 255, 255, 255))
             if not a.test:                                     # mouse buttons: options menu and exit, always on screen
                 bx_ = sw - 300 - 112 * 3
-                if font.button("Лик (L)", bx_, 10, 104, 34):
+                if font.button(TXT("main.0051"), bx_, 10, 104, 34):
                     want_chars = True
-                if font.button("Мени (Esc)", bx_ + 112, 10, 104, 34):
+                if font.button(TXT("main.0052"), bx_ + 112, 10, 104, 34):
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
@@ -1271,7 +1272,7 @@ if __name__ == "__main__":
         log("[fatal]\n" + tb)
         try:
             if rl.is_window_ready():
-                fatal_screen("Скопје GTA падна", tb.strip().splitlines()[-8:] + ["", f"Целиот дневник: {LOG_FILE}"], 0)
+                fatal_screen(TXT("main.0053"), tb.strip().splitlines()[-8:] + ["", (TXT("main.0054") + f'{LOG_FILE}')], 0)
         except Exception:  # noqa: BLE001
             pass
         sys.exit(1)

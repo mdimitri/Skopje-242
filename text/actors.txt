@@ -1,0 +1,18 @@
+# Macedonian text of src/actors.py
+# Format: key = text   (see text/README.md)
+
+
+## (module level)
+actors.0001 = Пиштол
+actors.0002 = Узи
+actors.0003 = Пумпарица
+actors.0004 = Калаш
+actors.0005 = Палка
+actors.0006 = Зоља
+actors.0007 = Црвена молња
+
+## update
+actors.0008 = Бегај бре, бегај!
+actors.0009 = Само да те фатам некогаш...
+actors.0010 = Ај, нема ти фајде да бегаш!
+actors.0011 = Ќе се видиме пак!

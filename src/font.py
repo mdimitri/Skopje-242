@@ -4,6 +4,7 @@ raylib's built-in font only has Latin glyphs, so every text call of the game goe
     font.draw_text(text, x, y, size, color)      font.measure_text(text, size)
 Call font.load() once after the window exists; before that (or if the file is missing) it falls back to the default font.
 """
+from texts import TXT
 import os
 
 import pyray as rl
@@ -119,12 +120,12 @@ def confirm_quit(in_frame=False):
         bx, by = (W - bw) // 2, (H - bh) // 2
         rl.draw_rectangle(bx, by, bw, bh, rl.Color(28, 30, 40, 250))
         rl.draw_rectangle_lines(bx, by, bw, bh, rl.Color(255, 205, 90, 255))
-        q = "Дали навистина сакаш да излезеш?"
+        q = TXT("font.0001")
         draw_text(q, bx + (bw - measure_text(q, 24, True)) // 2, by + 34, 24, rl.WHITE, bold=True)
-        hint = "Y / Enter = излез      N / Esc = продолжи"
+        hint = TXT("font.0002")
         draw_text(hint, bx + (bw - measure_text(hint, 16)) // 2, by + 76, 16, rl.Color(170, 174, 185, 255))
-        stay = button("Продолжи", bx + 30, by + 116, bw // 2 - 40, 44, 20)
-        leave = button("Излез", bx + bw // 2 + 10, by + 116, bw // 2 - 40, 44, 20)
+        stay = button(TXT("font.0003"), bx + 30, by + 116, bw // 2 - 40, 44, 20)
+        leave = button(TXT("font.0004"), bx + bw // 2 + 10, by + 116, bw // 2 - 40, 44, 20)
         rl.end_drawing()
         if time.time() - t0 > 0.25:                      # the click that opened the card must not answer it
             if leave or rl.is_key_pressed(rl.KEY_Y) or rl.is_key_pressed(rl.KEY_ENTER):
@@ -140,7 +141,7 @@ def exit_button(x=None, y=10):
     """The always-there "× Излез" button: asks first, then closes the game."""
     if x is None:
         x = rl.get_screen_width() - 120
-    if button("× Излез", x, y, 108, 34) and confirm_quit(True):
+    if button(TXT("font.0005"), x, y, 108, 34) and confirm_quit(True):
         try:
             rl.close_window()
         finally:

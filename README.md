@@ -118,3 +118,7 @@ Release history: [CHANGELOG.md](CHANGELOG.md).
 - **Voice: Suze**, a Macedonian female voice for RHVoice, © UNICEF, by the speech group of FEEIT UKIM ([suze-mkd](https://github.com/RHVoice/suze-mkd)), licensed **CC BY-NC-ND 4.0**. `run.bat` downloads it; it is not bundled. RHVoice engine: LGPL-2.1+.
 - Font: DejaVu Sans (`assets/fonts/LICENSE_DEJAVU`).
 - Radio: only music you put in `music/` yourself is played.
+
+## Text / proofreading
+
+All Macedonian (Cyrillic) text is in the `text/` folder as plain files, separate from the code. See `text/README.md` for the format; check edits with `python tools/check_text.py`.

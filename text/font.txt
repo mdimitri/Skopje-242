@@ -1,0 +1,12 @@
+# Macedonian text of src/font.py
+# Format: key = text   (see text/README.md)
+
+
+## confirm_quit
+font.0001 = Дали навистина сакаш да излезеш?
+font.0002 = Y / Enter = излез      N / Esc = продолжи
+font.0003 = Продолжи
+font.0004 = Излез
+
+## exit_button
+font.0005 = × Излез
