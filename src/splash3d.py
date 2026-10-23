@@ -265,7 +265,7 @@ class Splash3D(showcase.Showcase):
             self._draw3d(now, x, y, w, h)
         except Exception:  # noqa: BLE001 - never break loading because of decoration: fall back to the flat version
             self.failed = True
-            if os.environ.get("GTA_DEBUG"):
+            if os.environ.get("SK242_DEBUG"):
                 import traceback
                 traceback.print_exc()
             for fn in (rl.rl_enable_depth_mask, rl.end_mode_3d, rl.end_texture_mode):

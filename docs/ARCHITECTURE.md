@@ -109,7 +109,7 @@ renders a contact sheet of all models.
   `MK_LINES`, kiosk menu; internal Latin ids stay as keys: `IDS`, `PED_IDS`), `places.py`. Neighbourhood names come straight from the OSM
   `name` tag (Cyrillic); the old transliteration is gone. `speech.py` turns Cyrillic into the formant synth's phonemes (`cyr_to_latin`) and
   hands Cyrillic untouched to the neural voice. Sources and review status: `docs/TEXT_SOURCES.md`.
-- **Event protocol.** With `GTA_EVENTS=1` the tools print ASCII lines `@@{json}`: `plan` (cells with their rectangle in local metres),
+- **Event protocol.** With `SK242_EVENTS=1` the tools print ASCII lines `@@{json}`: `plan` (cells with their rectangle in local metres),
   `cell` (state active / done / cached / fail / split), `net` (bytes, bytes per second, seconds waiting, mirror; state wait / recv / done /
   rest), `warn` (failure kind per mirror), `note`, `prog` (build phase label, n, total), `done`. `main.run_tool` parses them and feeds
   `ui.Loader.event`. `tools/net.py` emits them for every request, once a second.

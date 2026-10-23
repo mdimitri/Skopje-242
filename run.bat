@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  Skopje GTA - one-click start.  Double-click this file.
+REM  Skopje 242 - one-click start.  Double-click this file.
 REM  First run: sets up Python + libraries, downloads the OSM map
 REM  data for Skopje and builds the world (a few minutes).
 REM  Later runs start the game straight away.
@@ -12,7 +12,7 @@ REM    run.bat windowed   (any other args go to the game, e.g. --size 1280x720)
 REM ============================================================
 setlocal
 cd /d "%~dp0"
-title Skopje GTA
+title Skopje 242
 
 set GAMEARGS=
 if /I "%~1"=="demo" (set GAMEARGS=--demo& shift)

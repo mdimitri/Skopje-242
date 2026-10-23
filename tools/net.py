@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-UA = "skopje-gta-prototype/0.4 (+https://github.com/; hobby game, polite client)"
+UA = "skopje-242/0.4 (+https://github.com/; hobby game, polite client)"
 
 
 _LOCK = threading.Lock()
@@ -87,7 +87,7 @@ def fetch(url, uid, data=None, first_byte=240.0, stall=25.0, headers=None, limit
 
     first_byte: how long the server may think before answering (Overpass computes the whole result first);
     stall: longest pause allowed once data is flowing; limit: overall cap for this one request (0 = none)."""
-    stall = float(os.environ.get("GTA_STALL", stall))
+    stall = float(os.environ.get("SK242_STALL", stall))
     h = {"User-Agent": UA}
     h.update(headers or {})
     st = {"n": 0, "t_last": time.time(), "body": None, "err": None, "r": None, "status": 0, "size": 0}

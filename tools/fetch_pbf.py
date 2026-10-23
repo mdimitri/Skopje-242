@@ -16,7 +16,7 @@ import urllib.request
 import net
 from geo import bbox
 
-PBF_URLS = os.environ.get("GTA_PBF", "").split(",") if os.environ.get("GTA_PBF") else [
+PBF_URLS = os.environ.get("SK242_PBF", "").split(",") if os.environ.get("SK242_PBF") else [
     "https://download.geofabrik.de/europe/macedonia-latest.osm.pbf",
     "https://download.openstreetmap.fr/extracts/europe/macedonia-latest.osm.pbf",
 ]

@@ -1,4 +1,4 @@
-"""Skopje GTA - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
+"""Скопје 242 - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
 from texts import TXT
 import argparse
 import json
@@ -103,7 +103,7 @@ def run_tool(args, loader, stage, max_sec=3600):
     """Run a python tool in a subprocess; its `@@{json}` lines drive the splash screen (map, speed, bar).
     Returns the exit code (0 ok, 2 partial result, 124 killed because it overran `max_sec`)."""
     q = queue.Queue()
-    env = dict(os.environ, GTA_EVENTS="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    env = dict(os.environ, SK242_EVENTS="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     proc = subprocess.Popen([sys.executable] + args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
 
     def reader():
@@ -243,7 +243,7 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
     if not demo_only:
         if need.get("osm"):
             loader.begin("osm")
-            osm_src = os.environ.get("GTA_SOURCE") or settings_mod.MAP_SOURCE_IDS[settings_mod.Settings()["osm_source"] % 3]
+            osm_src = os.environ.get("SK242_SOURCE") or settings_mod.MAP_SOURCE_IDS[settings_mod.Settings()["osm_source"] % 3]
             # the game needs the whole map: an incomplete download is resumed, switching routes, before anything is built
             order = [osm_src] + [s for s in ("geofabrik", "overpass", "auto") if s != osm_src]
             for k, route in enumerate(order):
@@ -325,7 +325,7 @@ def main():
     need = plan_needs(a)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
-    if a.fetch_radio or os.environ.get("GTA_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
+    if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
     world = ensure_world(a.world, loader, a.demo, a.refresh, need)
     log(f"[game] world: {len(world.buildings)} buildings, {len(world.roads)} roads, {len(world.edges)} edges, "
@@ -388,7 +388,7 @@ def main():
     places = Places(world)
     sim.places = places
     import transit
-    _osm = os.environ.get("GTA_OSM_DIR") or os.path.join(ROOT, "data", "osm")
+    _osm = os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm")
     if not (os.path.exists(os.path.join(_osm, "transit.json")) and os.path.exists(os.path.join(_osm, "map_pois.json"))):
         try:                                               # bus lines + map POIs from the cached country file (once)
             import subprocess
@@ -397,7 +397,7 @@ def main():
             print((r_.stdout + r_.stderr).strip()[-600:])
         except Exception as e_:  # noqa: BLE001 - buses / markers are optional
             print(f"[game] extras skipped: {e_}")
-    sim.transit = transit.Transit(sim, os.environ.get("GTA_OSM_DIR") or os.path.join(ROOT, "data", "osm"))
+    sim.transit = transit.Transit(sim, os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm"))
     log(f"[game] city buses: {len(sim.transit.lines)} JSP lines, {len(sim.transit.stops)} stops")
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
@@ -458,7 +458,7 @@ def main():
     fx_mod.GROUND = world.ground_y
     hud = Hud(world, overview, ov_size)
     try:                                                   # faint points of interest on the maps
-        with open(os.path.join(os.environ.get("GTA_OSM_DIR") or os.path.join(ROOT, "data", "osm"), "map_pois.json"), encoding="utf-8") as f_:
+        with open(os.path.join(os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm"), "map_pois.json"), encoding="utf-8") as f_:
             hud.pois = [p_ for p_ in json.load(f_) if isinstance(p_, list) and len(p_) == 4]
     except (OSError, ValueError):
         hud.pois = []
@@ -1072,13 +1072,13 @@ def main():
                 snap = True
         sf_due_ = False
         if a.test:
-            pt_ = os.environ.get("GTA_TEST_POI")
+            pt_ = os.environ.get("SK242_TEST_POI")
             if pt_ and frame == int(pt_) and sim.walker is not None and pois.cells:
                 q_ = next(iter(next(iter(pois.cells.values()))))
                 sim.walker.x, sim.walker.y, sim.walker.az = q_[0] + 3.0, q_[1], None
-            if pt_ and frame == int(pt_) + int(os.environ.get("GTA_TEST_POI_BUY", "3")):
+            if pt_ and frame == int(pt_) + int(os.environ.get("SK242_TEST_POI_BUY", "3")):
                 inp["buy"] = 0
-        if sim.mode == "foot" and (rl.is_key_pressed(rl.KEY_P) or (a.test and frame == int(os.environ.get("GTA_TEST_SELFIE", "-1")))) and not pois.busy:
+        if sim.mode == "foot" and (rl.is_key_pressed(rl.KEY_P) or (a.test and frame == int(os.environ.get("SK242_TEST_SELFIE", "-1")))) and not pois.busy:
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0

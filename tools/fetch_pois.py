@@ -47,7 +47,7 @@ def sub_of(t):
 def main():
     import osmium
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    osm = os.environ.get("GTA_OSM_DIR") or os.path.join(root, "data", "osm")
+    osm = os.environ.get("SK242_OSM_DIR") or os.path.join(root, "data", "osm")
     pbf = os.path.join(osm, "pbf", "country.osm.pbf")
     out = os.path.join(osm, "map_pois.json")
     if not os.path.exists(pbf):

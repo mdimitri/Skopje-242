@@ -105,7 +105,7 @@ def main():
     ntiles = (t_x1 - t_x0 + 1) * (t_y1 - t_y0 + 1)
     cache_dir = os.path.join(os.path.dirname(OUT), "terrain_tiles")
     os.makedirs(cache_dir, exist_ok=True)
-    mirrors = net.Mirrors(os.environ.get("GTA_DEM", "").split(",") if os.environ.get("GTA_DEM") else URLS)
+    mirrors = net.Mirrors(os.environ.get("SK242_DEM", "").split(",") if os.environ.get("SK242_DEM") else URLS)
     net.emit("plan", what="dem", cells=[{"id": f"dem:{x}:{y}", "layer": "dem", "r": tile_rect(Z, x, y)}
                                         for y in range(t_y0, t_y1 + 1) for x in range(t_x0, t_x1 + 1)])
     mosaic = np.zeros(((t_y1 - t_y0 + 1) * 256, (t_x1 - t_x0 + 1) * 256), np.float32)

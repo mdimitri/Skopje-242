@@ -1,4 +1,4 @@
-# One-time / incremental setup for Skopje GTA. Called by run.bat. ASCII only on purpose.
+# One-time / incremental setup for Skopje 242. Called by run.bat. ASCII only on purpose.
 param([switch]$Demo, [switch]$Refresh, [switch]$AiVoice)
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
@@ -13,7 +13,7 @@ function Say($m) { Write-Host "[setup] $m" }
 function Step($name) {
     $script:step++
     $pct = [int](100 * ($script:step - 1) / $script:steps)
-    Write-Progress -Activity "Skopje GTA setup" -Status "step $($script:step)/$($script:steps): $name" -PercentComplete $pct
+    Write-Progress -Activity "Skopje 242 setup" -Status "step $($script:step)/$($script:steps): $name" -PercentComplete $pct
     Write-Host ""
     Write-Host ("=== [{0}/{1}] {2} ===" -f $script:step, $script:steps, $name)
 }
@@ -100,6 +100,6 @@ if ($LASTEXITCODE -ne 0 -and (Test-Path "$root\tools\rhvoice_urls.txt")) {
 }
 Set-Content -Path "$rt\python.txt" -Value $py -Encoding ASCII
 
-Write-Progress -Activity "Skopje GTA setup" -Completed
+Write-Progress -Activity "Skopje 242 setup" -Completed
 Say "Ready - starting the game (the map is downloaded and built inside the game window, with a progress screen)."
 exit 0

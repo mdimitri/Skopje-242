@@ -487,7 +487,7 @@ def _sub(x, y):
     global _SUBS
     if _SUBS is None:
         try:
-            with open(os.path.join(os.environ.get("GTA_OSM_DIR") or os.path.join(_ROOT, "data", "osm"), "map_poi_kinds.json"), encoding="utf-8") as f:
+            with open(os.path.join(os.environ.get("SK242_OSM_DIR") or os.path.join(_ROOT, "data", "osm"), "map_poi_kinds.json"), encoding="utf-8") as f:
                 _SUBS = json.load(f)
         except (OSError, ValueError):
             _SUBS = {}

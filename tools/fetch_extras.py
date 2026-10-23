@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OSM = os.environ.get("GTA_OSM_DIR") or os.path.join(ROOT, "data", "osm")
+OSM = os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm")
 
 
 def bus_stops(pbf):

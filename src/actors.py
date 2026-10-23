@@ -548,7 +548,7 @@ class Walker:
                 self.y += ey / d * (R + tr - d)
 
     def update(self, dt, turn, fwd, run, world, jump=False):
-        """GTA-1 style: turn = A/D (-1..1) rotates, fwd = W/S (-1..1) walks forward/backward. SPACE jumps."""
+        """turn = A/D (-1..1) rotates, fwd = W/S (-1..1) walks forward/backward. SPACE jumps."""
         self.atk_t = max(0.0, self.atk_t - dt)
         self.atk_cd = max(0.0, self.atk_cd - dt)
         self.hurt_t = max(0.0, self.hurt_t - dt)

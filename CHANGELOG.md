@@ -2,9 +2,12 @@
 
 All notable changes to Скопје 242. Newest first.
 
-## Unreleased
+## Необјавено · Член 242
 
-- All Macedonian text moved out of the code into `text/*.txt` (5553 strings, loaded by `src/texts.py`); `tools/check_text.py` validates it. Behaviour unchanged.
+- Преименување во **Скопје · Член 242** (одземање на моторно возило според Кривичниот законик): наслов, прозорец, мени, README и постер за вчитување.
+- Менито е преуредено по ред: Игра, Свет, Приказ и камера, Звук, Мапа. „Игра“ е прва.
+- Променливите на околината се `SK242_*`, а exe-датотеката се вика `Skopje242`.
+- Сите македонски текстови се во `text/*.txt` (5552 низи, вчитани преку `src/texts.py`), проверка со `tools/check_text.py`.
 
 ## v2.0 – people that move and talk like Skopje
 

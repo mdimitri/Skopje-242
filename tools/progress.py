@@ -4,7 +4,7 @@ import os
 import sys
 import time
 
-EVENTS = os.environ.get("GTA_EVENTS") == "1"      # set by the game: also print machine-readable `@@{json}` lines
+EVENTS = os.environ.get("SK242_EVENTS") == "1"      # set by the game: also print machine-readable `@@{json}` lines
 
 
 def _ev(**kw):

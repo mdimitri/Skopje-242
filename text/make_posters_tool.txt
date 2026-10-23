@@ -65,5 +65,5 @@ make_posters_tool.0035 = Во шпиц, најбрз во Скопје е пеш
 make_posters_tool.0036 = Скопје ноќе е тивко само додека не помине свадба со зурли и тапан.
 
 ## title_poster
-make_posters_tool.0037 = Скопје:
-make_posters_tool.0038 = проектот никогаш не завршува
+make_posters_tool.0037 = Скопје · Член 242
+make_posters_tool.0038 = одземање на моторно возило

@@ -1,124 +1,122 @@
-<h1 align="center">Скопје 242</h1>
-<p align="center"><b>A GTA-1-style sandbox of Skopje, North Macedonia, in real 3D, Macedonian Cyrillic and pure Skopje slang.</b></p>
-<p align="center">v2.0 · Windows · Python + raylib</p>
+<h1 align="center">СКОПЈЕ · ЧЛЕН 242</h1>
+<p align="center"><b>Одземање на моторно возило</b><br>
+<i>„Тој што противправно ќе одземе туѓо моторно возило со намера да го употреби за возење, ќе се казни…“<br>
+— Кривичен законик, Член 242</i></p>
+<p align="center">изд. 2.0 · само Windows · Python + raylib</p>
 
-<p align="center"><img src="docs/screenshots/title.jpg" width="820" alt="Title screen"></p>
+<p align="center"><img src="docs/screenshots/title.jpg" width="820" alt="Скопје · Член 242"></p>
 
-An 11 × 7 km slice of Skopje around the Stone Bridge, built from **OpenStreetMap** and open elevation data.
-Everything the map leaves out (building looks, trees, lamps, parked cars, traffic, pedestrians) is generated procedurally.
-Drive a Yugo down Partizanska, ride a JSP bus, buy a burek at the kiosk, and get cussed at by pensioners in proper Skopje slang.
+Песочна игра во вистинско 3D по Скопје. Мапа од **OpenStreetMap** и отворени висински податоци, 11 × 7 км околу Камениот мост.
+Сè што мапата го нема (згради, дрвја, лампи, паркирани коли, сообраќај, пешаци) се генерира само.
+Кубурај по Партизанска во југо, фати ЈСП, земи бурек на киоск и слушај ги тетките и пензионерите како те кастрат на чист скопски.
 
 | | |
 |---|---|
-| ![Driving](docs/screenshots/drive.jpg) | ![Kiosk](docs/screenshots/kiosk.jpg) |
-| ![Night](docs/screenshots/night.jpg) | ![Roads](docs/screenshots/roads.jpg) |
+| ![Возење](docs/screenshots/drive.jpg) | ![Киоск](docs/screenshots/kiosk.jpg) |
+| ![Ноќ](docs/screenshots/night.jpg) | ![Улици](docs/screenshots/roads.jpg) |
 
-## Contents
+## Содржина
 
-[Quick start](#quick-start) · [Controls](#controls) · [Features](#features) · [Gallery](#gallery) · [Project layout](#project-layout) · [Known limits](#known-limits) · [Credits](#credits-and-licences)
+[Член 1 · Пуштање](#член-1--пуштање) · [Член 2 · Команди](#член-2--команди) · [Член 3 · Што има](#член-3--што-има) · [Член 4 · Галерија](#член-4--галерија) · [Член 5 · Што каде е](#член-5--што-каде-е) · [Член 6 · Ограничувања](#член-6--ограничувања) · [Член 7 · Заслуги](#член-7--заслуги-и-лиценци)
 
-## Quick start
+## Член 1 · Пуштање
 
-1. Download or clone the repository.
-2. Double-click **`run.bat`**.
+1. Симни го или клонирај го репото.
+2. Кликни двапати на **`run.bat`**.
 
-The first start installs Python and the libraries, downloads the map (Geofabrik / Overpass) and the terrain, and builds the world. That takes a few minutes; later starts take seconds.
+Првпат ќе му треба некоја минута: го става Python и библиотеките, ја симнува мапата (Geofabrik / Overpass) и теренот и го гради светот. Потоа се пушта за секунди.
 
-| command | what it does |
+| наредба | што прави |
 |---|---|
-| `run.bat` | play on the real Skopje map |
-| `run.bat demo` | offline synthetic demo city |
-| `run.bat refresh` | re-download the map and rebuild the world |
+| `run.bat` | игра на вистинската скопска мапа |
+| `run.bat demo` | демо град, без интернет |
+| `run.bat refresh` | пак ја симнува мапата и го гради светот |
 
-Extra options: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `--mute`.
-Put your own music in `music/` for the car radio (sub-folders become stations).
+Дополнителни опции: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `--mute`.
+Тури своја музика во `music/` за радиото во колата (потпапките стануваат станици).
 
-## Controls
+## Член 2 · Команди
 
-| key | in a car | on foot |
+| тастер | во кола | пешки |
 |---|---|---|
-| `W A S D` / arrows | drive | walk / turn |
-| `Shift` | – | run |
-| `Space` | handbrake (drift) | jump |
-| `Ctrl` | – | punch, punch, kick, or shoot |
-| `F` / `Enter` | get out | enter / steal a car, board a bus (40 ден.) |
-| `H` | horn / siren | say something |
-| `1`–`4` | – | kiosk food: burek, tulumba, kebapi, ajvar sandwich |
-| `Q` / `E` | radio station (last step = off) | – |
-| `P` | – | selfie |
-| `M` / `Tab` | map, click to teleport | map |
-| `T` / `Shift+T` | next / previous neighbourhood | same |
-| `[` / `]` | time of day −1 h / +1 h | same |
-| `L` | switch character | same |
-| `N` · `F3` · `F11` · `Esc` | mute · stats · fullscreen · menu / save / load | |
+| `W A S D` / стрелки | вози | оди / врти |
+| `Shift` | – | трча |
+| `Space` | рачна (дрифт) | скока |
+| `Ctrl` | – | удар, удар, клоца или пука |
+| `F` / `Enter` | излез | влез / одземање на возило, качување на автобус (40 ден.) |
+| `H` | клаксон / сирена | кажи нешто |
+| `1`–`4` | – | киоск: бурек, тулумба, кебапи, сендвич со ајвар |
+| `Q` / `E` | радио станица (последно = исклучено) | – |
+| `P` | – | селфи |
+| `M` / `Tab` | мапа, клик за телепорт | мапа |
+| `T` / `Shift+T` | следна / претходна населба | исто |
+| `[` / `]` | време од денот −1 ч / +1 ч | исто |
+| `L` | смени лик | исто |
+| `N` · `F3` · `F11` · `Esc` | тивко · статистика · цел екран · мени / зачувај / вчитај | |
 
-## Features
+Менито (Esc) е наредено по ред: **Игра** (продолжи, зачувај, вчитај), **Свет** (време, сообраќај, пешаци, агресивност), **Приказ и камера**, **Звук**, **Мапа**.
 
-### The city
-- Real OSM roads, buildings, water, parks, landmarks and neighbourhoods on real terrain. Slopes affect cars and walkers, and the Vardar bed is carved in.
-- Smooth 3D roads with kerbs, gutters, markings and zebra crossings. Widening and narrowing roads share vertices, and pavements meet in curved corners.
-- Bridges with real decks: drive under them or fall off into the river.
-- Kiosks, bus shelters, real bus stops, playgrounds, school yards, street furniture and breakable props.
-- Traffic lights in a green wave, a day/night cycle with street lamps and headlights, Skopje smog, bullet holes and scorch marks.
+## Член 3 · Што има
 
-### People and vehicles
-- **24 playable characters** with dozens of personal lines each, plus 39+ road users with their own one-liners.
-- Pedestrians walk with a rigged stride (hips, knees, shoulders, elbows) at a real walking pace, lean into a run, and stand with their arms down.
-- **Bump into someone** and they grumble, insult you, threaten you ("ќе ти врзам шамар", "фаќај магла") and finally fight you, each in their own character's voice.
-- 59 named vehicles (Yugo, Fićo, Lada Niva, Trabant, Passat Dijaspora, taxi, police, ambulance, fire truck, JSP bus, wedding limo) with dents, fire and explosions.
-- Real JSP city buses on real lines that stop at real stops: ride one or take it over.
-- An ambulance revives the fallen and the fire brigade puts out burning wrecks.
+### Градот
+- Вистински улици, згради, води, паркови, знаменитости и населби од OSM врз вистински терен. Угорнините им пречат на колите и на пешаците, а коритото на Вардар е вдлабнато.
+- Мазни 3D улици со тротоари, одводи, ознаки и пешачки. Мостови со вистинска патека: возиш под нив или паѓаш во реката.
+- Киосци, чекалници, вистински автобуски постојки, игралишта, училишни дворови, улична опрема и работи што се кршат.
+- Зелен бран на семафорите, ден и ноќ со улични лампи и фарови, скопски смог, дупки од куршуми и црни дамки.
 
-### Action
-- Fists, bats, pistols, uzis, shotguns, kalashnikovs and the zolja, with real projectiles that hit people, cars, walls and trees.
-- Oriented-box car collisions, chain explosions, blast waves, and props that fly and break.
-- Money (денари) for every punch, smash and explosion, shown as animated score pop-ups.
-- Shops and places: walk into a café, bank, church, school, fuel station or market and pick from a menu.
-- Selfie mode, kiosk food, burek and ajvar pickups, save and load slots.
+### Луѓе и возила
+- **24 лика за играње** со по десетици сопствени реплики и 39+ учесници во сообраќајот со свои.
+- Пешаците газат со жив чекор, навалуваат кога трчаат и стојат со раце долу.
+- **Удри во некого** и ќе мрмори, ќе те псуе, ќе ти се заканува („ќе ти врзам шамар“, „фаќај магла“) и на крај ќе се тепа, секој со свој глас.
+- 59 именувани возила (југо, фиќо, лада нива, трабант, пасат на дијаспора, такси, полиција, брза помош, пожарна, ЈСП, свадбарска лимузина) со удрени места, пожар и експлозии.
+- Вистински ЈСП автобуси на вистински линии што застануваат на вистински постојки: качи се или одземи го.
+- Брзата помош ги враќа паднатите, а пожарникарите ги гасат запалените олупини.
 
-### Language and sound
-- All text is Macedonian Cyrillic, written against the [Skopje slang bible](docs/Skopje_slang_bible.txt). Three language levels: clean, street and uncensored (fully unhinged).
-- Speech uses the Suze Macedonian voice with per-character pitch and rate, and a menu setting for how often pedestrians talk.
-- The car radio plays your own music with static between stations. About one in ten passing cars plays muffled music in its cabin.
-- All effects, engines, sirens and ambience are synthesised with numpy.
+### Акција
+- Тупаници, палки, пиштоли, узи, пумпарици, калашњикови и зоља, со вистински проектили што погодуваат луѓе, коли, ѕидови и дрвја.
+- Судири на кутии, верижни експлозии, ударни бранови и работи што летаат и се кршат.
+- Пари (денари) за секој удар, смачкување и експлозија, со скокачки бројки.
+- Продавници и места: влези во кафуле, банка, црква, училиште, пумпа или маркет и избери од менито.
+- Селфи, храна од киоск, зачувување и вчитување во слотови.
 
-## Gallery
+### Јазик и звук
+- Сè е на македонска кирилица, пишувано според [скопскиот сленг алманах](docs/Skopje_slang_bible.txt). Три нивоа: чисто, улица и без цензура.
+- Говорот е со гласот Суџе, со висина и брзина по лик, а во менито се определува колку често зборуваат пешаците.
+- Радиото пушта твоја музика, со шум меѓу станиците. Една од десет коли што поминуваат пушта приглушена музика.
+- Сите ефекти, мотори, сирени и амбиент се синтетизирани со numpy.
+
+## Член 4 · Галерија
 
 | | |
 |---|---|
-| ![Loading splash](docs/screenshots/splash.jpg) | ![Characters](docs/screenshots/likovi.jpg) |
-| ![Character select](docs/screenshots/select.jpg) | ![Weapons](docs/screenshots/weapons.jpg) |
-| ![Shop menu](docs/screenshots/poi.jpg) | ![Selfie](docs/screenshots/selfie.jpg) |
-| ![Menu](docs/screenshots/menu_bg.jpg) | ![Vardar](docs/screenshots/vardar.jpg) |
-| ![Smog](docs/screenshots/smog.jpg) | ![Wedding](docs/screenshots/wedding.jpg) |
+| ![Вчитување](docs/screenshots/splash.jpg) | ![Ликови](docs/screenshots/likovi.jpg) |
+| ![Избор на лик](docs/screenshots/select.jpg) | ![Оружје](docs/screenshots/weapons.jpg) |
+| ![Мени на продавница](docs/screenshots/poi.jpg) | ![Селфи](docs/screenshots/selfie.jpg) |
+| ![Мени](docs/screenshots/menu_bg.jpg) | ![Вардар](docs/screenshots/vardar.jpg) |
+| ![Смог](docs/screenshots/smog.jpg) | ![Свадба](docs/screenshots/wedding.jpg) |
 
-*All screenshots are from the real game on the real Skopje map.*
+## Член 5 · Што каде е
 
-## Project layout
-
-| path | contents |
+| патека | содржина |
 |---|---|
-| `run.bat`, `make_exe.bat` | start the game, build a stand-alone exe |
-| `src/` | the game: simulation (`actors.py`), rendering (`render.py`, `gl3d.py`), sound, radio, speech and all text |
-| `tools/` | map and terrain download, world builder, road meshes, checks |
-| `assets/` | fonts, character art, posters |
-| `docs/` | [architecture](docs/ARCHITECTURE.md), [long guide](docs/GUIDE.md), [text sources](docs/TEXT_SOURCES.md), slang bible, screenshots |
+| `run.bat`, `make_exe.bat` | пушти ја играта, направи самостоен exe |
+| `src/` | играта: симулација, цртање, звук, радио, говор |
+| `text/` | сите македонски текстови (по датотека, види `text/README.md`) |
+| `tools/` | симнување мапа и терен, градење свет, проверки |
+| `assets/` | фонтови, ликови, постери |
+| `docs/` | [архитектура](docs/ARCHITECTURE.md), [извори на текст](docs/TEXT_SOURCES.md), сленг алманах, слики |
 
-Release history: [CHANGELOG.md](CHANGELOG.md).
+Историја на изданија: [CHANGELOG.md](CHANGELOG.md).
 
-## Known limits
+## Член 6 · Ограничувања
 
-- Windows only. The voice and the setup script need Windows.
-- The Macedonian wording has not been reviewed by a native editor (see [docs/TEXT_SOURCES.md](docs/TEXT_SOURCES.md)).
-- The map download and the voice need an internet connection on first start. Generated data (`data/`, logs) is not in the repository.
+- Само Windows. Гласот и скриптата за подготовка бараат Windows.
+- Македонскиот текст не го прегледал јазичен уредник (види [docs/TEXT_SOURCES.md](docs/TEXT_SOURCES.md)).
+- Првиот пат треба интернет за мапата и гласот. Генерираните податоци (`data/`, дневници) не се во репото.
 
-## Credits and licences
+## Член 7 · Заслуги и лиценци
 
-- Map data © OpenStreetMap contributors, ODbL. Terrain: AWS Terrarium tiles (SRTM-based open data).
-- **Voice: Suze**, a Macedonian female voice for RHVoice, © UNICEF, by the speech group of FEEIT UKIM ([suze-mkd](https://github.com/RHVoice/suze-mkd)), licensed **CC BY-NC-ND 4.0**. `run.bat` downloads it; it is not bundled. RHVoice engine: LGPL-2.1+.
-- Font: DejaVu Sans (`assets/fonts/LICENSE_DEJAVU`).
-- Radio: only music you put in `music/` yourself is played.
-
-## Text / proofreading
-
-All Macedonian (Cyrillic) text is in the `text/` folder as plain files, separate from the code. See `text/README.md` for the format; check edits with `python tools/check_text.py`.
+- Мапа © соработници на OpenStreetMap, ODbL. Терен: плочки AWS Terrarium (отворени SRTM податоци).
+- **Глас: Суџе**, македонски женски глас за RHVoice, © УНИЦЕФ, од говорната група на ФЕИТ УКИМ ([suze-mkd](https://github.com/RHVoice/suze-mkd)), лиценца **CC BY-NC-ND 4.0**. `run.bat` го симнува, не е во пакетот. Моторот RHVoice: LGPL-2.1+.
+- Фонт: DejaVu Sans (`assets/fonts/LICENSE_DEJAVU`).
+- Радио: се пушта само музика што ти сам ќе ја ставиш во `music/`.

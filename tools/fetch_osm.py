@@ -27,9 +27,9 @@ except Exception:  # noqa: BLE001
     pass
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.environ.get("GTA_OSM_DIR") or os.path.join(ROOT, "data", "osm")
+OUT = os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm")
 PARTS = os.path.join(OUT, "parts")
-MIRRORS = os.environ.get("GTA_OVERPASS", "").split(",") if os.environ.get("GTA_OVERPASS") else [
+MIRRORS = os.environ.get("SK242_OVERPASS", "").split(",") if os.environ.get("SK242_OVERPASS") else [
     "https://overpass-api.de/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
     "https://z.overpass-api.de/api/interpreter",
@@ -45,12 +45,12 @@ PARTS_FMT = 2          # 2: ways carry their node ids (the road graph needs them
 SOURCES = ("auto", "geofabrik", "overpass")
 LAYERS = ["roads", "buildings", "areas", "pois", "places"]
 REQUIRED = {"roads", "buildings"}
-UNIT_LIMIT = float(os.environ.get("GTA_UNIT_LIMIT", 20 * 60))      # seconds per cell, all attempts together
-TOTAL_LIMIT = float(os.environ.get("GTA_TOTAL_LIMIT", 55 * 60))    # seconds for the whole download
+UNIT_LIMIT = float(os.environ.get("SK242_UNIT_LIMIT", 20 * 60))      # seconds per cell, all attempts together
+TOTAL_LIMIT = float(os.environ.get("SK242_TOTAL_LIMIT", 55 * 60))    # seconds for the whole download
 MAX_ATTEMPTS = 6
-WORKERS = int(os.environ.get("GTA_WORKERS", 4))             # pieces downloaded at the same time
-QUERY_TIMEOUT = int(os.environ.get("GTA_QUERY_TIMEOUT", 60))      # small tiles answer fast; a slow server is dropped early
-GRID = (int(os.environ.get("GTA_TILES_X", 11)), int(os.environ.get("GTA_TILES_Y", 7)))   # ~1 x 1 km tiles
+WORKERS = int(os.environ.get("SK242_WORKERS", 4))             # pieces downloaded at the same time
+QUERY_TIMEOUT = int(os.environ.get("SK242_QUERY_TIMEOUT", 60))      # small tiles answer fast; a slow server is dropped early
+GRID = (int(os.environ.get("SK242_TILES_X", 11)), int(os.environ.get("SK242_TILES_Y", 7)))   # ~1 x 1 km tiles
 
 LEISURE = "park|garden|pitch|playground|golf_course|recreation_ground|nature_reserve|stadium|track|sports_centre"
 PLACE = "suburb|neighbourhood|quarter|city_district|district|village|town|hamlet|locality|square|borough"
@@ -305,7 +305,7 @@ def clear_parts():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--force", action="store_true")
-    ap.add_argument("--source", choices=SOURCES, default=os.environ.get("GTA_SOURCE", "auto"),
+    ap.add_argument("--source", choices=SOURCES, default=os.environ.get("SK242_SOURCE", "auto"),
                     help="auto = Geofabrik file first, Overpass for whatever is still missing")
     a = ap.parse_args()
     os.makedirs(PARTS, exist_ok=True)

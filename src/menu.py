@@ -28,7 +28,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0001"), TXT("menu.0002"), TXT("menu.0003"), TXT("menu.0004"), TXT("menu.0005"), TXT("menu.0006")]
+TABS = [TXT("menu.0006"), TXT("menu.0004"), TXT("menu.0001"), TXT("menu.0003"), TXT("menu.0005")]   # Игра · Свет · Приказ · Звук · Мапа
 
 
 def _rows(in_game, slots=()):
@@ -38,31 +38,31 @@ def _rows(in_game, slots=()):
     spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     R = [
-        (0, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
-        (0, Row("toggle", TXT("menu.0009"), "fullscreen")),
-        (0, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
-        (0, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
-        (0, Row("toggle", TXT("menu.0014"), "labels")),
-        (1, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
-        (1, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
-        (1, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (2, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
-        (2, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
-        (2, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
-        (2, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
-        (2, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
-        (2, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
-        (2, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
-        (2, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
-        (3, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
-        (3, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
-        (3, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
-        (3, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
-        (3, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
-        (3, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
-        (3, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
-        (3, Row("toggle", TXT("menu.0038"), "ambulance")),
-        (3, Row("toggle", TXT("menu.0039"), "fire")),
+        (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
+        (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
+        (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
+        (2, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
+        (2, Row("toggle", TXT("menu.0014"), "labels")),
+        (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
+        (2, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
+        (2, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
+        (3, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
+        (3, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
+        (3, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
+        (3, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
+        (3, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
+        (3, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
+        (3, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
+        (3, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (1, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
+        (1, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
+        (1, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
+        (1, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
+        (1, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
+        (1, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
+        (1, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
+        (1, Row("toggle", TXT("menu.0038"), "ambulance")),
+        (1, Row("toggle", TXT("menu.0039"), "fire")),
         (4, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
     ]
     g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
@@ -72,7 +72,7 @@ def _rows(in_game, slots=()):
     if in_game:
         g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars")]
     g += [Row("action", TXT("menu.0049"), "quit")]
-    return R + [(5, r) for r in g]
+    return R + [(0, r) for r in g]
 
 
 def _title_card(seconds=6.0):
@@ -250,7 +250,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
         cfg.save()
         if not pick_character.load:
             return "play"
-        tab = len(TABS) - 1
+        tab = 0
     slots = [savegame.summary(n) for n in range(1, savegame.SLOTS + 1)]
     allrows = _rows(in_game, slots)
     rows = [r for t, r in allrows if t == tab]

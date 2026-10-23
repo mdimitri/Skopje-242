@@ -644,8 +644,8 @@ def title_poster():
     car(p, 360, 960, (230, 64, 56), 2.4)
     car(p, 1260, 1000, GOLD, 2.0)
     p.haze((12, 8, 24), 0, 0, 560, 190)
-    p.text(w // 2, 150, TXT("make_posters_tool.0037"), 230, GOLD, "mm")
-    p.text(w // 2, 340, TXT("make_posters_tool.0038"), 100, CREAM, "mm")
+    p.text(w // 2, 150, TXT("make_posters_tool.0037"), 150, GOLD, "mm")
+    p.text(w // 2, 340, TXT("make_posters_tool.0038"), 84, CREAM, "mm")
     p.line([(480, 430), (1440, 430)], ROSE, 8)
     p.save_big = True
     im = p.im.resize((1920, 1080), Image.LANCZOS)

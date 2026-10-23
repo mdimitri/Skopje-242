@@ -636,7 +636,7 @@ def main():
 
     if os.path.exists(os.path.join(a.src, "pbf", "country.osm.pbf")) and not os.path.exists(os.path.join(a.src, "bus_stops.json")):
         try:                                                    # real bus stops (and lines / POIs) from the country file
-            os.environ["GTA_OSM_DIR"] = a.src
+            os.environ["SK242_OSM_DIR"] = a.src
             import fetch_extras
             fetch_extras.OSM = a.src
             fetch_extras.main()
