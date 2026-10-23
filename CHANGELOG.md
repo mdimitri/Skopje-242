@@ -4,6 +4,8 @@ Screenshots: new 3D splash (`splash.jpg`), 24-avatar character select (`select.j
 
 ## v2.0 – walking, bumping, muffled car music, joined roads
 
+- **Walk cycle (final):** eight-phase stride cycle with cosine limb swing at real cadence (one stride per ~1.5 m walking, ~2.6 m running); arms hang down when standing; arms holding a prop swing with it. Refreshed screenshots (drive, kiosk, roads, night) from the real map.
+
 - **Walk animation:** longer strides, bigger leg and arm swing and a forward lean (strong when running) for the avatar and pedestrians, so the heading reads from above.
 - **Speech:** your avatar only talks when you press `H` on foot. New menu row "Колку често зборуваат пешаците" (0.1x–2x, default 1x = as before).
 - **Bumping:** walk into a pedestrian and they grumble, insult you, threaten you ("ќе ти врзам шамар", "гитла бе", "мрш", "фаќај магла" ...) and after a few bumps fight you. Lines depend on the character type (`src/bump_lines.py`).

@@ -622,8 +622,15 @@ def _swing(parts, i0, px, py, ang):
 
 
 def _phase(frame):
-    """Walk / run cycle frames: 0 and 1 are the stride extremes, 6 and 7 the passing poses, 8..11 the same for running.
+    """Walk / run cycle. 20..27 = walk, 30..37 = run: eight phases of one stride cycle, limbs swing as a cosine;
+    12 = standing (arms hanging, legs together); 0/1/6/7 and 8..11 = the old four-pose cycle (kept for callers).
     -> (base frame, leg swing angle, forward lean as a shear)."""
+    if frame == 12:
+        return 0, 0.0, 0.0
+    if 20 <= frame < 38:
+        run = frame >= 30
+        amp = 0.75 if run else 0.5
+        return 0, amp * math.cos(2 * math.pi * (frame % 10) / 8), (0.35 if run else 0.08)
     run = frame >= 8
     if run:
         frame = {8: 0, 9: 1, 10: 6, 11: 7}[frame]

@@ -141,7 +141,8 @@ class Renderer:
         """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
         if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
             return int(anim * 2.2) & 1
-        return ((8, 10, 9, 11) if run else (0, 6, 1, 7))[int(anim * (2.6 if run else 2.4)) & 3]
+        # one stride cycle (two steps) per ~1.5 m walking, ~2.6 m running: eight phases each
+        return (30 if run else 20) + (int(anim * (8 / 2.6 if run else 8 / 1.5)) & 7)
 
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)
@@ -355,6 +356,8 @@ class Renderer:
                     frame, y = (p.atk_kind if p.atk_t > 0 else self._gait(p.arch, p.anim, True)), 0.0
                 elif p.mode == "rage":
                     frame, y = (3 if int(p.anim) & 1 else 0), 0.0
+                elif getattr(p, "v", 1.0) < 0.1 and p.mode not in ("flee", "brawl"):
+                    frame, y = 12, 0.0                             # standing still: arms down
                 else:
                     frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), 0.0
                 lean = 0.0
@@ -368,7 +371,7 @@ class Renderer:
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
-            frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 0
+            frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 12
             if wk.atk_t > 0:
                 frame = wk.atk_kind
             if wk.z > 0.05:
