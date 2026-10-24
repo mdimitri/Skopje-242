@@ -31,10 +31,13 @@ def scan(lib_root):
                 continue
             try:
                 sc = json.load(open(os.path.join(dp, fn), encoding="utf-8"))
-                key = (sc.get("meta") or {}).get("key") or re.sub(r"_[0-9a-f]{6}$", "", sc["id"])
-                paths = [os.path.join(dp, f["file"]) for f in sc["files"]]
+                meta = sc.get("meta") if isinstance(sc.get("meta"), dict) else {}
+                key = meta.get("key") or re.sub(r"_[0-9a-f]{6}$", "", str(sc["id"]))
+                if not isinstance(key, str) or not key:
+                    continue
+                paths = [os.path.join(dp, os.path.basename(str(f["file"]))) for f in sc["files"] if isinstance(f, dict) and str(f.get("file", "")).lower().endswith(".mp3")]
             except Exception:  # noqa: BLE001
-                continue
+                continue                                          # unreadable / malformed sidecar: that sound just stays procedural
             paths = sorted(p for p in paths if os.path.isfile(p))
             if paths:
                 out.setdefault(key, []).extend(p for p in paths if p not in out.get(key, []))
