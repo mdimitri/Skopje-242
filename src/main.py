@@ -532,7 +532,6 @@ def main():
     def hero_line():
         lines = hero_lines.LINES.get(characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0])
         return rng.choice(talk.pool(lines, getattr(sim, "lang", 1))) if lines else None
-    acc = 0.0
     worst_bake = 0.0
 
     def say(text, x, y, who=None, prio=False):
@@ -850,7 +849,7 @@ def main():
         t_places["seen"] = True
         if r and not first_call:                            # the starting neighbourhood is not called out
             hud.set_place(r[0], r[1], 5.0)
-            say(r[1], fx_, fy_, TXT("main.0036"), True)
+            say(places.cur, fx_, fy_, TXT("main.0036"), True)      # spoken: just the name, the line stays on screen
 
     t_places = {"seen": False}
     amb_state = {"next": 8.0, "dens": 0.3}
@@ -902,7 +901,6 @@ def main():
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:
                 best[c.kind] = min(best.get(c.kind, 1e9), math.hypot(c.x - fx_, c.y - fy_))
-        spray = 1e9
         for b in sim.bodies:
             if b.kind in vehicles.SIREN_SOUND and getattr(b, "siren", False) and b.alive:
                 best[b.kind] = min(best.get(b.kind, 1e9), math.hypot(b.x - fx_, b.y - fy_))
@@ -936,7 +934,6 @@ def main():
     inp_last = {}
 
     # ------------------------------------------------------------------ main loop
-    prev_enter = False
     tp_idx = -1
     snap = False
     last_phase = None
@@ -972,6 +969,8 @@ def main():
                 fx_, fy_, _a, _b = sim.focus()
                 streamer.add_decal(("l", fx_ - 6, fy_ + 3, fx_ + 6, fy_ + 4, 0.25, (8, 8, 10, 200)))
                 streamer.add_decal(("d", fx_ + 3, fy_ + 6, 1.2, (150, 20, 24, 220)))
+            if frame == 242 and sim.walker is not None and os.environ.get("SK242_TEST_WEAPON"):    # e.g. bat: check the swing
+                sim.walker.weapon, sim.walker.ammo = os.environ["SK242_TEST_WEAPON"], 99
             if frame == 250 and sim.walker is not None:    # a volunteer for the fistfight
                 from actors import Ped
                 q_ = Ped()

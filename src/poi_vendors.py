@@ -425,17 +425,6 @@ _OSM_KINDS = {
 _CAT_KINDS = {"cafe": "cafe", "food": "kebab", "money": "bank", "health": "pharmacy", "shop": "minimarket"}
 
 
-def kind_of(cat, name, sub=""):
-    n = (name or "").lower()
-    for frags, k in NAME_KINDS:
-        if any(f in n for f in frags):
-            return k
-    k = OSM_KINDS.get(sub) or OSM_KINDS.get((sub or "").split("/")[0]) if sub else None
-    return k or CAT_KINDS.get(cat)
-
-
-
-
 # my kind -> existing vendor key (pools are merged); kinds not listed here become new vendors
 _ALIAS = {"supermarket": "market", "bakery": "pekara", "sweets": "slatkarnica", "cafe": "kafe", "bar": "kafeana", "pharmacy": "apteka",
           "electronics": "tech", "florist": "cvekjarnica", "bank": "menuvacnica", "autoservice": "auto", "books": "knigi",

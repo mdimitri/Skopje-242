@@ -166,8 +166,7 @@ class Renderer:
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
         w, st = self.w, self.st
-        S, M = w.chunk, w.margin
-        HX, HY = w.hx, w.hy
+        S = w.chunk
         self.t = t
         gl3d.ground_time(t)
         rl.rl_set_clip_planes(near, H * 4 + 400)
@@ -394,8 +393,14 @@ class Renderer:
                 wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
                 if wm is not None:
                     sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
-                    Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(0.8)),
-                                            rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(-wk.h)))
+                    tilt, yaw = 0.8, 0.0
+                    if wk.weapon in actors.MELEE and wk.atk_t > 0:      # bat swing: wound up behind the right shoulder, sweeps across the front
+                        u = 1.0 - wk.atk_t / actors.SWING_T
+                        e = u * u * (3 - 2 * u)
+                        tilt, yaw = 0.3 + 1.1 * math.sin(math.pi * min(1.0, u * 1.3)), 1.4 - 2.9 * e
+                    Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(tilt)),
+                                            rl.matrix_multiply(rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(yaw)),
+                                                               rl.matrix_rotate_y(-wk.h)))
                     Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
                     old_t = wm.transform
                     wm.transform = Mh

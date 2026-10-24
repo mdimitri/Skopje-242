@@ -19,6 +19,7 @@ WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT
            "shotgun": (TXT("actors.0003"), 0.85, 30, 6, 0.16, 18, 60), "kalash": (TXT("actors.0004"), 0.12, 40, 1, 0.03, 60, 240),
            "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14)}
 MELEE = ("bat",)                # swung, not fired: no tracer, no ammo used
+SWING_T = 0.36                  # seconds of one bat swing (the renderer sweeps the bat across the body)
 WEAPON_ORDER = ["fist", "bat", "pistol", "uzi", "shotgun", "kalash", "zolja"]
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
 
@@ -307,6 +308,29 @@ def _rad(kind):
 
 
 _RAD = [_rad(k) for k in range(len(vehicles.DIMS))]          # radius of the circle around each car's 2D box
+
+
+_CELL = 10.0
+
+
+def _cells(objs):
+    """Bucket objects with .x/.y into a _CELL grid (rebuilt every frame: cheap, objects move)."""
+    g = {}
+    for b in objs:
+        g.setdefault((int(b.x // _CELL), int(b.y // _CELL)), []).append(b)
+    return g
+
+
+def _near(g, x, y):
+    """Objects in the 3x3 cells around (x, y): everything within _CELL metres, plus some."""
+    cx, cy = int(x // _CELL), int(y // _CELL)
+    res = []
+    for i in (cx - 1, cx, cx + 1):
+        for j in (cy - 1, cy, cy + 1):
+            c = g.get((i, j))
+            if c:
+                res.extend(c)
+    return res
 
 
 def body_pairs(bodies):
@@ -696,6 +720,8 @@ class Peds:
         aggro = getattr(self.sim, "aggro", 1) if self.sim else 1
         if rng.random() < dt * (0.01, 0.03, 0.06, 0.12)[aggro % 4]:
             self._start_brawl(fx, fy, ev)
+        tc = self.sim.traffic.cars if self.sim is not None else ()
+        g_b, g_a = _cells(bodies), _cells((*bodies, *tc))          # 10 m grids: each person only checks the cars next to them
         for p in self.list:
             if p.mode == "svc":                                   # paramedic / fire fighter, moved by Services
                 p.gz = w.level(p.x, p.y, p.gz if p.gz is not None else -1e9)
@@ -728,7 +754,8 @@ class Peds:
                 continue
             # ------------- hit by a moving car?
             hit = None
-            for b in bodies:
+            near_b = _near(g_b, p.x, p.y)
+            for b in near_b:
                 if abs(b.x - p.x) > 4 or abs(b.y - p.y) > 4:
                     continue
                 sp = b.speed
@@ -754,8 +781,7 @@ class Peds:
                 out.append(p)
                 continue
             if p.mode in ("walk", "flee", "rage", "brawl"):         # people are not ghosts: parked cars, wrecks and traffic push them out
-                tc = self.sim.traffic.cars if self.sim is not None else ()
-                for b in (*bodies, *tc):
+                for b in _near(g_a, p.x, p.y):
                     if abs(b.x - p.x) > 7 or abs(b.y - p.y) > 7:
                         continue
                     hit_ = push_from_box(b, p.x, p.y, 0.3)
@@ -764,7 +790,7 @@ class Peds:
                         p.y += hit_[1] * hit_[2]
             # ------------- panic near fast cars
             if p.mode == "walk":
-                for b in bodies:
+                for b in near_b:
                     if b.speed > 6 and abs(b.x - p.x) < 9 and abs(b.y - p.y) < 9 and not b.empty:
                         d = math.hypot(b.x - p.x, b.y - p.y)
                         fxb, fyb = math.cos(b.h), math.sin(b.h)
@@ -1501,7 +1527,7 @@ class Sim:
         name, cd, dmg, pellets, spread, rng_m, _per = WEAPONS[wk.weapon]
         if wk.weapon not in MELEE:
             wk.ammo -= 1
-        wk.atk_cd, wk.atk_t, wk.atk_kind = cd, 0.2, 4
+        wk.atk_cd, wk.atk_t, wk.atk_kind = cd, (SWING_T if wk.weapon in MELEE else 0.2), 4
         empty = wk.ammo <= 0
         fx, fy = math.cos(wk.h), math.sin(wk.h)
         if wk.weapon in MELEE:
