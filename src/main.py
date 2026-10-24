@@ -585,11 +585,14 @@ def main():
                 aud.at("bullet_ricochet" if rng.random() < 0.4 else "bullet_wall", d["x"], d["y"], 0.5)
                 particles.debris(d["x"], d["y"], (200, 194, 180), 4, 1.2)
                 particles.smoke(d["x"] + d["nx"] * 0.3, d["y"] + d["ny"] * 0.3, 0.0, 1, 1.2, d["nx"] * 2, d["ny"] * 2, 0.4)
-            elif kind == "bullet_car":                               # metal: sparks
+            elif kind == "bullet_car":
+                aud.at("bullet_car_ping", d["x"], d["y"], 0.5)                               # metal: sparks
                 particles.sparks(d["x"], d["y"], 6, 0.9)
             elif kind == "bullet_tree":
+                aud.at("bullet_tree", d["x"], d["y"], 0.4)
                 particles.leaves(d["x"], d["y"], 5)
             elif kind == "bullet_ground":
+                aud.at("bullet_ground", d["x"], d["y"], 0.35)
                 particles.smoke(d["x"], d["y"], 0.1, 1, 0.2, 0, 0, 0.35)
                 particles.debris(d["x"], d["y"], (120, 112, 100), 3, 0.2)
             elif kind == "rocket_trail":
@@ -601,10 +604,14 @@ def main():
                 gains.add(d["amount"], d["x"], d["y"])
                 aud.play("cash", 0.35, 1.0 + min(0.5, d["amount"] / 80.0))
             elif kind == "board":
+                aud.play("bus_air_brake", 0.5)
+                aud.play("bus_door", 0.6)
                 hud.set_banner((TXT("main.0006") + f"{d['fare']}" + TXT("main.0007")), 5.0)
             elif kind == "alight":
+                aud.play("bus_door", 0.6)
                 hud.set_banner(TXT("main.0008"), 2.0)
             elif kind == "ped_shot":
+                aud.at("bullet_flesh", d["x"], d["y"], 0.6)
                 streamer.add_decal(("d", d["x"], d["y"], 0.8, (150, 20, 24, 200)))
             elif kind == "shot":
                 aud.play("shot", 0.7, 1.0)
@@ -615,7 +622,7 @@ def main():
                 particles.sparks(d["x1"], d["y1"], 6, 1.0)
                 shake = max(shake, 0.3)
             elif kind == "hurt" or kind == "hurt_car":
-                aud.play("punch", 0.9, 0.85)
+                aud.play("hurt_thud", 0.9, 0.85)
                 shake = max(shake, 0.5)
             elif kind == "knocked_out":
                 hud.set_banner(rng.choice(slang.KO_SELF), 3.5)
@@ -628,32 +635,37 @@ def main():
                 popups.add((f"{d['item']}  +{d['heal']}" + TXT("main.0011")), sim.walker.x, sim.walker.y, 2.8, 2.4, (255, 220, 120), 22)
                 hud.set_banner(rng.choice(slang.BOUGHT), 2.0)
             elif kind == "broke":
+                aud.play("denied_buzz", 0.6)
                 popups.add((f"{d['item']} = {d['price']}" + TXT("main.0012")), sim.walker.x, sim.walker.y, 2.8, 2.0, (255, 150, 140), 20)
                 hud.set_banner(rng.choice(slang.BROKE), 2.0)
             elif kind == "cash":
                 aud.play("cash", 0.8)
                 popups.add((f"+{d['amt']}" + TXT("main.0013")), d["x"], d["y"], 2.0, 1.8, (140, 255, 150), 22)
             elif kind == "gun":
-                aud.play("chime", 0.8, 1.4)
+                aud.play("weapon_pickup", 0.8, 1.4)
                 hud.set_banner((d.get('name', TXT("main.0055")).upper() + TXT("main.0014")), 2.4)
             elif kind == "fuel":
-                aud.play("chime", 0.6, 0.9)
+                aud.play("fuel_pour", 0.6, 0.9)
                 hud.set_banner((TXT("main.0015") + f"{int(d['f'] * 100)}%."), 2.0)
             elif kind == "fuel_low":
+                aud.play("fuel_warning", 0.6, 0.9)
                 hud.set_banner(TXT("main.0016"), 3.0)
             elif kind == "fuel_out":
+                aud.play("engine_stall", 0.8)
                 hud.set_banner(TXT("main.0017"), 3.5)
             elif kind == "teleport":
-                aud.play("chime", 0.5, 0.7)
+                aud.play("teleport_whoosh", 0.5, 0.7)
             elif kind == "spray":
                 dxs, dys = d["x1"] - d["x0"], d["y1"] - d["y0"]
                 ls = math.hypot(dxs, dys) or 1.0
                 particles.emit("w", d["x0"], d["y0"], 1.3, dxs / ls * 9, dys / ls * 9, 1.5, 3, 0.22, 0.7, (170, 210, 255), 0.6, 0.8, -4.0)
             elif kind == "extinguished":
+                aud.at("fire_out_hiss", d["x"], d["y"], 0.7)
                 particles.smoke(d["x"], d["y"], 0.0, 6, 0.8, 0, 0, 1.6)
                 popups.add(TXT("main.0018"), d["x"], d["y"], 3.0, 3.0, (170, 220, 255), 22)
             elif kind in ("revived", "revived_ped"):
                 aud.play("revive", 0.9)
+                aud.play("defib_zap", 0.6)
                 if kind == "revived":
                     hud.set_banner(TXT("main.0019"), 3.0)
                 else:
@@ -770,6 +782,7 @@ def main():
                 particles.emit("c", d["x"], d["y"], 1.2, 0, 0, 1.5, 1, 0.3, 0.9, (255, 110, 150), 2.0, 0.8, 0.6)
             elif kind == "car_ignite":
                 b = d["body"]
+                aud.at("fire_ignite", b.x, b.y, 0.7)
                 popups.add(rng.choice((TXT("main.0031"), TXT("main.0032"), TXT("main.0033"))), b.x, b.y, 3.0, 2.2, (255, 170, 90))
             elif kind == "explode":
                 b = d["body"]
@@ -1047,6 +1060,7 @@ def main():
         aud.loop("frog_chorus", 0.35 * dk * min(1.0, e_["water"] * 4))
         aud.loop("amb_industrial", 0.5 * min(1.0, e_.get("ind", 0) * 4))
         aud.loop("amb_square_day", 0.5 * day * min(1.0, e_.get("plaza", 0) * 5))
+        aud.loop("amb_pigeons_square", 0.4 * day * min(1.0, e_.get("plaza", 0) * 5))
         aud.loop("amb_playground", 0.5 * day * min(1.0, e_.get("play", 0) * 5))
         aud.loop("amb_football_pitch", 0.4 * day * min(1.0, e_.get("pitch", 0) * 5))
         aud.loop("amb_lake_shore", 0.5 * min(1.0, e_.get("lake", 0) * 5))
@@ -1205,6 +1219,7 @@ def main():
                 hud.set_banner(_a.WEAPONS[wname][0] if wname in _a.WEAPONS else TXT("main.0037"), 1.2)
             if rl.is_key_pressed(rl.KEY_M):
                 show_map = not show_map
+                aud.play("map_paper", 0.5)
             if rl.is_key_pressed(rl.KEY_F3):
                 show_dbg = not show_dbg
             if rl.is_key_pressed(rl.KEY_F11):

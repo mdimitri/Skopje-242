@@ -240,6 +240,28 @@ _s("garbage_truck", "city", 14, 4, "A garbage truck compactor crushing rubbish w
 _s("street_lamp_buzz", "city", 12, 3, "An old street lamp humming and buzzing at night.", 0.3, loop=True)
 _s("power_transformer_hum", "city", 20, 3, "An electrical substation transformer humming at 50 hertz.", 0.3, loop=True)
 _s("neon_buzz", "city", 12, 3, "A neon shop sign buzzing and flickering.", 0.3, loop=True)
+# ------------------------------------------------------------------ game events and interface (audit of every sim event, round 2)
+_s("bullet_car_ping", "weapons", 1.0, 8, "A bullet hitting a car body panel with a sharp metallic ping.", 0.7)
+_s("bullet_tree", "weapons", 1.0, 6, "A bullet thudding into a tree trunk with a dull wooden thwack.", 0.6)
+_s("bullet_ground", "weapons", 1.0, 6, "A bullet kicking into dirt and gravel with a soft puff.", 0.5)
+_s("bullet_flesh", "weapons", 1.0, 6, "A bullet hitting a body with a dull wet thump, no scream.", 0.7, "punch")
+_s("hurt_thud", "fight", 1.0, 8, "A person taking a hard knock, a dull body impact with a short breathy exhale.", 0.8, "punch")
+_s("defib_zap", "fight", 2.0, 5, "A defibrillator charging whine and a sharp electric zap.", 0.6)
+_s("fuel_warning", "vehicles/misc", 2.0, 5, "A car dashboard low fuel warning, two soft electronic beeps.", 0.5, "chime")
+_s("fuel_pour", "vehicles/misc", 3.0, 5, "Petrol being poured into a car tank from a jerrycan, glugging.", 0.6, "chime")
+_s("engine_stall", "vehicles/engines", 2.5, 6, "A car engine coughing and stalling, then dying out.", 0.8)
+_s("fire_ignite", "vehicles/misc", 2.5, 6, "A car catching fire with a whoosh of flames igniting.", 0.8)
+_s("fire_out_hiss", "vehicles/misc", 4.0, 5, "A fire dying out under foam with a long hiss and crackle.", 0.7)
+_s("bus_door", "vehicles/bus", 2.0, 6, "Bus doors opening and closing with a pneumatic hiss and a clunk.", 0.8)
+_s("bus_air_brake", "vehicles/bus", 3.0, 6, "A city bus stopping with a long pneumatic air brake hiss.", 0.9)
+_s("weapon_pickup", "weapons", 1.2, 5, "A metallic cocking and loading click of a gun being picked up.", 0.7, "chime")
+_s("teleport_whoosh", "interface", 1.5, 5, "A soft airy whoosh as if the view jumps across a map.", 0.5, "chime", tail=" No speech.")
+_s("map_paper", "interface", 1.2, 5, "A paper city map being unfolded and rustled.", 0.5)
+_s("denied_buzz", "interface", 1.0, 5, "A short soft negative buzz for not enough money.", 0.5, tail=" No speech.")
+_s("ui_click", "interface", 0.5, 5, "A soft clean menu tick.", 0.4, tail=" No speech.")
+_s("ui_confirm", "interface", 0.8, 5, "A soft confirming menu tone, short and pleasant.", 0.5, tail=" No speech.")
+_loop("amb_pigeons_square", "birds", "Pigeons cooing and fluttering on a busy square with distant footsteps.", 24, 5, 0.5)
+
 CATALOG[:] = [r for r in CATALOG if r]
 
 
