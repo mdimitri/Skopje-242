@@ -2051,6 +2051,8 @@ class Sim:
             self.transit.update(dt)
         if getattr(self, "kids", None) is not None:
             self.kids.update(dt)
+        if getattr(self, "works", None) is not None:
+            self.works.update(dt)
         self.shots.update(dt)
         for b in list(self.bodies):
             b.age += dt

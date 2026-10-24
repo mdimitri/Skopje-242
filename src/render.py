@@ -364,6 +364,8 @@ class Renderer:
                 lean = 0.0
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
+                elif p.pose == "work":                             # building site: hammering / shovelling, arms up and down
+                    frame = 4 if int(p.anim * 2.4) & 1 else 12
                 elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
                     frame, lean, y = 4, -1.05 + 0.1 * math.sin(p.anim * 6.0), -0.3
                 pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)

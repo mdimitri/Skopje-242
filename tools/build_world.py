@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 15
+VERSION = 16
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1121,6 +1121,29 @@ def main():
         traceback.print_exc()
         print(f"[build] leisure skipped: {e}")
 
+    works = []
+    try:                                                        # round 20: fenced building sites on empty lots in built-up areas
+        import construction
+        kill = Image.new("L", (NCX, NCY), 0)
+        kd = ImageDraw.Draw(kill)
+        for ar in areas:
+            if ar["kind"] in ("park", "playground", "pitch", "cemetery", "wood", "water", "plaza", "parking", "sand", "rock"):
+                kd.polygon([to_cell(px, py) for px, py in ar["outer"]], fill=1)
+        free_mask = (occ_a == 0) & (surf_a == 0) & (np.asarray(kill) == 0)
+        bi = np.pad(bld_a.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+        def density(x, y, rad=int(160 / CELL)):
+            c, r_ = to_cell(x, y)
+            c0, c1, r0, r1 = max(0, c - rad), min(NCX - 1, c + rad), max(0, r_ - rad), min(NCY - 1, r_ + rad)
+            return (bi[r1 + 1, c1 + 1] - bi[r0, c1 + 1] - bi[r1 + 1, c0] + bi[r0, c0]) / max(1, (r1 - r0 + 1) * (c1 - c0 + 1))
+        cp, works, cparked = construction.build(density, None, free_mask, CELL, HX, HY, add_c, chunk_of, lambda x, y: T.hs(x, y),
+                                                [(q[0], q[1]) for q in trees] + [(q[0], q[1]) for q in posts])
+        posts = list(posts) + cp
+        parked = list(parked) + cparked
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] construction skipped: {e}")
+
     try:
         phase("3D roads")
         nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks)
@@ -1254,7 +1277,7 @@ def main():
         "buildings": {"buildings": buildings},
         "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "places": places,
                   "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
-                  "sites": sites},
+                  "sites": sites, "works": works},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},

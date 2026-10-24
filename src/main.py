@@ -402,6 +402,9 @@ def main():
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
     log(f"[game] playgrounds / schools / pitches: {len(sim.kids.sites)}")
+    import works as works_mod
+    sim.works = works_mod.Works(sim)
+    log(f"[game] building sites: {len(sim.works.sites)}")
     pend_say = {}
     say_state = {"t": -9.0}
     flags = {"labels": True}
@@ -908,6 +911,7 @@ def main():
             aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / 150.0) * 0.55, 1.0, "sfx")
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
+        aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / sim.works.HEAR) ** 1.5, 1.0, "ambient")
         dk = sim.clock.dark
         amb_state["dens"] += (density_at(fx_, fy_) - amb_state["dens"]) * 0.02
         dn = amb_state["dens"]
@@ -1191,6 +1195,8 @@ def main():
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic), 1.0, world.ground_y(cam_x, cam_y))
+            if cfg.get("smog", 1) and not sf_on:
+                guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
             guard.run("popups", popups.draw, cam)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:

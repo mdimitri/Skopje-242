@@ -133,6 +133,23 @@ def build():
     t = _t(1.0)
     x = _lp(rng.standard_normal(len(t)).astype(np.float32), 3) * (1 + 0.3 * np.sin(2 * np.pi * 13 * t))
     S["spray"] = _loopify(x / np.abs(x).max() * 0.4, 0.1)
+    # building site (loop 6 s): diesel mixer drum rumble, irregular hammer blows, a drill burst and a metal clank
+    t = _t(6.0)
+    nz = rng.standard_normal(len(t)).astype(np.float32)
+    x = _lp(nz, 50) * 5 * (1 + 0.3 * np.sin(2 * np.pi * 1.6 * t)) + 0.5 * np.sin(2 * np.pi * 46 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * 0.8 * t))
+    for st in (0.4, 0.95, 1.5, 2.4, 2.8, 3.3, 4.3, 4.65, 5.3):                         # hammer: sharp tick + short ring
+        i0 = int(st * SR)
+        tt = _t(0.18)
+        blow = (np.sin(2 * np.pi * 1100 * tt) * 0.5 + rng.standard_normal(len(tt)).astype(np.float32) * 0.6) * np.exp(-tt / 0.012)
+        x[i0:i0 + len(tt)] += blow * 3.0
+    tt = _t(0.9)
+    drill = np.sign(np.sin(2 * np.pi * 170 * tt)) * 0.5 * (np.sin(2 * np.pi * 14 * tt) > -0.2) * np.minimum(1, tt / 0.05) * np.minimum(1, (0.9 - tt) / 0.1)
+    i0 = int(3.5 * SR)
+    x[i0:i0 + len(tt)] += drill * 1.6
+    tt = _t(0.7)
+    i0 = int(1.9 * SR)
+    x[i0:i0 + len(tt)] += (np.sin(2 * np.pi * 1850 * tt) + 0.6 * np.sin(2 * np.pi * 2610 * tt)) * np.exp(-tt / 0.15) * 1.2        # steel clank
+    S["construction"] = _loopify(x / np.abs(x).max() * 0.45)
     # ambience: crowd murmur, traffic roar, wind, dog bark, church bell
     t = _t(6.0)
     nz = rng.standard_normal(len(t)).astype(np.float32)
@@ -191,7 +208,7 @@ def _loopify(x, fade=0.25):
 
 class Audio:
     LOOPS = ("ai_engine_i4", "ai_engine_small", "ai_engine_v8", "ai_engine_diesel", "ai_engine_truck", "ai_engine_ev", "engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "siren_police", "siren_amb",
-             "siren_fire", "screech", "spray", "city", "birds", "crickets", "crowd", "traffic", "wind")
+             "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind")
 
     def __init__(self, mute=False):
         self.ok = False
