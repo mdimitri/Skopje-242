@@ -7,3 +7,5 @@ dist/
 build/
 assets/radio/
 .crlf/
+sound_requests/
+library/

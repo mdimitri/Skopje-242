@@ -2,7 +2,7 @@
 <p align="center"><b>Одземање на моторно возило</b><br>
 <i>„Тој што противправно ќе одземе туѓо моторно возило со намера да го употреби за возење, ќе се казни…“<br>
 — Кривичен законик, Член 242</i></p>
-<p align="center">изд. 2.0 · само Windows · Python + raylib</p>
+<p align="center">изд. 2.1 · само Windows · Python + raylib</p>
 
 <p align="center"><img src="docs/screenshots/title.jpg" width="820" alt="Скопје · 242"></p>
 

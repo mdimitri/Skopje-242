@@ -2,11 +2,16 @@
 If there is no audio device (or anything fails) every call quietly does nothing."""
 import math
 import os
+import random
 import tempfile
 import wave
+from collections import OrderedDict
 
 import numpy as np
 import pyray as rl
+
+import soundcat
+import soundlib
 
 SR = 22050
 
@@ -210,7 +215,9 @@ class Audio:
     LOOPS = ("ai_engine_i4", "ai_engine_small", "ai_engine_v8", "ai_engine_diesel", "ai_engine_truck", "ai_engine_ev", "engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind")
 
-    def __init__(self, mute=False):
+    CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)
+
+    def __init__(self, mute=False, root=None, dry=False):
         self.ok = False
         self.snd = {}
         self.dyn = []                                   # (sound, path) for speech clips, unloaded when finished
@@ -218,6 +225,22 @@ class Audio:
         self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
         self.muted = False
         self._tmp = None
+        self.lib, self.req = {}, (0, 0, 0)              # v2.1 artist library: key -> mp3 paths; (requests written, catalogue size, done)
+        self._ls, self._ls_mb, self._cur, self._last, self._vol = OrderedDict(), 0.0, {}, {}, {}
+        self.lx = self.ly = 0.0
+        self.dry, self.stats = dry, {}                 # dry run (cloud tests, no audio device): count what would play, library vs fallback
+        self.rng = random.Random(21)
+        if root:
+            try:
+                lib_root = os.environ.get("SK242_LIBRARY") or os.path.join(root, soundlib.LIB_DIR)
+                self.lib = soundlib.scan(lib_root)
+                self.req = soundlib.write_requests(root, self.lib)
+            except Exception:  # noqa: BLE001
+                pass
+        if dry:
+            self.snd = dict.fromkeys(build())
+            self.ok = True
+            return
         if mute:
             self.muted = True
             return
@@ -234,31 +257,134 @@ class Audio:
         except Exception:  # noqa: BLE001
             self.ok = False
 
-    def play(self, name, vol=1.0, pitch=1.0, bus="sfx"):
-        if not self.ok or self.muted or vol <= 0.01 or name not in self.snd:
+    # ---- v2.1 library: pick a version, balance its loudness, place it in space
+    def listener(self, x, y):
+        self.lx, self.ly = x, y
+
+    def has_lib(self, name):
+        return soundcat.ALIAS.get(name, name) in self.lib
+
+    def _lib_load(self, name, path, row):
+        """Decode an mp3 once, level it (loops by RMS, one-shots by peak, scaled by the catalogue level) and keep it cached."""
+        k = (name, path)
+        if k in self._ls:
+            self._ls.move_to_end(k)
+            return self._ls[k][0]
+        w = rl.load_wave(path)
+        try:
+            n = w.frameCount * w.channels
+            if n <= 0 or w.sampleSize not in (16, 32):
+                return None
+            f32 = w.sampleSize == 32                                 # raylib decodes mp3 to 32-bit float, wav to 16-bit
+            a = np.frombuffer(rl.ffi.buffer(w.data, n * (4 if f32 else 2)), dtype=np.float32 if f32 else np.int16)
+            x = a if f32 else a.astype(np.float32) / 32768.0
+            pk = float(np.abs(x).max()) or 1e-4
+            g = (0.02 + 0.10 * row[6]) / (float(np.sqrt((x * x).mean())) + 1e-5) if row[2] else (0.35 + 0.6 * row[6]) / pk
+            g = min(g, 0.98 / pk)
+            a[:] = x * g if f32 else np.clip(x * g * 32767.0, -32767, 32767).astype(np.int16)
+            s = rl.load_sound_from_wave(w)
+        finally:
+            rl.unload_wave(w)
+        mb = n * (4 if f32 else 2) / 1e6
+        self._ls[k] = (s, mb)
+        self._ls_mb += mb
+        for _ in range(len(self._ls)):
+            if self._ls_mb <= self.CACHE_MB or len(self._ls) < 2:
+                break
+            (k0, (s0, mb0)) = next(iter(self._ls.items()))
+            if k0 == k or any(c is s0 for c in self._cur.values()):
+                self._ls.move_to_end(k0)
+                continue
+            del self._ls[k0]
+            rl.unload_sound(s0)
+            self._ls_mb -= mb0
+        return s
+
+    def _pick(self, name):
+        """(sound, from_library, row): a random library version (never the one played last) or the procedural fallback."""
+        key = soundcat.ALIAS.get(name, name)
+        row = soundcat.BY_KEY.get(key)
+        paths = self.lib.get(key)
+        if self.dry:
+            fb = name if name in self.snd else (row[7] if row and row[7] in self.snd else None)
+            src = "lib" if paths and row else ("fallback:" + fb if fb else None)
+            if src:
+                self.stats[(name, src)] = self.stats.get((name, src), 0) + 1
+            return (self if src else None), bool(paths), row
+        if paths and row:
+            for _ in range(len(paths)):
+                last = self._last.get(name)
+                p = self.rng.choice(paths) if len(paths) < 2 else self.rng.choice([q for q in paths if q != last])
+                self._last[name] = p
+                try:
+                    s = self._lib_load(name, p, row)
+                except Exception:  # noqa: BLE001
+                    s = None
+                if s is not None:
+                    return s, True, row
+                paths = [q for q in paths if q != p]
+                if not paths:
+                    break
+        fb = name if name in self.snd else (row[7] if row and row[7] in self.snd else None)
+        return (self.snd[fb] if fb else None), False, row
+
+    def at(self, name, x, y, vol=1.0, pitch=1.0, bus="sfx", maxd=140.0, ref=8.0):
+        """One-shot placed in the world: quieter with distance (silent beyond maxd), panned by where it is from the listener."""
+        d = math.hypot(x - self.lx, y - self.ly)
+        if d >= maxd:
+            return
+        k = (ref / max(d, ref)) * (1.0 - (d / maxd) ** 2)
+        self.play(name, vol * k, pitch, bus, 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0))))
+
+    def _set(self, s, vol, pitch, bus, pan):
+        rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
+        rl.set_sound_pitch(s, pitch)
+        rl.set_sound_pan(s, pan)
+
+    def play(self, name, vol=1.0, pitch=1.0, bus="sfx", pan=0.5):
+        if not self.ok or self.muted or vol <= 0.01:
             return
         try:
-            s = self.snd[name]
-            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
-            rl.set_sound_pitch(s, pitch)
+            s, lib, row = self._pick(name)
+            if s is None:
+                return
+            if self.dry:
+                return
+            if lib and not row[2]:
+                pitch = 1.0 + self.rng.uniform(-0.04, 0.04)         # real recordings already vary; only a touch of detune
+            self._set(s, vol, pitch, bus, pan)
             rl.play_sound(s)
         except Exception:  # noqa: BLE001
             pass
 
-    def loop(self, name, vol, pitch=1.0, bus="ambient"):
-        """Keep a looping sound going at the given volume (0 stops it)."""
-        if not self.ok or name not in self.snd:
+    def loop(self, name, vol, pitch=1.0, bus="ambient", pan=0.5):
+        """Keep a looping sound going at the given volume (0 stops it).  A library loop starts another version each time it wraps."""
+        if not self.ok:
             return
         try:
-            s = self.snd[name]
+            if self.dry:
+                if vol > 0.01:
+                    self._pick(name)
+                return
+            s = self._cur.get(name)
+            if self.muted:
+                vol = self._vol[name] = 0.0
+            elif bus == "ambient":                                  # ambience eases in and out instead of jumping with the place
+                v0 = self._vol.get(name, 0.0)
+                vol = self._vol[name] = v0 + (vol - v0) * 0.05 if abs(vol - v0) > 0.004 else vol
             if vol <= 0.01 or self.muted:
-                if rl.is_sound_playing(s):
+                if s is not None and rl.is_sound_playing(s):
                     rl.stop_sound(s)
                 return
-            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
-            rl.set_sound_pitch(s, pitch)
-            if not rl.is_sound_playing(s):
+            if s is None or not rl.is_sound_playing(s):
+                s = self._pick(name)[0]
+                if s is None:
+                    return
+                self._cur[name] = s
+                self._set(s, vol, pitch, bus, pan)
                 rl.play_sound(s)
+                return
+            self._set(s, vol, pitch, bus, pan)
         except Exception:  # noqa: BLE001
             pass
 
@@ -296,6 +422,8 @@ class Audio:
     def close(self):
         try:
             for s in self.snd.values():
+                rl.unload_sound(s)
+            for s, _mb in self._ls.values():
                 rl.unload_sound(s)
             rl.close_audio_device()
         except Exception:  # noqa: BLE001

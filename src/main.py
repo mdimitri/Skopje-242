@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,6 +44,7 @@ import gl3d          # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
+import soundlib   # noqa: E402
 from actors import Body, Sim   # noqa: E402
 from bake import PPM, Streamer, bake_overview   # noqa: E402
 import fx as fx_mod   # noqa: E402
@@ -296,6 +298,7 @@ def main():
     ap.add_argument("--hour", type=float, default=17.0, help="start time of day (0-24)")
     ap.add_argument("--fetch-radio", dest="fetch_radio", action="store_true", help="legacy: download CC music into assets/radio (not needed, put files in music/)")
     ap.add_argument("--mute", action="store_true", help="no sound")
+    ap.add_argument("--sound-dry", action="store_true", help="run the sound logic without an audio device and print what would play (library vs fallback)")
     ap.add_argument("--demo", action="store_true", help="offline synthetic demo city")
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
     ap.add_argument("--nomenu", action="store_true", help="skip the start menu")
@@ -381,7 +384,8 @@ def main():
     sim.traffic.signals = sim.lights = lights
     print(f"[game] traffic lights: {len(lights.items)} signal heads")                     # test runs have nobody to press R
     loader.tick(1.0, "sound")
-    aud = audio_mod.Audio(mute=a.mute)
+    aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry)
+    print(f"[sound] library: {len(aud.lib)} sounds found, {aud.req[0]} new request files in sound_requests/ ({aud.req[2]} of {aud.req[1]} sounds done)")
     car_radio = radio_mod.Radio(aud)
     cabin_music = radio_mod.CabinMusic(aud, car_radio)
     spk = SpeechWorker()
@@ -564,19 +568,21 @@ def main():
             return math.hypot(x - fxs, y - fys) < r
         for kind, d in sim.events:
             if kind == "punch" or kind == "kick":
-                aud.play(kind, 0.8 if d["hit"] else 0.35, 1.0)
+                aud.at(kind if d["hit"] else "swing", d["x"], d["y"], 0.8 if d["hit"] else 0.35)
                 if d["hit"]:
                     particles.sparks(d["x"], d["y"], 5, 1.1)
                     shake = max(shake, 0.25)
             elif kind == "hit":
                 particles.emit("b", d["x"], d["y"], 1.0, 0, 0, 1.5, 4, 0.18, 0.5, (190, 20, 24), 2.0, 0.8, -6.0)
             elif kind == "ko":
-                aud.play("punch", 0.8, 0.7)
+                aud.play("body_fall", 0.8, 0.7)
                 popups.add(TXT("main.0004"), d["x"], d["y"], 2.6, 1.8, (255, 230, 90), 26)
             elif kind == "gunfire":
-                aud.play("boom" if d["kind"] == "zolja" else "shot", 0.6 if d["kind"] == "zolja" else 0.75,
-                         {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7}.get(d["kind"], 1.0))
+                aud.at({"zolja": "rocket_launch", "pistol": "shot_pistol", "uzi": "shot_uzi", "shotgun": "shot_shotgun", "kalash": "shot_kalash"}.get(d["kind"], "shot")
+                       if near(d["x"], d["y"], 70.0) else "shot_distant",
+                       d["x"], d["y"], 0.6 if d["kind"] == "zolja" else 0.75, {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7}.get(d["kind"], 1.0), maxd=220.0)
             elif kind == "bullet_wall":                              # chips of plaster + dust puff
+                aud.at("bullet_ricochet" if rng.random() < 0.4 else "bullet_wall", d["x"], d["y"], 0.5)
                 particles.debris(d["x"], d["y"], (200, 194, 180), 4, 1.2)
                 particles.smoke(d["x"] + d["nx"] * 0.3, d["y"] + d["ny"] * 0.3, 0.0, 1, 1.2, d["nx"] * 2, d["ny"] * 2, 0.4)
             elif kind == "bullet_car":                               # metal: sparks
@@ -653,21 +659,25 @@ def main():
                 else:
                     popups.add(TXT("main.0020"), d["x"], d["y"], 2.4, 2.0, (170, 255, 190), 24)
             if kind == "crash":
-                aud.play("crash", min(1.0, d["impact"] / 14.0) * (1.0 if near(d["x"], d["y"]) else 0.0), 1.0 + rng.uniform(-0.1, 0.1))
+                if d["impact"] > 8:
+                    aud.at("crash_glass", d["x"], d["y"], 0.6)
+                aud.at("crash" if d["impact"] > 6 else "crash_light", d["x"], d["y"], min(1.0, d["impact"] / 14.0), 1.0 + rng.uniform(-0.1, 0.1))
             elif kind == "horn":
-                aud.play(vehicles.HORN_SOUND[d["body"].kind], 0.6 if near(d["body"].x, d["body"].y) else 0.0, 1.0 + (d["body"].kind % 3) * 0.04)
+                aud.at(vehicles.HORN_SOUND[d["body"].kind], d["body"].x, d["body"].y, 0.6, 1.0 + (d["body"].kind % 3) * 0.04, maxd=160.0)
             elif kind == "explode":
-                aud.play("boom", 1.0 if near(d["body"].x, d["body"].y, 150) else 0.2)
+                if near(d["body"].x, d["body"].y, 90):
+                    aud.at("crowd_panic", d["body"].x, d["body"].y, 0.5, 1.0, "ambient", 140.0, 20.0)
+                aud.at("boom" if near(d["body"].x, d["body"].y, 150) else "boom_distant", d["body"].x, d["body"].y, 1.0, maxd=450.0, ref=40.0)
             elif kind == "splash":
-                aud.play("splash", 0.8 if not d.get("big") else 1.0, 0.8 if d.get("big") else 1.0)
+                aud.at("splash_big" if d.get("big") else "splash", d["x"], d["y"], 0.8 if not d.get("big") else 1.0, 0.8 if d.get("big") else 1.0)
             elif kind == "hurt_fall":
-                aud.play("crash", 0.45, 1.5)
+                aud.play("body_fall", 0.45, 1.5)
             elif kind == "fall":
-                aud.play("crash", min(1.0, d["speed"] / 14.0), 0.8)
+                aud.at("crash", d["x"], d["y"], min(1.0, d["speed"] / 14.0), 0.8)
             elif kind in ("burek", "ajvar"):
                 aud.play("eat" if kind == "burek" else "chime", 0.7)
             elif kind == "ped_hit":
-                aud.play("punch", 0.6 if near(d["ped"].x, d["ped"].y) else 0.0, 0.6)
+                aud.at("body_hit_car", d["ped"].x, d["ped"].y, 0.6, 0.6)
             if kind == "shout":
                 say(d["text"], d["x"], d["y"], d.get("who"))
             elif kind == "shout_self":
@@ -689,7 +699,7 @@ def main():
                     particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "break_tree" else (150, 150, 156), 12, 0.6)
                     if d["kind"] == "break_tree":
                         particles.leaves(d["x"], d["y"], 24)
-                    aud.play("crash", min(0.6, 0.2 + imp / 20.0), 0.8)
+                    aud.at("tree_break" if d["kind"] == "break_tree" else "crash_metal", d["x"], d["y"], min(0.6, 0.2 + imp / 20.0), 0.8)
                 if d["kind"] == "tree" and imp > 2:
                     particles.leaves(d["x"], d["y"], int(min(14, imp * 2)))
                     if t_game - last_crash_txt > 2.5 and b.player_car:
@@ -734,26 +744,29 @@ def main():
                 popups.add(TXT("main.0030"), b.x, b.y, 3.2, 2.2, (255, 220, 160), 22)
             elif kind == "kerb":                                     # clunk over the kerb
                 if d["body"].player_car:
-                    aud.play("crash", min(0.35, d["speed"] / 40.0), 1.6)
+                    aud.at("kerb_bump", d["body"].x, d["body"].y, min(0.35, d["speed"] / 40.0), 1.6)
             elif kind == "rocket":
                 particles.explosion(d["x"], d["y"])
-                aud.play("boom", 1.0)
+                aud.at("boom_rocket", d["x"], d["y"], 1.0, maxd=450.0, ref=40.0)
                 streamer.add_decal(("d", d["x"], d["y"], 3.6, (20, 18, 16, 190)))
                 shake = max(shake, 3.0)
             elif kind == "swing":
-                aud.play("punch", 0.5 if d["hit"] else 0.2)
+                aud.at("bat_hit" if d["hit"] else "swing", d["x"], d["y"], 0.5 if d["hit"] else 0.2)
             elif kind == "prop_break":                              # a punched / blasted prop: hide its mesh, throw bits
                 streamer.reload_near(d["x"], d["y"])
                 big = d["kind"] in ("post", "tree")
                 particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "tree" else (150, 150, 156), 14 if big else 8, 0.6)
                 if d["kind"] == "tree":
                     particles.leaves(d["x"], d["y"], 24)
-                aud.play("crash", 0.5 if near(d["x"], d["y"]) else 0.0, 1.3 if not big else 0.9)
+                aud.at("tree_break" if d["kind"] == "tree" else ("crash_metal" if d["kind"] == "post" else "crash_wood"), d["x"], d["y"], 0.5, 1.3 if not big else 0.9)
             elif kind == "prop_thud":
-                aud.play("punch", 0.4 if near(d["x"], d["y"]) else 0.0, 0.7)
+                aud.at("prop_thud", d["x"], d["y"], 0.4, 0.7)
                 if d.get("leaves"):
                     particles.leaves(d["x"], d["y"], 8)
             elif kind == "cpr":
+                if t_game > sx["cpr"]:
+                    sx["cpr"] = t_game + 3.0
+                    aud.at("cpr_pump", d["x"], d["y"], 0.5)
                 particles.emit("c", d["x"], d["y"], 1.2, 0, 0, 1.5, 1, 0.3, 0.9, (255, 110, 150), 2.0, 0.8, 0.6)
             elif kind == "car_ignite":
                 b = d["body"]
@@ -767,14 +780,18 @@ def main():
                 popups.add(rng.choice(slang.EXPLODE), b.x, b.y, 4.5, 3.0, (255, 190, 80), 26)
             elif kind == "stolen":
                 b = d["body"]
+                aud.at("engine_start", b.x, b.y, 0.7)
+                if rng.random() < 0.25:
+                    aud.at("car_alarm", b.x, b.y, 0.6, 1.0, "sfx", 120.0, 12.0)
                 popups.add(TXT("main.0034"), b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
             elif kind == "door" or kind == "door_shut":
-                aud.play("punch", 0.35 if kind == "door" else 0.7, 0.6 if kind == "door" else 0.75)
+                aud.at("car_door_open" if kind == "door" else "car_door_close", d["body"].x, d["body"].y, 0.5 if kind == "door" else 0.7, 0.6 if kind == "door" else 0.75)
             elif kind == "slam" or kind == "knock_off":
-                aud.play("punch", 0.9, 0.8)
+                aud.at("car_door_slam", d["x"], d["y"], 0.9, 0.8)
                 particles.emit("c", d["x"], d["y"], 0.3, 0, 0, 1.2, 8, 0.3, 0.6, (150, 140, 120), 1.0, 0.6, 0.5)
             elif kind == "enter":
                 b = d["body"]
+                aud.at("engine_start", b.x, b.y, 0.7)
                 popups.add(b.name, b.x, b.y, 3.4, 1.8, (200, 240, 255), 20)
             elif kind == "walker_dead":
                 sim.stats["deaths"] += 1
@@ -869,9 +886,94 @@ def main():
                     n += len(ch["b"])
         return max(0.0, min(1.0, n / 450.0))
 
+    try:
+        bio = soundlib.Biomes(world)                                 # v2.1: trees / parks / water around the listener
+    except Exception as e_:  # noqa: BLE001
+        print("[sound] no biome map:", e_)
+        bio = None
+    sx = {"env": {}, "chk": 0.0, "next": 6.0, "pass": {}, "stride": 0.0, "wnext": 3.0, "swim": 0.0, "hour": -1, "place": "", "h0": None, "cpr": 0.0}
+    # (weight, key, where it comes from): `where` picks a spot of that biome near the listener
+    def wildlife(fx_, fy_, dn, dk):
+        e, h = sx["env"], sim.clock.hour
+        night, dawn = dk > 0.6, 4.5 <= h < 8.0
+        wat, tre, par = min(1.0, e.get("water", 0) * 4), min(1.0, e.get("tree", 0) * 3), min(1.0, (e.get("park", 0) + e.get("tree", 0)) * 2)
+        town, open_ = dn, 1.0 - dn
+        if night:
+            o = [(1.5 * tre, "bird_owl", "tree"), (0.8 * tre, "bird_owl_little", "tree"), (1.2 * par, "bird_nightingale", "park"), (1.5 * wat, "frog_croak", "water"),
+                 (0.6 * town, "dog_pack_distant", None), (0.5 * town, "cat_fight", None), (0.6 * town, "cat_meow", None), (0.4, "dog_howl", None),
+                 (0.5 * open_, "siren_distant", None),
+                 (0.3 * town, "tv_apartment", None), (0.3 * town, "window_open", None), (0.3 * town, "door_slam", None), (0.2 * town, "rat_squeak", None),
+                 (0.15, "fireworks_distant", None), (0.15 * open_, "wind_gust", None)]
+        else:
+            o = [(2.5 * wat, "bird_duck_flock", "water"), (2.0 * wat, "bird_duck", "water"), (0.8 * wat, "bird_goose", "water"), (0.5 * wat, "bird_heron", "water"),
+                 (0.7 * wat, "bird_duck_takeoff", "water"), (0.3 * wat, "bird_swan", "water"), (0.4 * wat, "bird_seagull", "water"),
+                 (2.0 * tre + 0.3, "bird_songbird_day", "tree"), (1.0 * tre, "bird_cuckoo", "tree"), (1.0 * tre, "bird_woodpecker", "tree"), (0.8 * tre, "bird_jay", "tree"),
+                 (1.5 * par + 0.4, "bird_crow", "park"), (0.7 * par, "bird_crow_flock", "park"), (0.8 * par + 0.2, "bird_magpie", "park"), (1.4 * par + 0.5, "bird_dove", "park"),
+                 (1.0 * par + 0.4, "bird_pigeon", "park"), (0.6 * par + 0.3, "bird_pigeon_flock_takeoff", "park"), (1.2 * par + 0.4, "bird_sparrow", "park"),
+                 (0.8 * town, "bird_swallow", None), (0.5 * town if 17 <= h < 20.5 else 0.0, "bird_swift", None), (0.3 * open_, "bird_hawk", None),
+                 (0.4 * town, "dog_small", None), (0.4 * town, "dog_big", None), (0.2 * town, "dog_growl", None), (0.4 * town, "cat_meow", None),
+                 (1.5 * open_ if (dawn and open_ > 0.4) else 0.0, "bird_rooster", None), (0.5 * open_, "bird_hen", None), (0.4 * open_ * tre, "cow_bell", "tree"),
+                 (0.3 * open_, "sheep_bleat", None), (0.2 * open_, "donkey", None), (0.15 * par, "bee_buzz", "park")]
+            if dawn:
+                o += [(3.0 * par + 0.6, "bird_blackbird", "park"), (2.0 * par, "bird_songbird_day", "tree")]
+            o += [(0.5 * town, "kids_laugh", None), (0.3 * town, "coughing", None), (0.2 * town, "sneeze", None), (0.4 * town, "scooter_bell", None),
+                  (0.4 * town, "bicycle_pass", None), (0.4 * town, "window_open", None), (0.4 * town if 8 <= h < 12 else 0.0, "shutter_roll", None),
+                  (0.4 * town, "door_slam", None), (0.3 * town, "door_knock", None), (0.3 * town, "laundry_flap", None), (0.2 * town, "baby_cry", None),
+                  (0.3 * town if 5 <= h < 10 else 0.0, "garbage_truck", None), (0.3 * town if 5 <= h < 10 else 0.0, "sweeper_machine", None),
+                  (0.2 * town, "clap_hands", None), (0.2 * town, "glass_bottle", None), (0.2 * town, "bin_clang", None), (0.3 * par, "whistle_ref", "park"),
+                  (0.15 * par, "crowd_football_roar", "park"), (0.3 * par, "crowd_laugh", "park"), (0.1 * par, "crowd_cheer", "park"), (0.1 * par, "crowd_applause", "park"),
+                  (0.3 * tre, "bird_tit", "tree"), (0.2 * open_, "bird_hoopoe", None), (0.3 * open_, "bird_stork_clatter", None), (0.4 * par, "bird_wings_flap", "park"),
+                  (0.15 * open_, "horse_neigh", None), (0.1 * town, "fly_buzz", None), (0.25 * open_, "wind_gust", None), (0.15 * open_, "train_horn_distant", None)]
+        o = [q for q in o if q[0] > 0.01 and aud.has_lib(q[1])]
+        if not o:
+            return
+        r_ = rng.uniform(0, sum(q[0] for q in o))
+        for w_, key, where in o:
+            r_ -= w_
+            if r_ <= 0:
+                break
+        pt = bio.find(fx_, fy_, where, rng, 80.0) if (bio and where) else None
+        if pt is None:
+            if where:
+                return                                              # nowhere of that kind around: say nothing rather than a duck in a street
+            a_, d_ = rng.uniform(0, 6.283), rng.uniform(20, 70)
+            pt = (fx_ + d_ * math.cos(a_), fy_ + d_ * math.sin(a_))
+        aud.at(key, pt[0], pt[1], rng.uniform(0.45, 0.8), 1.0, "ambient", 110.0, 10.0)
+
+    def steps_and_passby(fx_, fy_):
+        """Footsteps of the player on foot (surface by what is under the feet) and a whoosh for traffic passing close by."""
+        wk = sim.walker
+        if sim.mode != "car":
+            v = math.hypot(wk.vx, wk.vy)
+            sx["stride"] += v / 60.0
+            run_ = v > 3.6
+            if v > 0.6 and sx["stride"] >= (2.5 if run_ else 1.5):
+                sx["stride"] = 0.0
+                sf = world.surface(wk.x, wk.y)
+                if world.wet(wk.x, wk.y, wk.az):
+                    k_ = "puddle_step"
+                elif sf == 2:
+                    k_ = "step_wood"
+                elif sf == 3 or sx["env"].get("park", 0) + sx["env"].get("tree", 0) < 0.25:
+                    k_ = "step_run_asphalt" if run_ else "step_asphalt"
+                else:
+                    k_ = "step_grass" if sx["env"].get("park", 0) + sx["env"].get("tree", 0) > 0.5 else "step_dirt"
+                aud.play(k_, 0.45 if run_ else 0.3, 1.0, "sfx")
+            if v > 0.6 and world.wet(wk.x, wk.y, wk.az) and t_game > sx["swim"]:
+                sx["swim"] = t_game + 3.0
+                aud.play("swim_stroke", 0.5, 1.0, "sfx")
+        for c in sim.traffic.cars:
+            if c.v > 3 and abs(c.x - fx_) < 14 and abs(c.y - fy_) < 14 and math.hypot(c.x - fx_, c.y - fy_) < 14 and sx["pass"].get(id(c), -9) < t_game - 9:
+                sx["pass"][id(c)] = t_game
+                prof = vehicles.ENGINE_SOUND[c.kind]
+                aud.at("truck_passby" if prof == "engine_truck" else ("car_passby_fast" if c.v > 9 else "car_passby_slow"), c.x, c.y, 0.7, 1.0, "engine", 40.0, 6.0)
+        if len(sx["pass"]) > 400:
+            sx["pass"] = {k_: v_ for k_, v_ in sx["pass"].items() if v_ > t_game - 9}
+
     def handle_audio(fx_, fy_):
         if not aud.ok or aud.muted:
             return
+        aud.listener(fx_, fy_)
         tf = min(1.5, sim.clock.traffic) / 1.5
         if sim.mode == "car":
             c = sim.car
@@ -884,8 +986,11 @@ def main():
                 else:
                     aud.loop(nm, 0.0, 1.0, "engine")
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
+            on_road = world.surface(c.x, c.y) in (2, 3)
+            aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
+            aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "screech"):
+            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:
@@ -920,7 +1025,74 @@ def main():
         aud.loop("traffic", 0.45 * dn * tf)
         aud.loop("crowd", min(0.5, near_peds * 0.03 + 0.25 * dn * sim.clock.peds / 1.5) * (1.0 - 0.6 * dk))
         aud.loop("wind", 0.28 * (1.0 - dn))
-        aud.loop("birds", max(0.0, 0.5 * (1 - dk * 1.6)) * (1.0 - 0.7 * dn))
+        if bio is not None and t_game >= sx["chk"]:
+            sx["chk"] = t_game + 0.25
+            pl_ = places.where(fx_, fy_)
+            sx["place"] = (pl_ or "").lower()
+            for k_, v_ in bio.at(fx_, fy_).items():
+                sx["env"][k_] = sx["env"].get(k_, 0.0) + (v_ - sx["env"].get(k_, 0.0)) * 0.25
+        e_ = sx["env"]
+        green = min(1.0, (e_["park"] + e_["tree"]) * 2.5)
+        day = max(0.0, 1.0 - dk * 1.6)
+        aud.loop("birds", day * (0.5 * (1.0 - 0.7 * dn) + 0.3 * green))
+        aud.loop("amb_park_day", 0.5 * day * min(1.0, e_["park"] * 3) * (1.0 - 0.5 * dn))
+        aud.loop("amb_forest_day", 0.55 * day * min(1.0, e_["tree"] * 3))
+        aud.loop("amb_forest_night", 0.5 * dk * min(1.0, e_["tree"] * 3))
+        aud.loop("amb_dawn_chorus", 0.5 * green * (1.0 if 4.5 <= sim.clock.hour < 7.5 else 0.0))
+        aud.loop("amb_river_vardar", 0.55 * min(1.0, e_["water"] * 5))
+        aud.loop("amb_river_ducks", 0.45 * day * min(1.0, e_["water"] * 4))
+        aud.loop("amb_street_night", 0.4 * dk * dn)
+        aud.loop("amb_cafe_terrace", 0.4 * day * min(1.0, near_peds / 8.0) * dn)
+        aud.loop("amb_bridge_traffic", 0.5 * (1.0 if world.surface(fx_, fy_) == 2 else 0.0) * tf)
+        aud.loop("frog_chorus", 0.35 * dk * min(1.0, e_["water"] * 4))
+        aud.loop("amb_industrial", 0.5 * min(1.0, e_.get("ind", 0) * 4))
+        aud.loop("amb_square_day", 0.5 * day * min(1.0, e_.get("plaza", 0) * 5))
+        aud.loop("amb_playground", 0.5 * day * min(1.0, e_.get("play", 0) * 5))
+        aud.loop("amb_football_pitch", 0.4 * day * min(1.0, e_.get("pitch", 0) * 5))
+        aud.loop("amb_lake_shore", 0.5 * min(1.0, e_.get("lake", 0) * 5))
+        aud.loop("amb_creek", 0.4 * min(1.0, e_.get("creek", 0) * 6))
+        aud.loop("amb_railway", 0.45 * min(1.0, e_.get("rail", 0) * 8))
+        aud.loop("amb_wind_trees", 0.4 * min(1.0, e_["tree"] * 3) * (1.0 - dn))
+        aud.loop("amb_meadow_day", 0.4 * day * (1.0 - dn) * (1.0 if e_["park"] > 0.15 and e_["tree"] < 0.1 else 0.0))
+        if sx["h0"] is None:
+            sx["h0"] = world.ground_y(fx_, fy_)
+        aud.loop("amb_hill_wind", 0.5 * max(0.0, min(1.0, (world.ground_y(fx_, fy_) - sx["h0"] - 40.0) / 80.0)))
+        slow_n = sum(1 for c in sim.traffic.cars if c.v < 1.5 and abs(c.x - fx_) < 50 and abs(c.y - fy_) < 50)
+        aud.loop("amb_traffic_jam", 0.55 * min(1.0, max(0.0, slow_n - 3) / 5.0))
+        aud.loop("amb_street_quiet", 0.35 * day * (1.0 if 0.25 < dn < 0.8 and tf < 0.5 else 0.0))
+        aud.loop("amb_courtyard", 0.3 * day * max(0.0, dn - 0.6) * 2.5)
+        aud.loop("street_lamp_buzz", 0.2 * dk * dn)
+        aud.loop("neon_buzz", 0.2 * dk * (1.0 if dn > 0.7 else 0.0))
+        hz_ = zlib.crc32(f"{int(fx_ // 300)},{int(fy_ // 300)}".encode()) % 13               # a few city blocks get their own event: a party, a market, a wedding ...
+        hr_ = sim.clock.hour
+        aud.loop("amb_night_party", 0.3 * dk * (1.0 if hz_ == 1 and dn > 0.4 else 0.0))
+        aud.loop("amb_market_morning", 0.4 * (1.0 if hz_ in (2, 3) and 6 <= hr_ < 13 and dn > 0.4 else 0.0))
+        aud.loop("amb_wedding_distant", 0.35 * (1.0 if hz_ == 4 and 14 <= hr_ < 23 else 0.0))
+        aud.loop("street_musician_accordion", 0.3 * day * (1.0 if hz_ == 5 and dn > 0.5 else 0.0))
+        aud.loop("power_transformer_hum", 0.25 * (1.0 if hz_ == 6 else 0.0))
+        aud.loop("amb_bazaar", 0.6 * day * (1.0 if "чаршија" in sx["place"] else 0.0))
+        if int(hr_) != sx["hour"]:
+            if sx["hour"] >= 0 and dn > 0.5:
+                aud.play("clock_tower", 0.3, 1.0, "ambient")
+            sx["hour"] = int(hr_)
+        fire_d = min((math.hypot(b.x - fx_, b.y - fy_) for b in sim.bodies if b.burn > 0.5 and abs(b.x - fx_) < 70 and abs(b.y - fy_) < 70), default=99.0)
+        aud.loop("fire_crackle", 0.6 * max(0.0, 1.0 - fire_d / 70.0), 1.0, "sfx")
+        near_site = min(sim.works.sites, key=lambda s_: math.hypot(s_[0] - fx_, s_[1] - fy_), default=None) if sim.works.open() else None
+        sd_ = math.hypot(near_site[0] - fx_, near_site[1] - fy_) if near_site else 1e9
+        prox = max(0.0, 1.0 - sd_ / works_mod.HEAR)
+        aud.loop("concrete_mixer", 0.5 * prox * prox, 1.0, "ambient")
+        aud.loop("jackhammer", 0.5 * prox * prox * (1.0 if near_site and int(near_site[0] + near_site[1]) % 3 == 0 else 0.0), 1.0, "ambient")
+        if near_site and t_game >= sx["wnext"] and sd_ < works_mod.HEAR:
+            sx["wnext"] = t_game + rng.uniform(1.2, 4.0)
+            aud.at(rng.choice(("hammer", "hammer", "hammer_steel", "drill", "metal_clank", "metal_clank", "angle_grinder", "shovel_gravel", "saw_wood",
+                               "fence_rattle", "wheelbarrow", "tin_roof_bang", "truck_reverse_beep", "crane_hum")),
+                   near_site[0] + rng.uniform(-8, 8), near_site[1] + rng.uniform(-8, 8), 0.7, 1.0, "ambient", works_mod.HEAR, 12.0)
+        aud.loop("cicadas", 0.3 * day * (1.0 - dn) * min(1.0, 0.3 + green) * (1.0 if 5 <= (sim.clock.hour // 1) <= 19 else 0.0))
+        steps_and_passby(fx_, fy_)
+        sx["next"] -= 1 / 60.0
+        if bio is not None and sx["next"] <= 0:
+            sx["next"] = rng.uniform(2.5, 7.0) * (1.0 + 1.5 * dn)
+            wildlife(fx_, fy_, dn, dk)
         aud.loop("crickets", 0.32 * max(0.0, dk * 1.4 - 0.3) * (1.0 - 0.5 * dn))
         amb_state["next"] -= 1 / 60.0
         if amb_state["next"] <= 0:
@@ -1024,7 +1196,7 @@ def main():
             if rl.is_key_pressed(rl.KEY_N):
                 aud.muted = not aud.muted
                 if aud.muted:
-                    for nm in aud.LOOPS:
+                    for nm in list(aud._cur):
                         aud.loop(nm, 0.0)
             enter_pressed = rl.is_key_pressed(rl.KEY_F) or rl.is_key_pressed(rl.KEY_ENTER)
             if rl.is_key_pressed(rl.KEY_TAB) and sim.mode == "foot" and sim.walker is not None:   # Tab: next weapon
@@ -1253,6 +1425,9 @@ def main():
         if a.test and frame >= a.test:
             break
     spk.dead = True
+    if aud.dry:
+        for (nm_, src_), n_ in sorted(aud.stats.items()):
+            print(f"[sound-dry] {nm_:28s} {src_:22s} x{n_}")
     if aud.ok:
         cabin_music.close()
         car_radio.close()
