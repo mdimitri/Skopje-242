@@ -111,9 +111,10 @@ class Services:
                 res.append(q)
         return res
 
-    def _spawn_node(self, x, y, lo=130.0, hi=260.0):
+    def _spawn_node(self, x, y, lo=70.0, hi=150.0):
         self._graph()
-        c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi]
+        fx, fy, _, _ = self.sim.focus()
+        c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
         if not c:
             c = [p for p in self._nodes.values() if math.hypot(p[0] - x, p[1] - y) > 80.0]
         return self.rng.choice(c) if c else None
