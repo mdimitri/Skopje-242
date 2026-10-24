@@ -17,6 +17,14 @@ Nothing else to configure. `SK242_LIBRARY=<path>` points the game at another lib
 - To change a sound: edit its prompt in `src/soundcat.py`, delete the old `library/<folder>/<id>*` files, relaunch to get a new request. To add versions later, request a new id by hand.
 - The full list (key, folder, length, versions, prompt) is `src/soundcat.py`; one catalogue row = one request.
 
+## Quality check at load (`src/soundproc.py`)
+
+A background thread checks every library file once (results cached in `library/.soundcache.json` by size and mtime, so later launches take a moment). A sound switches from procedural to the library as soon as its versions pass; rejects are listed in `logs/sound_rejects.txt` with the reason.
+
+- **Rejected:** silent, mostly silence, too short, truncated (< 40 % of the requested length), corrupt, clipped, and versions that disagree with their siblings (> 10 dB louder/quieter or a very different tone, only when a sound has 4+ versions). If every version of a sound is rejected, the game keeps the procedural sound; ask the artist to rerun that id (delete its sidecar so the request is written again).
+- **Cleaned when loaded:** DC offset and rumble below 25 Hz removed, leading/trailing silence trimmed from one-shots, 4 ms / 40 ms fades on one-shots, loops crossfaded end-into-start (equal power, up to 0.5 s) so the wrap is seamless, then loudness levelled.
+- **Distance:** one-shots farther than 45 m play a muffled copy (low-pass at ~2.8 kHz) in addition to the volume fall-off. Reverb and wall occlusion are not done (they would need live audio filters).
+
 ## How the game uses it
 
 - **Versions:** every play picks a random version, never the same twice in a row; loops start another version each time they wrap. One-shots get +-4 % detune.

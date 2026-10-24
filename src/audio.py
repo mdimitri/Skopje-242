@@ -12,6 +12,7 @@ import pyray as rl
 
 import soundcat
 import soundlib
+import soundproc
 
 SR = 22050
 
@@ -225,6 +226,7 @@ class Audio:
         self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
         self.muted = False
         self._tmp = None
+        self.info = {}
         self.lib, self.req = {}, (0, 0, 0)              # v2.1 artist library: key -> mp3 paths; (requests written, catalogue size, done)
         self._ls, self._ls_mb, self._cur, self._last, self._vol = OrderedDict(), 0.0, {}, {}, {}
         self.lx = self.ly = 0.0
@@ -233,8 +235,10 @@ class Audio:
         if root:
             try:
                 lib_root = os.environ.get("SK242_LIBRARY") or os.path.join(root, soundlib.LIB_DIR)
-                self.lib = soundlib.scan(lib_root)
-                self.req = soundlib.write_requests(root, self.lib)
+                raw = soundlib.scan(lib_root)
+                self.req = soundlib.write_requests(root, raw)             # done = has files; quality-rejected sounds are not re-requested
+                if raw and (dry or not mute):
+                    soundproc.Processor(self, lib_root, raw, os.path.join(root, "logs")).start(wait=dry)   # self.lib fills as keys pass the check
             except Exception:  # noqa: BLE001
                 pass
         if dry:
@@ -264,28 +268,25 @@ class Audio:
     def has_lib(self, name):
         return soundcat.ALIAS.get(name, name) in self.lib
 
-    def _lib_load(self, name, path, row):
-        """Decode an mp3 once, level it (loops by RMS, one-shots by peak, scaled by the catalogue level) and keep it cached."""
-        k = (name, path)
+    def _lib_load(self, name, path, row, far=False):
+        """Decode an mp3, clean it (soundproc.prepare), level it (loops by RMS, one-shots by peak, scaled by the catalogue level)
+        and keep it cached; `far` is the muffled copy used for distant one-shots."""
+        k = (name, path, far)
         if k in self._ls:
             self._ls.move_to_end(k)
             return self._ls[k][0]
-        w = rl.load_wave(path)
-        try:
-            n = w.frameCount * w.channels
-            if n <= 0 or w.sampleSize not in (16, 32):
-                return None
-            f32 = w.sampleSize == 32                                 # raylib decodes mp3 to 32-bit float, wav to 16-bit
-            a = np.frombuffer(rl.ffi.buffer(w.data, n * (4 if f32 else 2)), dtype=np.float32 if f32 else np.int16)
-            x = a if f32 else a.astype(np.float32) / 32768.0
-            pk = float(np.abs(x).max()) or 1e-4
-            g = (0.02 + 0.10 * row[6]) / (float(np.sqrt((x * x).mean())) + 1e-5) if row[2] else (0.35 + 0.6 * row[6]) / pk
-            g = min(g, 0.98 / pk)
-            a[:] = x * g if f32 else np.clip(x * g * 32767.0, -32767, 32767).astype(np.int16)
-            s = rl.load_sound_from_wave(w)
-        finally:
-            rl.unload_wave(w)
-        mb = n * (4 if f32 else 2) / 1e6
+        x, sr = soundproc.decode(path)
+        if x is None:
+            return None
+        y = soundproc.prepare(x, sr, self.info.get(path, {}), row[2], far)
+        pk = float(np.abs(y).max()) or 1e-4
+        g = (0.02 + 0.10 * row[6]) / (float(np.sqrt((y * y).mean())) + 1e-5) if row[2] else (0.35 + 0.6 * row[6]) / pk
+        y = np.clip(y * min(g, 0.98 / pk), -1.0, 1.0)
+        p = os.path.join(self._tmp, f"lib_{len(self._ls)}.wav")
+        _save(p, y, sr)
+        s = rl.load_sound(p)
+        os.remove(p)
+        mb = len(y) * 2 / 1e6
         self._ls[k] = (s, mb)
         self._ls_mb += mb
         for _ in range(len(self._ls)):
@@ -300,7 +301,7 @@ class Audio:
             self._ls_mb -= mb0
         return s
 
-    def _pick(self, name):
+    def _pick(self, name, far=False):
         """(sound, from_library, row): a random library version (never the one played last) or the procedural fallback."""
         key = soundcat.ALIAS.get(name, name)
         row = soundcat.BY_KEY.get(key)
@@ -317,7 +318,7 @@ class Audio:
                 p = self.rng.choice(paths) if len(paths) < 2 else self.rng.choice([q for q in paths if q != last])
                 self._last[name] = p
                 try:
-                    s = self._lib_load(name, p, row)
+                    s = self._lib_load(name, p, row, far)
                 except Exception:  # noqa: BLE001
                     s = None
                 if s is not None:
@@ -334,18 +335,18 @@ class Audio:
         if d >= maxd:
             return
         k = (ref / max(d, ref)) * (1.0 - (d / maxd) ** 2)
-        self.play(name, vol * k, pitch, bus, 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0))))
+        self.play(name, vol * k, pitch, bus, 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0))), far=d > 45.0)
 
     def _set(self, s, vol, pitch, bus, pan):
         rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
         rl.set_sound_pitch(s, pitch)
         rl.set_sound_pan(s, pan)
 
-    def play(self, name, vol=1.0, pitch=1.0, bus="sfx", pan=0.5):
+    def play(self, name, vol=1.0, pitch=1.0, bus="sfx", pan=0.5, far=False):
         if not self.ok or self.muted or vol <= 0.01:
             return
         try:
-            s, lib, row = self._pick(name)
+            s, lib, row = self._pick(name, far)
             if s is None:
                 return
             if self.dry:
