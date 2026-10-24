@@ -32,10 +32,10 @@ class Night:
         emerg = []
         for c in sim.traffic.cars:
             if c.kind in clock.EMERGENCY and rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:
-                emerg.append((c.x, c.y, c.h, c.v > 3))
+                emerg.append((c.x, c.y, c.h, c.v > 3, c.kind))
         for b in sim.bodies:
             if b.kind in clock.EMERGENCY and rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3] and b.alive:
-                emerg.append((b.x, b.y, b.h, bool(getattr(b, "siren", False) or getattr(b, "service", False)) or (b.player_car and b.speed > 3)))
+                emerg.append((b.x, b.y, b.h, bool(getattr(b, "siren", False) or getattr(b, "service", False)) or (b.player_car and b.speed > 3), b.kind))
         if dark > 0.02:
             tint = _col(255 - dark * 190, 255 - dark * 172, 255 - dark * 105, 255)
             rl.begin_blend_mode(rl.BLEND_MULTIPLIED)
@@ -48,6 +48,9 @@ class Night:
                 for cy in range(int(rect[1] // CELL), int(rect[3] // CELL) + 1):
                     for x, y in self.cells.get((cx, cy), ()):
                         self._glow(cam, x, y, 4.5, r_lamp, (255, 205, 120), 150 * dark)
+            for p in (sim.peds.list if self.detail >= 1 else ()):         # NPC cyclists / mopeds / scooters: one lamp, one tail light
+                if p.mode == "walk" and p.arch in vehicles.JACK_KIND and rect[0] < p.x < rect[2] and rect[1] < p.y < rect[3]:
+                    self._lights(cam, p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], ppm, dark, False)
             for c in (sim.traffic.cars if self.detail >= 1 else ()):
                 if rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:
                     self._lights(cam, c.x, c.y, c.h, c.kind, ppm, dark, c.braking)
@@ -58,19 +61,20 @@ class Night:
             if b.health <= 0 and not b.out and rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3]:
                 fl = 0.75 + 0.25 * math.sin(t * 17 + b.x)
                 self._glow(cam, b.x, b.y, 1.2, 7 * ppm * fl, (255, 140, 40), 170 * max(0.35, dark))
-        for x, y, h, on in emerg:
+        for x, y, h, on, kind in emerg:
             if not on:
                 continue
             ph = int(t * 6.0) & 1
-            hl = vehicles.HALF_L[47] * 0.1
+            hl = vehicles.DIMS[kind][0] * 0.05                       # light bar on this vehicle's own roof
+            top = vehicles.DIMS[kind][4] + 0.12
             ca, sa = math.cos(h), math.sin(h)
             a = 235 * max(0.55, dark)
             for side, col in ((-1, (255, 30, 30)), (1, (40, 80, 255))):
                 lit = (ph == 0) == (side < 0)
                 if lit:
                     px, py = x + ca * hl - sa * 0.5 * side, y + sa * hl + ca * 0.5 * side
-                    self._glow(cam, px, py, 1.9, 6.5 * ppm, col, a)
-                    self._glow(cam, px, py, 1.9, 2.2 * ppm, (255, 255, 255), a * 0.6)
+                    self._glow(cam, px, py, top, 6.5 * ppm, col, a)
+                    self._glow(cam, px, py, top, 2.2 * ppm, (255, 255, 255), a * 0.6)
         rl.end_blend_mode()
 
     def _beam(self, cam, x, y, ca, sa, a, length=13.0, spread=0.3):
@@ -94,11 +98,20 @@ class Night:
 
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)
-        L, W = vehicles.HALF_L[kind], vehicles.HALF_W[kind]
+        L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
         a = 150 * dark
+        lamp_y = max(0.45, vehicles.DIMS[kind][3] - 0.3)            # headlight height (belt line), not one fixed value
+        if kind in vehicles.BIKES:                                  # two-wheelers: a single lamp and tail light on the centre line
+            lamp_y = 0.95 if vehicles.EXTRA[kind] != "kick" else 0.9
+            hx, hy = x + ca * L * 0.8, y + sa * L * 0.8
+            self._beam(cam, hx, hy, ca, sa, a, 10.0, 0.25)
+            self._glow(cam, hx, hy, lamp_y, 0.8 * ppm, (255, 250, 230), a * 1.4)
+            tx, ty = x - ca * L * 0.9, y - sa * L * 0.9
+            self._glow(cam, tx, ty, 0.6, (1.8 if braking else 1.0) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
+            return
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
             self._beam(cam, hx, hy, ca, sa, a)
-            self._glow(cam, hx, hy, 0.6, 0.9 * ppm, (255, 250, 230), a * 1.4)
+            self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
-            self._glow(cam, tx, ty, 0.6, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
+            self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))

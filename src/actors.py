@@ -1554,18 +1554,9 @@ class Sim:
             return False
         if kind == "rider":
             p = best
-            b = Body(p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], 0)
-            b.az = p.gz
-            self.bodies.append(b)
-            dx, dy = p.x - wk.x, p.y - wk.y
-            d = math.hypot(dx, dy) or 1.0
-            p.mode, p.t, p.hy, p.hv, p.ko_land = "air", 5.0, 0.4, 3.0, True   # shoved off: the bike stays, the rider flies
-            p.vx, p.vy = dx / d * 4.5, dy / d * 4.5
-            p.spin = 0.0
-            self.ev("shout", text=TXT("vehicles.%04d" % self.rng.randrange(310, 316)), x=p.x, y=p.y)
-            self.ev("knock_off", x=p.x, y=p.y)
+            p.mode, p.t, p.v, p.vx, p.vy = "svc", 999.0, 0.0, 0.0, 0.0      # brakes: the hero walks up and drags them off
             self.stats["stolen"] += 1
-            self._start_jack(b, None, 0.55, True)
+            self._start_jack(None, p, 0.9, True)
             return True
         if kind == "ai":
             c = best
@@ -1573,7 +1564,7 @@ class Sim:
             self.traffic.cars.remove(c)
             self.bodies.append(b)
             self.stats["stolen"] += 1
-            self._start_jack(b, "driver", 1.25)
+            self._start_jack(b, "driver", 1.65)
             return True
         elif getattr(b_ := best, "bus_line", None) and not b_.empty and getattr(self, "transit", None) is not None \
                 and any(bus.body is b_ for bus in self.transit.buses):
@@ -1590,19 +1581,19 @@ class Sim:
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
                 b.parked_idx = None
-            self._start_jack(b, None, 0.5 if b.kind in vehicles.BIKES else 0.9)
+            self._start_jack(b, None, 0.5 if b.kind in vehicles.BIKES else 1.0)
             return True
         self._board(b)
         return True
 
     # carjack: the door swings open, the driver is slammed out onto the asphalt (out cold), you get in, the door shuts
     def _start_jack(self, b, victim, dur, stolen=False):
+        """victim: "driver" (an AI car: the hero yanks them out), a Ped on a two-wheeler, or None (empty vehicle)."""
         wk = self.walker
-        b.empty, b.ctl = False, None
-        self.jack = {"b": b, "t": 0.0, "dur": dur, "victim": victim, "x0": wk.x, "y0": wk.y, "in": False,
-                     "door": b.kind not in vehicles.BIKES, "stolen": stolen or victim is not None}
-        if self.jack["door"]:
-            self.ev("door", body=b)
+        if b is not None:
+            b.empty, b.ctl = False, None
+        self.jack = {"b": b, "t": 0.0, "dur": dur, "victim": victim, "x0": wk.x, "y0": wk.y, "in": False, "held": None,
+                     "door": b is not None and b.kind not in vehicles.BIKES, "stolen": stolen or victim is not None}
 
     def _seat_point(self, b, out):
         L, W = CIRC[b.kind][0], CIRC[b.kind][1]
@@ -1610,42 +1601,106 @@ class Sim:
         fx, fy = math.cos(b.h), math.sin(b.h)
         return b.x + lx * (W + out) + fx * L * 0.1, b.y + ly * (W + out) + fy * L * 0.1
 
-    def _tick_jack(self, dt):
-        j = self.jack
-        b, wk = j["b"], self.walker
-        if b not in self.bodies or not b.alive or (wk is None and not j["in"]) or (wk is not None and wk.health <= 0):
-            b.door, self.jack = 0.0, None
-            return
-        j["t"] += dt
-        t, T = j["t"], j["dur"]
-        if j["door"]:
-            if j["in"]:
-                b.door = max(0.0, b.door - dt / 0.3)
-                if b.door <= 0:
-                    self.ev("door_shut", body=b)
-                    self.jack = None
-                return
-            b.door = min(1.0, t / 0.35)
-        elif j["in"]:
-            self.jack = None
-            return
-        if j["victim"] == "driver" and t >= 0.38:                  # out you go
-            j["victim"] = None
-            lx, ly = math.sin(b.h), -math.cos(b.h)
-            sx, sy = self._seat_point(b, -0.2)
-            p = self.peds.eject(sx, sy, b.h + math.pi / 2, gz=b.az)
-            p.mode, p.t, p.hy, p.hv, p.ko_land = "air", 5.0, 0.7, 2.5, True
-            p.vx, p.vy = lx * 7.5, ly * 7.5
-            self.ev("shout", text=self.rng.choice(slang.DRIVER_RAGE), x=p.x, y=p.y)
-            self.ev("slam", x=p.x, y=p.y)
-        k = min(1.0, max(0.0, (t - (0.45 if j["door"] else 0.15)) / max(0.1, T - (0.45 if j["door"] else 0.15))))
-        tx, ty = self._seat_point(b, 0.35) if j["door"] else (b.x, b.y)
+    def _walk_to(self, wk, j, tx, ty, k, dt):
         wk.x, wk.y = j["x0"] + (tx - j["x0"]) * k, j["y0"] + (ty - j["y0"]) * k
         wk.vx = wk.vy = 0.0
         if 0 < k < 1:
             wk.moving = True
             wk.anim += dt * 3.0
-            wk.h = math.atan2(ty - j["y0"], tx - j["x0"])
+            if (tx - j["x0"]) ** 2 + (ty - j["y0"]) ** 2 > 0.01:
+                wk.h = math.atan2(ty - j["y0"], tx - j["x0"])
+        else:
+            wk.moving = False
+
+    def _tick_jack(self, dt):
+        """Carjack, step by step: walk to the door, open it, reach in, grab the driver, yank them out onto the asphalt
+        (out cold), get in, door shuts. Two-wheelers: walk up, grab the rider, shove them off, hop on."""
+        j = self.jack
+        b, wk, v = j["b"], self.walker, j["victim"]
+        rider = v is not None and v != "driver"
+        if (b is not None and (b not in self.bodies or not b.alive)) or (wk is None and not j["in"]) or (wk is not None and wk.health <= 0) \
+                or (rider and b is None and (v not in self.peds.list or v.mode != "svc")):
+            if b is not None:
+                b.door = 0.0
+            if j["held"] is not None:
+                j["held"].mode, j["held"].t = "ko", 6.0
+            self.jack = None
+            return
+        j["t"] += dt
+        t, T = j["t"], j["dur"]
+        if j["in"]:
+            if j["door"] and b.door > 0:
+                b.door = max(0.0, b.door - dt / 0.3)
+                if b.door <= 0:
+                    self.ev("door_shut", body=b)
+                return
+            self.jack = None
+            return
+        if rider:                                                    # ---- two-wheeler
+            if b is None:
+                ang = v.h
+                tx, ty = v.x - math.sin(ang) * 0.9, v.y + math.cos(ang) * 0.9        # beside the rider
+                self._walk_to(wk, j, tx, ty, min(1.0, t / 0.3), dt)
+                if t >= 0.3:
+                    wk.h = math.atan2(v.y - wk.y, v.x - wk.x)
+                    wk.atk_t, wk.atk_kind = 0.12, 4                  # arm out: grabs them by the collar
+                if t >= 0.55:                                        # shove: rider off, bike stays
+                    b = j["b"] = Body(v.x, v.y, v.h, vehicles.JACK_KIND[v.arch], 0)
+                    b.az = v.gz
+                    b.empty = False
+                    self.bodies.append(b)
+                    dx, dy = v.x - wk.x, v.y - wk.y
+                    d = math.hypot(dx, dy) or 1.0
+                    v.mode, v.t, v.hy, v.hv, v.ko_land, v.spin = "air", 5.0, 0.4, 3.0, True, 0.0
+                    v.vx, v.vy = dx / d * 4.5, dy / d * 4.5
+                    self.ev("shout", text=TXT("vehicles.%04d" % self.rng.randrange(310, 316)), x=v.x, y=v.y)
+                    self.ev("knock_off", x=v.x, y=v.y)
+                    j["x0"], j["y0"] = wk.x, wk.y
+                return
+            self._walk_to(wk, j, b.x, b.y, min(1.0, (t - 0.55) / 0.25), dt)
+        elif v == "driver":                                          # ---- car with a driver
+            dx_, dy_ = self._seat_point(b, 0.55)
+            self._walk_to(wk, j, dx_, dy_, min(1.0, t / 0.35), dt)
+            lx, ly = math.sin(b.h), -math.cos(b.h)
+            if t >= 0.35:
+                wk.h = math.atan2(-ly, -lx)                          # facing the car
+                if b.door == 0:
+                    self.ev("door", body=b)
+                b.door = min(1.0, (t - 0.35) / 0.3)                  # the hero pulls the door open
+            if 0.65 <= t < 1.25:
+                wk.atk_t, wk.atk_kind = 0.12, 4                      # reaches in, grabs the driver
+            if t >= 0.85 and j["held"] is None:                      # dragged out of the seat, still on their feet
+                sx, sy = self._seat_point(b, -0.25)
+                p = self.peds.eject(sx, sy, math.atan2(ly, lx), gz=b.az)
+                p.mode, p.t, p.v = "svc", 999.0, 0.0
+                j["held"] = p
+                self.ev("shout", text=self.rng.choice(slang.DRIVER_RAGE), x=p.x, y=p.y)
+            p = j["held"]
+            if p is not None and p.mode == "svc":
+                if t < 1.2:                                          # hauled across the sill toward the hero
+                    k = (t - 0.85) / 0.35
+                    sx, sy = self._seat_point(b, -0.25)
+                    p.x, p.y = sx + (wk.x - sx) * k * 0.8, sy + (wk.y - sy) * k * 0.8
+                    p.h = math.atan2(wk.y - p.y, wk.x - p.x)
+                else:                                                # yanked past the hero and slammed onto the asphalt
+                    p.mode, p.t, p.hy, p.hv, p.ko_land, p.spin = "air", 5.0, 0.6, 2.0, True, 0.0
+                    bx, by = math.cos(b.h), math.sin(b.h)
+                    p.vx, p.vy = lx * 5.5 - bx * 2.0, ly * 5.5 - by * 2.0
+                    self.ev("slam", x=p.x, y=p.y)
+                    j["x0"], j["y0"] = wk.x, wk.y
+            if t >= 1.25:
+                tx, ty = self._seat_point(b, 0.25)
+                self._walk_to(wk, j, tx, ty, min(1.0, (t - 1.25) / max(0.1, T - 1.25)), dt)
+        else:                                                        # ---- empty car / abandoned bike
+            if j["door"]:
+                tx, ty = self._seat_point(b, 0.35)
+                self._walk_to(wk, j, tx, ty, min(1.0, t / 0.4), dt)
+                if t >= 0.4:
+                    if b.door == 0:
+                        self.ev("door", body=b)
+                    b.door = min(1.0, (t - 0.4) / 0.3)
+            else:
+                self._walk_to(wk, j, b.x, b.y, min(1.0, t / max(0.1, T)), dt)
         if t >= T:
             j["in"] = True
             wk.moving = False
