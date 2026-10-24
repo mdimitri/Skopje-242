@@ -14,7 +14,7 @@ import pyray as rl
 
 import soundcat
 
-VER = 4                                          # bump to force a re-analysis of the whole library
+VER = 5                                          # bump to force a re-analysis of the whole library
 CLIP_FRAC = 0.003                                # share of samples at full scale before a file counts as clipped
 LOW_CUT = 25.0                                   # Hz, removes DC and sub-sonic rumble
 FAR_CUT = 2800.0                                 # Hz, low-pass of the 'far' copy used for distant one-shots
@@ -184,7 +184,7 @@ def _analyse(x, sr, secs, loop, row):
         return no("too short")
     if not np.isfinite(x).all():
         return no("corrupt samples (NaN/Inf)")
-    if n / sr < 0.4 * secs:
+    if n / sr < (0.4 if secs > 3 else 0.7) * secs:
         return no(f"truncated ({n / sr:.1f}s of {secs}s)")
     if n / sr > 2.0 * secs + 2.0:
         return no(f"too long ({n / sr:.1f}s of {secs}s)")
@@ -243,7 +243,7 @@ def _analyse(x, sr, secs, loop, row):
         why = f"stutter / digital repetition (self-match {fe['rep']:.2f})"
     elif P["onset"] is not None and fe["onset_pos"] > P["onset"]:
         why = f"no clear onset (peak at {fe['onset_pos'] * 100:.0f}% of the sound)"
-    elif P["decay"] is not None and fe["tail"] > -P["decay"] and dur > 0.5:
+    elif P["decay"] is not None and fe["tail"] > -P["decay"] and dur > 0.25:
         why = f"does not decay (end only {-fe['tail']:.0f} dB below the peak)"
     elif not P["loop"] and fe["crest"] < P["crest"]:
         why = f"too flat/steady for a one-shot (crest {fe['crest']:.1f})"
@@ -349,7 +349,7 @@ class Processor:
                         infos[p] = c["i"]
                         continue
                     x, sr = decode(p)
-                    infos[p] = analyse(x, sr, row[3], row[2], row) if x is not None else {"ok": False, "reason": "undecodable"}
+                    infos[p] = analyse(x, sr, self.a.secs_of.get(p) or row[3], row[2], row) if x is not None else {"ok": False, "reason": "undecodable"}
                     cache[ck] = {"v": VER, "mt": st.st_mtime_ns, "sz": st.st_size, "i": infos[p]}
                     fresh += 1
                 except Exception as e:  # noqa: BLE001

@@ -22,12 +22,14 @@ def base_seed(key):
     return (zlib.crc32(key.encode()) % 9000) * 100          # <= 100 versions per key, never overlapping
 
 
-def scan(lib_root):
-    """key -> sorted list of mp3 paths, for every sidecar in the library whose files exist."""
-    out = {}
+def scan(lib_root, prompts=None):
+    """-> (usable, fresh, secs): secs = {mp3 path: seconds its request asked for}; usable = key -> mp3 paths of the sidecar to play (one whose prompt equals the current catalogue prompt when there is
+    one, else the newest older one); fresh = keys that have a sidecar made from the current prompt.  `prompts` = {key: catalogue prompt};
+    without it every sidecar counts as current."""
+    found, secs = {}, {}
     for dp, _dn, fns in os.walk(lib_root):
         for fn in fns:
-            if not fn.endswith(".json"):
+            if not fn.endswith(".json") or fn.startswith("."):
                 continue
             try:
                 sc = json.load(open(os.path.join(dp, fn), encoding="utf-8"))
@@ -36,12 +38,22 @@ def scan(lib_root):
                 if not isinstance(key, str) or not key:
                     continue
                 paths = [os.path.join(dp, os.path.basename(str(f["file"]))) for f in sc["files"] if isinstance(f, dict) and str(f.get("file", "")).lower().endswith(".mp3")]
+                paths = sorted(p for p in paths if os.path.isfile(p))
+                if paths:
+                    cur = prompts is None or sc.get("prompt") == prompts.get(key)
+                    found.setdefault(key, []).append((cur, str(sc.get("completed_at", "")), paths))
+                    for p in paths:
+                        secs[p] = sc.get("seconds")
             except Exception:  # noqa: BLE001
                 continue                                          # unreadable / malformed sidecar: that sound just stays procedural
-            paths = sorted(p for p in paths if os.path.isfile(p))
-            if paths:
-                out.setdefault(key, []).extend(p for p in paths if p not in out.get(key, []))
-    return out
+    usable, fresh = {}, set()
+    for key, lst in found.items():
+        cur = [e for e in lst if e[0]]
+        pick = cur if cur else [max(lst, key=lambda e: e[1])]
+        if cur:
+            fresh.add(key)
+        usable[key] = [p for e in pick for p in e[2]]
+    return usable, fresh, secs
 
 
 def write_requests(root, have):
@@ -57,7 +69,7 @@ def write_requests(root, have):
         fn = os.path.join(d, rid + ".json")
         if os.path.exists(fn):
             continue
-        req = {"id": rid, "prompt": prompt, "versions": n, "seconds": secs, "output_dir": folder, "seed": base_seed(key),
+        req = {"id": rid, "prompt": prompt, "versions": n, "seconds": secs, "output_dir": folder, "seed": base_seed(key), "cfg_scale": 4.0 if loop else 5.0,
                "meta": {"key": key, "category": folder.split("/")[0], "loop": loop, "level": lvl, "game": "skopje242 v2.1"}}
         tmp = fn + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

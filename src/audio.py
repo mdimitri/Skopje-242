@@ -227,7 +227,7 @@ class Audio:
         self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
         self.muted = False
         self._tmp = None
-        self.info = {}
+        self.info, self.secs_of = {}, {}
         self.lib, self.req = {}, (0, 0, 0)              # v2.1 artist library: key -> mp3 paths; (requests written, catalogue size, done)
         self._ls, self._ls_mb, self._cur, self._last, self._vol = OrderedDict(), 0.0, {}, {}, {}
         self.lx = self.ly = 0.0
@@ -238,8 +238,8 @@ class Audio:
         if root:
             try:
                 lib_root = os.environ.get("SK242_LIBRARY") or os.path.join(root, soundlib.LIB_DIR)
-                raw = soundlib.scan(lib_root)
-                self.req = soundlib.write_requests(root, raw)             # done = has files; quality-rejected sounds are not re-requested
+                raw, fresh, self.secs_of = soundlib.scan(lib_root, {r[0]: r[5] for r in soundcat.CATALOG})
+                self.req = soundlib.write_requests(root, fresh)           # done = made from the current prompt; quality-rejected sounds are not re-requested
                 if raw and (dry or not mute):
                     soundproc.Processor(self, lib_root, raw, os.path.join(root, "logs")).start(wait=dry)   # self.lib fills as keys pass the check
             except Exception:  # noqa: BLE001

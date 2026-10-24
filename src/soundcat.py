@@ -224,7 +224,7 @@ _s("wheelbarrow", "construction", 5, 4, "A creaky wheelbarrow being pushed over 
 _s("tin_roof_bang", "construction", 3, 5, "A loose sheet of tin roofing banging in the wind.", 0.6)
 
 # ------------------------------------------------------------------ city events, bells, voices-free life
-_s("bell", "city", 8, 8, "A church bell tolling slowly, five deep strokes with a long ring.", 0.7)
+_s("bell", "city", 8, 8, "A church bell tolling slowly, two deep strokes.", 0.7)
 _s("clock_tower", "city", 10, 4, "A big tower clock striking the hour with a deep bell, mechanical ticking before.", 0.6)
 _s("window_open", "city", 2, 6, "A wooden window opening with a creak and a latch click.", 0.4)
 _s("shutter_roll", "city", 3, 5, "A metal shop shutter rolling up with a rattle.", 0.6)
@@ -263,6 +263,52 @@ _s("ui_confirm", "interface", 0.8, 5, "A soft confirming menu tone, short and pl
 _loop("amb_pigeons_square", "birds", "Pigeons cooing and fluttering on a busy square with distant footsteps.", 24, 5, 0.5)
 _loop("amb_city_far", "ambience/city", "The whole city heard from high above: a muffled low rumble of distant traffic, soft steady wind, no individual sounds or details.", 30, 6, 0.6)
 _loop("amb_wind_high", "ambience/weather", "Wind blowing steadily at height over rooftops, a soft airy rush with a low rumble, no details.", 30, 5, 0.5)
+
+
+# ------------------------------------------------------------------ game-feel pass
+# MOSS-SoundEffect takes short, concrete descriptions (its own examples are one plain sentence) and renders whatever scene words it is given, so
+# anything that reads cinematic (echo, outdoors, huge, over a city ...) makes a sound with a room and a tail.  This pass keeps each prompt to the
+# sound itself, appends one fixed style tail (dry / close-up / sharp attack / no tail for one-shots, seamless and even for loops) and caps one-shot
+# lengths so clips are short and punchy.  Loops and ambiences keep their length.
+_CUT = (r" outdoors", r" in a (city )?street", r" in a city", r" with (a short |an )?echo( between buildings)?", r",? echoing( between buildings| over (a|the) \w+)?", r" echoing",
+        r" reverberat\w+", r" over a city", r" with a long ring", r"\bhuge\b", r"\bgiant\b", r" cinematic", r", recorded (close|from)[^.,]*", r" from some distance",
+        r" and debris (falling|rattling) afterwards", r", then debris rattling", r" then settling to idle")
+_TAIL_SHOT = " Dry close-up game sound effect, sharp attack, tight and punchy, no reverb, no echo, no tail, no music, no speech."
+_TAIL_RING = " Dry close-up game sound effect, clean natural ring, no reverb, no echo, no music, no speech."
+_TAIL_LOOP = " Seamless loop, steady and even, dry, no reverb tail, no music, no speech."
+_RING = ("bell", "clock_tower", "horn", "chime", "pick", "revive", "ui_", "teleport", "denied", "fuel_warning", "defib", "cow_bell", "whistle", "train_horn", "siren_", "car_alarm", "truck_reverse")
+_CAP = (("step_", 0.6), ("puddle", 0.5), ("shot_uzi", 1.5), ("shot_kalash", 1.5), ("shot_shotgun", 1.2), ("shot_distant", 1.2), ("shot", 1.0), ("rocket_launch", 1.5), ("bullet_", 0.6),
+        ("bat_hit", 0.5), ("swing", 0.4), ("punch", 0.5), ("kick", 0.5), ("body_fall", 0.7), ("body_hit_car", 0.8), ("hurt_thud", 0.5), ("defib", 1.5), ("cpr", 2.0),
+        ("crash_light", 0.8), ("crash_glass", 1.5), ("crash_metal", 1.2), ("crash_wood", 1.2), ("crash", 1.5), ("tree_break", 1.5), ("prop_thud", 0.6), ("bin_clang", 1.2),
+        ("glass_bottle", 1.0), ("boom", 2.5), ("chime", 0.6), ("tick", 0.5), ("pick", 0.6), ("cash", 0.7), ("eat", 1.0), ("revive", 0.8), ("ui_", 0.5), ("teleport", 0.6),
+        ("denied", 0.5), ("map_paper", 0.8), ("fuel_warning", 0.6), ("fuel_pour", 2.0), ("weapon_pickup", 0.6), ("car_door", 0.7), ("horn_jingle", 2.5), ("horn_small", 0.5),
+        ("horn_truck", 1.2), ("horn", 0.7), ("engine_start", 2.0), ("engine_stall", 1.5), ("bus_door", 1.2), ("bus_air_brake", 1.8), ("kerb_bump", 0.6), ("car_alarm", 4.0),
+        ("fire_ignite", 1.5), ("fire_out", 2.5), ("car_passby", 4.0), ("truck_passby", 5.0), ("siren_distant", 4.0), ("train_horn", 4.0), ("splash_big", 2.0), ("splash", 1.2),
+        ("swim", 3.0), ("bell", 5.0), ("clock_tower", 4.0), ("bird_nightingale", 4.0), ("bird_blackbird", 3.0), ("bird_songbird", 3.0), ("bird_duck_flock", 3.0),
+        ("bird_crow_flock", 3.0), ("bird_owl", 2.5), ("bird_", 2.0), ("dog_pack", 4.0), ("dog_howl", 3.0), ("dog", 1.5), ("cat_fight", 3.0), ("cat_", 1.5), ("crowd_", 3.0),
+        ("kids_laugh", 2.5), ("baby_cry", 2.5), ("hammer", 1.5), ("drill", 2.0), ("angle_grinder", 2.0), ("saw_wood", 2.0), ("shovel", 1.5), ("metal_clank", 1.0),
+        ("truck_reverse", 3.0), ("fence_rattle", 1.5), ("wheelbarrow", 2.5), ("tin_roof", 1.5), ("thunder", 3.0), ("wind_gust", 3.0), ("fireworks", 3.0))
+_GROUP_CAP = {"animals": 2.0, "birds": 2.0, "crowd": 3.0, "city": 2.5, "vehicles/doors": 0.8, "vehicles/misc": 2.5, "construction": 2.0, "water": 2.0, "impacts": 1.5,
+              "weapons": 1.2, "fight": 0.7, "steps": 0.6, "pickups": 0.8, "interface": 0.5, "shops": 1.5, "explosions": 2.5}
+
+
+def _gamify(row):
+    key, folder, loop, secs, n, prompt, lvl, fb = row
+    p = prompt
+    for tail in (NO, " No speech.", " Steady, continuous, seamless loop, no sudden loud events."):
+        p = p.replace(tail, "")
+    for pat in _CUT:
+        p = _re.sub(pat, "", p)
+    p = _re.sub(r"\s+", " ", p).strip().rstrip(".") + "."
+    if loop:
+        return (key, folder, loop, secs, n, p + _TAIL_LOOP, lvl, fb)
+    cap = next((c for pre, c in _CAP if key.startswith(pre)), _GROUP_CAP.get(folder, _GROUP_CAP.get(folder.split("/")[0], 2.5)))
+    ring = any(key.startswith(r) for r in _RING)
+    return (key, folder, loop, max(0.5, min(secs, cap)), n, p + (_TAIL_RING if ring else _TAIL_SHOT), lvl, fb)
+
+
+import re as _re  # noqa: E402
+CATALOG[:] = [_gamify(r) for r in CATALOG]
 
 CATALOG[:] = [r for r in CATALOG if r]
 

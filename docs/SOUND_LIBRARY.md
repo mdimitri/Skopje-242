@@ -17,6 +17,16 @@ Nothing else to configure. `SK242_LIBRARY=<path>` points the game at another lib
 - To change a sound: edit its prompt in `src/soundcat.py`, delete the old `library/<folder>/<id>*` files, relaunch to get a new request. To add versions later, request a new id by hand.
 - The full list (key, folder, length, versions, prompt) is `src/soundcat.py`; one catalogue row = one request.
 
+## Writing prompts for MOSS-SoundEffect (game feel)
+
+The model card shows only short, concrete one-sentence prompts ("fresh snow crunching under footsteps.", "a sports car roaring past on the highway.") and a duration; there are no documented control words, so the prompt is the whole recipe and the model renders every scene word you give it. A prompt that says "echoing between buildings" or "outdoors" gets a room and a tail, which is what made the first batch cinematic. Rules the catalogue now follows (`soundcat._gamify` applies them to every row):
+
+- **One sound, plain nouns and verbs** ("A single pistol gunshot."), no scene, place, mood or story words.
+- **Fixed style tail** on every one-shot: "Dry close-up game sound effect, sharp attack, tight and punchy, no reverb, no echo, no tail, no music, no speech." Ringing sounds (horns, bells, chimes) say "clean natural ring" instead; loops say "Seamless loop, steady and even, dry, no reverb tail".
+- **Short clips:** one-shots are capped by type (steps 0.6 s, punches 0.5, UI 0.5, shots 1.0-1.5, impacts 0.8-1.5, explosions 2.5, horns 0.5-1.2, birds 2-3, crowd 3); loops and ambiences keep 8-30 s. The model fills the whole length, so a shorter length is the strongest "less cinematic" control.
+- **Generation settings** written into every request: `cfg_scale` 5.0 for one-shots (holds the prompt harder, so the dry/punchy words stick) and 4.0 for loops. If a sound still comes out wet, raise `cfg_scale` toward 6-7 for that request, or make the prompt more specific about the source and surface ("rubber sole on dry asphalt").
+- **Changing a prompt** changes the request id, so the game asks for the new version on the next launch, keeps playing the old one until the new files appear, and then uses only the new ones (the old files can be deleted).
+
 ## Quality check at load (`src/soundproc.py`)
 
 A background thread checks every library file once (results cached in `library/.soundcache.json` by size and mtime, so later launches take a moment). A sound switches from procedural to the library as soon as its versions pass; rejects are listed in `logs/sound_rejects.txt` with the reason.
