@@ -2,6 +2,7 @@
 otherwise the approximate centres below (hand-placed, so treat the positions as rough)."""
 from texts import TXT
 import math
+import time
 import random
 
 from geo import project
@@ -59,6 +60,10 @@ def _inside(x, y, poly):
     return inside
 
 
+SMALL_AREA = 1.5e6                                    # m2: outlines smaller than this count as a neighbourhood
+REPEAT_S = 30.0                                       # the same name is not announced again within this time
+
+
 class Places:
     """Neighbourhoods straight from OpenStreetMap: place nodes plus place / administrative-boundary outlines.
     The smallest outline containing the player wins; otherwise the nearest place node within 600 m.
@@ -95,13 +100,27 @@ class Places:
         self.list.sort(key=lambda p: p[0])
         self.polys.sort(key=lambda p: p[0])
         self.cur = None
+        self.shown = {}                                   # name -> time it was last announced
         self.rng = random.Random(77)
 
     def where(self, x, y):
-        for _a, name, poly in self.polys:                 # smallest first
+        """Finest level wins: a small outline containing you, else the nearest suburb/quarter node within 500 m
+        (Карпош 3, Ново Лисиче, Влае ...), else a big outline (whole district), else any node within 600 m."""
+        big = None
+        for a, name, poly in self.polys:                  # smallest first
             if _inside(x, y, poly):
-                return name
-        best, bd = None, 600.0 ** 2
+                if a < SMALL_AREA:
+                    return name
+                big = big or name
+                break
+        best, bd = None, 500.0 ** 2
+        for name, nx, ny in self.nodes:
+            d = (nx - x) ** 2 + (ny - y) ** 2
+            if d < bd:
+                best, bd = name, d
+        if best or big:
+            return best or big
+        bd = 600.0 ** 2
         for name, nx, ny in self.nodes:
             d = (nx - x) ** 2 + (ny - y) ** 2
             if d < bd:
@@ -117,6 +136,8 @@ class Places:
         name = self.where(x, y)
         if name != self.cur:
             self.cur = name
-            if name:
+            now = time.monotonic()
+            if name and now - self.shown.get(name, -1e9) >= REPEAT_S:
+                self.shown[name] = now
                 return name + (TXT("places.0034") if self.approx else ""), self.line_for(name)
         return None
