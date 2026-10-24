@@ -148,9 +148,9 @@ class Splash3D(showcase.Showcase):
                 addbox(x0 + 20, k * 1.0, 3.2, 0.5, 0.012, 0.0, W)
         # ---- buildings, far side: the game's own wall / roof / parapet generators with its facade textures
         for row, (zf, depth_rng) in enumerate(((-8.2, (9, 15)), (-26.0, (12, 20)))):
-            x = x0 + r.uniform(0, 3)
-            while x < x0 + CH - 6:
-                w = r.uniform(9, 21)
+            x = x0 + r.uniform(1.5, 4)
+            while x < x0 + CH - 11:
+                w = min(r.uniform(9, 21), x0 + CH - 2.5 - x)      # never reach into the next chunk
                 d = r.uniform(*depth_rng)
                 typ = r.choices(("house", "panel", "office", "block"), (3, 3, 2, 4))[0]
                 if row == 1:
@@ -176,7 +176,7 @@ class Splash3D(showcase.Showcase):
                                                   r.uniform(1.0, 2.4), h, (150, 150, 156)))
                 kx, kz = SHADOW[0] * min(h, 9.0), SHADOW[1] * min(h, 9.0)             # (capped: a 30 m block would black out the whole street)
                 shadows.append(_hull([(px, pz) for px, pz in ring] + [(px + kx, pz + kz) for px, pz in ring]))
-                x += w + r.uniform(0.5, 5.0)
+                x += w + r.uniform(4.0, 8.0)                                  # real gaps: no touching walls (z-fight flicker)
         # ---- street furniture and trees, near and far pavement
         x = x0 + r.uniform(2, 8)
         while x < x0 + CH - 2:

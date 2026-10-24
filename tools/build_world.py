@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 14
+VERSION = 15
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -576,9 +576,9 @@ def tree_geo(x, z, r, shade_i, seed):
     elif sp == 3:                                                # poplar: slim and very tall
         crown(x, z, r * 0.45, trunk_h - 0.8, trunk_h + r * 0.6, trunk_h + r * 2.8, 6, off)
     elif sp == 2:                                                # two lumps side by side
-        for k in (-1, 1):
-            cx, cz = x + math.cos(off) * k * r * 0.4, z + math.sin(off) * k * r * 0.4
-            crown(cx, cz, r * 0.72, trunk_h - 0.4 + k * 0.2, trunk_h + r * 0.45, trunk_h + r * 1.05 + k * 0.2, 6, off + k)
+        for k in (-1, 1):                                        # lumps stay over the trunk and overlap: one crown, not two trees
+            cx, cz = x + math.cos(off) * k * r * 0.2, z + math.sin(off) * k * r * 0.2
+            crown(cx, cz, r * 0.85, trunk_h - 0.4, trunk_h + r * 0.5 + k * 0.1, trunk_h + r * 1.1 + k * 0.1, 6, off + k)
     else:                                                        # round crowns (also birch and autumn)
         rad = r * (0.7 if sp == 4 else 1.0)
         crown(x, z, rad, trunk_h - 0.4, trunk_h + rad * 0.5, trunk_h + rad * 1.2, 7, off)
