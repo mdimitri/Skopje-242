@@ -647,7 +647,7 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                         mx, my = (i0[0] + o1[0]) * 0.5, (i0[1] + o1[1]) * 0.5
                         piece += 1
                         near_cut = (RK0 > 0 and _spath(RP, RK0, k, t0) < 14.0) or (RK1 < len(RP) - 1 and _spath(RP, k, RK1, 0.0) - t1 * ln < 14.0)
-                        if not near_cut and cov.near_junction(mx, my) and (cov.covered(mx, my, i, False) or cov.covered(i0[0], i0[1], i, False)
+                        if not near_cut and (cov.covered(mx, my, i, False) or cov.covered(i0[0], i0[1], i, False)
                                                          or cov.covered(o1[0], o1[1], i, False)):
                             continue
                         pav = 178 + (4 if piece % 2 else -4) + (jit * 0)
