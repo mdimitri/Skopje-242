@@ -14,7 +14,7 @@ import pyray as rl
 
 import soundcat
 
-VER = 3                                          # bump to force a re-analysis of the whole library
+VER = 4                                          # bump to force a re-analysis of the whole library
 CLIP_FRAC = 0.003                                # share of samples at full scale before a file counts as clipped
 LOW_CUT = 25.0                                   # Hz, removes DC and sub-sonic rumble
 FAR_CUT = 2800.0                                 # Hz, low-pass of the 'far' copy used for distant one-shots
@@ -56,9 +56,10 @@ _TONAL_SHOTS = ("horn", "bell", "clock_tower", "chime", "tick", "pick", "revive"
                 "car_lock", "defib", "truck_reverse", "bird_", "dog", "cat_", "cow_", "sheep", "donkey", "horse", "frog", "baby_cry", "kids_", "crowd_", "coughing", "sneeze", "clap")
 
 
-_HISSY = ("spray", "angle_grinder", "jackhammer", "fire_crackle", "tick", "bullet_ricochet", "handbrake", "wind_gust", "thunder", "sweeper", "garbage", "amb_lake", "amb_creek",
+_HISSY = ("spray", "angle_grinder", "jackhammer", "fire_crackle", "bullet_ricochet", "handbrake", "wind_gust", "thunder", "sweeper", "garbage", "amb_lake", "amb_creek",
           "amb_river", "bus_air_brake", "fire_out", "fuel_pour", "splash", "swim", "crowd", "swing", "fireworks", "tin_roof", "laundry", "car_hood", "boom", "crash_glass", "saw_wood", "screech")
 _CLEAN_LOOPS = ("city", "traffic", "wind", "amb_street", "amb_wind", "amb_forest", "amb_park", "amb_meadow", "amb_hill", "amb_dawn", "amb_courtyard", "amb_traffic", "amb_railway")
+_UI = ("tick", "pick", "chime", "revive", "ui_click", "ui_confirm", "teleport_whoosh", "denied_buzz", "fuel_warning", "cash", "map_paper")
 _HIT_FOLDERS = ("weapons", "explosions", "impacts", "fight", "steps")
 
 
@@ -89,6 +90,8 @@ def profile(row):
         P.update(onset=0.85, decay=5.0, crest=1.6, tonal=P["tonal"] or key in ("bin_clang", "metal_clank"))
         if key.startswith("step_") or key == "puddle_step":
             P["dur"] = (0.04, 2.0)
+    if key in _UI:
+        P.update(hf=0.35, cent=(150, 5500))                           # menu / pickup sounds must be clean: a bright hissy tick is not a click
     if any(key.startswith(k) for k in ("horn", "siren_", "train_horn", "car_alarm", "truck_reverse", "whistle", "bell", "clock_tower", "defib", "fuel_warning")):
         P.update(onset=None, decay=None, crest=1.1)
     for pre, need in (("horn", 14), ("whistle", 10), ("clock_tower", 12), ("truck_reverse", 10)):
