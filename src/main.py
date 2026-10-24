@@ -983,19 +983,60 @@ def main():
         if len(sx["pass"]) > 400:
             sx["pass"] = {k_: v_ for k_, v_ in sx["pass"].items() if v_ > t_game - 9}
 
+    seeds = {"n": 0}
+    eng_state = {}
+
+    def car_seed(b):
+        """A number that stays with this one car (the same object, so also after you leave it and get back in): picks its engine recording and pitch."""
+        s_ = seeds.get(id(b))
+        if s_ is None:
+            seeds["n"] += 1
+            s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
+        return s_
+
+    def engine_pitch(b, nm, fr, thr):
+        """Revs follow the speed through five gears (rising, drop at each shift), a little higher under throttle, smoothed so shifts glide;
+        every car gets its own base pitch, an electric motor just whines up with speed."""
+        base = 1.0 + ((car_seed(b) // 7) % 13 - 6) * 0.012
+        if nm == "engine_ev":
+            tgt = 0.6 + 1.5 * fr
+        else:
+            g = min(4, int(fr * 5.0))
+            rpm = 0.3 + 0.7 * min(1.0, fr * 5.0 - g) if g > 0 else 0.25 + 0.75 * min(1.0, fr * 5.0)
+            tgt = 0.55 + 1.15 * rpm + 0.1 * thr
+        st = eng_state.get(id(b), tgt)
+        st += (tgt - st) * 0.12
+        eng_state[id(b)] = st
+        if len(eng_state) > 200:
+            eng_state.clear()
+        return st * base
+
+    def doppler(b, lx, ly):
+        """Pitch shift of a moving source: higher while it comes towards you, lower once it passes."""
+        dx, dy = b.x - lx, b.y - ly
+        d_ = math.hypot(dx, dy) or 1.0
+        vx_, vy_ = (b.vx, b.vy) if hasattr(b, "vx") else (b.v * math.cos(b.h), b.v * math.sin(b.h))
+        vr = (vx_ * dx + vy_ * dy) / d_
+        return max(0.85, min(1.15, 343.0 / (343.0 + vr)))
+
+    def pan_of(x, lx, d):
+        return 0.5 + 0.45 * max(-1.0, min(1.0, (x - lx) / max(d, 12.0)))
+
     def handle_audio(fx_, fy_):
         if not aud.ok or aud.muted:
             return
         aud.listener(fx_, fy_)
+        aud.update()
+        aud.set_zoom(max(0.0, min(1.0, (math.log(max(ppm, 1.0)) - math.log(3.0)) / (math.log(40.0) - math.log(3.0)))))        # camera height -> how much street / how much city bed
         tf = min(1.5, sim.clock.traffic) / 1.5
         if sim.mode == "car":
             c = sim.car
-            vmax = vehicles.PERF[c.kind][0]
-            fr = min(1.0, c.speed / vmax)
+            fr = min(1.0, c.speed / vehicles.PERF[c.kind][0])
             prof = vehicles.ENGINE_SOUND[c.kind]
             for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
-                if nm == prof:
-                    aud.loop(nm, 0.2 + 0.3 * abs(inp_last.get("throttle", 0)) + 0.1 * fr, (0.55 + 1.7 * fr) if nm != "engine_ev" else (0.6 + 1.6 * fr), "engine")
+                if nm == prof:                                       # this very car always uses the same recording, however often you leave and re-enter it
+                    thr_ = abs(inp_last.get("throttle", 0))
+                    aud.loop(nm, 0.2 + 0.3 * thr_ + 0.1 * fr, engine_pitch(c, nm, fr, thr_), "engine", 0.5, car_seed(c))
                 else:
                     aud.loop(nm, 0.0, 1.0, "engine")
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
@@ -1015,18 +1056,21 @@ def main():
             if near_c is not None and vehicles.ENGINE_SOUND[near_c.kind] == nm:
                 fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
                 k_ = (1.0 - nd / 45.0) ** 2
-                aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), (0.55 + 1.5 * fr_) if nm != "engine_ev" else (0.6 + 1.4 * fr_), "engine")
+                dop_ = doppler(near_c, fx_, fy_)
+                aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), engine_pitch(near_c, nm, fr_, 0.6) * dop_, "engine", pan_of(near_c.x, fx_, nd), car_seed(near_c))
             else:
                 aud.loop("ai_" + nm, 0.0, 1.0, "engine")
-        best = {}
+        best, near_v = {}, {}
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:
                 best[c.kind] = min(best.get(c.kind, 1e9), math.hypot(c.x - fx_, c.y - fy_))
+                near_v[c.kind] = c if math.hypot(c.x - fx_, c.y - fy_) <= best[c.kind] else near_v.get(c.kind, c)
         for b in sim.bodies:
             if b.kind in vehicles.SIREN_SOUND and getattr(b, "siren", False) and b.alive:
                 best[b.kind] = min(best.get(b.kind, 1e9), math.hypot(b.x - fx_, b.y - fy_))
+                near_v[b.kind] = b if math.hypot(b.x - fx_, b.y - fy_) <= best[b.kind] else near_v.get(b.kind, b)
         for k, nm in vehicles.SIREN_SOUND.items():
-            aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / 150.0) * 0.55, 1.0, "sfx")
+            aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / 150.0) * 0.55, doppler(near_v[k], fx_, fy_) if k in near_v else 1.0, "sfx", pan_of(near_v[k].x, fx_, best[k]) if k in near_v else 0.5)
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
         aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
@@ -1061,6 +1105,8 @@ def main():
         aud.loop("amb_industrial", 0.5 * min(1.0, e_.get("ind", 0) * 4))
         aud.loop("amb_square_day", 0.5 * day * min(1.0, e_.get("plaza", 0) * 5))
         aud.loop("amb_pigeons_square", 0.4 * day * min(1.0, e_.get("plaza", 0) * 5))
+        aud.loop("amb_city_far", 0.55 * (1.0 - aud.zoom) ** 1.2 * (0.4 + 0.6 * dn))
+        aud.loop("amb_wind_high", 0.5 * (1.0 - aud.zoom) ** 1.5)
         aud.loop("amb_playground", 0.5 * day * min(1.0, e_.get("play", 0) * 5))
         aud.loop("amb_football_pitch", 0.4 * day * min(1.0, e_.get("pitch", 0) * 5))
         aud.loop("amb_lake_shore", 0.5 * min(1.0, e_.get("lake", 0) * 5))

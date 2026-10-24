@@ -261,6 +261,8 @@ _s("denied_buzz", "interface", 1.0, 5, "A short soft negative buzz for not enoug
 _s("ui_click", "interface", 0.5, 5, "A soft clean menu tick.", 0.4, tail=" No speech.")
 _s("ui_confirm", "interface", 0.8, 5, "A soft confirming menu tone, short and pleasant.", 0.5, tail=" No speech.")
 _loop("amb_pigeons_square", "birds", "Pigeons cooing and fluttering on a busy square with distant footsteps.", 24, 5, 0.5)
+_loop("amb_city_far", "ambience/city", "The whole city heard from high above: a muffled low rumble of distant traffic, soft steady wind, no individual sounds or details.", 30, 6, 0.6)
+_loop("amb_wind_high", "ambience/weather", "Wind blowing steadily at height over rooftops, a soft airy rush with a low rumble, no details.", 30, 5, 0.5)
 
 CATALOG[:] = [r for r in CATALOG if r]
 
@@ -271,3 +273,13 @@ ALIAS["siren"] = "siren_police"
 
 BY_KEY = {r[0]: r for r in CATALOG}
 assert len(BY_KEY) == len(CATALOG), "duplicate sound keys"
+
+
+# Random detune applied to every play of a library one-shot (+-fraction of pitch), by folder; a sound's own variations come on top of it
+PITCH_VAR = {"steps": 0.08, "birds": 0.07, "animals": 0.07, "crowd": 0.06, "fight": 0.06, "impacts": 0.05, "construction": 0.06, "weapons": 0.03,
+             "explosions": 0.04, "pickups": 0.03, "interface": 0.02, "vehicles/horns": 0.02, "vehicles/sirens": 0.0, "city": 0.05, "water": 0.05}
+
+
+def pitch_var(row):
+    f = row[1]
+    return PITCH_VAR.get(f, PITCH_VAR.get(f.split("/")[0], 0.04))

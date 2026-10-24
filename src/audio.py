@@ -4,6 +4,7 @@ import math
 import os
 import random
 import tempfile
+import time
 import wave
 from collections import OrderedDict
 
@@ -232,6 +233,8 @@ class Audio:
         self.lx = self.ly = 0.0
         self.dry, self.stats = dry, {}                 # dry run (cloud tests, no audio device): count what would play, library vs fallback
         self.rng = random.Random(21)
+        self.pend, self.zoom, self.zk, self._lastp, self._cur_var = [], 0.7, {}, {}, {}
+        self.set_zoom(0.7)
         if root:
             try:
                 lib_root = os.environ.get("SK242_LIBRARY") or os.path.join(root, soundlib.LIB_DIR)
@@ -280,7 +283,7 @@ class Audio:
             return None
         y = soundproc.prepare(x, sr, self.info.get(path, {}), row[2], far)
         pk = float(np.abs(y).max()) or 1e-4
-        g = (0.02 + 0.10 * row[6]) / (float(np.sqrt((y * y).mean())) + 1e-5) if row[2] else (0.35 + 0.6 * row[6]) / pk
+        g = soundproc.loudness_gain(y, sr, row[2], row[6])
         y = np.clip(y * min(g, 0.98 / pk), -1.0, 1.0)
         p = os.path.join(self._tmp, f"lib_{len(self._ls)}.wav")
         _save(p, y, sr)
@@ -301,7 +304,7 @@ class Audio:
             self._ls_mb -= mb0
         return s
 
-    def _pick(self, name, far=False):
+    def _pick(self, name, far=False, variant=None):
         """(sound, from_library, row): a random library version (never the one played last) or the procedural fallback."""
         key = soundcat.ALIAS.get(name, name)
         row = soundcat.BY_KEY.get(key)
@@ -315,7 +318,10 @@ class Audio:
         if paths and row:
             for _ in range(len(paths)):
                 last = self._last.get(name)
-                p = self.rng.choice(paths) if len(paths) < 2 else self.rng.choice([q for q in paths if q != last])
+                if variant is not None:                              # a fixed version (e.g. one car always has the same engine recording)
+                    p = sorted(paths)[(variant + _) % len(paths)]
+                else:
+                    p = self.rng.choice(paths) if len(paths) < 2 else self.rng.choice([q for q in paths if q != last])
                 self._last[name] = p
                 try:
                     s = self._lib_load(name, p, row, far)
@@ -329,16 +335,41 @@ class Audio:
         fb = name if name in self.snd else (row[7] if row and row[7] in self.snd else None)
         return (self.snd[fb] if fb else None), False, row
 
-    def at(self, name, x, y, vol=1.0, pitch=1.0, bus="sfx", maxd=140.0, ref=8.0):
-        """One-shot placed in the world: quieter with distance (silent beyond maxd), panned by where it is from the listener."""
+    def at(self, name, x, y, vol=1.0, pitch=1.0, bus="sfx", maxd=140.0, ref=8.0, delayed=True):
+        """One-shot placed in the world: quieter with distance (silent beyond maxd), panned by where it is from the listener,
+        arriving late by distance / speed of sound (an explosion 300 m away is heard about a second after it is seen)."""
         d = math.hypot(x - self.lx, y - self.ly)
         if d >= maxd:
             return
         k = (ref / max(d, ref)) * (1.0 - (d / maxd) ** 2)
-        self.play(name, vol * k, pitch, bus, 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0))), far=d > 45.0)
+        pan = 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0)))
+        far = d > 45.0 or self.zoom < 0.3                           # distant or zoomed far out: the muffled copy
+        t = d / 343.0
+        if delayed and t > 0.07 and len(self.pend) < 64:
+            self.pend.append((time.perf_counter() + t, name, vol * k, pitch, bus, pan, far))
+        else:
+            self.play(name, vol * k, pitch, bus, pan, far=far)
 
-    def _set(self, s, vol, pitch, bus, pan):
-        rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get(bus, 1.0))
+    def update(self):
+        """Play the sounds whose travel time has passed."""
+        if self.pend:
+            now = time.perf_counter()
+            due = [q for q in self.pend if q[0] <= now]
+            if due:
+                self.pend = [q for q in self.pend if q[0] > now]
+                for _t, name, vol, pitch, bus, pan, far in due:
+                    self.play(name, vol, pitch, bus, pan, far=far)
+
+    def set_zoom(self, c):
+        """c: 0 = camera far out, 1 = right down in the street.  Close: street detail and speech.  Far: those fade, the muffled city and wind bed takes over."""
+        self.zoom = c
+        self.zk = {"sfx": 0.3 + 0.7 * c, "engine": 0.35 + 0.65 * c, "ambient": 0.3 + 0.7 * c, "speech": 0.08 + 0.92 * c ** 1.3}
+
+    BED = ("city", "wind", "amb_city_far", "amb_wind_high", "amb_wind_trees", "amb_hill_wind")
+
+    def _set(self, s, vol, pitch, bus, pan, name=None):
+        z = (0.6 + 0.8 * (1.0 - self.zoom)) if name in self.BED else self.zk.get(bus, 1.0)       # the bed grows as you zoom out, the detail fades
+        rl.set_sound_volume(s, min(1.0, vol * z) * self.master * self.bus.get(bus, 1.0))
         rl.set_sound_pitch(s, pitch)
         rl.set_sound_pan(s, pan)
 
@@ -346,26 +377,31 @@ class Audio:
         if not self.ok or self.muted or vol <= 0.01:
             return
         try:
+            now = time.perf_counter()
+            if now - self._lastp.get(name, -9.0) < 0.04:            # the same sound twice within 40 ms is one hit, not two voices
+                return
+            self._lastp[name] = now
             s, lib, row = self._pick(name, far)
             if s is None:
                 return
             if self.dry:
                 return
             if lib and not row[2]:
-                pitch = 1.0 + self.rng.uniform(-0.04, 0.04)         # real recordings already vary; only a touch of detune
-            self._set(s, vol, pitch, bus, pan)
+                v = soundcat.pitch_var(row)                         # real recordings already vary; a category-sized random detune on top
+                pitch = 1.0 + self.rng.uniform(-v, v)
+            self._set(s, vol, pitch, bus, pan, name)
             rl.play_sound(s)
         except Exception:  # noqa: BLE001
             pass
 
-    def loop(self, name, vol, pitch=1.0, bus="ambient", pan=0.5):
+    def loop(self, name, vol, pitch=1.0, bus="ambient", pan=0.5, variant=None):
         """Keep a looping sound going at the given volume (0 stops it).  A library loop starts another version each time it wraps."""
         if not self.ok:
             return
         try:
             if self.dry:
                 if vol > 0.01:
-                    self._pick(name)
+                    self._pick(name, False, variant)
                 return
             s = self._cur.get(name)
             if self.muted:
@@ -377,15 +413,18 @@ class Audio:
                 if s is not None and rl.is_sound_playing(s):
                     rl.stop_sound(s)
                 return
+            if s is not None and variant is not None and self._cur_var.get(name) != variant:
+                rl.stop_sound(s)                                    # another car: its own recording
+                s = None
             if s is None or not rl.is_sound_playing(s):
-                s = self._pick(name)[0]
+                s = self._pick(name, False, variant)[0]
                 if s is None:
                     return
-                self._cur[name] = s
-                self._set(s, vol, pitch, bus, pan)
+                self._cur[name], self._cur_var[name] = s, variant
+                self._set(s, vol, pitch, bus, pan, name)
                 rl.play_sound(s)
                 return
-            self._set(s, vol, pitch, bus, pan)
+            self._set(s, vol, pitch, bus, pan, name)
         except Exception:  # noqa: BLE001
             pass
 
@@ -398,7 +437,7 @@ class Audio:
             for o, _p in self.dyn:                     # never two voices at once
                 rl.stop_sound(o)
             s = rl.load_sound(p)
-            rl.set_sound_volume(s, min(1.0, vol) * self.master * self.bus.get("speech", 1.0))
+            rl.set_sound_volume(s, min(1.0, vol * self.zk["speech"]) * self.master * self.bus.get("speech", 1.0))
             rl.play_sound(s)
             self.dyn.append((s, p))
         except Exception:  # noqa: BLE001

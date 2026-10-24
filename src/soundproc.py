@@ -288,6 +288,25 @@ def prepare(x, sr, info, loop, far=False):
     return x
 
 
+def loudness_gain(y, sr, loop, level):
+    """Gain that brings a cleaned sample to the loudness of its catalogue level: A-weighted RMS of the active part (loops: everything), so a bright
+    chirp and a rumble of the same 'level' sound equally loud.  The caller caps it so the peak stays below full scale."""
+    n = min(len(y), 1 << 20)
+    seg = y[:n]
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    f2 = np.maximum(f, 10.0) ** 2
+    ra = (12194.0 ** 2 * f2 ** 2) / ((f2 + 20.6 ** 2) * np.sqrt((f2 + 107.7 ** 2) * (f2 + 737.9 ** 2)) * (f2 + 12194.0 ** 2))
+    w = np.fft.irfft(np.fft.rfft(seg) * ra / ra[np.argmin(abs(f - 1000))], n)
+    if not loop:                                                      # one-shots: loudness of the part within 25 dB of the peak, not of the silence around it
+        hop = max(1, sr // 100)
+        m = len(w) // hop
+        e = (w[:m * hop].reshape(m, hop) ** 2).mean(axis=1)
+        e = e[e > e.max() * 10 ** (-2.5)] if m else e
+        rms = float(np.sqrt(e.mean())) if len(e) else 1e-4
+        return (0.05 + 0.12 * level) / (rms + 1e-5)
+    return (0.02 + 0.10 * level) / (float(np.sqrt((w * w).mean())) + 1e-5)
+
+
 class Processor:
     """Analyses every library file once (cached by size+mtime), then hands the good ones to audio.lib key by key."""
 
