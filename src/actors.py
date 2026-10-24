@@ -107,7 +107,7 @@ def bump(b, impact, wx, wy, nx, ny):
     """Apply damage + a dent. (nx,ny) is the normal pointing from the obstacle toward the car."""
     if impact < 1.2:
         return
-    b.health -= max(0.0, impact - 2.0) * 3.4
+    b.health -= max(0.0, impact - 2.0) * 3.4 * (0.3 if b.service else 0.5 if vehicles.LARGE[b.kind] else 1.0)   # sturdy builds
     mag = min(0.08 + impact * 0.04, 0.8)
     dx, dy = wx - b.x, wy - b.y
     c, s = math.cos(b.h), math.sin(b.h)
@@ -142,7 +142,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     vl = p.vx * rx + p.vy * ry
     p.braking = False
     if throttle > 0:
-        vf += (ACC * dmg * max(0.0, 1 - vf / (VMAX * dmg)) if vf >= 0 else BRAKE) * dt * throttle
+        top = VMAX * dmg                          # thrust tapers off and just beats drag at the rated top speed
+        vf += (ACC * dmg * max(0.0, 1 - (vf / top) ** 3) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
         p.braking = vf < 0
     elif throttle < 0:
         if vf > 0.8:
@@ -1090,7 +1091,7 @@ class Traffic:
         if vehicles.LARGE[c.kind] and e["w"] < 8:
             c.kind = 1
         c.color = rng.randrange(vehicles.N_COLORS)
-        c.pace = rng.uniform(0.75, 1.0) * vehicles.SPEED[c.kind]
+        c.pace = rng.uniform(0.85, 1.1) * vehicles.SPEED[c.kind]
         c.v = 0.0
         c.x, c.y, c.h = self._place(c)
         c.gz = w.level(c.x, c.y, 1e9 if e["bridge"] else -1e9)
@@ -1163,6 +1164,11 @@ class Traffic:
             c.shift_t += dt
             if c.shift_t > 1.5 and self._free(c, -c.shift, 14.0):     # the lane it came from is clear again
                 c.shift, c.shift_t = 0.0, 0.0
+            elif c.stuck > 2.0 and c.rev <= 0:                   # met someone head-on out there: it is the one that backs off
+                if self.scan(c, 7.0, flip=True) is None:
+                    c.rev = 2.0
+                elif self._free(c, -c.shift, 6.0):
+                    c.shift, c.shift_t = 0.0, 0.0
             return
         if c.rev > 0 or c.cool > 0 or c.v > 0.3 or gap is None or gap > 4.0 or c.stuck < self.WAIT[ag]:
             return
@@ -1186,9 +1192,9 @@ class Traffic:
         rx, ry = -hy, hx
         hwc = vehicles.HALF_W[c.kind]
         ahead = 8.0 + c.v * 1.6
-        dev = c.avoid + c.shift + c.yld
-        tgt, near = 0.0, False
+        tgt, near, worst, bgap = 0.0, False, None, None
         if ph:
+            inward = -1.0 if c.lane > 0 else 1.0                  # towards the middle of the road
             gx, gy = int(c.x // 16), int(c.y // 16)
             n = int(ahead // 16) + 1
             for ix in range(gx - n, gx + n + 1):
@@ -1199,21 +1205,30 @@ class Traffic:
                         if fwd > ahead + ohl or fwd < -(vehicles.HALF_L[c.kind] + ohl):
                             continue
                         ca, sa = abs(math.cos(oh - c.h)), abs(math.sin(oh - c.h))
+                        hl = ca * ohl + sa * ohw
                         need = hwc + ca * ohw + sa * ohl + 0.45
                         lat = dx * rx + dy * ry
                         if abs(lat) < need + 0.6:
                             near = True
-                            d = (need + 0.25 - abs(lat)) * (-1.0 if lat > 0 else 1.0)
+                            side = inward if abs(lat) < 0.5 else (-1.0 if lat > 0 else 1.0)     # pass on the open side
+                            d = (need + 0.25 - abs(lat) if side * lat <= 0 else need + 0.25 + abs(lat)) * side
                             if abs(d) > abs(tgt - c.avoid):
-                                tgt = c.avoid + d
+                                tgt, worst = c.avoid + d, (fwd - vehicles.HALF_L[c.kind] - hl, d)
             if near:
-                lo, hi = ((hwc - 0.6, 1e9) if not e["ow"] else (-e["w"] / 2 + hwc + 0.2, e["w"] / 2 - hwc - 0.2))
                 tot = c.lane + c.shift + tgt + c.yld
-                if not e["ow"]:                                   # may graze the middle of a wide road, never far over it
+                if not e["ow"]:                                   # may graze the middle of the road, or use the
+                    lo = hwc - 0.6                                # oncoming lane when it is clear
+                    if tot < lo and self._free(c, -e["w"] / 4 - (c.lane + c.shift + c.avoid + c.yld), 30.0):
+                        lo = -e["w"] / 4
                     if tot < lo:
                         tgt += lo - tot
-                elif tot < lo or tot > hi:
-                    tgt += (lo - tot) if tot < lo else (hi - tot)
+                else:
+                    lo, hi = -e["w"] / 2 + hwc + 0.2, e["w"] / 2 - hwc - 0.2
+                    if tot < lo or tot > hi:
+                        tgt += (lo - tot) if tot < lo else (hi - tot)
+                if worst is not None and abs(worst[1] - (tgt - c.avoid)) > 0.3:     # can't get round it: stop short
+                    bgap = worst[0]
+                    vlim = min(vlim, max(0.0, (bgap - 1.8) * 0.7))
                 vlim = min(vlim, 7.0)
         c.avoid += max(-1.5 * dt, min(1.5 * dt, tgt - c.avoid))
         ytgt = 0.0
@@ -1231,7 +1246,7 @@ class Traffic:
                 vlim = min(vlim, 4.5 if fwd > 14.0 else (1.0 if abs(c.yld - ytgt) > 0.4 else 0.0))
                 break
         c.yld += max(-1.8 * dt, min(1.8 * dt, ytgt - c.yld))
-        return vlim
+        return vlim, bgap
 
     def _free(self, c, off, ahead):
         """Is the strip beside/in front of car c, moved sideways by `off` (to its left), empty for `ahead` metres?"""
@@ -1279,7 +1294,7 @@ class Traffic:
             h.setdefault((int(c.x // 16), int(c.y // 16)), []).append((c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c, c.h))
         ph, ems = {}, []                                      # kerb-parked cars (for swerving) and emergency vehicles
         for b in bodies:
-            if b.parked_idx is not None and b.speed < 0.3:
+            if b.speed < 0.3 and not b.air:                     # standing cars (parked, wrecks, abandoned): drive round them
                 ph.setdefault((int(b.x // 16), int(b.y // 16)), []).append((b.x, b.y, vehicles.HALF_W[b.kind], vehicles.HALF_L[b.kind], b.h))
                 continue
             if b.service and not b.out:
@@ -1296,7 +1311,7 @@ class Traffic:
         for c in self.cars:
             e = w.edges[c.e]
             L = e["len"]
-            vmax = min(e["speed"] * c.pace * 0.9, vehicles.PERF[c.kind][0] * 0.8)
+            vmax = min(e["speed"] * c.pace * (1.05, 1.12, 1.2, 1.3)[ag], vehicles.PERF[c.kind][0] * 0.9)      # at about the limit, more in a nervous city
             if w.hilly:                                           # engines labour uphill, brakes hold downhill
                 sl = c.pitch
                 vmax *= max(0.4, 1.0 - 4.5 * sl) if sl > 0 else min(1.2, 1.0 - 1.2 * sl)
@@ -1320,9 +1335,11 @@ class Traffic:
                 at_red = True                                      # queueing for a red light is not a jam to escape
             if c.nxt is None and L - c.s < 35.0:
                 self._pick(c)
-            vlim = self._courtesy(c, e, vlim, ems, ph, dt)
+            vlim, bgap = self._courtesy(c, e, vlim, ems, ph, dt)
             if c.ghost <= 0:
                 gap = self.scan(c, 9.0 + c.v * 2.4)
+                if bgap is not None and (gap is None or bgap < gap):
+                    gap = bgap                                   # a standing car it can't get round counts as a blocker
                 if c.rev > 0:
                     vlim = 0.0
                 elif gap is not None:
@@ -2205,7 +2222,7 @@ class Sim:
                 tmp = self.traffic.make_body(c)
                 tmp.parked_idx = None
                 r = collide_bodies(b, tmp, vehicles.PERF[b.kind][4], vehicles.PERF[tmp.kind][4])
-                if r and r[0] > 2.0:
+                if r and r[0] > (12.0 if b.service or vehicles.LARGE[c.kind] else 7.0):     # a real crash, not a knock
                     tmp.empty = True
                     self.bodies.append(tmp)
                     self.traffic.cars.remove(c)
@@ -2217,9 +2234,13 @@ class Sim:
                     if b.player_car and self.mode == "car" and b.health > 0:
                         self._pay(min(80, int(r[0] * 4)), r[1], r[2])
                     break
-                elif r:                                  # light touch: the AI car is pushed out too and stops
+                elif r:                                  # light touch / small knock: shoved aside, it brakes and drives on
                     c.x, c.y, c.h = tmp.x, tmp.y, tmp.h
-                    c.v = 0.0
+                    c.v = min(c.v, 1.0)
+                    if r[0] > 2.0:
+                        ev("crash", body=b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
+                        if b.player_car and self.mode == "car" and b.health > 0:
+                            self._pay(min(30, int(r[0] * 2)), r[1], r[2])
         self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, self.walker if self.mode == "foot" else None)
         self._cull_t -= dt
         if self._cull_t <= 0:                       # thin the crowd / traffic when the clock says it is quiet
