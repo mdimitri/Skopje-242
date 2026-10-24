@@ -4,7 +4,7 @@ The game plays AI-generated sound effects from an external library and falls bac
 
 ## Artist workflow
 
-1. Launch the game once. It writes one request JSON per missing sound into `sound_requests/` (199 files, 5-10 versions each; loops are 20-30 s, one-shots 1-10 s). Already-finished sounds are never requested again; existing request files are never overwritten.
+1. Launch the game once. It writes one request JSON per missing sound into `sound_requests/` (219 files, 5-10 versions each; loops are 20-30 s, one-shots 1-10 s). Already-finished sounds are never requested again; existing request files are never overwritten.
 2. Run the MOSS-SoundEffect batch worker with `--requests <game>\\sound_requests --output <game>\\library` (it deletes each request when done), or copy the JSONs into the worker's own `requests/` and copy its `library/` back into the game folder. Copy, don't move, if you work with separate folders: the game recreates a request only when neither the file nor a finished sidecar exists.
 3. Launch the game again. The console prints `[sound] library: N sounds found`. Done sounds are used immediately; the rest stay procedural.
 

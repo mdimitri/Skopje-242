@@ -306,6 +306,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
                 span = r.hi - r.lo
                 cfg[r.key] = max(r.lo, min(r.hi, cfg[r.key] + d * span * (0.05 if r.key != "hour" else 0.0417)))
             return True
+        if aud is not None and (rl.is_key_pressed(rl.KEY_DOWN) or rl.is_key_pressed(rl.KEY_UP)):
+            aud.play("ui_click", 0.5)
         if rl.is_key_pressed(rl.KEY_DOWN):
             sel = (sel + 1) % len(rows)
             while rows[sel].kind == "head":
@@ -319,6 +321,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
         if rl.is_key_pressed(rl.KEY_RIGHT) or rl.is_key_pressed_repeat(rl.KEY_RIGHT):
             changed = step(1)
         act = rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE)
+        if aud is not None and act:
+            aud.play("ui_confirm", 0.6)
         clicked = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and hover is not None
         r = rows[sel]
         slider_like = r.kind == "slider" or (r.kind == "choice" and r.bar)
