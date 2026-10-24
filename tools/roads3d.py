@@ -6,6 +6,7 @@ pavements / markings are cut away where another road's asphalt crosses them.  Ev
 (material 'solid': vertex colours on a white pixel), streamed per chunk like the buildings.
 """
 import math
+import os
 
 import numpy as np
 
@@ -422,6 +423,16 @@ def _ribbon(e, i, J, plates):
     return P, hwv, fr, k0, k1
 
 
+def _spath(P, k0, k1, frac):
+    """Path length along P from vertex k0 to vertex k1, plus frac of the segment k1 (k0 <= k1; frac in 0..1)."""
+    s = 0.0
+    for q in range(k0, k1):
+        s += math.hypot(P[q + 1][0] - P[q][0], P[q + 1][1] - P[q][1])
+    if k1 + 1 < len(P):
+        s += frac * math.hypot(P[k1 + 1][0] - P[k1][0], P[k1 + 1][1] - P[k1][1])
+    return s
+
+
 def _offset_v(P, fr, hwv, side, extra=0.0):
     return [(p[0] + f[0][0] * (h + extra) * side * f[1], p[1] + f[0][1] * (h + extra) * side * f[1]) for p, f, h in zip(P, fr, hwv)]
 
@@ -564,6 +575,11 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     for i_, e_ in enumerate(edges):
         _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
     joints = _joints(edges)
+    deg = {}
+    for e_ in edges:
+        if e_["drive"] or e_["walk"]:
+            deg[e_["a"]] = deg.get(e_["a"], 0) + 1
+            deg[e_["b"]] = deg.get(e_["b"], 0) + 1
     plates = _plate_nodes(edges, joints)
     ribs = {}
     out = Out(chunk_of, T)
@@ -606,6 +622,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         for p, end_ in ((pts[0], 0), (pts[-1], 1)):
             if (i, end_) in joints:                            # shared cross-section: nothing to fill
                 continue
+            if e["bridge"] and deg.get(e["a"] if end_ == 0 else e["b"], 0) >= 2:     # deck meets its approach road: no bulge over it
+                continue
             r = hw - (0.0 if foot else 0.0)
             ring = [(p[0] + math.cos(a * math.pi / 6) * r, p[1] + math.sin(a * math.pi / 6) * r) for a in range(12)]
             for k in range(0, 12, 2):
@@ -628,7 +646,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                         o1 = (outer[k][0] + (outer[k + 1][0] - outer[k][0]) * t1, outer[k][1] + (outer[k + 1][1] - outer[k][1]) * t1)
                         mx, my = (i0[0] + o1[0]) * 0.5, (i0[1] + o1[1]) * 0.5
                         piece += 1
-                        if cov.near_junction(mx, my) and (cov.covered(mx, my, i, False) or cov.covered(i0[0], i0[1], i, False)
+                        near_cut = (RK0 > 0 and _spath(RP, RK0, k, t0) < 14.0) or (RK1 < len(RP) - 1 and _spath(RP, k, RK1, 0.0) - t1 * ln < 14.0)
+                        if not near_cut and cov.near_junction(mx, my) and (cov.covered(mx, my, i, False) or cov.covered(i0[0], i0[1], i, False)
                                                          or cov.covered(o1[0], o1[1], i, False)):
                             continue
                         pav = 178 + (4 if piece % 2 else -4) + (jit * 0)
@@ -636,6 +655,25 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                         out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), pc)
                         out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]),
                                  (150, 148, 142), 0.78)
+        # dead ends: the pavement wraps round the rounded asphalt end instead of stopping flush with it
+        if cls in SIDEWALK and not e["bridge"]:
+            for end_ in (0, 1):
+                nd = e["a"] if end_ == 0 else e["b"]
+                if (i, end_) in joints or nd in plates or deg.get(nd, 0) != 1:
+                    continue
+                p_ = pts[0] if end_ == 0 else pts[-1]
+                da = _away(e, end_)
+                nx_, ny_ = -da[1], da[0]
+                prev = None
+                for q in range(9):
+                    th = math.pi * q / 8
+                    ux, uy = nx_ * math.cos(th) - da[0] * math.sin(th), ny_ * math.cos(th) - da[1] * math.sin(th)
+                    cur = ((p_[0] + ux * hw, p_[1] + uy * hw), (p_[0] + ux * (hw + SW_W), p_[1] + uy * (hw + SW_W)))
+                    if prev:
+                        (i0, o0), (i1, o1) = prev, cur
+                        out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (172, 168, 158))
+                        out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (150, 148, 142), 0.78)
+                    prev = cur
         # lane markings
         if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
             _markings(out, cov, i, e, pts, fr, y + 0.025)
@@ -649,9 +687,40 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     _corners(out, edges, plates, ribs)
     for x, yy, ax, ay, w, *_r in xwalks:                      # zebra crossings + stop lines
         _zebra(out, x, yy, ax, ay, w)
+    if os.environ.get("ROADS_DEBUG"):
+        _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
     out.flush(add, mat)
     pout.flush(add, mat)
     return out.n + pout.n, piers
+
+
+def _debug_dump(out, edges, prefix, S=8.0, R=45.0, count=14):
+    """ROADS_DEBUG=<path prefix>: writes top-down PNGs (<prefix>_N.png) around the busiest junctions, bridge ends and dead ends."""
+    from PIL import Image, ImageDraw
+    tris = []
+    for (p, c, deck) in out.d.values():
+        for k in range(0, len(p), 3):
+            tris.append((p[k:k + 3], c[k], deck is not None))
+    tris.sort(key=lambda t: max(q[1] for q in t[0]) + (1.0 if t[2] else 0.0))
+    deg, at = {}, {}
+    for e in edges:
+        for nd, q in ((e["a"], e["pts"][0]), (e["b"], e["pts"][-1])):
+            deg[nd] = deg.get(nd, 0) + 1
+            at[nd] = (q, e["bridge"])
+    picks = sorted(at, key=lambda n: (-(at[n][1]) * 5 - deg[n]))[:count]
+    for n_, nd in enumerate(picks):
+        (cx, cy), _b = at[nd]
+        W = int(2 * R * S)
+        im = Image.new("RGB", (W, W), (60, 110, 60))
+        d = ImageDraw.Draw(im)
+        for t, col, _deck in tris:
+            if not any(abs(q[0] - cx) < R and abs(q[2] - cy) < R for q in t):
+                continue
+            d.polygon([((q[0] - cx + R) * S, (q[2] - cy + R) * S) for q in t], fill=tuple(int(v) for v in col[:3]))
+        im.save(f"{prefix}_{n_}.png")
+
+
+
 
 
 def _piers(pout, piers, deck, T):
