@@ -177,7 +177,7 @@ class Hud:
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
                 font.draw_text((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
-                font.draw_text(font.fit(gun, 18, 196), sw - 196, sh - 160, 18, rl.Color(255, 230, 140, 255))
+                font.draw_text(font.fit(gun, 18, 240), sw - 260, sh - 220, 18, rl.Color(255, 230, 140, 255))
                 self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
