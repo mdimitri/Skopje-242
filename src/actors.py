@@ -107,7 +107,7 @@ def bump(b, impact, wx, wy, nx, ny):
     """Apply damage + a dent. (nx,ny) is the normal pointing from the obstacle toward the car."""
     if impact < 1.2:
         return
-    b.health -= max(0.0, impact - 2.0) * 3.4 * (0.3 if b.service else 0.5 if vehicles.LARGE[b.kind] else 1.0)   # sturdy builds
+    b.health -= max(0.0, impact - 2.0) * 3.4 / 1.33 * (0.3 if b.service else 0.5 if vehicles.LARGE[b.kind] else 1.0)   # sturdy builds
     mag = min(0.08 + impact * 0.04, 0.8)
     dx, dy = wx - b.x, wy - b.y
     c, s = math.cos(b.h), math.sin(b.h)
@@ -189,7 +189,7 @@ def settle(b, w, dt, ev=None):
             imp = -b.vz
             b.az, b.vz, b.air = tgt, 0.0, False
             if imp > 5.0:
-                b.health -= (imp - 5.0) * 5.0
+                b.health -= (imp - 5.0) * 5.0 / 1.33          # 33% sturdier cars
                 b.dirty = True
                 if ev:
                     ev("fall", body=b, speed=imp, x=b.x, y=b.y)

@@ -305,6 +305,8 @@ for _i, _v in enumerate(_V):
     if _o:
         for _k, _x in enumerate(_o):
             _b[_k] = _x
+    _b[0] *= 0.75                     # Martin: 25% lower top speed and acceleration all round
+    _b[1] *= 0.75
     PERF.append(tuple(_b))
 
 # ---------------------------------------------------------------------------- fighting: (hit points, chance to fight back, punch damage)
