@@ -218,7 +218,7 @@ def yard(g, cx, cz, hw, hd, bx0, bz0, bx1, bz1, gate_side, rr, taken):
             _prism(g, s[0] + 2.0, B, s[1], 0.3, 0.9, 8, (60, 90, 170))
 
 
-def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, log=print, max_sites=110):
+def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, log=print, max_sites=900, per_km=4):
     """density(x, y): share of built-up ground around a point; free_mask: bool grid of empty ground (True = free);
     cell: its resolution in m.  -> (posts, works, parked)"""
     import vehicles
@@ -250,23 +250,31 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
                 cands.append((x, y))
     rr.shuffle(cands)
     placed, posts, works, parked = [], [], [], []
+    per_km_n = {}                                                       # sites per 1 km square: every built-up square gets a few
+    pg = {}                                                          # placed sites on a 100 m grid (spacing test)
     for x, y in cands:
         if len(works) >= max_sites:
             break
-        if any(abs(x - px) < 90 and abs(y - py) < 90 for px, py in placed):
+        km = (int((x + hx) // 1000), int((y + hy) // 1000))
+        if per_km_n.get(km, 0) >= per_km:
+            continue
+        gk = (int(x // 100), int(y // 100))
+        if any(abs(x - px) < 70 and abs(y - py) < 70 for a in (-1, 0, 1) for b in (-1, 0, 1) for px, py in pg.get((gk[0] + a, gk[1] + b), ())):
             continue
         for w, d in SIZES:
             x0, y0 = x - w / 2 - 2, y - d / 2 - 2                     # a 2 m margin of free ground around the fence
             if not all_free(x0, y0, w + 4, d + 4):
                 continue
-            if density(x, y) < 0.05:
+            if density(x, y) < 0.03:
                 break
             if any(abs(t[0] - x) < w / 2 + 6 and abs(t[1] - y) < d / 2 + 6 for k in ((int(x // 40) + a, int(y // 40) + b) for a in (-1, 0, 1) for b in (-1, 0, 1)) for t in tg.get(k, ())):
                 continue
             hs = [th(x + sx * w / 2, y + sy * d / 2) for sx in (-1, 0, 1) for sy in (-1, 0, 1)]
-            if max(hs) - min(hs) > 1.1:
+            if max(hs) - min(hs) > 1.6:
                 continue
             placed.append((x, y))
+            pg.setdefault(gk, []).append((x, y))
+            per_km_n[km] = per_km_n.get(km, 0) + 1
             LOTS.append((x - w / 2 - 1, y - d / 2 - 1, x + w / 2 + 1, y + d / 2 + 1))
             r = random.Random(int(x * 7 + y * 13))
             stage = r.choice((0, 1, 2, 3, 3, 4, 4, 5, 5))
