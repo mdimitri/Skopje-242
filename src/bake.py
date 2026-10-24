@@ -148,7 +148,9 @@ def bake_chunk(world, cx, cy, rt, decals=()):
             for i in ch["b"]:                 # ground contact + cast shadows
                 b = B[i]
                 fill_tris(b["v"], b["tri"], (120, 116, 112, 255))
-                fill_tris(b["v"], b["tri"], (20, 20, 30, 78), b["h"] * 0.32, b["h"] * 0.22)
+                k = min(1.0, 9.0 / (b["h"] * 0.32 + 1e-6))      # cap the cast length so tall blocks don't leave detached ghost footprints
+                for f in (0.25, 0.5, 0.75, 1.0):               # sweep the footprint along the shadow direction
+                    fill_tris(b["v"], b["tri"], (20, 20, 30, 26), b["h"] * 0.32 * k * f, b["h"] * 0.22 * k * f)
             for ti in ch["t"]:
                 x, y, r, _sh = world.trees[ti]
                 disc(x + 1.6, y + 1.2, r * 0.95, (10, 25, 10, 70), 8)
