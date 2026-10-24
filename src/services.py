@@ -34,6 +34,7 @@ class Job:
         self.spray_t = 0.0
         self.said = False
         self.age = 0.0
+        self.off = self.off_goal = self.off_t = self.cool = 0.0     # detour sideways round a blockage (see _ctl)
 
 
 class Services:
@@ -163,6 +164,22 @@ class Services:
         while j.pi < len(j.path) - 1 and math.hypot(j.path[j.pi][0] - b.x, j.path[j.pi][1] - b.y) < 7.0:
             j.pi += 1
         tx, ty = j.path[j.pi]
+        # a siren may swing onto the oncoming lane or briefly up the kerb round whatever blocks the road, then comes back
+        gap0 = self._gap(b, 9.0 + max(vf, 0.0) * 1.5)
+        j.cool = max(0.0, j.cool - dt)
+        if j.off_goal:
+            j.off_t += dt
+            timed = j.off_t > 5.5
+            if timed or (j.off_t > 1.5 and gap0 is None and self._gap(b, 14.0, -j.off_goal) is None):
+                j.off_goal, j.cool = 0.0, 4.0 if timed else 0.5
+        elif gap0 is not None and gap0 < 9.0 and vf < 3.0 and j.cool <= 0:
+            for o in (3.0, -3.0, 4.6, -4.6):
+                if self._gap(b, 16.0, o) is None:
+                    j.off_goal, j.off_t = o, 0.0
+                    break
+        j.off += max(-2.0 * dt, min(2.0 * dt, j.off_goal - j.off))
+        if j.off:
+            tx, ty = tx - math.sin(b.h) * j.off, ty + math.cos(b.h) * j.off
         err = _wrap(math.atan2(ty - b.y, tx - b.x) - b.h)
         dend = math.hypot(j.path[-1][0] - b.x, j.path[-1][1] - b.y)
         vmax = vehicles.PERF[b.kind][0] * 0.55
@@ -171,7 +188,7 @@ class Services:
         if k > j.pi:
             bend = abs(_wrap(math.atan2(j.path[k][1] - ty, j.path[k][0] - tx) - math.atan2(ty - b.y, tx - b.x)))
             v = min(v, max(4.0, v_cruise * (1.0 - min(0.65, bend / 1.2))))
-        gap = self._gap(b, 10.0 + max(vf, 0.0) * 2.6)          # never drive into anything: brake for what is ahead
+        gap = self._gap(b, 10.0 + max(vf, 0.0) * 2.6, j.off_goal)          # never drive into anything: brake for what is ahead
         if gap is not None:
             v = min(v, max(0.0, (gap - 2.5) * 0.7))
         if stop_at_end:
@@ -185,7 +202,7 @@ class Services:
             b.ctl = (-1.0, max(-1.0, min(1.0, err * 1.8)), gap < 3.0)         # brake hard
             return False
         b.ctl = (thr, max(-1.0, min(1.0, err * 1.8)), stop_at_end and dend < 9.0 and v < 0.5)
-        if abs(vf) < 0.6 and v > 2.5:
+        if abs(vf) < 0.6 and (v > 2.5 or (gap is not None and gap < 3.0)):      # stalled, or nosed into something
             j.stuck += dt
             if j.stuck > 3.0:
                 j.stuck, j.rev = 0.0, 1.6
@@ -196,17 +213,18 @@ class Services:
             j.stuck = 0.0
         return dend < 9.0 and abs(vf) < 1.0
 
-    def _gap(self, b, look):
+    def _gap(self, b, look, lat=0.0):
         """Free distance ahead of body b along its heading (cars, other bodies, people on foot), or None if clear."""
         sim = self.sim
         hx, hy = math.cos(b.h), math.sin(b.h)
         rx, ry = -hy, hx
+        bx, by = b.x + rx * lat, b.y + ry * lat                # probe from a sideways-moved position (detour check)
         hw_b, hl_b = vehicles.HALF_W[b.kind] + 0.3, vehicles.HALF_L[b.kind]
         best = None
 
         def test(ox, oy, hw, hl, oh):
             nonlocal best
-            dx, dy = ox - b.x, oy - b.y
+            dx, dy = ox - bx, oy - by
             fwd = dx * hx + dy * hy
             if fwd < 0.3 or fwd > look + hl:
                 return
