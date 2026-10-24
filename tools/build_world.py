@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 16
+VERSION = 17
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1136,8 +1136,15 @@ def main():
             c0, c1, r0, r1 = max(0, c - rad), min(NCX - 1, c + rad), max(0, r_ - rad), min(NCY - 1, r_ + rad)
             return (bi[r1 + 1, c1 + 1] - bi[r0, c1 + 1] - bi[r1 + 1, c0] + bi[r0, c0]) / max(1, (r1 - r0 + 1) * (c1 - c0 + 1))
         cp, works, cparked = construction.build(density, None, free_mask, CELL, HX, HY, add_c, chunk_of, lambda x, y: T.hs(x, y),
-                                                [(q[0], q[1]) for q in trees] + [(q[0], q[1]) for q in posts])
+                                                [(q[0], q[1]) for q in posts])
         posts = list(posts) + cp
+        lots = construction.LOTS
+        if lots and trees:                                      # a site clears its lot of trees
+            ta = np.array([(t[0], t[1]) for t in trees])
+            keep = np.ones(len(trees), bool)
+            for a_, b_, c_, d_ in lots:
+                keep &= ~((ta[:, 0] >= a_) & (ta[:, 0] <= c_) & (ta[:, 1] >= b_) & (ta[:, 1] <= d_))
+            trees = [t for t, k in zip(trees, keep) if k]
         parked = list(parked) + cparked
     except Exception as e:  # noqa: BLE001 - decoration
         import traceback

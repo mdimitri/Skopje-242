@@ -23,8 +23,9 @@ FENCE = ((60, 110, 150), (60, 110, 150), (200, 200, 205), (70, 130, 90))
 YEL, NET = (232, 188, 40), (70, 150, 90)
 B = 0.05                                    # the dirt pad top above the terrain
 FH = 2.3                                    # fence panel height
-SIZES = ((46, 38), (36, 30), (28, 24))      # lot rectangles tried, largest first (m)
+SIZES = ((46, 38), (36, 30), (28, 24), (22, 18))      # lot rectangles tried, largest first (m)
 FLOOR_H = 3.1
+LOTS = []                                   # (x0, y0, x1, y1) of every placed lot: build_world drops the trees inside
 
 
 def _wedge(g, x0, z0, x1, z1, w, y_hi, col):
@@ -217,7 +218,7 @@ def yard(g, cx, cz, hw, hd, bx0, bz0, bx1, bz1, gate_side, rr, taken):
             _prism(g, s[0] + 2.0, B, s[1], 0.3, 0.9, 8, (60, 90, 170))
 
 
-def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, log=print, max_sites=48):
+def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, log=print, max_sites=110):
     """density(x, y): share of built-up ground around a point; free_mask: bool grid of empty ground (True = free);
     cell: its resolution in m.  -> (posts, works, parked)"""
     import vehicles
@@ -252,13 +253,13 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
     for x, y in cands:
         if len(works) >= max_sites:
             break
-        if any(abs(x - px) < 150 and abs(y - py) < 150 for px, py in placed):
+        if any(abs(x - px) < 90 and abs(y - py) < 90 for px, py in placed):
             continue
         for w, d in SIZES:
             x0, y0 = x - w / 2 - 2, y - d / 2 - 2                     # a 2 m margin of free ground around the fence
             if not all_free(x0, y0, w + 4, d + 4):
                 continue
-            if density(x, y) < 0.10:
+            if density(x, y) < 0.05:
                 break
             if any(abs(t[0] - x) < w / 2 + 6 and abs(t[1] - y) < d / 2 + 6 for k in ((int(x // 40) + a, int(y // 40) + b) for a in (-1, 0, 1) for b in (-1, 0, 1)) for t in tg.get(k, ())):
                 continue
@@ -266,6 +267,7 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
             if max(hs) - min(hs) > 1.1:
                 continue
             placed.append((x, y))
+            LOTS.append((x - w / 2 - 1, y - d / 2 - 1, x + w / 2 + 1, y + d / 2 + 1))
             r = random.Random(int(x * 7 + y * 13))
             stage = r.choice((0, 1, 2, 3, 3, 4, 4, 5, 5))
             gate = r.randrange(4)

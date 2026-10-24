@@ -42,6 +42,7 @@ import geo as geo_mod   # noqa: E402
 import gl3d          # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
+import works as works_mod   # noqa: E402
 from actors import Body, Sim   # noqa: E402
 from bake import PPM, Streamer, bake_overview   # noqa: E402
 import fx as fx_mod   # noqa: E402
@@ -402,7 +403,6 @@ def main():
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
     log(f"[game] playgrounds / schools / pitches: {len(sim.kids.sites)}")
-    import works as works_mod
     sim.works = works_mod.Works(sim)
     log(f"[game] building sites: {len(sim.works.sites)}")
     pend_say = {}
@@ -911,7 +911,7 @@ def main():
             aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / 150.0) * 0.55, 1.0, "sfx")
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
-        aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / sim.works.HEAR) ** 1.5, 1.0, "ambient")
+        aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
         dk = sim.clock.dark
         amb_state["dens"] += (density_at(fx_, fy_) - amb_state["dens"]) * 0.02
         dn = amb_state["dens"]
