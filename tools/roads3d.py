@@ -867,6 +867,11 @@ def lanes_per_way(e):
 def _markings(out, cov, i, e, pts, fr, y):
     w, rk = e["w"], rank_of(e["cls"])
     white, yellow = (236, 234, 224), (232, 206, 96)
+    n_ = lanes_per_way(e)
+    if n_ >= 3:                                              # 3+ lanes a side: the kerb lane is painted yellow, bus only (cars ignore it)
+        lw = w / n_ if e["ow"] else w / 2 / n_
+        for sgn in ((1,) if e["ow"] else (1, -1)):
+            _line(out, cov, i, e, pts, fr, sgn * (w / 2 - lw / 2), y - 0.008, lw - 0.35, (214, 184, 70), False, rk)
     if e["ow"]:
         lanes = lanes_per_way(e)
         for k in range(1, lanes):

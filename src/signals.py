@@ -20,7 +20,7 @@ class Signals:
         self.by_edge = {}
         self.nodes = {}                                  # junction -> [(x, y), [signal indices]]
         rank = {}
-        for i, (node, ei, end, grp, lx, lz, jx, jz) in enumerate(self.items):
+        for i, (node, ei, end, grp, lx, lz, jx, jz, *_h) in enumerate(self.items):
             self.by_edge[(ei, end)] = i
             self.nodes.setdefault(node, [(jx, jz), []])[1].append(i)
             r = RANK.get(world.edges[ei]["cls"].replace("_link", ""), 0) if hasattr(world, "edges") else 0
@@ -34,7 +34,7 @@ class Signals:
 
     def state(self, i):
         """0 green, 1 yellow, 2 red for signal i."""
-        node, _e, _end, grp, _lx, _lz, jx, _jz = self.items[i]
+        node, _e, _end, grp, _lx, _lz, jx, _jz, *_h = self.items[i]
         p = self.pre.get(node)
         if p is not None and p[1] > self.t:
             return 0 if grp == p[0] else 2
@@ -57,7 +57,7 @@ class Signals:
                 continue
             best, grp = -2.0, None
             for i in idx:                                # the approach it comes along points the same way as it drives
-                _n, _e, _end, g, lx, lz, _jx, _jz = self.items[i]
+                _n, _e, _end, g, lx, lz, _jx, _jz, *_h = self.items[i]
                 ax, ay = self._axis(i)
                 d = ax * hx + ay * hy
                 if d > best:
@@ -69,7 +69,7 @@ class Signals:
         """Unit direction in which traffic on signal i's approach drives into the junction."""
         a = self.__dict__.setdefault("_ax", {})
         if i not in a:
-            _n, ei, end, _g, _lx, _lz, jx, jz = self.items[i]
+            _n, ei, end, _g, _lx, _lz, jx, jz, *_h = self.items[i]
             p = self.edges[ei]["pts"]
             q = p[-2] if end == 1 else p[1]              # the vertex before the junction end
             dx, dy = jx - q[0], jz - q[1]
@@ -87,8 +87,9 @@ class Signals:
         x0, y0, x1, y1 = rect
         for i, it in enumerate(self.items):
             lx, lz = it[4], it[5]
+            hb = it[8] if len(it) > 8 else 2.95
             if x0 - 5 < lx < x1 + 5 and y0 - 5 < lz < y1 + 5:
                 st = self.state(i)
                 y = ground_y(lx, lz)
-                rl.draw_cube(rl.Vector3(lx, y + 3.12 + 0.30 * (2 - (2, 1, 0)[st]), lz), 0.38, 0.22, 0.38, COLS[st])
-                rl.draw_cube(rl.Vector3(lx, y + 4.03, lz), 0.4, 0.05, 0.4, COLS[st])
+                rl.draw_cube(rl.Vector3(lx, y + hb + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), lz), 0.38, 0.22, 0.38, COLS[st])
+                rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.4, 0.05, 0.4, COLS[st])

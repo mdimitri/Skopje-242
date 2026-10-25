@@ -49,6 +49,7 @@ class Body:
         self.x, self.y, self.h = x, y, h
         self.vx = self.vy = self.w = 0.0
         self.steer = 0.0
+        self.wheel = 0.0             # front-wheel angle drawn (rad)
         self.kind, self.color = kind, color
         self.health = 100.0
         self.dents = []              # (lx, lz, nx, nz, mag) in local space
@@ -132,6 +133,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     vf = p.vx * fx + p.vy * fy
     p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt)
     maxang = STEER / (1.0 + abs(vf) / (8.0 if L_ < 6 else 13.0))
+    p.wheel = p.steer * maxang
     if abs(vf) > 0.15:
         om = vf / wb * math.tan(p.steer * maxang)
         if handbrake:

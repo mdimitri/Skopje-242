@@ -63,19 +63,49 @@ def _ngon(r, n, rot=0.0, cy=0.0):
     return [(r * math.cos(rot + 2 * math.pi * i / n), cy + r * math.sin(rot + 2 * math.pi * i / n)) for i in range(n)]
 
 
-def signal_pole(x, z, fx, fz, rx, rz, lit):
+def signal_pole(x, z, fx, fz, rx, rz, lit, arm=0.75, mast=False):
+    """Kerb pole with a head hanging over the road; mast=True: a tall pole whose arm reaches `arm` m over the lanes and carries the head."""
     g = G()
-    g.box(x, 0, z, 0.14, 3.9, 0.14, (62, 64, 70))
-    hx, hz = x - rx * 0.75, z - rz * 0.75                      # housing hangs over the road
-    g.box(x - rx * 0.38, 3.55, z - rz * 0.38, 0.1 + abs(rx) * 0.7, 0.07, 0.1 + abs(rz) * 0.7, (62, 64, 70))
-    g.box(hx, 2.95, hz, 0.34, 1.05, 0.34, (28, 28, 32))
+    col = (62, 64, 70)
+    hb = 4.75 if mast else 2.95                                 # underside of the housing
+    g.box(x, 0, z, 0.2 if mast else 0.14, 6.1 if mast else 3.9, 0.2 if mast else 0.14, col)
+    hx, hz = x - rx * arm, z - rz * arm                         # housing hangs over the road
+    if mast:
+        g.box(x - rx * arm / 2, 5.75, z - rz * arm / 2, 0.14 + abs(rx) * arm, 0.12, 0.14 + abs(rz) * arm, col)
+    else:
+        g.box(x - rx * 0.38, 3.55, z - rz * 0.38, 0.1 + abs(rx) * 0.7, 0.07, 0.1 + abs(rz) * 0.7, col)
+    g.box(hx, hb, hz, 0.34, 1.05, 0.34, (28, 28, 32))
     cols = ((230, 40, 40), (240, 190, 30), (50, 220, 90))
     for k, c in enumerate(cols):
         on = (k == lit)                                         # lit = -1: all dark, the game draws the live lamp
         cc = c if on else tuple(int(v * 0.22) for v in c)
-        g.vpoly(hx, 3.0 + 0.30 * (2 - k) + 0.12, hz, fx, fz, _ngon(0.1, 8, 0.4), cc, 0.18)
+        g.vpoly(hx, hb + 0.05 + 0.30 * (2 - k) + 0.12, hz, fx, fz, _ngon(0.1, 8, 0.4), cc, 0.18)
     if lit >= 0:
-        g.box(hx, 4.0, hz, 0.38, 0.05, 0.38, tuple(cols[lit]))    # lit lamp is also visible from above
+        g.box(hx, hb + 1.05, hz, 0.38, 0.05, 0.38, tuple(cols[lit]))    # lit lamp is also visible from above
+    return g
+
+
+_BUS_GLYPHS = {"B": ("110", "101", "110", "101", "110"), "U": ("101", "101", "101", "101", "111"),
+               "S": ("111", "100", "111", "001", "111")}
+
+
+def bus_text(x, z, tx, tz, hs=None):
+    """White BUS painted on the road at (x, z) for traffic driving along (tx, tz): the first letter nearest the driver, tops pointing ahead; hs(x, z) = terrain height, so the letters follow a sloping road."""
+    g = G()
+    h0 = hs(x, z) if hs else 0.0
+    rx, rz = -tz, tx                                           # across the lane
+    cw, ch, gap = 0.3, 0.42, 0.7
+    for li, ch_ in enumerate("SUB"):                            # read top to bottom, so the word's first letter is the farthest one
+        base = (li - 1) * (5 * ch + gap)
+        for row, bits in enumerate(_BUS_GLYPHS[ch_]):
+            along = base + (2 - row) * ch
+            for col in range(3):
+                if bits[col] == "1":
+                    across = (col - 1) * cw
+                    bx, bz = x + tx * along + rx * across, z + tz * along + rz * across
+                    y_ = 0.15 + (hs(bx, bz) - h0 if hs else 0.0)             # a flat quad facing up (a box's own top faces down seen from above)
+                    c_ = [(bx + tx * du + rx * dv, y_, bz + tz * du + rz * dv) for du, dv in ((-ch / 2, -cw / 2), (ch / 2, -cw / 2), (ch / 2, cw / 2), (-ch / 2, cw / 2))]
+                    g.quad(c_[0], c_[3], c_[2], c_[1], (236, 234, 224), (0, 1, 0))
     return g
 
 
@@ -142,7 +172,7 @@ def parapet(x, z, yaw, length):
 
 
 STOPS = []          # real bus stops placed by build(): (x, y, road dir x, road dir y, kerb x, kerb y, name)
-SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junction x, junction z) - filled by build()
+SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junction x, junction z, housing height) - filled by build()
 
 
 def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=None, log=print, decks=None, add_abs=None, terrain_h=None,
@@ -153,7 +183,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     STOPS.clear()
     MAT = 3
     xw, posts, lamps = [], [], []
-    counts = {"lights": 0, "signs": 0, "cross": 0, "bridges": 0, "stops": 0, "benches": 0, "bins": 0, "junk": 0}
+    counts = {"masts": 0, "lights": 0, "signs": 0, "cross": 0, "bridges": 0, "stops": 0, "benches": 0, "bins": 0, "junk": 0}
 
     # every ground-level drive road as segments in a 20 m grid: props never stand on a carriageway
     seg_grid = {}
@@ -228,6 +258,11 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     lit_osm = {n for n, lst in inc.items() if osm_sig and len(lst) >= 3 and osm_lit(
         *(edges[lst[0][0]]["pts"][0] if lst[0][1] == 0 else edges[lst[0][0]]["pts"][-1]))}
 
+    lit_pts = []                                          # positions of every lit junction so far (real ones first)
+    for n_ in lit_osm:
+        _e, _end = inc[n_][0]
+        lit_pts.append(edges[_e]["pts"][0] if _end == 0 else edges[_e]["pts"][-1])
+
     def inner(ei, end):
         """A short link between two lit nodes of one big junction: no lights inside the junction itself."""
         e = edges[ei]
@@ -244,8 +279,11 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         top = max(ranks)
         maxw = max(edges[ei]["w"] for ei, _ in lst)
         cell = (int(nx_ // 70), int(ny_ // 70))
-        if osm_sig:                                       # the real lights where the map has them
-            want_light = node in lit_osm
+        if osm_sig:                                       # the real lights where the map has them, plus main junctions the map left out
+            want_light = node in lit_osm or (len(lst) >= 3 and sum(1 for r in ranks if r >= 3) >= 2 and not any(
+                (nx_ - qx_) ** 2 + (ny_ - qy_) ** 2 < 110.0 ** 2 for qx_, qy_ in lit_pts))
+            if want_light and node not in lit_osm:
+                lit_pts.append((nx_, ny_))
         else:
             want_light = sum(1 for r in ranks if r >= 2) >= 2 and not any(
                 (cell[0] + a, cell[1] + b) in light_cells for a in (-1, 0, 1) for b in (-1, 0, 1))
@@ -262,7 +300,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             e = edges[ei]
             _p, _q, dx, dy = at(e, 0.0 if end == 0 else e["len"])
             grp = 0 if abs(dx * ux0 + dy * uy0) > 0.7 else 1
-            SIGNALS.append((node, ei, end, grp, float("nan"), float("nan"), round(nx_, 1), round(ny_, 1)))
+            SIGNALS.append((node, ei, end, grp, float("nan"), float("nan"), round(nx_, 1), round(ny_, 1), 2.95))
 
         for (ei, end), rk in zip(lst, ranks):
             e = edges[ei]
@@ -290,15 +328,18 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             if want_light and inner(ei, end):
                 pass
             elif want_light:                              # right kerb, further back, else the left kerb; lamps lit live
+                mast = w >= 9.0 and rk >= 2                  # wide main road: the head hangs from an arm over the lanes
+                arm = min(w * 0.55, 8.0) if mast else 0.75
                 for back, side in ((3.8, 1), (9.0, 1), (3.8, -1), (9.0, -1)):
                     qx, qy = px + ax * back + rx * (w / 2 + 1.0) * side, py + ay * back + ry * (w / 2 + 1.0) * side
                     if back < e["len"] - d and not_building(qx, qy) and ok(qx, qy) and put(
-                            signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1), qx, qy):
+                            signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1, arm, mast), qx, qy):
                         posts.append((qx, qy, 0.22))
                         counts["lights"] += 1
+                        counts["masts"] += mast
                         grp = 0 if abs(ax * ux0 + ay * uy0) > 0.7 else 1
-                        SIGNALS.append((node, ei, end, grp, round(qx - rx * side * 0.75, 2), round(qy - ry * side * 0.75, 2),
-                                        round(nx_, 1), round(ny_, 1)))
+                        SIGNALS.append((node, ei, end, grp, round(qx - rx * side * arm, 2), round(qy - ry * side * arm, 2),
+                                        round(nx_, 1), round(ny_, 1), 4.75 if mast else 2.95))
                         break
                 else:
                     head_only(ei, end)                    # every approach of a lit junction gets its lights
@@ -487,6 +528,10 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 put(bus_shelter(px, py, math.atan2(dy, dx)), px, py, False)
                 put(sign(px + dx * 2.2, py + dy * 2.2, rx, ry, "bus"), px + dx * 2.2, py + dy * 2.2, False)
                 posts += [(px + dx * 1.4, py + dy * 1.4, 0.25), (px - dx * 1.4, py - dy * 1.4, 0.25)]
+                bx_, by_ = qx + rx * (e["w"] / 2 - 1.2), qy + ry * (e["w"] / 2 - 1.2)
+                far = min(math.hypot(bx_ - e["pts"][0][0], by_ - e["pts"][0][1]), math.hypot(bx_ - e["pts"][-1][0], by_ - e["pts"][-1][1]))
+                if e["w"] >= 5.5 and far > 12.0:
+                    put(bus_text(bx_, by_, ry, -rx, tz), bx_, by_, False)      # traffic drives with the shelter on its right
                 STOPS.append((round(px, 1), round(py, 1), round(dx, 3), round(dy, 3), round(qx + rx * (e["w"] / 2 - 1.2), 1),
                               round(qy + ry * (e["w"] / 2 - 1.2), 1), nm))
                 counts["stops"] += 1

@@ -42,6 +42,7 @@ class Renderer:
         self._built = 0
         self.shadows = True
         self.car_models = {}
+        self.front_wheels = {}        # kind -> (axle x, radius, track half, model)
         self._own = {}                         # id(body) -> body with its own model
         self._frames = 0
         self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
@@ -105,7 +106,7 @@ class Renderer:
                 gl3d.free_model(b.model)
                 b.model = None                             # never keep a freed model if the rebuild below fails
             b.model = gl3d.car_model(b.kind, b.color, b.dents, 1.0 if b.exploded else min(1.0, b.burn / 6.0) * 0.5,
-                                     b.color < 0)
+                                     b.color < 0, True)
             b.dirty = False
             self._own[id(b)] = b
         if b.model is not None:
@@ -115,7 +116,7 @@ class Renderer:
         key = (b.kind, b.color)
         m = self.car_models.get(key)
         if m is None:
-            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, True)
+            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, True, True)
         return m
 
     def _free_orphans(self, bodies):
@@ -139,7 +140,7 @@ class Renderer:
                 if m is not None:
                     return m                                      # (none yet: build it now, a car is never invisible)
             self._built += 1
-            m = self.car_models[key] = gl3d.car_model(kind, color)
+            m = self.car_models[key] = gl3d.car_model(kind, color, (), 0.0, False, True)
         return m
 
     @staticmethod
@@ -343,7 +344,7 @@ class Renderer:
         cars, doors = [], []
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect):
-                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll))
+                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str))
                 sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
         for b in sim.bodies:
             if self._in(b.x, b.y, rect):
@@ -356,7 +357,7 @@ class Renderer:
                     self._vanish_t = t
                     self.log(f"[vanish] player car not drawn: model {m is not None} own {b.model is not None} dirty {b.dirty} "
                              f"kind {b.kind} colour {b.color} y {gy}")
-                cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll))
+                cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll, b.kind, b.wheel))
                 if b.door > 0.01:
                     doors.append((b, gy))
                 hl = vehicles.HALF_L[b.kind] + 0.1
@@ -432,18 +433,26 @@ class Renderer:
                 self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
         if self.shadows:
             self._shadow_batch(sh)
-        for x, z, h, m, tint, gy, pitch, roll in cars:
+        for x, z, h, m, tint, gy, pitch, roll, kind, ang in cars:
             if m is None:
                 continue
-            if abs(pitch) < 0.004 and abs(roll) < 0.004:
-                rl.draw_model_ex(m, V3(x, gy, z), UP, -math.degrees(h), ONE, tint)
-            else:                                            # tilt with the slope: roll, pitch, heading, then move
-                M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
-                                                          rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
-                old = m.transform
-                m.transform = M
-                rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
-                m.transform = old
+            M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
+                                                      rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+            old = m.transform
+            m.transform = M                                  # tilt with the slope: roll, pitch, heading, then move
+            rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
+            m.transform = old
+            fw = self.front_wheels.get(kind)
+            if fw is None:
+                fw = self.front_wheels[kind] = gl3d.front_wheel(kind) if kind not in vehicles.BIKES else (0, 0, 0, None)
+            wx, wr, hz, wm = fw
+            if wm is None:
+                continue
+            old = wm.transform
+            for sd in (-hz, hz):                             # front wheels turned about their own centres by the steering angle
+                wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_y(-ang), rl.matrix_translate(wx, wr, sd)), M)
+                rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
+            wm.transform = old
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
             m = self.car_models.get(key)

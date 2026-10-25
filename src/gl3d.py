@@ -454,7 +454,28 @@ def _bike_parts(ex, body_c, A, box, quad, parts):
             box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
 
 
-def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
+def _wheel_layout(st, L):
+    """(x, radius, width) of every wheel pair, the front axle first."""
+    if L > 11:
+        return [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
+    return {"bus": [(L * 0.32, 0.45, 0.26), (-L * 0.30, 0.45, 0.26)],
+            "truck": [(L * 0.36, 0.5, 0.34), (-L * 0.22, 0.5, 0.34), (-L * 0.36, 0.5, 0.34)],
+            "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, 0.34, 0.26), (-L * 0.31, 0.34, 0.26)])
+
+
+def front_wheel(kind):
+    """(axle x, track half-width z, wheel model with its centre at the origin) of a car's front wheels, which the renderer
+    turns by the steering angle (car_arrays(steer_wheels=True) leaves them out of the body)."""
+    L, W = V.DIMS[kind % V.N][:2]
+    wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], L)[0]
+    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array((158, 158, 164), np.float32))
+    rgba = np.empty((len(v), 4), np.uint8)
+    rgba[:, :3] = np.clip(c, 0, 255)
+    rgba[:, 3] = 255
+    return wx, wr, W / 2 - 0.02, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+
+
+def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
     """Vertices/colours of a car in local space (x forward, y up, z right); dents = [(lx, lz, nx, nz, mag)]."""
     kind = kind % V.N
     L, W, y0, belt, roof = V.DIMS[kind]
@@ -570,11 +591,7 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
     box(xb - 0.04, y0, 0, 0.12, bh, W * 1.0, bump_c)
     quad((xf + 0.106, y0 + 0.03, -0.2), (0, 0, 0.4), (0, 0.12, 0), (1, 0, 0), (236, 236, 226))
     quad((xb - 0.106, y0 + 0.03, -0.2), (0, 0, 0.4), (0, 0.12, 0), (-1, 0, 0), (236, 236, 226))
-    wheels = {"bus": [(L * 0.32, 0.45, 0.26), (-L * 0.30, 0.45, 0.26)],
-              "truck": [(L * 0.36, 0.5, 0.34), (-L * 0.22, 0.5, 0.34), (-L * 0.36, 0.5, 0.34)],
-              "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, 0.34, 0.26), (-L * 0.31, 0.34, 0.26)])
-    if L > 11:
-        wheels = [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
+    wheels = _wheel_layout(st, L)
     wx_list = [w[0] for w in wheels]
     for s in (-1, 1):
         zz = s * (W / 2 + 0.008)
@@ -622,7 +639,9 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False):
         for wx, wr, _wd in wheels:
             quad((wx - wr - 0.06, y0 - 0.02, zs + s * 0.002), (2 * wr + 0.12, 0, 0), (0, wr * 0.5, 0), (0, 0, s), (22, 22, 24))
     _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None)
-    for wx, wr, wd_ in wheels:                                              # wheels (not deformable)
+    for wi, (wx, wr, wd_) in enumerate(wheels):                             # wheels (not deformable)
+        if steer_wheels and wi == 0:
+            continue                                                        # the front pair is drawn separately, turned
         for s in (-1, 1):
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)))
             parts.append((v, c, False))
@@ -685,8 +704,8 @@ def door_model(kind, color):
     return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
 
 
-def car_model(kind, color, dents=(), burnt=0.0, player=False):
-    pos, uv, col = car_arrays(kind, color, dents, burnt, player)
+def car_model(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
+    pos, uv, col = car_arrays(kind, color, dents, burnt, player, steer_wheels)
     return make_model(pos, uv, col)
 
 
