@@ -302,6 +302,8 @@ class Streamer:
                 if need_g:
                     self._bake(key)
                 if need_m:
+                    if need_g and (time.perf_counter() - t0) * 1000 > budget_ms:       # the bake alone used the frame's budget: meshes next frame
+                        break
                     self._load_meshes(key)
             except Exception as e:  # noqa: BLE001 - never let one chunk kill the game
                 self.errors += 1

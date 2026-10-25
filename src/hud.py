@@ -1,6 +1,7 @@
 """HUD: speed/health, stats, minimap, full map, floating slang labels, banners, streaming bar."""
 from texts import TXT
 import math
+import numpy as np
 import random
 
 import pyray as rl
@@ -99,6 +100,7 @@ class Hud:
         self.tip_t = 0.0
         self.tip = ""
         self.markers = []            # (name, x, y) neighbourhoods drawn on the big map
+        self._poi_key, self._poi_xy = None, None
         self.pois = []               # [x, y, category, name] faint points of interest (data/osm/map_pois.json)
         self.radio_line = ""          # car radio station / song, drawn in the vehicle panel
         self.place = ("", "", 0.0)   # neighbourhood tooltip: title, line, seconds left
@@ -242,11 +244,10 @@ class Hud:
                     qx, qy = to_mm(pk[0], pk[1])
                     if mx < qx < mx + ms and my < qy < my + ms:
                         rl.draw_circle(int(qx), int(qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
-            for x, y, cat, _nm in self.pois:
-                if abs(x - fx) < 400 and abs(y - fy) < 400:
-                    qx, qy = to_mm(x, y)
-                    if mx < qx < mx + ms and my < qy < my + ms:
-                        rl.draw_circle(int(qx), int(qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
+            for x, y, cat, _nm in self._pois_near(fx, fy):
+                qx, qy = to_mm(x, y)
+                if mx < qx < mx + ms and my < qy < my + ms:
+                    rl.draw_circle(int(qx), int(qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
             for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations, named
                 qx, qy = to_mm(x, y)
                 if mx < qx < mx + ms and my < qy < my + ms:
@@ -303,6 +304,15 @@ class Hud:
             qx, qy = to_big(fx, fy)
             rl.draw_circle(int(qx), int(qy), 7, rl.Color(230, 40, 40, 255))
             font.draw_text(TXT("hud.0019"), mx, my - 30, 22, rl.Color(255, 255, 255, 255))
+
+    def _pois_near(self, fx, fy):
+        """The POIs within 400 m of (fx, fy), in list order (numpy prefilter: the list has thousands of entries)."""
+        if self._poi_key != (id(self.pois), len(self.pois)):
+            self._poi_key = (id(self.pois), len(self.pois))
+            self._poi_xy = np.array([(p[0], p[1]) for p in self.pois], np.float64).reshape(-1, 2)
+        a = self._poi_xy
+        idx = np.nonzero((np.abs(a[:, 0] - fx) < 400) & (np.abs(a[:, 1] - fy) < 400))[0]
+        return [self.pois[i] for i in idx]
 
     def _menu(self, sim, sw, sh):
         items = vehicles.KIOSK_MENU

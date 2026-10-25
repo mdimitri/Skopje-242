@@ -63,6 +63,12 @@ class Renderer:
 
     # ---------------------------------------------------------------- the whole city, far LOD: coarse terrain under the overview map
     def _overview(self):
+        self.build_overview()
+        if self._ov_model is not None:
+            rl.draw_model(self._ov_model, V3(0, 0, 0), 1.0, WHITE)
+
+    def build_overview(self):
+        """Builds the coarse model once (the loader calls it, so the first zoom-out never stalls a frame)."""
         if getattr(self, "_ov_model", None) is None:
             w = self.w
             if w.hilly:
@@ -90,8 +96,6 @@ class Renderer:
             if m is not None:
                 gl3d.set_texture(m, self.overview)
             self._ov_model = m
-        if self._ov_model is not None:
-            rl.draw_model(self._ov_model, V3(0, 0, 0), 1.0, WHITE)
 
     # ---------------------------------------------------------------- models
     def car_model(self, b):
@@ -165,6 +169,7 @@ class Renderer:
     # ---------------------------------------------------------------- scene
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
+        self._ppm = ppm
         w, st = self.w, self.st
         S = w.chunk
         self.t = t
@@ -349,8 +354,10 @@ class Renderer:
                 sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
         # peds
         peds = []
+        far2 = 90.0 ** 2 if self._ppm < 4.0 else 1e18                  # zoomed far out, people beyond 90 m from the view centre are 1-2 pixel dots: not worth a draw call each
+        mcx, mcz = (rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5
         for p in sim.peds.list:
-            if self._in(p.x, p.y, rect):
+            if self._in(p.x, p.y, rect) and ((p.x - mcx) ** 2 + (p.y - mcz) ** 2 < far2 or p.mode in ("dead", "ko", "fight")):
                 if p.mode in ("dead", "air"):
                     frame, y = 2, p.hy
                 elif p.mode == "ko":

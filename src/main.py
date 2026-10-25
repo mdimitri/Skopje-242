@@ -9,6 +9,7 @@ import random
 import subprocess
 import sys
 import threading
+import gc
 import time
 import zlib
 import traceback
@@ -358,6 +359,7 @@ def main():
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
     loader.tick(0.4, "car & pedestrian models")
+    renderer.build_overview()
     renderer.BUILD_BUDGET = 10 ** 9
     for kind in range(vehicles.N):
         renderer.ai_model(kind, 0)
@@ -365,7 +367,12 @@ def main():
     for a_ in range(vehicles.PED_COUNT):
         renderer.ped_model(a_, 0, 0, 0)
         renderer.ped_model(a_, 0, 1, 0)
+        if a_ in vehicles.WALKERS:                         # the walk cycle and the standing pose, so the first crowd never builds models in-frame
+            for fr_ in (12, 20, 21, 22, 23, 24, 25, 26, 27):
+                renderer.ped_model(a_, 0, fr_, 0)
         loader.tick(0.7 + 0.3 * a_ / vehicles.PED_COUNT, f"pedestrian models {a_ + 1}/{vehicles.PED_COUNT}")
+    for fr_ in (0, 2, 3, 4, 5, 12, 13) + tuple(range(20, 28)) + tuple(range(30, 38)):
+        renderer.ped_model(100 + cfg["lik"] % len(characters.LIKOVI), 0, fr_, 3)        # the player's own avatar: every pose it can show
     renderer.BUILD_BUDGET = type(renderer).BUILD_BUDGET
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
@@ -376,6 +383,7 @@ def main():
 
     rng = random.Random(a.seed)
     sim = Sim(world, rng, a.cars, a.peds)
+    world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
     sim.car.color = -1                                   # the player's own car gets racing stripes
     sim.clock.hour = (a.hour if a.test or "--hour" in sys.argv else cfg["hour"]) % 24.0
     streamer.clock = sim.clock
@@ -497,6 +505,9 @@ def main():
         streamer.update([key], True, 1e9)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
+    gc.collect()
+    gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
+    gc.set_threshold(50000, 20, 100)
     res_ = ""
     if not a.test and not a.nomenu:
         loader.hold()                              # let the showcase (cars / characters) play until a key press
@@ -528,6 +539,7 @@ def main():
     frame = 0
     t_game = 0.0
     ft_hist = []
+    auto_q = 1.0
     last_crash_txt = 0.0
     tip_t = 25.0
     want_menu = False
@@ -1479,6 +1491,13 @@ def main():
         finally:
             rl.end_drawing()
         ft_hist.append(dt_real)
+        if not a.test and len(ft_hist) >= 60:              # quality scaler: a slow PC thins the crowds a little instead of stuttering
+            avg_ = sum(ft_hist[-60:]) / 60.0
+            if avg_ > 1 / 40:
+                auto_q = max(0.6, auto_q - 0.002)
+            elif avg_ < 1 / 55:
+                auto_q = min(1.0, auto_q + 0.002)
+            sim.dens_traffic, sim.dens_peds = cfg.traffic_mult * auto_q, cfg.ped_mult * auto_q
         if a.test and a.shot and frame in (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1):
             img = rl.load_image_from_screen()
             rl.export_image(img, f"{a.shot}_{frame}.png")

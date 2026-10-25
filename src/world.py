@@ -119,6 +119,7 @@ class World:
             lo, hi = (p[3], p[4]) if len(p) >= 5 else (th(x, y) - 1.0, th(x, y) + 2.4)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, r, lo, hi))
         self.pgrid = pg
+        self.trees = np.array(self.trees, np.float64).reshape(-1, 4)     # (x, y, radius, kind): half a million Python tuples become one 15 MB block
         self.broken, self.broken_ver = [], 0
         P(1.0, "collision ready")
 
@@ -187,7 +188,25 @@ class World:
 
     def ground_y(self, x, y):
         """Height of the walkable surface on the ground here: terrain + asphalt / pavement build-up."""
-        t = self.th(x, y)
+        st = self.tstep                                         # (th() inlined: this is called thousands of times per frame)
+        fx = (x + self.hx) / st
+        fy = (y + self.hy) / st
+        nx = self.tnx
+        if fx < 0.0:
+            fx = 0.0
+        elif fx > nx - 1.001:
+            fx = nx - 1.001
+        if fy < 0.0:
+            fy = 0.0
+        elif fy > self.tny - 1.001:
+            fy = self.tny - 1.001
+        ix, iy = int(fx), int(fy)
+        tx, ty = fx - ix, fy - iy
+        g = self.tl
+        i = iy * nx + ix
+        a = g[i] + (g[i + 1] - g[i]) * tx
+        b = g[i + nx] + (g[i + nx + 1] - g[i + nx]) * tx
+        t = a + (b - a) * ty
         if self.hgt is None:
             return t
         ix = int((x + self.hx) / self.cell)
@@ -278,8 +297,12 @@ class World:
         t = pos[: len(pos) - len(pos) % 3].reshape(-1, 3, 3)
         kill = np.zeros(len(t), bool)
         for bx, by, r, hi, *_k in near:
-            d2 = (t[:, :, 0] - bx) ** 2 + (t[:, :, 2] - by) ** 2
-            kill |= np.all(d2 < r * r, axis=1) & np.all(t[:, :, 1] < hi, axis=1)
+            cand = np.nonzero((np.abs(t[:, 0, 0] - bx) < r) & (np.abs(t[:, 0, 2] - by) < r))[0]       # first vertex near it: the only triangles worth the full test
+            if not len(cand):
+                continue
+            tc = t[cand]
+            d2 = (tc[:, :, 0] - bx) ** 2 + (tc[:, :, 2] - by) ** 2
+            kill[cand[np.all(d2 < r * r, axis=1) & np.all(tc[:, :, 1] < hi, axis=1)]] = True
         t[kill] = 0.0
         return pos
 

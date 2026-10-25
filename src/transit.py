@@ -139,6 +139,11 @@ class Transit:
     def update(self, dt):
         if not self.lines:
             return
+        self._acc = getattr(self, "_acc", 0.0) + dt                 # buses and stops think every other frame: the physics keeps using the last controls
+        self._skip = not getattr(self, "_skip", False)
+        if self._skip:
+            return
+        dt, self._acc = self._acc, 0.0
         sim = self.sim
         fx, fy = sim.focus()[:2]
         self.t -= dt

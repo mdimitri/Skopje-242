@@ -312,6 +312,7 @@ def _rad(kind):
 _RAD = [_rad(k) for k in range(len(vehicles.DIMS))]          # radius of the circle around each car's 2D box
 
 
+LOD_FAR2 = 100.0 ** 2          # beyond this distance from the player cars and walkers are simulated at a third of the rate
 _CELL = 10.0
 
 
@@ -724,7 +725,15 @@ class Peds:
             self._start_brawl(fx, fy, ev)
         tc = self.sim.traffic.cars if self.sim is not None else ()
         g_b, g_a = _cells(bodies), _cells((*bodies, *tc))          # 10 m grids: each person only checks the cars next to them
-        for p in self.list:
+        dt0 = dt
+        self._tick = getattr(self, "_tick", 0) + 1
+        for pi, p in enumerate(self.list):
+            dt = dt0
+            if p.mode == "walk" and (p.x - fx) ** 2 + (p.y - fy) ** 2 > LOD_FAR2:      # far from the player: one step in three, three times as long
+                if (pi + self._tick) % 3:
+                    out.append(p)
+                    continue
+                dt = dt0 * 3.0
             if p.mode == "svc":                                   # paramedic / fire fighter, moved by Services
                 p.gz = w.level(p.x, p.y, p.gz if p.gz is not None else -1e9)
                 out.append(p)
@@ -985,6 +994,7 @@ class Peds:
             if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 300 ** 2:
                 out.append(p)
         self.list = out
+        dt = dt0
         for _ in range(2):
             if len([q for q in self.list if q.mode == "walk"]) < self.target:
                 self.spawn(fx, fy)
@@ -1041,6 +1051,7 @@ class Traffic:
         self.appr = {}               # junction node -> [(priority key, car, heading, eta)] of cars close to it
         self.lead = None
         self.despawned = 0
+        self._tick = 0
 
     @staticmethod
     def lanes_of(e):
@@ -1169,11 +1180,12 @@ class Traffic:
         rx, ry = -hy, hx
         best = None
         cx, cy = c.x + ox, c.y + oy
-        gx, gy = int(cx // 16), int(cy // 16)
-        n = int(rng_ahead // 16) + 1
-        for ix in range(gx - n, gx + n + 1):
-            for iy in range(gy - n, gy + n + 1):
-                for o in self.hash.get((ix, iy), ()):
+        ex, ey = cx + hx * (rng_ahead + 7.5), cy + hy * (rng_ahead + 7.5)       # only the cells the look-ahead strip can touch (a car is < 7.5 m half-length / half-width)
+        bx_, by_ = cx + hx * min(back, 0.0), cy + hy * min(back, 0.0)
+        hash_get = self.hash.get
+        for ix in range(int((min(bx_, ex) - 8.0) // 16), int((max(bx_, ex) + 8.0) // 16) + 1):
+            for iy in range(int((min(by_, ey) - 8.0) // 16), int((max(by_, ey) + 8.0) // 16) + 1):
+                for o in hash_get((ix, iy), ()):
                     if o[4] is c:
                         continue
                     dx, dy = o[0] - cx, o[1] - cy
@@ -1411,7 +1423,17 @@ class Traffic:
         self.occ, self.queue, self.appr, self._mine = occ, queue, appr, mine
         keep = []
         ag = (getattr(self.sim, "aggro", 1) if self.sim else 1) % 4
-        for c in self.cars:
+        dt0 = dt
+        self._tick += 1
+        tick = self._tick
+        for ci, c in enumerate(self.cars):
+            if (c.x - fx) ** 2 + (c.y - fy) ** 2 > LOD_FAR2:         # far from the player: one step in three, three times as long (nobody sees it)
+                if (ci + tick) % 3:
+                    keep.append(c)
+                    continue
+                dt = dt0 * 3.0
+            else:
+                dt = dt0
             e = w.edges[c.e]
             L = e["len"]
             vmax = min(e["speed"] * c.pace * (1.05, 1.12, 1.2, 1.3)[ag], vehicles.PERF[c.kind][0] * 0.9)      # at about the limit, more in a nervous city
@@ -1518,17 +1540,18 @@ class Traffic:
                 if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0:     # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back
                     c.x, c.y, c.h = rx_, ry_, _rh
             c.gz = w.level(c.x, c.y, 1e9 if e["bridge"] else -1e9)
-            if w.hilly or e["bridge"]:
+            if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt follows the ground: every other frame is plenty
                 fx_, fy_ = math.cos(c.h), math.sin(c.h)
                 wy_ = 1e9 if e["bridge"] else -1e9
                 hb = vehicles.DIMS[c.kind][0] * 0.31
                 pt = math.atan2(w.level(c.x + fx_ * hb, c.y + fy_ * hb, wy_) - w.level(c.x - fx_ * hb, c.y - fy_ * hb, wy_), 2 * hb)
                 rl_ = math.atan2(w.level(c.x + fy_ * 0.85, c.y - fx_ * 0.85, wy_) - w.level(c.x - fy_ * 0.85, c.y + fx_ * 0.85, wy_), 1.7)
-                kk = min(1.0, dt * 8)
+                kk = min(1.0, dt * 8) if dt != dt0 else min(1.0, dt * 16)
                 c.pitch += (pt - c.pitch) * kk
                 c.roll += (rl_ - c.roll) * kk
             keep.append(c)
         self.cars = [c for c in keep if (c.x - fx) ** 2 + (c.y - fy) ** 2 < 460 ** 2]
+        dt = dt0
         self._jam_t += dt
         if self._jam_t >= 1.0:
             self._track_jams(self._jam_t)

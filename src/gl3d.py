@@ -200,14 +200,9 @@ def _shade(n):
 def grid_face(o, du, dv, nu, nv):
     """Quad grid: points o + i/nu*du + j/nv*dv -> triangle vertices (N,3)."""
     o, du, dv = np.array(o, np.float32), np.array(du, np.float32), np.array(dv, np.float32)
-    i, j = np.meshgrid(np.arange(nu + 1), np.arange(nv + 1), indexing="ij")
-    P = o[None, None, :] + (i / nu)[..., None] * du + (j / nv)[..., None] * dv
-    tris = []
-    for a in range(nu):
-        for b in range(nv):
-            p00, p10, p01, p11 = P[a, b], P[a + 1, b], P[a, b + 1], P[a + 1, b + 1]
-            tris += [p00, p10, p11, p00, p11, p01]
-    return np.array(tris, np.float32)
+    P = o + (np.arange(nu + 1) / nu)[:, None, None] * du + (np.arange(nv + 1) / nv)[None, :, None] * dv
+    p00, p10, p01, p11 = P[:-1, :-1], P[1:, :-1], P[:-1, 1:], P[1:, 1:]
+    return np.stack((p00, p10, p11, p00, p11, p01), axis=2).reshape(-1, 3).astype(np.float32)
 
 
 def box_faces(cx, cy, cz, sx, sy, sz, nx=1, ny=1, nz=1, bottom=False):
