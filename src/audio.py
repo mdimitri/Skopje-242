@@ -2,8 +2,10 @@
 If there is no audio device (or anything fails) every call quietly does nothing."""
 import math
 import os
+import queue
 import random
 import tempfile
+import threading
 import time
 import wave
 from collections import OrderedDict
@@ -236,6 +238,7 @@ class Audio:
         self.info, self.secs_of = {}, {}
         self.lib, self.req = {}, (0, 0, 0)              # v2.1 artist library: key -> mp3 paths; (requests written, catalogue size, done)
         self._ls, self._ls_mb, self._cur, self._last, self._vol = OrderedDict(), 0.0, {}, {}, {}
+        self._jobs, self._done, self._pending, self._worker = queue.Queue(), {}, set(), None     # library files prepared off the game thread
         self.lx = self.ly = 0.0
         self.dry, self.stats = dry, {}                 # dry run (cloud tests, no audio device): count what would play, library vs fallback
         self.rng = random.Random(21)
@@ -279,24 +282,27 @@ class Audio:
         return soundcat.ALIAS.get(name, name) in self.lib
 
     def _lib_load(self, name, path, row, far=False):
-        """Decode an mp3, clean it (soundproc.prepare), level it (loops by RMS, one-shots by peak, scaled by the catalogue level)
-        and keep it cached; `far` is the muffled copy used for distant one-shots."""
+        """The cached sound for one library file, or None while it is still being prepared.  Decoding an mp3 and cleaning it
+        (soundproc.prepare) takes 100-500 ms, so that runs on a worker thread; the game thread only loads the finished wav."""
         k = (name, path, far)
         if k in self._ls:
             self._ls.move_to_end(k)
             return self._ls[k][0]
-        x, sr = soundproc.decode(path)
-        if x is None:
+        done = self._done.pop(k, None)
+        if done is None:
+            if k not in self._pending:
+                self._pending.add(k)
+                if self._worker is None:
+                    self._worker = threading.Thread(target=self._prepare_loop, daemon=True)
+                    self._worker.start()
+                self._jobs.put((k, path, row, far))
             return None
-        y = soundproc.prepare(x, sr, self.info.get(path, {}), row[2], far)
-        pk = float(np.abs(y).max()) or 1e-4
-        g = soundproc.loudness_gain(y, sr, row[2], row[6])
-        y = np.clip(y * min(g, 0.98 / pk), -1.0, 1.0)
-        p = os.path.join(self._tmp, f"lib_{len(self._ls)}.wav")
-        _save(p, y, sr)
+        self._pending.discard(k)
+        p, mb = done
+        if p is None:
+            return None
         s = rl.load_sound(p)
         os.remove(p)
-        mb = len(y) * 2 / 1e6
         self._ls[k] = (s, mb)
         self._ls_mb += mb
         for _ in range(len(self._ls)):
@@ -311,6 +317,31 @@ class Audio:
             self._ls_mb -= mb0
         return s
 
+    def _prepare_loop(self):
+        """Worker thread: decode, clean and level library files into wavs for _lib_load."""
+        n = 0
+        while True:
+            k, path, row, far = self._jobs.get()
+            try:
+                x, sr = soundproc.decode(path)
+                if x is None:
+                    self._done[k] = (None, 0.0)
+                    continue
+                y = soundproc.prepare(x, sr, self.info.get(path, {}), row[2], far)
+                pk = float(np.abs(y).max()) or 1e-4
+                g = soundproc.loudness_gain(y, sr, row[2], row[6])
+                y = np.clip(y * min(g, 0.98 / pk), -1.0, 1.0)
+                n += 1
+                p = os.path.join(self._tmp, f"lib_{n}.wav")
+                _save(p, y, sr)
+                self._done[k] = (p, len(y) * 2 / 1e6)
+            except Exception:  # noqa: BLE001 - a broken file falls back to the procedural sound
+                self._done[k] = (None, 0.0)
+
+    def _ready(self, name, path, far):
+        k = (name, path, far)
+        return k in self._ls or k in self._done
+
     def _pick(self, name, far=False, variant=None):
         """(sound, from_library, row): a random library version (never the one played last) or the procedural fallback."""
         key = soundcat.ALIAS.get(name, name)
@@ -323,6 +354,14 @@ class Audio:
                 self.stats[(name, src)] = self.stats.get((name, src), 0) + 1
             return (self if src else None), bool(paths), row
         if paths and row:
+            if variant is None:                                      # prefer versions that are ready; get one more ready for next time
+                ready = [q for q in paths if self._ready(name, q, far)]
+                if len(ready) < len(paths):
+                    try:
+                        self._lib_load(name, self.rng.choice([q for q in paths if q not in ready]), row, far)
+                    except Exception:  # noqa: BLE001
+                        pass
+                paths = ready or paths
             for _ in range(len(paths)):
                 last = self._last.get(name)
                 if variant is not None:                              # a fixed version (e.g. one car always has the same engine recording)

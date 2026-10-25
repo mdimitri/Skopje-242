@@ -44,6 +44,7 @@ class Renderer:
         self.car_models = {}
         self._own = {}                         # id(body) -> body with its own model
         self._frames = 0
+        self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
         self.ped_models = {}
         self.pick_models = {}
         self.wreck_models = {}
@@ -102,6 +103,7 @@ class Renderer:
         if b.dirty or (b.model is None and (b.dents or b.exploded)):
             if b.model is not None:
                 gl3d.free_model(b.model)
+                b.model = None                             # never keep a freed model if the rebuild below fails
             b.model = gl3d.car_model(b.kind, b.color, b.dents, 1.0 if b.exploded else min(1.0, b.burn / 6.0) * 0.5,
                                      b.color < 0)
             b.dirty = False
@@ -347,7 +349,14 @@ class Renderer:
             if self._in(b.x, b.y, rect):
                 tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
                 gy = b.az if b.az is not None else w.ground_y(b.x, b.y)
-                cars.append((b.x, b.y, b.h, self.car_model(b), tint, gy, b.pitch, b.roll))
+                m = self.car_model(b)
+                if not (math.isfinite(b.pitch) and math.isfinite(b.roll)):     # a broken tilt would draw the car nowhere (only its shadow)
+                    b.pitch = b.roll = 0.0
+                if b.player_car and (m is None or not math.isfinite(gy)) and t - self._vanish_t > 5.0:
+                    self._vanish_t = t
+                    self.log(f"[vanish] player car not drawn: model {m is not None} own {b.model is not None} dirty {b.dirty} "
+                             f"kind {b.kind} colour {b.color} y {gy}")
+                cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll))
                 if b.door > 0.01:
                     doors.append((b, gy))
                 hl = vehicles.HALF_L[b.kind] + 0.1

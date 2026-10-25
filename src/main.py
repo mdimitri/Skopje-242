@@ -83,10 +83,12 @@ class Guard:
         self.errors = {}
         self.disabled = set()
         self.msg = hud_msg
+        self.ms = {}                                    # this frame's time per subsystem (for the hitch log)
 
     def run(self, name, fn, *a, **kw):
         if name in self.disabled:
             return None
+        t0 = time.perf_counter()
         try:
             return fn(*a, **kw)
         except SystemExit:
@@ -100,6 +102,8 @@ class Guard:
                 self.disabled.add(name)
                 self.msg((f'{name}' + TXT("main.0001")))
             return None
+        finally:
+            self.ms[name] = self.ms.get(name, 0.0) + (time.perf_counter() - t0) * 1000
 
 
 # ----------------------------------------------------------------------- world loading with fallbacks
@@ -359,6 +363,7 @@ def main():
         tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t}
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
+    renderer.log = log
     loader.tick(0.4, "car & pedestrian models")
     renderer.build_overview()
     renderer.BUILD_BUDGET = 10 ** 9
@@ -540,6 +545,15 @@ def main():
     frame = 0
     t_game = 0.0
     ft_hist = []
+    hitch_t0, hitch_n = time.perf_counter(), 0          # frames over 100 ms are written to logs/game.log with what took the time
+    gc_t = [0.0, 0.0]
+
+    def gc_cb(phase, info):
+        if phase == "start":
+            gc_t[0] = time.perf_counter()
+        else:
+            gc_t[1] += time.perf_counter() - gc_t[0]
+    gc.callbacks.append(gc_cb)
     auto_q = 1.0
     last_crash_txt = 0.0
     tip_t = 25.0
@@ -1186,6 +1200,7 @@ def main():
     tp_idx = -1
     snap = False
     last_phase = None
+    hitch_t0 = time.perf_counter()
     while not rl.window_should_close():
         dt_real = rl.get_frame_time()
         dt = 1 / 60 if a.test else min(dt_real, 0.05)
@@ -1490,8 +1505,17 @@ def main():
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
+            t_sw = time.perf_counter()
             rl.end_drawing()
         ft_hist.append(dt_real)
+        t_now = time.perf_counter()
+        if t_now - hitch_t0 > 0.1 and hitch_n < 300 and not a.test:
+            hitch_n += 1
+            parts = sorted(guard.ms.items(), key=lambda kv: -kv[1])[:6] + [("gc", gc_t[1] * 1000), ("swap", (t_now - t_sw) * 1000)]
+            log(f"[hitch] {(t_now - hitch_t0) * 1000:.0f} ms ({sim.mode}): " + ", ".join(f"{k} {v:.0f}" for k, v in parts if v >= 1.0))
+        hitch_t0 = t_now
+        guard.ms.clear()
+        gc_t[1] = 0.0
         if not a.test and len(ft_hist) >= 60:              # quality scaler: a slow PC thins the crowds a little instead of stuttering
             avg_ = sum(ft_hist[-60:]) / 60.0
             if avg_ > 1 / 40:
