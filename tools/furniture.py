@@ -129,6 +129,18 @@ def sign(x, z, fx, fz, kind):
     elif kind == "cross":
         g.vpoly(x, cy, z, fx, fz, [(-0.4, -0.4), (0.4, -0.4), (0.4, 0.4), (-0.4, 0.4)], (30, 90, 190), 0.06)
         g.vpoly(x, cy, z, fx, fz, [(0, 0.28), (0.28, -0.26), (-0.28, -0.26)], (245, 245, 245), 0.07)
+    elif kind == "oneway":
+        g.vpoly(x, cy, z, fx, fz, [(-0.4, -0.4), (0.4, -0.4), (0.4, 0.4), (-0.4, 0.4)], (30, 90, 190), 0.06)
+        g.vpoly(x, cy, z, fx, fz, [(-0.07, -0.3), (0.07, -0.3), (0.07, 0.05), (-0.07, 0.05)], (245, 245, 245), 0.07)
+        g.vpoly(x, cy, z, fx, fz, [(-0.24, 0.05), (0.24, 0.05), (0.0, 0.32)], (245, 245, 245), 0.07)
+    elif kind == "noentry":
+        g.vpoly(x, cy, z, fx, fz, _ngon(0.4, 12), (200, 28, 30), 0.06)
+        g.vpoly(x, cy, z, fx, fz, [(-0.3, -0.07), (0.3, -0.07), (0.3, 0.07), (-0.3, 0.07)], (245, 245, 245), 0.07)
+    elif kind == "rail":
+        g.vpoly(x, cy, z, fx, fz, [(-0.5, 0.42), (0.5, 0.42), (0.0, -0.4)], (200, 28, 30), 0.06)
+        g.vpoly(x, cy, z, fx, fz, [(-0.3, 0.32), (0.3, 0.32), (0.0, -0.12)], (245, 245, 245), 0.07)
+        for sg in (1, -1):
+            g.vpoly(x, cy, z, fx, fz, [(-0.2, 0.2 * sg + 0.04), (0.2, -0.2 * sg + 0.04), (0.2, -0.2 * sg + 0.1), (-0.2, 0.2 * sg + 0.1)], (30, 30, 34), 0.08)
     elif kind == "bus":
         g.vpoly(x, cy, z, fx, fz, _ngon(0.4, 12), (30, 90, 190), 0.06)
         g.vpoly(x, cy, z, fx, fz, [(-0.24, -0.16), (0.24, -0.16), (0.24, 0.16), (-0.24, 0.16)], (245, 245, 245), 0.07)
@@ -172,6 +184,14 @@ def parapet(x, z, yaw, length):
 
 
 STOPS = []          # real bus stops placed by build(): (x, y, road dir x, road dir y, kerb x, kerb y, name)
+def lanes_n(e):
+    """Lanes per travel direction (same rule as roads3d.lanes_per_way)."""
+    n, w = e.get("lanes", 0), e["w"]
+    if e["ow"]:
+        return n if n else max(1, int(round(w / 3.2)))
+    return max(1, n // 2) if n else (2 if w >= 11.0 else 1)
+
+
 SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junction x, junction z, housing height) - filled by build()
 
 
@@ -388,6 +408,27 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                         posts += [(px + dx * 1.4, py + dy * 1.4, 0.25), (px - dx * 1.4, py - dy * 1.4, 0.25)]
                         counts["stops"] += 1
                 s += r.uniform(110, 200)
+        if e["drive"] and not e["bridge"] and L > 30 and cls in RANK:      # one-way streets: the sign where they start, no entry where they end
+            for end_, kind_ in ((0, "oneway"), (1, "noentry")):
+                if e["ow"] and len(inc.get(e["a"] if end_ == 0 else e["b"], ())) >= 3:
+                    s_ = 6.0 if end_ == 0 else L - 6.0
+                    x, y, dx, dy = at(e, s_)
+                    sd = 1 if end_ == 0 else -1                # entrance: right kerb, facing back to the approach; exit: left kerb, facing the wrong-way driver
+                    px, py = x + dy * sd * (w / 2 + 1.1), y - dx * sd * (w / 2 + 1.1)
+                    if ok(px, py) and not_building(px, py):
+                        put(sign(px, py, -dx * sd, -dy * sd, kind_), px, py)
+                        posts.append((px, py, 0.16))
+                        counts["signs"] += 1
+        if e["drive"] and not e["bridge"] and L > 120 and lanes_n(e) >= 3 and cls in RANK:      # bus lane along the right kerb lane
+            s_ = r.uniform(30, 60)
+            while s_ < L - 30:
+                x, y, dx, dy = at(e, s_)
+                px, py = x + dy * (w / 2 + 1.1), y - dx * (w / 2 + 1.1)
+                if ok(px, py) and not_building(px, py):
+                    put(sign(px, py, -dx, -dy, "bus"), px, py)
+                    posts.append((px, py, 0.16))
+                    counts["signs"] += 1
+                s_ += r.uniform(180, 300)
         if e["drive"] and cls in ("primary", "secondary", "tertiary", "residential", "living_street") and L > 40:
             s = r.uniform(15, 40)                          # round 8: benches / bins on the pavement of city streets
             while s < L - 15:
