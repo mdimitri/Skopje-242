@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 21
+VERSION = 22
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1033,6 +1033,16 @@ def main():
             gy += spacing
 
     import bisect
+    _bi = np.pad(bld_a.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+
+    def _bld_share(x, y, rad=30.0):
+        """Share of building cells within rad metres: a quiet, built-up street has plenty."""
+        cx_, cy_ = to_cell(x, y)
+        k = int(rad / CELL)
+        x0_, x1_, y0_, y1_ = max(cx_ - k, 0), min(cx_ + k + 1, NCX), max(cy_ - k, 0), min(cy_ + k + 1, NCY)
+        n_ = (x1_ - x0_) * (y1_ - y0_)
+        return float(_bi[y1_, x1_] - _bi[y0_, x1_] - _bi[y1_, x0_] + _bi[y0_, x0_]) / n_ if n_ > 0 else 0.0
+
     for e in each([e for e in edges if e["drive"] and not e["bridge"]], "street trees, lamps, parked cars"):
         r = random.Random(e["a"] * 100003 + e["b"])
         cls, w = e["cls"], e["w"]
@@ -1070,18 +1080,35 @@ def main():
                 side = -side
                 s += step
         if cls in ("residential", "unclassified", "tertiary") and L > 40 and w >= 6.0:
-            s = 11.0
-            while s < L - 11:
-                if r.random() < 0.20:
-                    x, y, dx, dy = at(s)
-                    side = 1 if e["ow"] else r.choice((1, -1))     # one-way (boulevard halves): right kerb only, never the median
-                    off = w / 2 + 0.55                                       # half up on the pavement, as in Skopje
-                    px, py = x - dy * off * side, y + dx * off * side
-                    if abs(px) < HX - 5 and abs(py) < HY - 5:
-                        ix, iy = to_cell(px, py)
-                        if not bld_a[iy, ix]:
-                            parked.append((px, py, math.atan2(dy, dx) + (0.0 if side == 1 else math.pi), r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
-                s += r.uniform(6.0, 9.0)
+            # round 23: streets among many buildings are quiet and full of cars; the dense ones park both kerbs, diagonally where wide enough
+            mx, my, _, _ = at(L / 2)
+            dense = cls != "tertiary" and w <= 9.5 and _bld_share(mx, my) >= 0.14
+            diag = dense and w >= 7.0
+            sides = (1, -1) if dense and not e["ow"] else (None,)
+            for fixed in sides:
+                s = 14.0 if diag else 11.0
+                while s < L - (14.0 if diag else 11.0):
+                    if r.random() < (0.78 if diag else 0.7 if dense else 0.20):
+                        x, y, dx, dy = at(s)
+                        side = fixed or (1 if e["ow"] else r.choice((1, -1)))     # one-way (boulevard halves): right kerb only, never the median
+                        off = w / 2 + (1.7 if diag else 0.55)                    # half up on the pavement, as in Skopje; diagonal noses in to the kerb
+                        px, py = x - dy * off * side, y + dx * off * side
+                        if abs(px) < HX - 5 and abs(py) < HY - 5:
+                            ix, iy = to_cell(px, py)
+                            if not bld_a[iy, ix]:
+                                hd = math.atan2(dy, dx) + (0.0 if side == 1 else math.pi)
+                                if diag:
+                                    hd += r.choice((0.72, 0.8, 0.88))             # ~45 deg, nose towards the kerb (kerb is at +90 deg of travel)
+                                parked.append((px, py, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
+                    s += r.uniform(2.6, 3.1) if diag else r.uniform(5.2, 6.0) if dense else r.uniform(6.0, 9.0)
+    kept, taken = [], {}                                        # round 23: cars of crossing streets must not overlap
+    for q in parked:
+        gx_, gy_ = int(q[0] // 4), int(q[1] // 4)
+        if any((q[0] - o[0]) ** 2 + (q[1] - o[1]) ** 2 < 2.4 ** 2 for i_ in (-1, 0, 1) for j_ in (-1, 0, 1) for o in taken.get((gx_ + i_, gy_ + j_), ())):
+            continue
+        taken.setdefault((gx_, gy_), []).append(q)
+        kept.append(q)
+    parked = kept
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
     import furniture
@@ -1110,6 +1137,9 @@ def main():
                                                       bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")),
                                                       signals=_read_list(os.path.join(a.src, "signals.json")))
         lamps += bridge_lamps
+        _st = list(__import__("furniture").STOPS)
+        if _st:                                                 # round 23: no parked car within 16 m of a bus stop
+            parked = [q for q in parked if all((q[0] - t[0]) ** 2 + (q[1] - t[1]) ** 2 > 256 and (q[0] - t[4]) ** 2 + (q[1] - t[5]) ** 2 > 256 for t in _st)]
     except Exception as e:  # noqa: BLE001 - furniture is decoration, never fatal
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
