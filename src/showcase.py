@@ -11,10 +11,12 @@ import pyray as rl
 import characters
 import font
 import poster as poster_mod
+import peds_lines
 import showcase_lines as L
 import vehicles
 
 CAR_SECS, CHAR_SECS, BLOCK = 9.0, 11.0, 4
+NPC = 1000                                                 # character index offset: NPC pedestrian archetypes after the hero portraits
 GOLD = rl.Color(240, 200, 60, 255)
 PAINT = [(190, 50, 45), (50, 90, 160), (210, 210, 215), (60, 130, 85), (200, 160, 40), (110, 60, 130), (150, 150, 155), (40, 40, 46),
          (200, 110, 40), (130, 30, 40)]
@@ -46,7 +48,7 @@ class Showcase:
             self.queue.append(("car", self.cars[self.car_pos % len(self.cars)]))
             self.car_pos += 1
         if not getattr(self, "char_order", None):
-            self.char_order = list(range(len(characters.LIKOVI)))
+            self.char_order = list(range(len(characters.LIKOVI))) + [NPC + a for a in vehicles.WALKERS if peds_lines.TOPICS.get(vehicles.PED_IDS[a])]
             self.rng.shuffle(self.char_order)
         for _ in range(BLOCK):                                 # 4 cars, 4 characters, ... until everything has been shown
             self.queue.append(("char", self.char_order.pop()))
@@ -65,7 +67,7 @@ class Showcase:
             secs = CAR_SECS
             col = vehicles.FIXED[i] or PAINT[(i * 7 + 3) % len(PAINT)]
         else:
-            q = L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
+            q = peds_lines.idle(vehicles.PED_IDS[i - NPC]) if i >= NPC else L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
             text, secs, col = self.rng.choice(q), CHAR_SECS, None
         self.shown_cars += kind == "car"
         self.cur = {"kind": kind, "i": i, "text": text, "t0": now, "secs": secs, "col": col, "k": (self.shown_cars - 1) % vehicles.N + 1}
@@ -184,7 +186,7 @@ class Showcase:
         else:
             self._chars_scene(c, t, x, y, w, sh, base, now)
             tag = L_CHARS
-            name = characters.LIKOVI[c["i"]][1]
+            name = vehicles.PED_NAMES[c["i"] - NPC] if c["i"] >= NPC else characters.LIKOVI[c["i"]][1]
         # ---- caption area
         cy = y + sh + 12
         font.draw_text(tag, int(x + 14), int(cy), 14, rl.Color(150, 154, 165, 255), bold=True)
@@ -194,7 +196,7 @@ class Showcase:
             font.draw_text(ln, int(x + 14), int(cy), 24, rl.Color(240, 200, 60, a), bold=True)
             cy += 30
         cy += 4
-        sub = c["text"] if c["kind"] == "car" else characters.LIKOVI[c["i"]][2]
+        sub = c["text"] if c["kind"] == "car" else "" if c["i"] >= NPC else characters.LIKOVI[c["i"]][2]
         for ln in font.wrap(sub, 20 if c["kind"] == "car" else 16, int(w - 28))[:4]:
             font.draw_text(ln, int(x + 14), int(cy), 20 if c["kind"] == "car" else 16, rl.Color(235, 235, 235, a))
             cy += 26 if c["kind"] == "car" else 21
@@ -208,7 +210,7 @@ class Showcase:
             m = None
             try:
                 import gl3d
-                pos, _uv, rgba = gl3d._hero(i, frame)
+                pos, _uv, rgba = gl3d.ped_arrays(i - NPC, 0, frame) if i >= NPC else gl3d._hero(i, frame)
                 n = len(pos) - len(pos) % 3
                 m = (pos[:n].reshape(-1, 3, 3).astype(np.float32), rgba[:n:3].astype(np.uint8))
             except Exception:  # noqa: BLE001 - the splash falls back to the caricature
@@ -248,7 +250,7 @@ class Showcase:
         ang = 0.5 + 0.5 * math.sin(now * 0.9)
         by_ = base + int(sh * 0.12)
         ok = self._avatar(c["i"], frame, cx, by_ + math.sin(now * 7) * 1.5, S, ang)
-        if not ok:
+        if not ok and c["i"] < NPC:
             tex = self._texture(c["i"])
             if tex:
                 poster_mod.draw_fit(tex, int(cx - S * 0.4), int(by_ - S * 1.8), int(S * 0.8), int(S * 1.8))
