@@ -867,15 +867,13 @@ def lanes_per_way(e):
 def _markings(out, cov, i, e, pts, fr, y):
     w, rk = e["w"], rank_of(e["cls"])
     white, yellow = (236, 234, 224), (232, 206, 96)
-    n_ = lanes_per_way(e)
-    if n_ >= 3:                                              # 3+ lanes a side: the kerb lane is painted yellow, bus only (cars ignore it)
-        lw = w / n_ if e["ow"] else w / 2 / n_
-        for sgn in ((1,) if e["ow"] else (1, -1)):
-            _line(out, cov, i, e, pts, fr, sgn * (w / 2 - lw / 2), y - 0.008, lw - 0.35, (214, 184, 70), False, rk)
+    bus = lanes_per_way(e) >= 3                              # 3+ lanes a side: the kerb lane's markings are yellow (bus only, cars ignore it)
+    bus_c = (232, 190, 40)
     if e["ow"]:
         lanes = lanes_per_way(e)
         for k in range(1, lanes):
-            _line(out, cov, i, e, pts, fr, -w / 2 + k * w / lanes, y, 0.13, white, True, rk)
+            yl = bus and k == lanes - 1
+            _line(out, cov, i, e, pts, fr, -w / 2 + k * w / lanes, y, 0.13, bus_c if yl else white, not yl, rk)
     else:
         if w >= 8.0:
             _line(out, cov, i, e, pts, fr, 0.14, y, 0.11, yellow, False, rk)
@@ -884,11 +882,12 @@ def _markings(out, cov, i, e, pts, fr, y):
             _line(out, cov, i, e, pts, fr, 0.0, y, 0.13, white, True, rk)
         n = lanes_per_way(e)
         for k in range(1, n):
+            yl = bus and k == n - 1
             for sgn in (1, -1):
-                _line(out, cov, i, e, pts, fr, sgn * k * w / 2 / n, y, 0.12, white, True, rk)
+                _line(out, cov, i, e, pts, fr, sgn * k * w / 2 / n, y, 0.12, bus_c if yl else white, not yl, rk)
     if w >= 7.0:
         for sgn in (1, -1):
-            _line(out, cov, i, e, pts, fr, sgn * (w / 2 - 0.4), y, 0.1, white, False, rk)
+            _line(out, cov, i, e, pts, fr, sgn * (w / 2 - 0.4), y, 0.1, bus_c if bus else white, False, rk)
 
 
 def _zebra(out, x, y, ax, ay, w):
