@@ -52,7 +52,7 @@ class Services:
         if self._adj is not None:
             return
         w = self.sim.w
-        nodes, adj = {}, {}
+        nodes, adj, radj = {}, {}, {}
         for i, e in enumerate(w.edges):
             if not e["drive"] or e["len"] < 1:
                 continue
@@ -60,9 +60,11 @@ class Services:
                 nodes[e["a"]] = e["pts"][0]
                 nodes[e["b"]] = e["pts"][-1]
             adj.setdefault(e["a"], []).append((e["b"], i, 1))
+            radj.setdefault(e["b"], []).append((e["a"], e["len"]))
             if not e["ow"]:
                 adj.setdefault(e["b"], []).append((e["a"], i, -1))
-        self._nodes, self._adj = nodes, adj
+                radj.setdefault(e["a"], []).append((e["b"], e["len"]))
+        self._nodes, self._adj, self._radj = nodes, adj, radj
 
     def _nearest_node(self, x, y):
         best, bn = 1e18, None
@@ -113,10 +115,30 @@ class Services:
                 res.append(q)
         return res
 
-    def _spawn_node(self, x, y, lo=70.0, hi=150.0):
+    def _to(self, x, y, limit=900.0):
+        """Driving distance from every node within `limit` to the node nearest (x, y), with the traffic (one-ways too)."""
+        b = self._nearest_node(x, y)
+        dist, pq = {b: 0.0}, [(0.0, b)]
+        while pq:
+            d, n = heapq.heappop(pq)
+            if d > dist.get(n, 1e18) or d > limit:
+                continue
+            for m, ln in self._radj.get(n, ()):
+                if d + ln < dist.get(m, 1e18):
+                    dist[m] = d + ln
+                    heapq.heappush(pq, (d + ln, m))
+        return dist
+
+    def _spawn_node(self, x, y, lo=70.0, hi=150.0, to_call=False):
         self._graph()
         fx, fy, _, _ = self.sim.focus()
         c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
+        if c and to_call:                       # out of sight, but the one with the shortest drive to the call
+            dist = self._to(x, y)
+            near = [(dist[n], p) for n, p in self._nodes.items() if n in dist and lo < math.hypot(p[0] - x, p[1] - y) < hi
+                    and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
+            if near:
+                return min(near)[1]
         if not c:
             c = [p for p in self._nodes.values() if math.hypot(p[0] - x, p[1] - y) > 80.0]
         return self.rng.choice(c) if c else None
@@ -255,7 +277,7 @@ class Services:
     def _spawn_vehicle(self, j, kind, dest_x, dest_y):
         sim = self.sim
         fx, fy, _, _ = sim.focus()
-        sp = self._spawn_node(dest_x, dest_y)
+        sp = self._spawn_node(dest_x, dest_y, to_call=True)
         if sp is None:
             return False
         path = self.route(sp[0], sp[1], dest_x, dest_y)

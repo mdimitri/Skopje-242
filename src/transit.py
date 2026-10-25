@@ -484,14 +484,16 @@ class Transit:
         fx, fy = math.cos(b.h), math.sin(b.h)
         bx, by = b.x - fy * lat, b.y + fx * lat
         L = vehicles.DIMS[b.kind][0] / 2
-        objs = [(o.x, o.y) for o in sim.bodies if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3)]
+        look = 4.0 + max(0.0, b.vx * fx + b.vy * fy) * 1.6         # free road wanted: more the faster it goes (it brakes slowly)
+        objs = [(o.x, o.y, vehicles.HALF_L[o.kind]) for o in sim.bodies
+                if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3)]
         if not standing:
-            objs += [(c.x, c.y) for c in sim.traffic.cars]
+            objs += [(c.x, c.y, vehicles.HALF_L[c.kind]) for c in sim.traffic.cars]
             if sim.mode == "foot" and sim.walker is not None:
-                objs.append((sim.walker.x, sim.walker.y))
-        for x, y in objs:
+                objs.append((sim.walker.x, sim.walker.y, 0.3))
+        for x, y, hl in objs:
             dx, dy = x - bx, y - by
             t = dx * fx + dy * fy
-            if L < t < L + 9.0 and abs(-dx * fy + dy * fx) < 2.0:
+            if t > L * 0.5 and t - hl - L < look and abs(-dx * fy + dy * fx) < 2.0:     # its rear, not its middle (buses are long)
                 return True
         return False

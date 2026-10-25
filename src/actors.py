@@ -1002,7 +1002,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside")
 
     def __init__(self):
         self.cab = random.random() < 0.1        # one in ten has its radio on (heard muffled from outside)
@@ -1024,6 +1024,7 @@ class Car:
         self.turn = 0.0            # heading change onto c.nxt (rad, > 0 = towards its own kerb, < 0 = across the oncoming lane)
         self.arr = None            # time it reached the approach to the junction ahead (first come, first served)
         self.blk = None            # what stood right in front of it last frame
+        self.rside = 0.0           # while reversing: the lane offset it swings its nose towards, to go round next
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -1198,7 +1199,7 @@ class Traffic:
                     else:                                             # the other car's box, seen from this car's heading:
                         ca, sa = abs(math.cos(o[5] - c.h)), abs(math.sin(o[5] - c.h))
                         hw, hl = ca * o[2] + sa * o[3], ca * o[3] + sa * o[2]     # (a car crossing sideways is wide)
-                    if lat > hw + (0.0 if o[5] is None else vehicles.HALF_W[c.kind]):
+                    if lat > hw + (0.0 if o[5] is None else vehicles.HALF_W[c.kind] + 0.25):     # a hand's width spare: no grazing
                         continue
                     gap = fwd - vehicles.HALF_L[c.kind] - hl
                     if fwd < (0.3 if o[5] is None else back):                          # beside or behind: not in the way
@@ -1208,6 +1209,7 @@ class Traffic:
         return best
 
     WAIT = (9.0, 6.0, 4.0, 2.5)      # seconds a stopped car waits before trying to get out, by aggression setting
+    LOCK_MAN = math.atan(1.5 * math.tan(0.55))   # front-wheel lock while manoeuvring: turns 50 % tighter than normal driving
 
     def _untangle(self, c, e, gap, dt, fx, fy):
         """A car that has been stuck behind something works its way out: back off, slip into another lane (even the
@@ -1236,8 +1238,10 @@ class Traffic:
             if self._free(c, off, 26.0 if (not e["ow"] and off < 0) else 14.0):
                 c.shift, c.shift_t = off, 0.0
                 return
-        if self.rng.random() < dt * (0.6, 0.8, 1.2, 2.0)[ag] and self.scan(c, 7.0, flip=True) is None:
-            c.rev = self.rng.uniform(1.2, 2.8)                             # nothing behind: back up to give way
+        if self.rng.random() < dt * (0.6, 0.8, 1.2, 2.0)[ag] and self.scan(c, 7.0, flip=True) is None \
+                and not any(o.rev > 0 and (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 400.0 for o in self.cars):
+            c.rev = self.rng.uniform(1.2, 2.8)                             # nothing behind: back up to give way, one car
+            c.rside = next((off for off in sorted(opts, key=abs) if self._free(c, off, 6.0)), opts[0] if opts else 0.0)   # of a knot at a time
         elif c.stuck > self.WAIT[ag] * 4:
             c.cool = 4.0
 
@@ -1514,14 +1518,19 @@ class Traffic:
                 c.ghost -= dt
                 if c.ghost <= 0 and (self.scan(c, 1.0, back=-vehicles.HALF_L[c.kind]) or 0.0) < 0.0:
                     c.ghost = 0.5                                 # still inside another car: slip on until clear
-            if c.rev > 0:                                         # backing out of a jam (the way behind was checked)
-                c.rev -= dt
+            if c.rev > 0:                                         # backing out of a jam (the way behind was checked),
+                c.rev -= dt                                       # swinging the nose towards the side it will pass on
                 c.s = max(0.0, c.s - 2.2 * dt)
+                if c.rside and abs((c.h - _th + math.pi) % (2 * math.pi) - math.pi) < 0.35:
+                    c.h += math.copysign(2.2 * math.tan(self.LOCK_MAN) / wb * dt, c.rside)
                 c.x -= math.cos(c.h) * 2.2 * dt
                 c.y -= math.sin(c.h) * 2.2 * dt
                 gb = self.scan(c, 4.0, flip=True)
                 if c.rev <= 0 or c.s <= 0.5 or (gb is not None and gb < 1.0):
                     c.rev, c.cool, c.stuck = 0.0, 3.0, 0.0
+                    if c.rside and self._free(c, c.rside, 10.0):         # room now: straight on round it
+                        c.shift, c.shift_t = c.rside, 0.0
+                    c.rside = 0.0
             else:
                 c.s += c.v * dt * max(0.0, math.cos(c.h - _th))     # progress along the road, not along the clock
                 if c.s >= L:
@@ -1531,7 +1540,8 @@ class Traffic:
                     e = w.edges[c.e]
                 # pure pursuit with a bicycle model: steer for a point ahead on the lane, limited front-wheel angle and
                 # rate, so cars swing round bends and into other lanes along believable arcs instead of sliding
-                want = max(-0.55, min(0.55, math.atan2(2.0 * wb * math.sin(max(-1.5708, min(1.5708, err))), la)))
+                lock = self.LOCK_MAN if (c.shift or abs(c.avoid) > 0.3 or c.cool > 0) else 0.55     # going round / out of a jam:
+                want = max(-lock, min(lock, math.atan2(2.0 * wb * math.sin(max(-1.5708, min(1.5708, err))), la)))  # tighter turns
                 c.str += (want - c.str) * min(1.0, dt * 5.0)
                 c.h += c.v * math.tan(c.str) / wb * dt
                 c.x += math.cos(c.h) * c.v * dt
