@@ -78,10 +78,10 @@ class Splash3D(showcase.Showcase):
         want_char = self.rng.random() < 0.5
         if want_char:
             if not self.char_bag:
-                self.char_bag = list(range(len(characters.LIKOVI)))
+                self.char_bag = list(range(len(characters.LIKOVI))) + [showcase.NPC + a for a in vehicles.WALKERS if showcase.peds_lines.TOPICS.get(vehicles.PED_IDS[a])] + [showcase.PERS + k for k in range(len(showcase.PERSONAS))]
                 self.rng.shuffle(self.char_bag)
             kind, i = "char", self.char_bag.pop()
-            q = showcase.L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
+            q = showcase.PERSONAS[i - showcase.PERS][2] if i >= showcase.PERS else showcase.peds_lines.idle(vehicles.PED_IDS[i - showcase.NPC]) if i >= showcase.NPC else showcase.L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
             text, secs = self.rng.choice(q), showcase.CHAR_SECS
             act = self.rng.choice(("walk", "fight", "shoot", "chase", "rage"))
             extra = {"act": act, "dummy": self.rng.randrange(9)}
@@ -376,8 +376,13 @@ class Splash3D(showcase.Showcase):
         if c["kind"] == "car":
             tag, name, sub = f"{showcase.L_CARS}  {c['k']}/{vehicles.N}", vehicles.NAMES[c["i"]], c["text"]
         else:
-            lk = characters.LIKOVI[c["i"]]
-            tag, name, sub = showcase.L_CHARS, lk[1], lk[2]
+            if c["i"] >= showcase.PERS:
+                tag, name, sub = showcase.L_CHARS, showcase.PERSONAS[c["i"] - showcase.PERS][0], ""
+            elif c["i"] >= showcase.NPC:
+                tag, name, sub = showcase.L_CHARS, vehicles.PED_NAMES[c["i"] - showcase.NPC], ""
+            else:
+                lk = characters.LIKOVI[c["i"]]
+                tag, name, sub = showcase.L_CHARS, lk[1], lk[2]
         up = int((1.0 - min(1.0, t * 6)) * 14)
         font.draw_text(tag, 20, sh - band + 8 + up, 14, rl.Color(150, 154, 165, a), bold=True)
         font.draw_text(font.fit(name, 26, int(w - 40), True), 20, sh - band + 26 + up, 26, rl.Color(240, 200, 60, a), bold=True)
@@ -390,7 +395,7 @@ class Splash3D(showcase.Showcase):
 
     def _char_act(self, c, t, now, wx, dyn):
         """Walk / fight / shoot / chase / rage with the character's in-game model; returns the point above the head."""
-        arch, act, Z = 100 + c["i"], c["act"], 1.9
+        arch, act, Z = (showcase._arch(c["i"]) if c["i"] >= showcase.NPC else 100 + c["i"]), c["act"], 1.9
         d = c["dummy"]
         if act == "walk":
             px = wx - 2.5 + 5.0 * t

@@ -354,6 +354,7 @@ def main():
 
     loader.begin("textures")
     tex = {}
+    loader.tick(0.01, "textures")
     try:
         tex = gl3d.build_textures()
     except Exception:  # noqa: BLE001
@@ -364,31 +365,34 @@ def main():
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
     renderer.log = log
-    loader.tick(0.4, "car & pedestrian models")
+    loader.tick(0.15, "overview mesh")
     renderer.build_overview()
+    loader.tick(0.25, "car & pedestrian models")
     renderer.BUILD_BUDGET = 10 ** 9
     for kind in range(vehicles.N):
         renderer.ai_model(kind, 0)
-        loader.tick(0.4 + 0.3 * kind / vehicles.N, f"car models {kind + 1}/{vehicles.N}")
+        loader.tick(0.25 + 0.25 * (kind + 1) / vehicles.N, f"car models {kind + 1}/{vehicles.N}")
     for a_ in range(vehicles.PED_COUNT):
-        renderer.ped_model(a_, 0, 0, 0)
-        renderer.ped_model(a_, 0, 1, 0)
-        if a_ in vehicles.WALKERS:                         # the walk cycle and the standing pose, so the first crowd never builds models in-frame
-            for fr_ in (12, 20, 21, 22, 23, 24, 25, 26, 27):
-                renderer.ped_model(a_, 0, fr_, 0)
-        loader.tick(0.7 + 0.3 * a_ / vehicles.PED_COUNT, f"pedestrian models {a_ + 1}/{vehicles.PED_COUNT}")
-    for fr_ in (0, 2, 3, 4, 5, 12, 13) + tuple(range(20, 28)) + tuple(range(30, 38)):
+        fr_list = [0, 1] + ([12, 20, 21, 22, 23, 24, 25, 26, 27] if a_ in vehicles.WALKERS else [])      # the walk cycle and the standing pose, so the first crowd never builds models in-frame
+        for j_, fr_ in enumerate(fr_list):
+            renderer.ped_model(a_, 0, fr_, 0)
+            loader.tick(0.5 + 0.3 * (a_ + (j_ + 1) / len(fr_list)) / vehicles.PED_COUNT, f"pedestrian models {a_ + 1}/{vehicles.PED_COUNT}")
+    own_ = (0, 2, 3, 4, 5, 12, 13) + tuple(range(20, 28)) + tuple(range(30, 38))
+    for j_, fr_ in enumerate(own_):
         renderer.ped_model(100 + cfg["lik"] % len(characters.LIKOVI), 0, fr_, 3)        # the player's own avatar: every pose it can show
+        loader.tick(0.8 + 0.1 * (j_ + 1) / len(own_), "your character")
     renderer.BUILD_BUDGET = type(renderer).BUILD_BUDGET
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
     renderer.pick_model("cash")
     for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "zolja", "fuel"):
         renderer.pick_model(_k)
-    loader.tick(1.0, "ready")
+    loader.tick(0.9, "pickups & weapons")
 
     rng = random.Random(a.seed)
+    loader.tick(0.92, "simulation")
     sim = Sim(world, rng, a.cars, a.peds)
+    loader.tick(0.95, "pavement grid")
     world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
     sim.car.color = -1                                   # the player's own car gets racing stripes
     sim.clock.hour = (a.hour if a.test or "--hour" in sys.argv else cfg["hour"]) % 24.0
@@ -396,8 +400,9 @@ def main():
     sim.auto_respawn = bool(a.test)
     lights = signals.Signals(world)
     sim.traffic.signals = sim.lights = lights
+    loader.tick(0.97, "traffic lights")
     print(f"[game] traffic lights: {len(lights.items)} signal heads")                     # test runs have nobody to press R
-    loader.tick(1.0, "sound")
+    loader.tick(0.99, "sound")
     aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry)
     print(f"[sound] library: {len(aud.lib)} sounds found, {aud.req[0]} new request files in sound_requests/ ({aud.req[2]} of {aud.req[1]} sounds done)")
     car_radio = radio_mod.Radio(aud)
@@ -508,6 +513,7 @@ def main():
     loader.begin("chunks")
     first = want_list(sx, sy, 7.0, W, H, 30)[:40]
     for i, key in enumerate(first):
+        loader.tick(i / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
         streamer.update([key], True, 1e9)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
