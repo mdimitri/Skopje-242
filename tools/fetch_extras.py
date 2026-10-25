@@ -1,4 +1,4 @@
-"""Bus lines (transit.json), bus stops (bus_stops.json) and map POIs (map_pois.json) from the cached country file,
+"""Bus lines (transit.json), bus stops (bus_stops.json), railway (rail.json) and map POIs (map_pois.json) from the cached country file,
 when any is missing.
 Run by the game at start; needs no network and takes ~15-40 s once."""
 import json
@@ -26,6 +26,36 @@ def bus_stops(pbf):
     return out
 
 
+def rail_data(pbf):
+    """Railway lines (rail / disused / platform ways with bridge, tunnel, layer) and stations, halts and level crossings in
+    the map box -> [["way", kind, bridge, tunnel, [[x, y], ...]], ["node", kind, x, y, name], ...] in game metres (a plain
+    list, so the world build's OSM reader skips this file)."""
+    import osmium
+    from geo import bbox, project
+    s_, w_, n_, e_ = bbox()
+    out = []
+
+    class H(osmium.SimpleHandler):
+        def node(self, n):
+            t = n.tags
+            k = t.get("railway")
+            if k in ("station", "halt", "level_crossing", "crossing") and s_ <= n.location.lat <= n_ and w_ <= n.location.lon <= e_:
+                x, y = project(n.location.lat, n.location.lon)
+                out.append(["node", k, round(x, 1), round(y, 1), t.get("name", "")])
+
+        def way(self, w):
+            t = w.tags
+            k = t.get("railway")
+            if k not in ("rail", "disused", "platform"):
+                return
+            pts = [project(q.lat, q.lon) for q in w.nodes if q.location.valid()]
+            if any(s_ <= q.lat <= n_ and w_ <= q.lon <= e_ for q in w.nodes if q.location.valid()):
+                out.append(["way", k, t.get("bridge", "no") != "no", t.get("tunnel", "no") != "no", [[round(a, 1), round(b, 1)] for a, b in pts]])
+
+    H().apply_file(pbf, locations=True)
+    return out
+
+
 def main():
     pbf = os.path.join(OSM, "pbf", "country.osm.pbf")
     if not os.path.exists(pbf):
@@ -46,6 +76,13 @@ def main():
             json.dump(st, f, ensure_ascii=False)
         os.replace(bs + ".tmp", bs)
         print(f"[extras] bus stops: {len(st)}")
+    rj = os.path.join(OSM, "rail.json")
+    if not os.path.exists(rj):
+        rl = rail_data(pbf)
+        with open(rj + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(rl, f, ensure_ascii=False)
+        os.replace(rj + ".tmp", rj)
+        print(f"[extras] railway: {sum(1 for r in rl if r[0] == 'way')} ways, {sum(1 for r in rl if r[0] == 'node')} stations / crossings")
     if not os.path.exists(os.path.join(OSM, "map_pois.json")):
         import fetch_pois
         fetch_pois.main()

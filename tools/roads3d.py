@@ -792,6 +792,9 @@ def _debug_dump(out, edges, prefix, S=8.0, R=45.0, count=14):
 
 
 
+PIER_SKIP = None          # set by build_world: (x, z, radius) -> True when a pier there would stand in a drivable lane below
+
+
 def _piers(pout, piers, deck, T):
     """Concrete piers every ~22 m wherever the deck is clearly above the ground (rivers, valleys, over-roads)."""
     L = deck.len
@@ -813,6 +816,8 @@ def _piers(pout, piers, deck, T):
                 off = lat * width * 0.27
                 px, pz = x - math.sin(yaw) * off, z + math.cos(yaw) * off
                 sz = 1.3 if lat else min(width * 0.7, 6.0)
+                if PIER_SKIP is not None and PIER_SKIP(px, pz, max(0.9, sz * 0.5)):
+                    continue                               # the deck spans the street underneath instead
                 tg2 = T.hs(px, pz) if T is not None else 0.0
                 _pier(pout, px, pz, yaw, 1.3, sz, tg2 - 0.5, dh - SLAB + 0.05)
                 piers.append((px, pz, max(0.9, sz * 0.5), tg2 - 1.0, dh - SLAB))

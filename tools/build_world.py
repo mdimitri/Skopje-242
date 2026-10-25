@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 19
+VERSION = 20
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1151,8 +1151,46 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
+    # ---- leftovers on the carriageway: lamps, trees and collision posts that stand inside a drivable lane (OSM street_lamp
+    # nodes on the centre line, links, bridge lamps above a road, fence panels of a site that overlaps a street) block
+    # cars and turns for good, so they go; posts up on a bridge deck are left alone
+    cgrid_ = {}
+    for e_ in edges:
+        if e_["drive"] and not e_["bridge"]:
+            for (ax_, ay_), (bx_, by_) in zip(e_["pts"], e_["pts"][1:]):
+                for gx_ in range(int(min(ax_, bx_) // 20) - 1, int(max(ax_, bx_) // 20) + 2):
+                    for gy_ in range(int(min(ay_, by_) // 20) - 1, int(max(ay_, by_) // 20) + 2):
+                        cgrid_.setdefault((gx_, gy_), []).append((ax_, ay_, bx_, by_, e_["w"] / 2 - 0.2))
+
+    def in_lane(x, y, r=0.0):
+        for ax_, ay_, bx_, by_, hw_ in cgrid_.get((int(x // 20), int(y // 20)), ()):
+            dx_, dy_ = bx_ - ax_, by_ - ay_
+            t_ = max(0.0, min(1.0, ((x - ax_) * dx_ + (y - ay_) * dy_) / (dx_ * dx_ + dy_ * dy_ or 1e-9)))
+            if math.hypot(x - ax_ - dx_ * t_, y - ay_ - dy_ * t_) < hw_ - r:
+                return True
+        return False
+
+    n_l, n_t, n_p = len(lamps), len(trees), len(posts)
+    lamps = [q for q in lamps if not in_lane(q[0], q[1], 0.22)]
+    trees = [q for q in trees if not in_lane(q[0], q[1], 0.5)]
+    posts = [q for q in posts if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
+    print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
+
+    stations = []
+    try:                                                        # round 21: railway viaducts, level crossings, stations
+        import rail
+        rl = _read_list(os.path.join(a.src, "rail.json"))
+        if rl:
+            rp, stations = rail.build(rl, edges, add_c, mesh.add, chunk_of, lambda x, y: float(T.hs(x, y)), in_lane)
+            posts = list(posts) + rp
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] railway skipped: {e}")
+
     try:
         phase("3D roads")
+        roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r)           # no bridge pier in a street passing underneath
         nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks)
         posts = list(posts) + piers
         roads3d_ok = True
@@ -1284,7 +1322,7 @@ def main():
         "buildings": {"buildings": buildings},
         "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "places": places,
                   "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
-                  "sites": sites, "works": works},
+                  "sites": sites, "works": works, "stations": stations},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},
