@@ -467,6 +467,8 @@ def _free_runs(bad, ta, tb, length):
 
 
 def _offset_v(P, fr, hwv, side, extra=0.0):
+    if isinstance(extra, list):
+        return [(p[0] + f[0][0] * (h + x) * side * f[1], p[1] + f[0][1] * (h + x) * side * f[1]) for p, f, h, x in zip(P, fr, hwv, extra)]
     return [(p[0] + f[0][0] * (h + extra) * side * f[1], p[1] + f[0][1] * (h + extra) * side * f[1]) for p, f, h in zip(P, fr, hwv)]
 
 
@@ -685,7 +687,11 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
             skip = partners.get(i, ())
             for side in (1, -1):
                 inner = _offset_v(RP, RF, RH, side)
-                outer = _offset_v(RP, RF, RH, side, SW_W)
+                sw_ = e.get("sw")
+                if sw_:                                         # wider pavement beside diagonal bays, eased back to normal over the last 6 m of each end
+                    dd = [min(math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]), math.hypot(q[0] - pts[-1][0], q[1] - pts[-1][1])) for q in RP]
+                    sw_ = [SW_W + (sw_ - SW_W) * min(1.0, max(0.0, (d_ - 10.0) / 6.0)) for d_ in dd]
+                outer = _offset_v(RP, RF, RH, side, sw_ or SW_W)
                 piece = 0
                 first = last = None
                 for k in range(RK0, RK1):                       # from the plate's cut to the plate's cut (or the shared joint)

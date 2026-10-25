@@ -1033,6 +1033,10 @@ def main():
             gy += spacing
 
     import bisect
+    _deg = {}
+    for e_ in edges:
+        for nd_ in (e_["a"], e_["b"]):
+            _deg[nd_] = _deg.get(nd_, 0) + 1
     _bi = np.pad(bld_a.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
 
     def _bld_share(x, y, rad=30.0):
@@ -1084,14 +1088,18 @@ def main():
             mx, my, _, _ = at(L / 2)
             dense = cls != "tertiary" and w <= 9.5 and _bld_share(mx, my) >= 0.06
             diag = dense and w >= 6.0
+            if diag:
+                e["sw"] = roads3d.SW_W * 1.3                             # wider pavement so the bays sit on it, not in the lane
+            ctr = min(1.0, max(0.35, math.hypot(mx, my) / 1800.0))      # fewer on wide roads towards the centre
             sides = (1, -1) if dense and not e["ow"] else (None,)
             for fixed in sides:
                 s = 14.0 if diag else 11.0
                 while s < L - (14.0 if diag else 11.0):
-                    if r.random() < (0.78 if diag else 0.7 if dense else 0.20):
+                    busy = 1.0 if dense else min(1.0, min(s if _deg.get(e["a"], 0) >= 3 else 99.0, (L - s) if _deg.get(e["b"], 0) >= 3 else 99.0) / 50.0)
+                    if r.random() < (0.78 if diag else 0.7 if dense else 0.10 * busy * ctr):     # wide roads: half the cars, tapering at busy junctions
                         x, y, dx, dy = at(s)
                         side = fixed or (1 if e["ow"] else r.choice((1, -1)))     # one-way (boulevard halves): right kerb only, never the median
-                        off = w / 2 + (1.7 if diag else 0.55)                    # half up on the pavement, as in Skopje; diagonal noses in to the kerb
+                        off = w / 2 + (2.0 if diag else 0.55)                    # half up on the pavement, as in Skopje; diagonal noses in to the kerb
                         px, py = x - dy * off * side, y + dx * off * side
                         if abs(px) < HX - 5 and abs(py) < HY - 5:
                             ix, iy = to_cell(px, py)
