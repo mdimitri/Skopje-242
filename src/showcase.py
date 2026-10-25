@@ -12,6 +12,7 @@ import characters
 import font
 import poster as poster_mod
 import peds_lines
+import talk
 import showcase_lines as L
 import vehicles
 
@@ -20,6 +21,13 @@ NPC = 1000                                                 # character index off
 GOLD = rl.Color(240, 200, 60, 255)
 PAINT = [(190, 50, 45), (50, 90, 160), (210, 210, 215), (60, 130, 85), (200, 160, 40), (110, 60, 130), (150, 150, 155), (40, 40, 46),
          (200, 110, 40), (130, 30, 40)]
+PERS = 2000                                                # character index offset: named Skopje personalities (talk.PERSONAS)
+PERSONAS = [(n, vehicles.PED_IDS.index(t), ls) for n, t, ls in talk.PERSONAS if t in vehicles.PED_IDS and ls]
+
+
+def _arch(i):
+    """Pedestrian archetype drawn for a NPC/personality character index."""
+    return PERSONAS[i - PERS][1] if i >= PERS else i - NPC
 
 
 def _c(t, a=255):
@@ -48,7 +56,7 @@ class Showcase:
             self.queue.append(("car", self.cars[self.car_pos % len(self.cars)]))
             self.car_pos += 1
         if not getattr(self, "char_order", None):
-            self.char_order = list(range(len(characters.LIKOVI))) + [NPC + a for a in vehicles.WALKERS if peds_lines.TOPICS.get(vehicles.PED_IDS[a])]
+            self.char_order = list(range(len(characters.LIKOVI))) + [NPC + a for a in vehicles.WALKERS if peds_lines.TOPICS.get(vehicles.PED_IDS[a])] + [PERS + k for k in range(len(PERSONAS))]
             self.rng.shuffle(self.char_order)
         for _ in range(BLOCK):                                 # 4 cars, 4 characters, ... until everything has been shown
             self.queue.append(("char", self.char_order.pop()))
@@ -67,7 +75,7 @@ class Showcase:
             secs = CAR_SECS
             col = vehicles.FIXED[i] or PAINT[(i * 7 + 3) % len(PAINT)]
         else:
-            q = peds_lines.idle(vehicles.PED_IDS[i - NPC]) if i >= NPC else L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
+            q = PERSONAS[i - PERS][2] if i >= PERS else peds_lines.idle(vehicles.PED_IDS[i - NPC]) if i >= NPC else L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
             text, secs, col = self.rng.choice(q), CHAR_SECS, None
         self.shown_cars += kind == "car"
         self.cur = {"kind": kind, "i": i, "text": text, "t0": now, "secs": secs, "col": col, "k": (self.shown_cars - 1) % vehicles.N + 1}
@@ -186,7 +194,7 @@ class Showcase:
         else:
             self._chars_scene(c, t, x, y, w, sh, base, now)
             tag = L_CHARS
-            name = vehicles.PED_NAMES[c["i"] - NPC] if c["i"] >= NPC else characters.LIKOVI[c["i"]][1]
+            name = PERSONAS[c["i"] - PERS][0] if c["i"] >= PERS else vehicles.PED_NAMES[c["i"] - NPC] if c["i"] >= NPC else characters.LIKOVI[c["i"]][1]
         # ---- caption area
         cy = y + sh + 12
         font.draw_text(tag, int(x + 14), int(cy), 14, rl.Color(150, 154, 165, 255), bold=True)
@@ -210,7 +218,7 @@ class Showcase:
             m = None
             try:
                 import gl3d
-                pos, _uv, rgba = gl3d.ped_arrays(i - NPC, 0, frame) if i >= NPC else gl3d._hero(i, frame)
+                pos, _uv, rgba = gl3d.ped_arrays(_arch(i), 0, frame) if i >= NPC else gl3d._hero(i, frame)
                 n = len(pos) - len(pos) % 3
                 m = (pos[:n].reshape(-1, 3, 3).astype(np.float32), rgba[:n:3].astype(np.uint8))
             except Exception:  # noqa: BLE001 - the splash falls back to the caricature
