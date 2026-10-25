@@ -53,6 +53,7 @@ QUERY_TIMEOUT = int(os.environ.get("SK242_QUERY_TIMEOUT", 60))      # small tile
 GRID = (int(os.environ.get("SK242_TILES_X", 11)), int(os.environ.get("SK242_TILES_Y", 7)))   # ~1 x 1 km tiles
 
 LEISURE = "park|garden|pitch|playground|golf_course|recreation_ground|nature_reserve|stadium|track|sports_centre"
+RAIL_ONLY = "disused|platform|station|halt|level_crossing|crossing"    # railway objects only the train build uses (rail.json)
 PLACE = "suburb|neighbourhood|quarter|city_district|district|village|town|hamlet|locality|square|borough"
 
 
@@ -72,6 +73,7 @@ def queries(b):
             f'way["railway"~"^(rail|light_rail|tram)$"]({bb});way["place"="square"]({bb});'
             f'rel["natural"="water"]({bb});rel["landuse"]({bb});rel["leisure"~"{LEISURE}"]({bb});'
             f'rel["waterway"="riverbank"]({bb});'
+            f'way["railway"~"^(disused|platform)$"]({bb});node["railway"~"^(station|halt|level_crossing|crossing)$"]({bb});'
         ),
         "pois": f'node["natural"="tree"]({bb});node["highway"~"street_lamp|traffic_signals"]({bb});',
     }
@@ -164,6 +166,10 @@ def run_unit(mirrors, layer, bb, uid, deadline, depth=0):
 
 
 # ------------------------------------------------------------------------------------------------ driver
+def part_doc(layer, els):
+    return {"elements": els, "rail": 1} if layer == "areas" else {"elements": els}
+
+
 def part_path(layer, i, j):
     return os.path.join(PARTS, f"{layer}_{i}_{j}.json")
 
@@ -195,7 +201,7 @@ def preview(uid, layer, els, limit=1500):
 def save_part(layer, i, j, els):
     tmp = part_path(layer, i, j) + f".tmp.{layer}_{i}_{j}"
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"elements": els}, fh)
+        json.dump(part_doc(layer, els), fh)
     os.replace(tmp, part_path(layer, i, j))
 
 
@@ -283,10 +289,35 @@ def from_pbf(grid, todo, results):
     return True
 
 
+def rail_rows(els):
+    """Railway lines and stations / level crossings -> rail.json rows (same form as fetch_extras.rail_data)."""
+    out = []
+    for el in els:
+        t = el.get("tags", {})
+        k = t.get("railway")
+        if el["type"] == "way" and k in ("rail", "disused", "platform"):
+            pts = [project(p["lat"], p["lon"]) for p in el.get("geometry") or [] if p]
+            out.append(["way", k, t.get("bridge", "no") != "no", t.get("tunnel", "no") != "no", [[round(a, 1), round(b, 1)] for a, b in pts]])
+        elif el["type"] == "node" and k in ("station", "halt", "level_crossing", "crossing"):
+            x, y = project(el["lat"], el["lon"])
+            out.append(["node", k, round(x, 1), round(y, 1), t.get("name", "")])
+    return out
+
+
+def write_list(name, rows):
+    tmp = os.path.join(OUT, name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(rows, fh, ensure_ascii=False)
+    os.replace(tmp, os.path.join(OUT, name))
+    print(f"[osm] {name}: {len(rows)}")
+
+
 def load_part(layer, i, j):
     try:
         with open(part_path(layer, i, j), encoding="utf-8") as f:
             js = json.load(f)
+        if layer == "areas" and not js.get("rail"):          # saved before the railway objects were part of it
+            return None
         return js["elements"] if "elements" in js else None
     except Exception:  # noqa: BLE001
         return None
@@ -412,7 +443,7 @@ def main():
                 state["bad_run"] = 0
             tmp = part_path(layer, i, j) + ".tmp." + uid.replace(":", "_")
             with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump({"elements": els}, fh)
+                json.dump(part_doc(layer, els), fh)
             os.replace(tmp, part_path(layer, i, j))
             results[(layer, i, j)] = els
             net.emit("cell", id=uid, state="done", n=len(els))
@@ -440,6 +471,14 @@ def main():
                 if key not in seen:
                     seen.add(key)
                     merged.append(el)
+        if have == len(grid):
+            if layer == "areas":
+                write_list("rail.json", rail_rows(merged))
+            elif layer == "pois":
+                write_list("signals.json", [[round(c, 1) for c in project(el["lat"], el["lon"])] for el in merged
+                                            if el["type"] == "node" and el.get("tags", {}).get("highway") == "traffic_signals"])
+        if layer == "areas":
+            merged = [el for el in merged if not re.search(f"^({RAIL_ONLY})$", el.get("tags", {}).get("railway", ""))]
         if have:
             tmp = os.path.join(OUT, layer + ".json.tmp")
             with open(tmp, "w", encoding="utf-8") as fh:

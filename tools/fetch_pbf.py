@@ -101,6 +101,8 @@ def layers_of(kind, t):
             out.append("places")
         if g("natural") == "tree" or re.search("street_lamp|traffic_signals", g("highway", "")):
             out.append("pois")
+        if re.search(r"^(station|halt|level_crossing|crossing)$", g("railway", "")):
+            out.append("areas")
         return out
     if PLACE.search(g("place", "") or "-") or (g("boundary") == "administrative" and re.search(
             r"^(7|8|9|10)$" if kind == "r" else r"^(9|10)$", g("admin_level", ""))):
@@ -112,7 +114,7 @@ def layers_of(kind, t):
             out.append("roads")
         if (g("landuse") or NATURAL.search(g("natural", "") or "-") or LEISURE.search(g("leisure", "") or "-")
                 or g("waterway") or g("amenity") == "parking" or g("place") == "square"
-                or re.search(r"^(rail|light_rail|tram)$", g("railway", ""))):
+                or re.search(r"^(rail|light_rail|tram|disused|platform)$", g("railway", ""))):
             out.append("areas")
     else:
         if (g("natural") == "water" or g("landuse") or LEISURE.search(g("leisure", "") or "-")

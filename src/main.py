@@ -176,7 +176,8 @@ def plan_needs(a):
     box_ok = bool(box) and box.get("hx") == geo_mod.HX and box.get("hy") == geo_mod.HY and box.get("fmt") == 2
     # a partial download is completed on the next start, but not on every start (the servers may be down)
     retry = bool(box) and not box.get("complete", True) and time.time() - box.get("t", 0) > 3600
-    n = {"osm": a.refresh or not have or not box_ok or retry,
+    extras = all(os.path.exists(os.path.join(osm, f)) for f in ("rail.json", "signals.json"))   # trains + real lights
+    n = {"osm": a.refresh or not have or not box_ok or retry or (not extras and bool(box) and box.get("complete", True)),
          "dem": not os.path.exists(os.path.join(osm, "terrain.npy"))}
     n["build"] = n["osm"] or n["dem"] or not os.path.isdir(real) or _stale(real, osm)
     return n
