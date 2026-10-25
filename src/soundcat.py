@@ -273,9 +273,10 @@ _loop("amb_wind_high", "ambience/weather", "Wind blowing steadily at height over
 _CUT = (r" outdoors", r" in a (city )?street", r" in a city", r" with (a short |an )?echo( between buildings)?", r",? echoing( between buildings| over (a|the) \w+)?", r" echoing",
         r" reverberat\w+", r" over a city", r" with a long ring", r"\bhuge\b", r"\bgiant\b", r" cinematic", r", recorded (close|from)[^.,]*", r" from some distance",
         r" and debris (falling|rattling) afterwards", r", then debris rattling", r" then settling to idle")
-_TAIL_SHOT = ""
-_TAIL_RING = ""
-_TAIL_LOOP = ""
+_TAIL_SHOT = ", short punchy movie sound effect"
+_TAIL_RING = ", short movie sound effect"
+_TAIL_LOOP = ", lively ambience with small random sounds"
+_TAIL_STEADY = ", steady constant sound"
 _RING = ("bell", "clock_tower", "horn", "chime", "pick", "revive", "ui_", "teleport", "denied", "fuel_warning", "defib", "cow_bell", "whistle", "train_horn", "siren_", "car_alarm", "truck_reverse")
 _CAP = (("step_", 0.6), ("puddle", 0.5), ("shot_uzi", 1.5), ("shot_kalash", 1.5), ("shot_shotgun", 1.2), ("shot_distant", 1.2), ("shot", 1.0), ("rocket_launch", 1.5), ("bullet_", 0.6),
         ("bat_hit", 0.5), ("swing", 0.4), ("punch", 0.5), ("kick", 0.5), ("body_fall", 0.7), ("body_hit_car", 0.8), ("hurt_thud", 0.5), ("defib", 1.5), ("cpr", 2.0),
@@ -519,9 +520,10 @@ SIMPLE = {
 
 def _gamify(row):
     key, folder, loop, secs, n, prompt, lvl, fb = row
-    p = SIMPLE.get(key, prompt)                    # plain 1-5 word description, no style words: the model handles plain nouns best
+    p = SIMPLE.get(key, prompt)                    # plain 1-5 word description + one short style phrase
     if loop:
-        return (key, folder, loop, secs, n, p + _TAIL_LOOP, lvl, fb)
+        steady = folder.startswith("vehicles") or folder.startswith("construction") or key in ("street_lamp_buzz", "power_transformer_hum", "neon_buzz")    # machines hum evenly
+        return (key, folder, loop, secs, n, p + (_TAIL_STEADY if steady else _TAIL_LOOP), lvl, fb)
     cap = next((c for pre, c in _CAP if key.startswith(pre)), _GROUP_CAP.get(folder, _GROUP_CAP.get(folder.split("/")[0], 2.5)))
     ring = any(key.startswith(r) for r in _RING)
     return (key, folder, loop, max(0.5, min(secs, cap)), n, p + (_TAIL_RING if ring else _TAIL_SHOT), lvl, fb)
