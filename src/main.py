@@ -426,6 +426,9 @@ def main():
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
     log(f"[game] playgrounds / schools / pitches: {len(sim.kids.sites)}")
+    import rentals
+    sim.rentals = rentals.Rentals(sim)
+    log(f"[game] rental e-scooters: {len(sim.rentals.spots)}")
     sim.works = works_mod.Works(sim)
     log(f"[game] building sites: {len(sim.works.sites)}")
     pend_say = {}
@@ -667,6 +670,9 @@ def main():
                 aud.play("eat", 0.8)
                 popups.add((f"{d['item']}  +{d['heal']}" + TXT("main.0011")), sim.walker.x, sim.walker.y, 2.8, 2.4, (255, 220, 120), 22)
                 hud.set_banner(rng.choice(slang.BOUGHT), 2.0)
+            elif kind == "rent":
+                aud.play("cash", 0.35, 1.0)
+                popups.add((f"{d['item']}  -{d['price']}" + TXT("main.0012")), sim.walker.x, sim.walker.y, 2.8, 2.0, (255, 220, 120), 20)
             elif kind == "broke":
                 aud.play("denied_buzz", 0.6)
                 popups.add((f"{d['item']} = {d['price']}" + TXT("main.0012")), sim.walker.x, sim.walker.y, 2.8, 2.0, (255, 150, 140), 20)

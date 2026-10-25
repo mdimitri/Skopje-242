@@ -61,6 +61,7 @@ class Body:
         self.exploded = False
         self.drown = 0.0
         self.parked_idx = None
+        self.rental = False          # rental e-scooter still standing at its spot (rentals.py)
         self.skid = None             # previous rear wheel positions
         self.slip = 0.0
         self.braking = False
@@ -2010,6 +2011,15 @@ class Sim:
             return True
         else:
             b = best
+            if b.rental:                                           # rental e-scooter: pay first
+                fare = __import__("rentals").FARE
+                name = vehicles.NAMES[b.kind]
+                if self.money < fare:
+                    self.ev("broke", item=name, price=fare)
+                    return False
+                self.money -= fare
+                b.rental = False
+                self.ev("rent", item=name, price=fare)
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
                 b.parked_idx = None
@@ -2375,6 +2385,8 @@ class Sim:
             self.transit.update(dt)
         if getattr(self, "kids", None) is not None:
             self.kids.update(dt)
+        if getattr(self, "rentals", None) is not None:
+            self.rentals.update(dt)
         if getattr(self, "works", None) is not None:
             self.works.update(dt)
         self.shots.update(dt)

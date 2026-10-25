@@ -216,6 +216,7 @@ class Renderer:
                     self._decals(rect)
                 self._actors(rect, sim, t)
                 self._shots(rect, sim)
+                self._balls(rect, sim)
                 if getattr(sim, "lights", None) is not None:
                     sim.lights.draw(rect, w.ground_y)
                 if getattr(sim, "trains", None) is not None:
@@ -308,6 +309,13 @@ class Renderer:
                 gy = w.ground_y(x, y) + z
                 c = rl.Color(30, 26, 22, 230) if dark else rl.Color(70, 64, 58, 230)
                 rl.draw_cube(V3(x, gy, y), size * (1 - abs(nx)) + 0.02, size, size * (1 - abs(ny)) + 0.02, c)
+
+    def _balls(self, rect, sim):
+        """The kids' balls on the pitches."""
+        kd = getattr(sim, "kids", None)
+        for x, y, _vx, _vy, z, _vz in (kd.balls.values() if kd is not None else ()):
+            if self._in(x, y, rect):
+                rl.draw_sphere(V3(x, self.w.ground_y(x, y) + z + 0.11, y), 0.11, rl.Color(240, 240, 236, 255))
 
     def _actors(self, rect, sim, t):
         w = self.w
