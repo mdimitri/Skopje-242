@@ -131,11 +131,17 @@ def build():
     notes = (392, 392, 392, 523, 659)                                       # wedding / ice-cream-van jingle
     x = np.concatenate([np.sin(2 * np.pi * f * _t(0.16)) * np.minimum(1, _t(0.16) / 0.01) * np.minimum(1, (0.16 - _t(0.16)) / 0.03) for f in notes])
     S["horn_jingle"] = x * 0.4
-    # tyre screech (loop, modulated band noise)
-    t = _t(1.0)
-    nz = rng.standard_normal(len(t)).astype(np.float32)
-    x = (nz - _lp(nz, 14)) * 0.5 * (1 + 0.3 * np.sin(2 * np.pi * 9 * t))
-    S["screech"] = _loopify(x / np.abs(x).max() * 0.4, 0.1)
+    # tyre screech (loop): rubber stick-slip squeal = a wavering ~1.1 kHz tone with harmonics and flutter, over a little band noise
+    t = _t(2.0)
+    drift = _lp(rng.standard_normal(len(t)), 2000)                         # slow random pitch wander
+    f = 1100 * (1 + 0.06 * drift / (np.abs(drift).max() + 1e-9) + 0.015 * np.sin(2 * np.pi * 5.3 * t))
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    tone = np.sin(ph) + 0.5 * np.sin(2 * ph + 0.3) + 0.25 * np.sin(3 * ph + 1.1)
+    flut = 0.75 + 0.25 * np.sin(2 * np.pi * 27 * t + 2 * np.sin(2 * np.pi * 3.1 * t))
+    nz = rng.standard_normal(len(t))
+    band = _lp(nz - _lp(nz, 10), 3)
+    x = (tone * flut + 0.35 * band / (np.abs(band).max() + 1e-9)).astype(np.float32)
+    S["screech"] = _loopify(x / np.abs(x).max() * 0.45, 0.15)
     # water spray (loop)
     t = _t(1.0)
     x = _lp(rng.standard_normal(len(t)).astype(np.float32), 3) * (1 + 0.3 * np.sin(2 * np.pi * 13 * t))
