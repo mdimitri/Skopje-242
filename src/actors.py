@@ -805,6 +805,17 @@ class Peds:
                     if hit_ is not None:
                         p.x += hit_[0] * hit_[2]
                         p.y += hit_[1] * hit_[2]
+                        if p.mode == "walk" and getattr(b, "speed", 9.0) < 0.3 and p.bump_cd <= 0 and (p.x - fx) ** 2 + (p.y - fy) ** 2 < 40 ** 2:
+                            p.bump_cd = 7.0                                   # squeezed past a parked car: a grumble (the first-stage line)
+                            lang_ = getattr(self.sim, "lang", 1) if self.sim else 1
+                            text_ = bible_lines.bump(vehicles.PED_IDS[p.arch], 0, lang_, rng) or bump_lines.line(vehicles.PED_IDS[p.arch], 0, rng)
+                            if talk.allowed(text_, lang_):
+                                ev("shout", text=text_, x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                    elif p.mode == "walk" and getattr(b, "speed", 9.0) < 0.3:                  # steer round a standing car a step or two ahead
+                        ah_ = push_from_box(b, p.x + math.cos(p.h) * 1.1, p.y + math.sin(p.h) * 1.1, 0.55)
+                        if ah_ is not None:
+                            p.x += ah_[0] * 1.6 * dt
+                            p.y += ah_[1] * 1.6 * dt
             # ------------- panic near fast cars
             if p.mode == "walk":
                 for b in near_b:

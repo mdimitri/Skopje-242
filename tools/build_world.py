@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 24
+VERSION = 25
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1099,13 +1099,24 @@ def main():
                     if r.random() < (0.78 if diag else 0.7 if dense else 0.10 * busy * ctr):     # wide roads: half the cars, tapering at busy junctions
                         x, y, dx, dy = at(s)
                         side = fixed or (1 if e["ow"] else r.choice((1, -1)))     # one-way (boulevard halves): right kerb only, never the median
-                        off = w / 2 + (2.0 if diag else 0.55)                    # half up on the pavement, as in Skopje; diagonal noses in to the kerb
+                        off = w / 2 + (2.45 if diag else 0.55)                   # half up on the pavement, as in Skopje; diagonal bays sit wholly on pavement and grass
                         px, py = x - dy * off * side, y + dx * off * side
+                        dg = diag
+                        if dg:                                                   # a building beside the pavement leaves no room: park parallel
+                            for k_ in (-1.8, 0.0, 1.8):
+                                qx_, qy_ = x + dx * k_ - dy * (w / 2 + 4.8) * side, y + dy * k_ + dx * (w / 2 + 4.8) * side
+                                cx2, cy2 = to_cell(qx_, qy_)
+                                if not (0 <= cx2 < NCX and 0 <= cy2 < NCY) or bld_a[cy2, cx2]:
+                                    dg = False
+                                    break
+                            if not dg:
+                                off = w / 2 + 0.55
+                                px, py = x - dy * off * side, y + dx * off * side
                         if abs(px) < HX - 5 and abs(py) < HY - 5:
                             ix, iy = to_cell(px, py)
                             if not bld_a[iy, ix]:
                                 hd = math.atan2(dy, dx) + (0.0 if side == 1 else math.pi)
-                                if diag:
+                                if dg:
                                     hd += r.choice((0.72, 0.8, 0.88))             # ~45 deg, nose towards the kerb (kerb is at +90 deg of travel)
                                 parked.append((px, py, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
                     s += r.uniform(2.6, 3.1) if diag else r.uniform(5.2, 6.0) if dense else r.uniform(6.0, 9.0)
