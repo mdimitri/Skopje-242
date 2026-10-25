@@ -150,7 +150,8 @@ class Bus:
                 self.next_stop, self.stop_k = c, k
                 break
         self.wait = 0.0
-        self.dodge, self.dodge_t = 0.0, 0.0      # sideways step round a car standing in the lane
+        self.dodge = 0.0                         # sideways step (to the left, < 0) round a car standing in the lane
+        self.s, self.lat = line.cum[i], 0.0     # where it is along / across its line
         self.stuck = 0.0
         self.rev = 0.0
 
@@ -266,9 +267,7 @@ class Transit:
         off = max(right, hw - vehicles.DIMS[b.kind][1] / 2 - 0.4) if bus.next_stop - s_bus < 40.0 else right
         while off > 0.5 and hasattr(w, "kerb") and w.kerb(tx + nx * (off + 1.3), ty + ny * (off + 1.3)):
             off -= 0.5                                              # narrow street: don't scrape the pavement
-        bus.dodge_t -= dt
-        if bus.dodge_t > 0:
-            off += bus.dodge                                        # going round something standing in the lane
+        bus.lane_off = off
         # follow the lane line itself (heading of the road a little ahead + a pull towards the lane), not a far-off point
         # that cuts across the markings: pure pursuit from the centre line left the buses half a lane out
         (ax, ay), (bx_, by_) = ln.pts[seg], ln.pts[seg + 1]
@@ -278,6 +277,12 @@ class Transit:
         while k2 < len(ln.pts) - 1 and ln.cum[k2] - s_bus < 4.0 + abs(vf) * 0.4:
             k2 += 1
         h_road = math.atan2(ln.pts[k2][1] - ln.pts[max(k2 - 1, 0)][1], ln.pts[k2][0] - ln.pts[max(k2 - 1, 0)][0])
+        bus.lat = lat
+        want = self._squeeze(bus)                                   # round a parked car: just as far out as it takes,
+        if want < 0 and self._blocked(bus, want, moving=True):      # starting early, and only into a free lane
+            want = 0.0
+        bus.dodge += max(-1.5 * dt, min(1.5 * dt, want - bus.dodge))
+        off += bus.dodge
         err = _wrap(h_road - b.h) + math.atan2(1.2 * (off - lat), abs(vf) + 3.0)
         if bus.wait > 0:                                            # at a stop: doors open
             bus.wait -= dt
@@ -298,14 +303,7 @@ class Transit:
         to_stop = bus.next_stop - s_bus
         v = 11.0 * (1.0 - min(0.8, abs(err) / 1.0))
         v = min(v, max(2.0, to_stop * 0.25))
-        ahead = self._blocked(b)
-        if ahead and bus.dodge_t <= 0 and abs(vf) < 1.0 and self._blocked(b, standing=True):
-            for lat in (-2.4, -3.6):                                # a parked / abandoned car: pull out round it if clear
-                if not self._blocked(b, lat):
-                    bus.dodge, bus.dodge_t, ahead = lat, 5.0, False
-                    break
-        elif ahead and bus.dodge_t > 0 and not self._blocked(b, 0.0, True, moving=True):
-            ahead = False                                           # mid-manoeuvre: only moving things stop it
+        ahead = self._blocked(bus)
         if ahead:
             v = 0.0
         if bus.rev > 0:
@@ -477,23 +475,64 @@ class Transit:
             ln.lane[j] = r
         return r
 
-    def _blocked(self, b, lat=0.0, standing=False, moving=False):
-        """Something (car, the player, a pedestrian) right in front: wait instead of ramming it.  `lat` probes from a
-        position moved sideways (to the right); `standing` only counts cars that stand still, `moving` only moving ones."""
-        sim = self.sim
-        fx, fy = math.cos(b.h), math.sin(b.h)
-        bx, by = b.x - fy * lat, b.y + fx * lat
+    def _near(self, bus, standing=False, moving=False, reach=40.0):
+        """Things on the road ahead of the bus, measured along its line: [(distance of their rear past the bus front,
+        across the line, half width across the line)] -- along the line, so a bend does not hide or invent anything."""
+        sim, b, ln = self.sim, bus.body, bus.line
         L = vehicles.DIMS[b.kind][0] / 2
-        look = 4.0 + max(0.0, b.vx * fx + b.vy * fy) * 1.6         # free road wanted: more the faster it goes (it brakes slowly)
-        objs = [(o.x, o.y, vehicles.HALF_L[o.kind]) for o in sim.bodies
+        objs = [(o.x, o.y, o.h, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind]) for o in sim.bodies
                 if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3)]
         if not standing:
-            objs += [(c.x, c.y, vehicles.HALF_L[c.kind]) for c in sim.traffic.cars]
+            objs += [(c.x, c.y, c.h, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]) for c in sim.traffic.cars]
             if sim.mode == "foot" and sim.walker is not None:
-                objs.append((sim.walker.x, sim.walker.y, 0.3))
-        for x, y, hl in objs:
-            dx, dy = x - bx, y - by
-            t = dx * fx + dy * fy
-            if t > L * 0.5 and t - hl - L < look and abs(-dx * fy + dy * fx) < 2.0:     # its rear, not its middle (buses are long)
-                return True
+                objs.append((sim.walker.x, sim.walker.y, 0.0, 0.4, 0.3))
+        r2 = (reach + L + 8.0) ** 2
+        out = []
+        for x, y, h, hw, hl in objs:
+            if (x - b.x) ** 2 + (y - b.y) ** 2 > r2:
+                continue
+            best = None
+            k = max(0, bus.i - 2)
+            while k < len(ln.pts) - 1 and ln.cum[k] < bus.s + reach + L + hl:
+                (ax, ay), (bx_, by_) = ln.pts[k], ln.pts[k + 1]
+                sl = ln.cum[k + 1] - ln.cum[k]
+                if sl > 0:
+                    ux, uy = (bx_ - ax) / sl, (by_ - ay) / sl
+                    t = (x - ax) * ux + (y - ay) * uy
+                    if -1.0 <= t <= sl + 1.0:
+                        lt = -(x - ax) * uy + (y - ay) * ux
+                        if best is None or abs(lt) < abs(best[1]):
+                            ca, sa = abs(math.cos(h) * ux + math.sin(h) * uy), abs(-math.sin(h) * ux + math.cos(h) * uy)
+                            best = (ln.cum[k] + t, lt, ca * hw + sa * hl, ca * hl + sa * hw)
+                k += 1
+            if best is not None and best[0] + best[3] > bus.s - L:          # not yet wholly behind the bus
+                out.append((best[0] - best[3] - bus.s - L, best[1], best[2]))
+        return out
+
+    def _blocked(self, bus, extra=0.0, standing=False, moving=False):
+        """Something (car, the player, a pedestrian) in the bus's own path just ahead: wait instead of ramming it.  The
+        path is the bus's width along its line, where the bus is now (close by) or will be (further on); `extra` moves it
+        sideways (to the left, < 0); `standing` only counts things that stand still, `moving` only moving ones."""
+        b = bus.body
+        vf = max(0.0, b.vx * math.cos(b.h) + b.vy * math.sin(b.h))
+        look = 4.0 + vf * 1.6                                       # free road wanted: more the faster it goes (it brakes slowly)
+        hw_b = vehicles.HALF_W[b.kind]
+        tgt = getattr(bus, "lane_off", 0.0) + bus.dodge + extra
+        for gap, lat, hw in self._near(bus, standing, moving, look + 2.0):
+            if -1.0 < gap < look:
+                at = (bus.lat + extra) if gap < 3.0 else tgt
+                if abs(lat - at) < hw_b + hw - 0.15:                     # (mirrors may pass over a kerb-side bonnet)
+                    return True
         return False
+
+    def _squeeze(self, bus):
+        """How far (< 0, to the left) the bus must step out of its lane to pass a car standing in it (a parked or
+        abandoned one), with a hand's width spare; 0 when there is none ahead."""
+        b = bus.body
+        hw_b, off = vehicles.HALF_W[b.kind], getattr(bus, "lane_off", 0.0)
+        need = 0.0
+        for gap, lat, hw in self._near(bus, standing=True, reach=30.0):
+            if gap > -vehicles.DIMS[b.kind][0] and abs(lat - off) < hw_b + hw + 0.35:    # in the way, or still beside it
+                need = min(need, lat - hw - hw_b - 0.35 - off)
+        lo = -self._lane(bus.line, bus.i)[1] + hw_b + 0.3 - off       # as far as the far edge of the road (one-ways: the
+        return need if need >= lo else 0.0                          # other lanes) -- no way round at all: wait

@@ -134,11 +134,15 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt)
     maxang = STEER / (1.0 + abs(vf) / (8.0 if L_ < 6 else 13.0))
     p.wheel = p.steer * maxang
+    om = 0.0
     if abs(vf) > 0.15:
         om = vf / wb * math.tan(p.steer * maxang)
         if handbrake:
             om *= 1.4
         p.h += om * dt
+    # the car turns about its rear axle (the front wheels steer): its middle, a little ahead of that, moves sideways into
+    # the turn as it yaws -- without this it pivoted about its middle and the tail swung out as if the rear wheels steered
+    vk = 0.0 if handbrake else om * L_ * (0.31 if L_ < 11 else 0.33)
     fx, fy = math.cos(p.h), math.sin(p.h)
     rx, ry = -fy, fx
     vf = p.vx * fx + p.vy * fy
@@ -169,8 +173,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         vf *= math.exp(-1.1 * dt)
         p.braking = True
     grip = 1.8 if handbrake else (GRIP * 0.63 if sf == 0 else GRIP)
-    p.slip = abs(vl)
-    vl *= math.exp(-grip * dt)
+    p.slip = abs(vl - vk)
+    vl = vk + (vl - vk) * math.exp(-grip * dt)
     p.vx, p.vy = fx * vf + rx * vl, fy * vf + ry * vl
     p.x += p.vx * dt
     p.y += p.vy * dt
@@ -1524,7 +1528,10 @@ class Traffic:
                 c.rev -= dt                                       # swinging the nose towards the side it will pass on
                 c.s = max(0.0, c.s - 2.2 * dt)
                 if c.rside and abs((c.h - _th + math.pi) % (2 * math.pi) - math.pi) < 0.35:
-                    c.h += math.copysign(2.2 * math.tan(self.LOCK_MAN) / wb * dt, c.rside)
+                    yaw = math.copysign(2.2 * math.tan(self.LOCK_MAN) / wb * dt, c.rside)
+                    c.h += yaw                                    # about the rear axle, as when driving forwards
+                    c.x -= math.sin(c.h) * yaw * wb * 0.52
+                    c.y += math.cos(c.h) * yaw * wb * 0.52
                 c.x -= math.cos(c.h) * 2.2 * dt
                 c.y -= math.sin(c.h) * 2.2 * dt
                 gb = self.scan(c, 4.0, flip=True)
@@ -1546,8 +1553,9 @@ class Traffic:
                 want = max(-lock, min(lock, math.atan2(2.0 * wb * math.sin(max(-1.5708, min(1.5708, err))), la)))  # tighter turns
                 c.str += (want - c.str) * min(1.0, dt * 5.0)
                 c.h += c.v * math.tan(c.str) / wb * dt
-                c.x += math.cos(c.h) * c.v * dt
-                c.y += math.sin(c.h) * c.v * dt
+                slip = math.atan(0.52 * math.tan(c.str))           # about the rear axle: the middle moves a little into
+                c.x += math.cos(c.h + slip) * c.v * dt              # the turn (rear axle 0.31 L behind it, wheelbase 0.6 L)
+                c.y += math.sin(c.h + slip) * c.v * dt
                 rx_, ry_, _rh = self._ref(e, c.d, c.s, c.lane + c.shift + c.avoid + c.yld)
                 if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0:     # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back
                     c.x, c.y, c.h = rx_, ry_, _rh
