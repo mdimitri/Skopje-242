@@ -210,6 +210,8 @@ class Renderer:
                 self._shots(rect, sim)
                 if getattr(sim, "lights", None) is not None:
                     sim.lights.draw(rect, w.ground_y)
+                if getattr(sim, "trains", None) is not None:
+                    sim.trains.draw(rect, w.ground_y)
                 particles.draw()
         finally:
             rl.end_mode_3d()

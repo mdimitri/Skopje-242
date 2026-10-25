@@ -5,7 +5,8 @@ above the terrain so every street underneath stays open; the deck eases down to 
 unless a street passes beneath.  Columns stand in pairs beside the track every ~22 m and are left out wherever they would
 land on a carriageway.  Where a drivable street crosses a line at ground level the crossing gets rails over the asphalt,
 two striped barrier posts and warning crosses.  The five stations get a platform, a canopy and a small building.
--> (posts, stations): breakable collision circles (x, y, r, lo, hi) and (name, x, y, yaw) for later use."""
+-> (posts, stations, track): breakable collision circles (x, y, r, lo, hi), (name, x, y, yaw), and for the trains
+{"lines": [[(x, z, y_rail_top), ...] every ~8 m], "crossings": [(x, z, edge, s_from_edge_start, yaw_of_line)]}."""
 import math
 
 import numpy as np
@@ -47,9 +48,9 @@ def _pieces(pts):
 
 
 def viaduct(g_list, pts, th, in_lane, under):
-    """Deck, parapets, rails and columns along one bridge way.  -> [(x, z, y_abs, G)], posts"""
+    """Deck, parapets, rails and columns along one bridge way.  -> [(x, z, y_abs, G)], posts, [(x, z, rail top)]"""
     pcs, total = _pieces(pts)
-    parts, posts = [], []
+    parts, posts, top = [], [], []
     for i, (x, z, yaw, ln, run) in enumerate(pcs):
         ramp = min(1.0, min(run, total - run) / RAMP)
         ramp = ramp * ramp * (3 - 2 * ramp)
@@ -67,6 +68,7 @@ def viaduct(g_list, pts, th, in_lane, under):
         for k in (-0.5, 0.0, 0.5):                                                        # sleepers
             g.box(x + ca * ln * k, y + 1.12, z + sa * ln * k, 0.28, 0.07, 2.5, SLEEPER, yaw)
         parts.append((x, z, 0.0, g))
+        top.append((round(x, 1), round(z, 1), round(y + 1.26, 2)))
         if c > 2.0 and i % 3 == 1:                                                        # a pair of columns
             for s in (-1, 1):
                 px, pz = x + nx * 2.2 * s, z + nz * 2.2 * s
@@ -76,7 +78,7 @@ def viaduct(g_list, pts, th, in_lane, under):
                     gc.box(px, h - 0.5, pz, 1.1, y - h + 0.5, 1.1, CONC_D, yaw)
                     parts.append((px, pz, 0.0, gc))
                     posts.append((px, pz, 0.7, h - 1.0, y))
-    return parts, posts
+    return parts, posts, top
 
 
 def crossing(x, z, yaw, ryaw, w):
@@ -120,20 +122,20 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
     """rl: rail.json rows.  th(x, z): terrain height.  in_lane(x, z, r): inside a drivable carriageway."""
     ways = [r for r in rl if r[0] == "way" and r[1] == "rail"]
     nodes = [r for r in rl if r[0] == "node"]
-    posts, stations = [], []
+    posts, stations, runs, xings = [], [], [], []
     mat = 3                                                      # MAT_SOLID
 
     # streets as segments in a 30 m grid, for "is a street beneath this piece" and the ground crossings
     grid = {}
-    for e in edges:
+    for ei, e in enumerate(edges):
         if e["drive"] and not e["bridge"]:
-            for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
+            for k, ((ax, ay), (bx, by)) in enumerate(zip(e["pts"], e["pts"][1:])):
                 for gx in range(int(min(ax, bx) // 30), int(max(ax, bx) // 30) + 1):
                     for gy in range(int(min(ay, by) // 30), int(max(ay, by) // 30) + 1):
-                        grid.setdefault((gx, gy), []).append((ax, ay, bx, by, e["w"] / 2 + 3.0, e["w"]))
+                        grid.setdefault((gx, gy), []).append((ax, ay, bx, by, e["w"] / 2 + 3.0, e["w"], ei, e["cum"][k]))
 
     def under(x, z):
-        for ax, ay, bx, by, hw, _w in grid.get((int(x // 30), int(z // 30)), ()):
+        for ax, ay, bx, by, hw, _w, _ei, _s in grid.get((int(x // 30), int(z // 30)), ()):
             dx, dy = bx - ax, by - ay
             t = max(0.0, min(1.0, ((x - ax) * dx + (z - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
             if math.hypot(x - ax - dx * t, z - ay - dy * t) < hw + STEP / 2:
@@ -145,18 +147,20 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
         if tunnel or len(pts) < 2:
             continue
         if bridge:
-            parts, pp = viaduct(None, pts, th, in_lane, under)
+            parts, pp, top = viaduct(None, pts, th, in_lane, under)
             for x, z, _y, g in parts:
                 pos, uv, col = g.out()
                 add_abs(chunk_of(x, z), mat, pos, uv, col)
             posts += pp
+            runs.append(top)
             nd += 1
         else:                                                    # ground line: rails across the streets it meets
+            runs.append([(round(x, 1), round(z, 1), round(th(x, z) + 0.25, 2)) for x, z, _yw, _l, _r in _pieces(pts)[0]])
             for a, b in zip(pts, pts[1:]):
                 seen = set()
                 for gx in range(int(min(a[0], b[0]) // 30), int(max(a[0], b[0]) // 30) + 1):
                     for gy in range(int(min(a[1], b[1]) // 30), int(max(a[1], b[1]) // 30) + 1):
-                        for ax, ay, bx, by, _hw, w in grid.get((gx, gy), ()):
+                        for ax, ay, bx, by, _hw, w, ei, s0 in grid.get((gx, gy), ()):
                             if (ax, ay, bx, by) in seen:
                                 continue
                             seen.add((ax, ay, bx, by))
@@ -164,6 +168,8 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
                             if p:
                                 g = crossing(p[0], p[1], math.atan2(b[1] - a[1], b[0] - a[0]), math.atan2(by - ay, bx - ax), w)
                                 add_c(chunk_of(*p), mat, *g.out())
+                                xings.append((round(p[0], 1), round(p[1], 1), ei, round(s0 + math.hypot(p[0] - ax, p[1] - ay), 1),
+                                              round(math.atan2(b[1] - a[1], b[0] - a[0]), 3)))
                                 nc += 1
     for _k, kind, x, z, name in nodes:
         if kind not in ("station", "halt"):
@@ -192,5 +198,33 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
             for k in (-7.0, 0.0, 7.0):                          # the building is 22 m long: three collision circles
                 posts.append((x + math.cos(best[1]) * k - math.sin(best[1]) * 12.5, z + math.sin(best[1]) * k + math.cos(best[1]) * 12.5,
                               4.2, th(x, z) - 1.0, th(x, z) + 4.5))
-    log(f"[build] railway: {nd} viaduct sections, {nc} ground crossings, {len(stations)} stations")
-    return posts, stations
+    lines = _chain([r for r in runs if len(r) >= 2])
+    log(f"[build] railway: {nd} viaduct sections, {nc} ground crossings, {len(stations)} stations, {len(lines)} train lines")
+    return posts, stations, {"lines": lines, "crossings": xings}
+
+
+def _chain(runs):
+    """Join way pieces that meet end to end (within 12 m) into long lines a train can run along, longest first."""
+    runs = [list(r) for r in runs]
+    out = []
+    while runs:
+        cur = runs.pop(0)
+        grown = True
+        while grown:
+            grown = False
+            for i, r in enumerate(runs):
+                for rr in (r, r[::-1]):
+                    if math.hypot(rr[0][0] - cur[-1][0], rr[0][1] - cur[-1][1]) < 12.0:
+                        cur += rr[1:]
+                    elif math.hypot(rr[-1][0] - cur[0][0], rr[-1][1] - cur[0][1]) < 12.0:
+                        cur = rr[:-1] + cur
+                    else:
+                        continue
+                    runs.pop(i)
+                    grown = True
+                    break
+                if grown:
+                    break
+        out.append(cur)
+    out.sort(key=lambda r: -len(r))
+    return [r for r in out if len(r) >= 25]                    # at least ~200 m of track

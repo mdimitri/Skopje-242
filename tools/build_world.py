@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 20
+VERSION = 21
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -52,9 +52,10 @@ AREA_STYLE = {   # kind: (z-order, rgb)
 }
 
 
-def connect_roads(roads, radius=7.0):
+def connect_roads(roads, radius=7.0, drive_radius=12.0):
     """Join dead ends that stop just short of another road (a gap in the data): the end moves onto the nearest vertex or onto a new
-    junction node inserted into that road.  Same level only (never bridges, never motorways), the end must point at the road."""
+    junction node inserted into that road.  Same level only (never bridges, never motorways), the end must point at the road.
+    A street end may reach drive_radius, a path only radius."""
     use = {}
     for rd in roads:
         if (rd["drive"] or rd["walk"]) and len(rd["nodes"]) == len(rd["pts"]):
@@ -68,8 +69,9 @@ def connect_roads(roads, radius=7.0):
         pts = rd["pts"]
         for k in range(len(pts) - 1):
             (ax, ay), (bx, by) = pts[k], pts[k + 1]
-            for cx in range(int((min(ax, bx) - radius) // cs), int((max(ax, bx) + radius) // cs) + 1):
-                for cy in range(int((min(ay, by) - radius) // cs), int((max(ay, by) + radius) // cs) + 1):
+            rg = max(radius, drive_radius)
+            for cx in range(int((min(ax, bx) - rg) // cs), int((max(ax, bx) + rg) // cs) + 1):
+                for cy in range(int((min(ay, by) - rg) // cs), int((max(ay, by) + rg) // cs) + 1):
                     grid.setdefault((cx, cy), []).append((ri, k))
     inserts = {}                                    # road -> [(segment k, t, new node id, point)]
     fresh = -1
@@ -97,7 +99,7 @@ def connect_roads(roads, radius=7.0):
                 t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * ex + (p[1] - ay) * ey) / l2))
                 qx, qy = ax + ex * t, ay + ey * t
                 d = math.hypot(p[0] - qx, p[1] - qy)
-                if d > radius or d < 0.05:
+                if d > (drive_radius if rd["drive"] else radius) or d < 0.05:
                     continue
                 if (qx - p[0]) * dx + (qy - p[1]) * dy < 0.2 * d:         # not pointing at it: a parallel neighbour
                     continue
@@ -786,14 +788,16 @@ def main():
                 drv = 0
             if t.get("access") in ("private", "no") or t.get("motor_vehicle") in ("no", "private"):
                 drv = 0
+            lanes = 0
             if t.get("lanes"):
                 try:
-                    w = max(w, int(t["lanes"]) * 3.1)
+                    lanes = max(0, int(t["lanes"]))
+                    w = max(w, lanes * 3.1)
                 except ValueError:
                     pass
             ms = t.get("maxspeed", "")
             if ms.isdigit() and drv:
-                spd = min(spd * 1.1, max(4.0, int(ms) / 3.6 * 0.8))
+                spd = min(spd * 1.4, max(4.0, int(ms) / 3.6 * 0.95))      # drivers keep to about the posted limit
             ow = 0
             o = t.get("oneway")
             nodes = el.get("nodes", [])
@@ -809,7 +813,7 @@ def main():
             except ValueError:
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
-                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", "")})
+                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
@@ -902,7 +906,7 @@ def main():
                 if cum[-1] > 0.5:
                     edges.append({"a": nid(ns[start]), "b": nid(ns[i]), "pts": seg, "cum": cum, "len": cum[-1],
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
-                                  "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"]})
+                                  "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0)})
                 start = i
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
@@ -1071,7 +1075,7 @@ def main():
                 if r.random() < 0.20:
                     x, y, dx, dy = at(s)
                     side = 1 if e["ow"] else r.choice((1, -1))     # one-way (boulevard halves): right kerb only, never the median
-                    off = w / 2 + 0.15
+                    off = w / 2 + 0.55                                       # half up on the pavement, as in Skopje
                     px, py = x - dy * off * side, y + dx * off * side
                     if abs(px) < HX - 5 and abs(py) < HY - 5:
                         ix, iy = to_cell(px, py)
@@ -1103,7 +1107,8 @@ def main():
     try:
         xwalks, posts, bridge_lamps = furniture.build(edges, roads, _is_water, _not_building, add_c, chunk_of, (HX, HY),
                                                       decks=decks, add_abs=mesh.add, terrain_h=lambda x, z: T.hs(x, z),
-                                                      bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")))
+                                                      bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")),
+                                                      signals=_read_list(os.path.join(a.src, "signals.json")))
         lamps += bridge_lamps
     except Exception as e:  # noqa: BLE001 - furniture is decoration, never fatal
         print(f"[build] furniture skipped: {e}")
@@ -1176,12 +1181,12 @@ def main():
     posts = [q for q in posts if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
-    stations = []
+    stations, track = [], {"lines": [], "crossings": []}
     try:                                                        # round 21: railway viaducts, level crossings, stations
         import rail
         rl = _read_list(os.path.join(a.src, "rail.json"))
         if rl:
-            rp, stations = rail.build(rl, edges, add_c, mesh.add, chunk_of, lambda x, y: float(T.hs(x, y)), in_lane)
+            rp, stations, track = rail.build(rl, edges, add_c, mesh.add, chunk_of, lambda x, y: float(T.hs(x, y)), in_lane)
             posts = list(posts) + rp
     except Exception as e:  # noqa: BLE001 - decoration
         import traceback
@@ -1322,7 +1327,7 @@ def main():
         "buildings": {"buildings": buildings},
         "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "places": places,
                   "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
-                  "sites": sites, "works": works, "stations": stations},
+                  "sites": sites, "works": works, "stations": stations, "track": track},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},

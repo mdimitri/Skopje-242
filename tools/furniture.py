@@ -146,7 +146,7 @@ SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junct
 
 
 def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=None, log=print, decks=None, add_abs=None, terrain_h=None,
-          bus_stops=None):
+          bus_stops=None, signals=None):
     """Returns (xwalks, posts, lamps). add(chunk, mat, pos, uv, col) puts geometry in the mesh accumulator."""
     rr = random.Random(2024)
     SIGNALS.clear()
@@ -217,6 +217,22 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             inc.setdefault(e["a"], []).append((ei, 0))
             inc.setdefault(e["b"], []).append((ei, 1))
     light_cells = set()
+    osm_sig = {}                                          # real traffic_signals nodes (fetch_extras), in a 40 m grid
+    for sx, sy in signals or ():
+        osm_sig.setdefault((int(sx // 40), int(sy // 40)), []).append((sx, sy))
+
+    def osm_lit(x, y):
+        return any((sx - x) ** 2 + (sy - y) ** 2 < 35.0 ** 2 for a in (-1, 0, 1) for b in (-1, 0, 1)
+                   for sx, sy in osm_sig.get((int(x // 40) + a, int(y // 40) + b), ()))
+
+    lit_osm = {n for n, lst in inc.items() if osm_sig and len(lst) >= 3 and osm_lit(
+        *(edges[lst[0][0]]["pts"][0] if lst[0][1] == 0 else edges[lst[0][0]]["pts"][-1]))}
+
+    def inner(ei, end):
+        """A short link between two lit nodes of one big junction: no lights inside the junction itself."""
+        e = edges[ei]
+        return e["len"] < 40.0 and (e["b"] if end == 0 else e["a"]) in lit_osm
+
     for node, lst in inc.items():
         if len(lst) < 3:
             continue
@@ -228,16 +244,31 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         top = max(ranks)
         maxw = max(edges[ei]["w"] for ei, _ in lst)
         cell = (int(nx_ // 70), int(ny_ // 70))
-        want_light = sum(1 for r in ranks if r >= 2) >= 2 and not any(
-            (cell[0] + a, cell[1] + b) in light_cells for a in (-1, 0, 1) for b in (-1, 0, 1))
+        if osm_sig:                                       # the real lights where the map has them
+            want_light = node in lit_osm
+        else:
+            want_light = sum(1 for r in ranks if r >= 2) >= 2 and not any(
+                (cell[0] + a, cell[1] + b) in light_cells for a in (-1, 0, 1) for b in (-1, 0, 1))
         if want_light:
             light_cells.add(cell)
         phase = rr.randint(0, 1)
-        e_a, end_a = lst[0]
-        _x, _y, ux0, uy0 = at(edges[e_a], 0.0 if end_a == 0 else edges[e_a]["len"])   # axis of signal group 0
+        e_a, end_a = max(lst, key=lambda q: RANK[edges[q[0]]["cls"]])           # the biggest road sets signal group 0
+        _x, _y, ux0, uy0 = at(edges[e_a], 0.0 if end_a == 0 else edges[e_a]["len"])
+
+        def head_only(ei, end):
+            """A signal without a pole of its own (short approach, no room at the kerb): the lights still apply."""
+            if inner(ei, end):
+                return
+            e = edges[ei]
+            _p, _q, dx, dy = at(e, 0.0 if end == 0 else e["len"])
+            grp = 0 if abs(dx * ux0 + dy * uy0) > 0.7 else 1
+            SIGNALS.append((node, ei, end, grp, float("nan"), float("nan"), round(nx_, 1), round(ny_, 1)))
+
         for (ei, end), rk in zip(lst, ranks):
             e = edges[ei]
             if e["len"] < 16:
+                if want_light:
+                    head_only(ei, end)
                 continue
             s0 = 0.0 if end == 0 else e["len"]
             sgn = 1 if end == 0 else -1
@@ -247,6 +278,8 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             rx, ry = ay, -ax                              # right-hand side for traffic approaching the junction
             w = e["w"]
             if not ok(px, py):
+                if want_light:
+                    head_only(ei, end)
                 continue
             has_x = w >= 6.0 and e["len"] >= 30 and rr.random() < (0.9 if (want_light and rk >= 2) else 0.5 if rk >= 2 else 0.3)
             if has_x:
@@ -254,15 +287,23 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 counts["cross"] += 1
             fx, fy = ax, ay                               # signs face the approaching traffic
             lx, ly = px + ax * 3.8 + rx * (w / 2 + 1.0), py + ay * 3.8 + ry * (w / 2 + 1.0)
-            if not_building(lx, ly) and ok(lx, ly):
-                if want_light and rk >= 1:
-                    if put(signal_pole(lx, ly, fx, fy, rx, ry, -1), lx, ly):   # lamps are lit live by the game
-                        posts.append((lx, ly, 0.22))
+            if want_light and inner(ei, end):
+                pass
+            elif want_light:                              # right kerb, further back, else the left kerb; lamps lit live
+                for back, side in ((3.8, 1), (9.0, 1), (3.8, -1), (9.0, -1)):
+                    qx, qy = px + ax * back + rx * (w / 2 + 1.0) * side, py + ay * back + ry * (w / 2 + 1.0) * side
+                    if back < e["len"] - d and not_building(qx, qy) and ok(qx, qy) and put(
+                            signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1), qx, qy):
+                        posts.append((qx, qy, 0.22))
                         counts["lights"] += 1
                         grp = 0 if abs(ax * ux0 + ay * uy0) > 0.7 else 1
-                        SIGNALS.append((node, ei, end, grp, round(lx - rx * 0.75, 2), round(ly - ry * 0.75, 2),
+                        SIGNALS.append((node, ei, end, grp, round(qx - rx * side * 0.75, 2), round(qy - ry * side * 0.75, 2),
                                         round(nx_, 1), round(ny_, 1)))
-                elif rk < top:
+                        break
+                else:
+                    head_only(ei, end)                    # every approach of a lit junction gets its lights
+            if not_building(lx, ly) and ok(lx, ly) and not want_light:
+                if rk < top:
                     put(sign(lx, ly, fx, fy, "stop" if rr.random() < 0.55 else "yield"), lx, ly)
                     posts.append((lx, ly, 0.16))
                     counts["signs"] += 1

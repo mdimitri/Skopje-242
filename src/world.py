@@ -307,6 +307,7 @@ class World:
             if e["walk"]:
                 self.walk_out.setdefault(e["a"], []).append((i, 1))
                 self.walk_out.setdefault(e["b"], []).append((i, -1))
+        self.main = self._main_net()
         P(0.2, 'routing graph')
         sg = 64.0
         self.sg = sg
@@ -317,10 +318,52 @@ class World:
                 (ax, ay), (bx, by) = e["pts"][k], e["pts"][k + 1]
                 cells.add((int((ax + bx) / 2 // sg), int((ay + by) / 2 // sg)))
             for c in cells:
-                if e["drive"] and e["cls"] not in ("service", "living_street") and e["len"] > 12:
+                if e["drive"] and e["cls"] not in ("service", "living_street") and e["len"] > 12 and e["a"] in self.main and e["b"] in self.main:
                     self.drive_cells.setdefault(c, []).append(i)
                 if e["walk"] and e["cls"] not in ("steps",):
                     self.walk_cells.setdefault(c, []).append(i)
+
+    def _main_net(self):
+        """Nodes of the largest strongly connected part of the driving graph: from each of them every other one can be
+        reached under the one-way rules.  Traffic is born and routed only here, so no car starts in a closed-off pocket."""
+        rev = {}
+        for n, lst in self.out.items():
+            for ei, d in lst:
+                e = self.edges[ei]
+                rev.setdefault(e["b"] if d == 1 else e["a"], []).append(n)
+        order, seen = [], set()
+        for n0 in self.out:                                   # Kosaraju, iterative: finishing order on the graph ...
+            if n0 in seen:
+                continue
+            seen.add(n0)
+            st = [(n0, iter(self.out.get(n0, ())))]
+            while st:
+                n, it = st[-1]
+                for ei, d in it:
+                    e = self.edges[ei]
+                    m = e["b"] if d == 1 else e["a"]
+                    if m not in seen:
+                        seen.add(m)
+                        st.append((m, iter(self.out.get(m, ()))))
+                        break
+                else:
+                    st.pop()
+                    order.append(n)
+        best, seen = set(), set()
+        for n0 in reversed(order):                            # ... then components on the reversed graph
+            if n0 in seen:
+                continue
+            comp, st = {n0}, [n0]
+            seen.add(n0)
+            while st:
+                for m in rev.get(st.pop(), ()):
+                    if m not in seen:
+                        seen.add(m)
+                        comp.add(m)
+                        st.append(m)
+            if len(comp) > len(best):
+                best = comp
+        return best
 
     KERB_CLS = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street",
                 "primary_link", "secondary_link", "tertiary_link", "trunk_link"}

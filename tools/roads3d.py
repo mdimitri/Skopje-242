@@ -855,11 +855,20 @@ def _line(out, cov, me, e, pts, fr, off, y, width, col, dashed, rank):
             prev = q
 
 
+def lanes_per_way(e):
+    """Lanes in each travel direction: the OSM lanes count where the map has one, otherwise from the width (one-way
+    roads round(w/3.2), two-way roads two each way from 11 m).  src/actors.Traffic.lanes_of drives on these."""
+    n, w = e.get("lanes", 0), e["w"]
+    if e["ow"]:
+        return n if n else max(1, int(round(w / 3.2)))
+    return max(1, n // 2) if n else (2 if w >= 11.0 else 1)
+
+
 def _markings(out, cov, i, e, pts, fr, y):
     w, rk = e["w"], rank_of(e["cls"])
     white, yellow = (236, 234, 224), (232, 206, 96)
     if e["ow"]:
-        lanes = max(1, int(round(w / 3.2)))
+        lanes = lanes_per_way(e)
         for k in range(1, lanes):
             _line(out, cov, i, e, pts, fr, -w / 2 + k * w / lanes, y, 0.13, white, True, rk)
     else:
@@ -868,9 +877,10 @@ def _markings(out, cov, i, e, pts, fr, y):
             _line(out, cov, i, e, pts, fr, -0.14, y, 0.11, yellow, False, rk)
         else:
             _line(out, cov, i, e, pts, fr, 0.0, y, 0.13, white, True, rk)
-        if w >= 11.0:
+        n = lanes_per_way(e)
+        for k in range(1, n):
             for sgn in (1, -1):
-                _line(out, cov, i, e, pts, fr, sgn * w / 4, y, 0.12, white, True, rk)
+                _line(out, cov, i, e, pts, fr, sgn * k * w / 2 / n, y, 0.12, white, True, rk)
     if w >= 7.0:
         for sgn in (1, -1):
             _line(out, cov, i, e, pts, fr, sgn * (w / 2 - 0.4), y, 0.1, white, False, rk)

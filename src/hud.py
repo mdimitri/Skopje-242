@@ -247,6 +247,12 @@ class Hud:
                     qx, qy = to_mm(x, y)
                     if mx < qx < mx + ms and my < qy < my + ms:
                         rl.draw_circle(int(qx), int(qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
+            for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations, named
+                qx, qy = to_mm(x, y)
+                if mx < qx < mx + ms and my < qy < my + ms:
+                    rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(150, 40, 40, 255))
+                    if name:
+                        font.draw_text(name, int(qx) + 5, int(qy) - 7, 12, rl.Color(150, 40, 40, 255))
             for cc in sim.traffic.cars:
                 qx, qy = to_mm(cc.x, cc.y)
                 if mx < qx < mx + ms and my < qy < my + ms:
@@ -282,6 +288,11 @@ class Hud:
                     qx, qy = to_big(x, y)
                     font.draw_text(name, int(qx) + 6, int(qy) - 8, 16, rl.Color(20, 30, 90, 255))
                     rl.draw_circle(int(qx), int(qy), 4, rl.Color(20, 30, 90, 255))
+            for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations
+                qx, qy = to_big(x, y)
+                rl.draw_rectangle(int(qx) - 4, int(qy) - 4, 8, 8, rl.Color(150, 40, 40, 255))
+                if name:
+                    font.draw_text(name, int(qx) + 7, int(qy) - 8, 15, rl.Color(150, 40, 40, 255))
             for x, y, cat, _nm in self.pois:                    # faint POI dots, coloured by kind
                 qx, qy = to_big(x, y)
                 rl.draw_circle(int(qx), int(qy), 1.6, POI_COL.get(cat, POI_COL["shop"]))

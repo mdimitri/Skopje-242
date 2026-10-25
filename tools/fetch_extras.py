@@ -1,4 +1,4 @@
-"""Bus lines (transit.json), bus stops (bus_stops.json), railway (rail.json) and map POIs (map_pois.json) from the cached country file,
+"""Bus lines (transit.json), bus stops (bus_stops.json), railway (rail.json), traffic signals (signals.json) and map POIs (map_pois.json) from the cached country file,
 when any is missing.
 Run by the game at start; needs no network and takes ~15-40 s once."""
 import json
@@ -23,6 +23,19 @@ def bus_stops(pbf):
             if o.location.valid() and s_ <= o.location.lat <= n_ and w_ <= o.location.lon <= e_:
                 x, y = project(o.location.lat, o.location.lon)
                 out.append([round(x, 1), round(y, 1), t.get("name", "")])
+    return out
+
+
+def signal_nodes(pbf):
+    """Every highway=traffic_signals node in the map box -> [[x, y], ...] in game metres."""
+    import osmium
+    from geo import bbox, project
+    s_, w_, n_, e_ = bbox()
+    out = []
+    for o in osmium.FileProcessor(pbf, osmium.osm.NODE):
+        if o.tags.get("highway") == "traffic_signals" and o.location.valid() and s_ <= o.location.lat <= n_ and w_ <= o.location.lon <= e_:
+            x, y = project(o.location.lat, o.location.lon)
+            out.append([round(x, 1), round(y, 1)])
     return out
 
 
@@ -83,6 +96,13 @@ def main():
             json.dump(rl, f, ensure_ascii=False)
         os.replace(rj + ".tmp", rj)
         print(f"[extras] railway: {sum(1 for r in rl if r[0] == 'way')} ways, {sum(1 for r in rl if r[0] == 'node')} stations / crossings")
+    sj = os.path.join(OSM, "signals.json")
+    if not os.path.exists(sj):
+        sl = signal_nodes(pbf)
+        with open(sj + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(sl, f)
+        os.replace(sj + ".tmp", sj)
+        print(f"[extras] traffic signals: {len(sl)}")
     if not os.path.exists(os.path.join(OSM, "map_pois.json")):
         import fetch_pois
         fetch_pois.main()

@@ -56,8 +56,9 @@ class Services:
         for i, e in enumerate(w.edges):
             if not e["drive"] or e["len"] < 1:
                 continue
-            nodes[e["a"]] = e["pts"][0]
-            nodes[e["b"]] = e["pts"][-1]
+            if e["a"] in w.main and e["b"] in w.main:            # only the connected network: every call is reachable
+                nodes[e["a"]] = e["pts"][0]
+                nodes[e["b"]] = e["pts"][-1]
             adj.setdefault(e["a"], []).append((e["b"], i, 1))
             if not e["ow"]:
                 adj.setdefault(e["b"], []).append((e["a"], i, -1))
