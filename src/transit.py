@@ -97,6 +97,10 @@ def attach_stops(lines, stops):
                 for gy in (int(y // 40) - 1, int(y // 40), int(y // 40) + 1):
                     for k in grid.get((gx, gy), ()):
                         d = math.hypot(stops[k][0] - x, stops[k][1] - y)
+                        ax, ay = (ln.pts[j + 1][0] - x, ln.pts[j + 1][1] - y) if j + 1 < len(ln.pts) else (x - ln.pts[j - 1][0], y - ln.pts[j - 1][1])
+                        al = math.hypot(ax, ay) or 1.0
+                        if (-(stops[k][0] - x) * ay + (stops[k][1] - y) * ax) / al < -2.0:
+                            continue                                     # the shelter across the road is the other direction's
                         if d < 22 and (k not in best or d < best[k][0]):
                             best[k] = (d, ln.cum[j])
         ln.stops = sorted((c, k) for k, (d, c) in best.items())
@@ -112,6 +116,7 @@ class Bus:
                 self.next_stop, self.stop_k = c, k
                 break
         self.wait = 0.0
+        self.dodge, self.dodge_t = 0.0, 0.0      # sideways step round a car standing in the lane
         self.stuck = 0.0
         self.rev = 0.0
 
@@ -210,6 +215,18 @@ class Transit:
         while j < len(ln.pts) - 1 and ln.cum[j] - s_bus < 10.0 + abs(vf) * 0.8:   # look-ahead point (from the true position)
             j += 1
         tx, ty = ln.pts[j]
+        pj = max(j - 1, 0)                                          # the line is the road's centre: keep to the right lane,
+        ddx, ddy = tx - ln.pts[pj][0], ty - ln.pts[pj][1]           # and pull in to the kerb for a stop
+        dd = math.hypot(ddx, ddy) or 1.0
+        nx, ny = -ddy / dd, ddx / dd
+        off = 2.6 if bus.next_stop - s_bus < 40.0 else 1.8
+        w = self.sim.w
+        while off > 0.5 and hasattr(w, "kerb") and w.kerb(tx + nx * (off + 1.3), ty + ny * (off + 1.3)):
+            off -= 0.5                                              # narrow street: don't scrape the pavement
+        bus.dodge_t -= dt
+        if bus.dodge_t > 0:
+            off += bus.dodge                                        # going round something standing in the lane
+        tx, ty = tx + nx * off, ty + ny * off
         err = _wrap(math.atan2(ty - b.y, tx - b.x) - b.h)
         if bus.wait > 0:                                            # at a stop: doors open
             bus.wait -= dt
@@ -231,6 +248,13 @@ class Transit:
         v = 11.0 * (1.0 - min(0.8, abs(err) / 1.0))
         v = min(v, max(2.0, to_stop * 0.25))
         ahead = self._blocked(b)
+        if ahead and bus.dodge_t <= 0 and abs(vf) < 1.0 and self._blocked(b, standing=True):
+            for lat in (-2.4, -3.6):                                # a parked / abandoned car: pull out round it if clear
+                if not self._blocked(b, lat):
+                    bus.dodge, bus.dodge_t, ahead = lat, 5.0, False
+                    break
+        elif ahead and bus.dodge_t > 0 and not self._blocked(b, 0.0, True, moving=True):
+            ahead = False                                           # mid-manoeuvre: only moving things stop it
         if ahead:
             v = 0.0
         if bus.rev > 0:
@@ -377,16 +401,20 @@ class Transit:
                 keep.append(p)
         self.movers = keep
 
-    def _blocked(self, b):
-        """Something (car, the player, a pedestrian) right in front: wait instead of ramming it."""
+    def _blocked(self, b, lat=0.0, standing=False, moving=False):
+        """Something (car, the player, a pedestrian) right in front: wait instead of ramming it.  `lat` probes from a
+        position moved sideways (to the right); `standing` only counts cars that stand still, `moving` only moving ones."""
         sim = self.sim
         fx, fy = math.cos(b.h), math.sin(b.h)
+        bx, by = b.x - fy * lat, b.y + fx * lat
         L = vehicles.DIMS[b.kind][0] / 2
-        objs = [(o.x, o.y) for o in sim.bodies if o is not b] + [(c.x, c.y) for c in sim.traffic.cars]
-        if sim.mode == "foot" and sim.walker is not None:
-            objs.append((sim.walker.x, sim.walker.y))
+        objs = [(o.x, o.y) for o in sim.bodies if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3)]
+        if not standing:
+            objs += [(c.x, c.y) for c in sim.traffic.cars]
+            if sim.mode == "foot" and sim.walker is not None:
+                objs.append((sim.walker.x, sim.walker.y))
         for x, y in objs:
-            dx, dy = x - b.x, y - b.y
+            dx, dy = x - bx, y - by
             t = dx * fx + dy * fy
             if L < t < L + 9.0 and abs(-dx * fy + dy * fx) < 2.0:
                 return True

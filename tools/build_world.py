@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 18
+VERSION = 19
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1070,13 +1070,13 @@ def main():
             while s < L - 11:
                 if r.random() < 0.20:
                     x, y, dx, dy = at(s)
-                    side = r.choice((1, -1))
+                    side = 1 if e["ow"] else r.choice((1, -1))     # one-way (boulevard halves): right kerb only, never the median
                     off = w / 2 + 0.15
                     px, py = x - dy * off * side, y + dx * off * side
                     if abs(px) < HX - 5 and abs(py) < HY - 5:
                         ix, iy = to_cell(px, py)
                         if not bld_a[iy, ix]:
-                            parked.append((px, py, math.atan2(dy, dx), r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
+                            parked.append((px, py, math.atan2(dy, dx) + (0.0 if side == 1 else math.pi), r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
                 s += r.uniform(6.0, 9.0)
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
