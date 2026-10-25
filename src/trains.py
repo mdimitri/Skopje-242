@@ -53,6 +53,7 @@ class Train:
     def __init__(self, line, s, d):
         self.line, self.s, self.d = line, s, d
         self.v, self.wait, self.last_stop = SPEED, 0.0, None
+        self.ended = False                                    # set at the end of the line (the train leaves the map)
 
 
 class Trains:
@@ -105,6 +106,7 @@ class Trains:
                 t.wait, t.last_stop, t.v = DWELL, stop, 0.0
             if rem <= 0.5:                                    # end of the line: wait, then back the other way
                 t.s, t.d, t.wait, t.v, t.last_stop = end, -t.d, DWELL, 0.0, None
+                t.ended = True
         closed = set()
         for key, (ln, s, _x, _z, _yaw) in self.xings.items():
             for t in self.trains:

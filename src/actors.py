@@ -1592,6 +1592,7 @@ class Sim:
         self.money = 250
         self.jack = None                     # carjack in progress (see _start_jack)
         self.riding = None                   # the city bus you ride as a passenger (Ctrl takes it over)
+        self.train_ride = None               # the trains.Train you ride on foot (F at a station boards / gets off)
         self.shots = projectiles.Projectiles(self)
         import chaos
         self.chaos = chaos.Chaos(self)       # breakable props, blast waves, chain fires
@@ -1900,6 +1901,22 @@ class Sim:
         if self.mode == "car":
             return
         wk = self.walker
+        tr = self.train_ride
+        if tr is not None:                                         # get off, only while the train stands in a station
+            if tr.v < 0.1 and tr.wait > 0:
+                self.train_ride = None
+                self.ev("alight")
+            return False
+        for t in self.trains.trains:
+            if t.v < 0.1 and t.wait > 0 and t.last_stop is not None:
+                for k in range(trains.CARS):
+                    x, y, _z, _h = t.line.at(t.s - t.d * (k * (trains.CAR_L + trains.GAP) + trains.CAR_L / 2))
+                    if math.hypot(wk.x - x, wk.y - y) < 14.0:
+                        fare = 40 if self.money >= 40 else 0
+                        self.money -= fare
+                        self.train_ride = t
+                        self.ev("board", body=None, fare=fare)
+                        return True
         best, bd, kind = None, 1e9, None
         for b in self.bodies:
             if not b.alive or b.burn > 0.5:
@@ -2200,6 +2217,8 @@ class Sim:
                 c.drown = 0.0
         else:
             wk = self.walker
+            if self.train_ride is not None:                        # a passenger: the controls wait, the carriage carries you
+                inp = dict(inp, move=(0, 0), attack=False, jump=False)
             if wk.health > 0:
                 wk.combo_t = getattr(wk, "combo_t", 0.0) - dt
                 if wk.combo_t <= 0:
@@ -2395,6 +2414,20 @@ class Sim:
                         if b.player_car and self.mode == "car" and b.health > 0:
                             self._pay(min(30, int(r[0] * 2)), r[1], r[2])
         self.trains.update(dt)
+        tr = self.train_ride
+        if tr is not None and self.mode == "foot" and self.walker is not None:
+            if tr.ended:                                           # the train left the map: back to the nearest station
+                tr.ended = False
+                ex, ey, _z, _h = tr.line.at(tr.s)
+                st = min(getattr(w, "stations", ()) or (), key=lambda q: math.hypot(q[1] - ex, q[2] - ey), default=None)
+                self.train_ride = None
+                if st is not None:
+                    self.walker.x, self.walker.y, self.walker.vx, self.walker.vy = st[1], st[2], 0.0, 0.0
+                    self.ev("alight")
+            else:
+                self.walker.x, self.walker.y, _z, _h = tr.line.at(tr.s - tr.d * (trains.CAR_L / 2))
+        elif tr is not None:
+            self.train_ride = None
         self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, self.walker if self.mode == "foot" else None)
         self._cull_t -= dt
         if self._cull_t <= 0:                       # thin the crowd / traffic when the clock says it is quiet
