@@ -1008,7 +1008,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man")
 
     def __init__(self):
         self.cab = random.random() < 0.1        # one in ten has its radio on (heard muffled from outside)
@@ -1031,6 +1031,7 @@ class Car:
         self.arr = None            # time it reached the approach to the junction ahead (first come, first served)
         self.blk = None            # what stood right in front of it last frame
         self.rside = 0.0           # while reversing: the lane offset it swings its nose towards, to go round next
+        self.man = 0.0             # seconds left of making way for an oncoming car (it and that car turn tightest)
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -1216,6 +1217,7 @@ class Traffic:
 
     WAIT = (9.0, 6.0, 4.0, 2.5)      # seconds a stopped car waits before trying to get out, by aggression setting
     LOCK_MAN = math.atan(1.5 * math.tan(0.55))   # front-wheel lock while manoeuvring: turns 50 % tighter than normal driving
+    LOCK_WAY = math.atan(2.0 * math.tan(0.55))   # making way for an oncoming car: half the normal turning radius
 
     def _untangle(self, c, e, gap, dt, fx, fy):
         """A car that has been stuck behind something works its way out: back off, slip into another lane (even the
@@ -1231,6 +1233,7 @@ class Traffic:
             elif c.stuck > 2.0 and c.rev <= 0:                   # met someone head-on out there: it is the one that backs off
                 if self.scan(c, 7.0, flip=True) is None:
                     c.rev = 2.0
+                    self._make_way(c)
                 elif self._free(c, -c.shift, 6.0):
                     c.shift, c.shift_t = 0.0, 0.0
             return
@@ -1248,8 +1251,16 @@ class Traffic:
                 and not any(o.rev > 0 and (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 400.0 for o in self.cars):
             c.rev = self.rng.uniform(1.2, 2.8)                             # nothing behind: back up to give way, one car
             c.rside = next((off for off in sorted(opts, key=abs) if self._free(c, off, 6.0)), opts[0] if opts else 0.0)   # of a knot at a time
+            self._make_way(c)
         elif c.stuck > self.WAIT[ag] * 4:
             c.cool = 4.0
+
+    def _make_way(self, c):
+        """c backs up to let the car facing it through (a narrow street, parked cars both sides): for the next few seconds
+        both steer with the tightest lock, so they squeeze past each other."""
+        o = c.blk
+        if isinstance(o, Car) and abs((o.h - c.h + math.pi) % (2 * math.pi) - math.pi) > 2.4:
+            c.man = o.man = 6.0
 
     def _courtesy(self, c, e, vlim, ems, ph, dt):
         """Swerve round kerb-parked cars and pull over for emergency vehicles.  Smooth sideways targets (c.avoid / c.yld);
@@ -1520,6 +1531,8 @@ class Traffic:
                     continue
                 if d2 > 90 ** 2 and c.ghost <= 0:
                     c.ghost, c.stuck = 4.0, 0.0                   # nearer, still unseen: slips through the knot
+            if c.man > 0:
+                c.man -= dt
             if c.ghost > 0:
                 c.ghost -= dt
                 if c.ghost <= 0 and (self.scan(c, 1.0, back=-vehicles.HALF_L[c.kind]) or 0.0) < 0.0:
@@ -1528,7 +1541,7 @@ class Traffic:
                 c.rev -= dt                                       # swinging the nose towards the side it will pass on
                 c.s = max(0.0, c.s - 2.2 * dt)
                 if c.rside and abs((c.h - _th + math.pi) % (2 * math.pi) - math.pi) < 0.35:
-                    yaw = math.copysign(2.2 * math.tan(self.LOCK_MAN) / wb * dt, c.rside)
+                    yaw = math.copysign(2.2 * math.tan(self.LOCK_WAY if c.man > 0 else self.LOCK_MAN) / wb * dt, c.rside)
                     c.h += yaw                                    # about the rear axle, as when driving forwards
                     c.x -= math.sin(c.h) * yaw * wb * 0.52
                     c.y += math.cos(c.h) * yaw * wb * 0.52
@@ -1549,7 +1562,7 @@ class Traffic:
                     e = w.edges[c.e]
                 # pure pursuit with a bicycle model: steer for a point ahead on the lane, limited front-wheel angle and
                 # rate, so cars swing round bends and into other lanes along believable arcs instead of sliding
-                lock = self.LOCK_MAN if (c.shift or abs(c.avoid) > 0.3 or c.cool > 0) else 0.55     # going round / out of a jam:
+                lock = self.LOCK_WAY if c.man > 0 else self.LOCK_MAN if (c.shift or abs(c.avoid) > 0.3 or c.cool > 0) else 0.55     # going round / out of a jam:
                 want = max(-lock, min(lock, math.atan2(2.0 * wb * math.sin(max(-1.5708, min(1.5708, err))), la)))  # tighter turns
                 c.str += (want - c.str) * min(1.0, dt * 5.0)
                 c.h += c.v * math.tan(c.str) / wb * dt
