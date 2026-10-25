@@ -17,6 +17,10 @@ Nothing else to configure. `SK242_LIBRARY=<path>` points the game at another lib
 - To change a sound: edit its prompt in `src/soundcat.py`, delete the old `library/<folder>/<id>*` files, relaunch to get a new request. To add versions later, request a new id by hand.
 - The full list (key, folder, length, versions, prompt) is `src/soundcat.py`; one catalogue row = one request.
 
+## What the AI makes
+
+Only background ambiences (41 sounds: `soundcat.AI_KEYS` = the `ambience/` folder, `amb_*`, park birds, crickets, cicadas, frogs at night, building site). Every short effect (weapons, punches, footsteps, crashes, horns, sirens, engines, UI) uses the game's own procedural sounds; library files for those keys are ignored and no requests are written for them.
+
 ## Writing prompts for MOSS-SoundEffect (game feel)
 
 The model card shows only short, concrete one-sentence prompts ("fresh snow crunching under footsteps.", "a sports car roaring past on the highway.") and a duration; there are no documented control words, so the prompt is the whole recipe and the model renders every scene word you give it. A prompt that says "echoing between buildings" or "outdoors" gets a room and a tail, which is what made the first batch cinematic. Rules the catalogue now follows (`soundcat._gamify` applies them to every row):

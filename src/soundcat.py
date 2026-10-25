@@ -540,6 +540,9 @@ ALIAS["engine"] = "engine_i4"
 ALIAS["siren"] = "siren_police"
 
 BY_KEY = {r[0]: r for r in CATALOG}
+
+# Only background ambiences come from the AI library; every short effect, engine, siren and machine stays procedural (audio.build)
+AI_KEYS = {r[0] for r in CATALOG if r[1].startswith("ambience") or r[0].startswith("amb_") or r[0] in ("birds", "crickets", "cicadas", "frog_chorus", "construction")}
 assert len(BY_KEY) == len(CATALOG), "duplicate sound keys"
 
 

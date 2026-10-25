@@ -239,6 +239,7 @@ class Audio:
             try:
                 lib_root = os.environ.get("SK242_LIBRARY") or os.path.join(root, soundlib.LIB_DIR)
                 raw, fresh, self.secs_of = soundlib.scan(lib_root, {r[0]: r[5] for r in soundcat.CATALOG})
+                raw = {k: v for k, v in raw.items() if k in soundcat.AI_KEYS}    # old library files of short effects are ignored
                 self.req = soundlib.write_requests(root, fresh)           # done = made from the current prompt; quality-rejected sounds are not re-requested
                 if raw and (dry or not mute):
                     soundproc.Processor(self, lib_root, raw, os.path.join(root, "logs")).start(wait=dry)   # self.lib fills as keys pass the check

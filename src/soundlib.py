@@ -62,6 +62,8 @@ def write_requests(root, have):
     os.makedirs(d, exist_ok=True)
     written = done = 0
     for key, folder, loop, secs, n, prompt, lvl, _fb in soundcat.CATALOG:
+        if key not in soundcat.AI_KEYS:
+            continue
         if key in have:
             done += 1
             continue
@@ -76,7 +78,7 @@ def write_requests(root, have):
             json.dump(req, f, ensure_ascii=False, indent=1)
         os.replace(tmp, fn)
         written += 1
-    return written, len(soundcat.CATALOG), done
+    return written, len(soundcat.AI_KEYS), done
 
 
 class Biomes:
