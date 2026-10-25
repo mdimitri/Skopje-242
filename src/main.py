@@ -403,7 +403,7 @@ def main():
     sim.places = places
     import transit
     _osm = os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm")
-    if not (os.path.exists(os.path.join(_osm, "transit.json")) and os.path.exists(os.path.join(_osm, "map_pois.json"))):
+    if not (transit.current(_osm) and os.path.exists(os.path.join(_osm, "map_pois.json"))):
         try:                                               # bus lines + map POIs from the cached country file (once)
             import subprocess
             r_ = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "fetch_extras.py")], capture_output=True,

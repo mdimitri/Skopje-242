@@ -69,13 +69,23 @@ def rail_data(pbf):
     return out
 
 
+def current_transit(tj):
+    """transit.json exists and carries every line's own stops (v 2); older files are read again from the country file."""
+    try:
+        with open(tj, encoding="utf-8") as f:
+            recs = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return not recs or recs[0].get("v") == 2
+
+
 def main():
     pbf = os.path.join(OSM, "pbf", "country.osm.pbf")
     if not os.path.exists(pbf):
         print("[extras] no country file - skipped")
         return 0
     tj = os.path.join(OSM, "transit.json")
-    if not os.path.exists(tj):
+    if not current_transit(tj):
         import fetch_pbf
         tr = fetch_pbf.routes_only(pbf)
         with open(tj + ".tmp", "w", encoding="utf-8") as f:

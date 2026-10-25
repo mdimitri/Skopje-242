@@ -214,10 +214,11 @@ def extract(pbf, on_el=None, on_tick=None):
     for rid, t, mem in routes:
         ways = [way_geom[ref] for ty, ref, role in mem if ty == "w" and ref in way_geom and role in ("", "forward", "backward")]
         stops = [{"lat": node_pos[ref][0], "lon": node_pos[ref][1]} for ty, ref, role in mem if ty == "n" and ref in node_pos
-                 and role.startswith("stop")]
+                 and role.startswith(("stop", "platform"))]
         if ways and any(inside(p["lat"], p["lon"]) for g in ways for p in g):
             transit.append({"id": rid, "ref": t.get("ref", ""), "name": t.get("name", ""), "from": t.get("from", ""),
-                            "to": t.get("to", ""), "operator": t.get("operator", t.get("network", "")), "ways": ways, "stops": stops})
+                            "to": t.get("to", ""), "operator": t.get("operator", t.get("network", "")), "ways": ways, "stops": stops,
+                            "v": 2})
     out["_transit"] = transit
     st["pass"] = 3
     tick(True)
@@ -238,16 +239,19 @@ def routes_only(pbf):
     """Just the bus lines (for transit.json when every map part is already cached)."""
     import osmium
     s_, w_, n_, e_ = bbox()
-    routes, need = [], set()
+    routes, need, need_n = [], set(), set()
     for r in osmium.FileProcessor(pbf, osmium.osm.RELATION):
         t = dict(r.tags)
         if t.get("type") == "route" and t.get("route") in ("bus", "trolleybus"):
             mem = [(m.type, m.ref, m.role) for m in r.members]
             routes.append((r.id, t, mem))
             need.update(ref for ty, ref, _ in mem if ty == "w")
-    geom = {}
+            need_n.update(ref for ty, ref, role in mem if ty == "n" and role.startswith(("stop", "platform")))
+    geom, pos = {}, {}
     for o in osmium.FileProcessor(pbf, osmium.osm.NODE | osmium.osm.WAY).with_locations():
         if not o.is_way():
+            if o.id in need_n and o.location.valid():
+                pos[o.id] = {"lat": o.location.lat, "lon": o.location.lon}
             continue
         if o.id in need:
             geom[o.id] = [{"lat": nd.lat, "lon": nd.lon} for nd in o.nodes if nd.location.valid()]
@@ -256,5 +260,7 @@ def routes_only(pbf):
         ways = [geom[ref] for ty, ref, role in mem if ty == "w" and geom.get(ref) and role in ("", "forward", "backward")]
         if ways and any(s_ <= p["lat"] <= n_ and w_ <= p["lon"] <= e_ for g in ways for p in g):
             out.append({"id": rid, "ref": t.get("ref", ""), "name": t.get("name", ""), "from": t.get("from", ""),
-                        "to": t.get("to", ""), "operator": t.get("operator", t.get("network", "")), "ways": ways, "stops": []})
+                        "to": t.get("to", ""), "operator": t.get("operator", t.get("network", "")), "ways": ways,
+                        "stops": [pos[ref] for ty, ref, role in mem if ty == "n" and ref in pos and role.startswith(("stop", "platform"))],
+                        "v": 2})
     return out

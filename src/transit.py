@@ -1,7 +1,7 @@
 """ЈСП city buses on the real lines from OpenStreetMap (data/osm/transit.json, written by the Geofabrik download).
 
 Each line's ways are chained into one polyline; a few buses drive near the player with the same car physics as every
-other vehicle (pure-pursuit steering along the line, never teleported while visible), stop every ~450 m and announce
+other vehicle (pure-pursuit steering along the line in its rightmost lane, never teleported while visible), stop at the real stops and announce
 the line. Without transit.json (Overpass download, demo city) there are simply no city buses.
 """
 from texts import TXT
@@ -16,7 +16,6 @@ from geo import project
 
 MAX_BUSES = 5
 SPAWN_MIN, SPAWN_MAX, DESPAWN = 220.0, 420.0, 650.0
-STOP_EVERY = 450.0
 
 
 def _wrap(a):
@@ -24,8 +23,8 @@ def _wrap(a):
 
 
 def _chain(ways):
-    """Join the member ways in order (flipping each to continue from the previous end) and keep the longest
-    gap-free run, so a bus never has to cross a hole in the relation."""
+    """Join the member ways in order (flipping each to continue from the previous end) into gap-free runs, so a bus
+    never has to cross a hole in the relation; every run can carry buses of its own."""
     runs, out = [], []
     for g in ways:
         pts = [project(p["lat"], p["lon"]) for p in g]
@@ -40,16 +39,18 @@ def _chain(ways):
                 out = []
         out.extend(pts)
     runs.append(out)
-    best = max(runs, key=lambda r: sum(math.dist(a, b) for a, b in zip(r, r[1:])) if len(r) > 1 else 0)
-    res = [best[0]] if best else []
-    for q in best[1:]:                              # thin to >= 4 m so the steering does not zig-zag
-        if math.dist(q, res[-1]) >= 4.0:
-            res.append(q)
+    res = []
+    for run in runs:
+        r = run[:1]
+        for q in run[1:]:                           # thin to >= 4 m so the steering does not zig-zag
+            if math.dist(q, r[-1]) >= 4.0:
+                r.append(q)
+        res.append(r)
     return res
 
 
 class Line:
-    def __init__(self, rec):
+    def __init__(self, rec, pts):
         self.ref = rec.get("ref") or "?"
         name = (rec.get("name") or "").replace(TXT("transit.0001"), "").replace(TXT("transit.0002"), "").strip()
         dest = rec.get("to") or ""
@@ -57,7 +58,9 @@ class Line:
             if not dest and sep in name:
                 dest = name.split(sep)[-1].strip()
         self.dest = (dest if dest and dest != self.ref else TXT("transit.0004"))[:28]
-        self.pts = _chain(rec.get("ways", []))
+        self.pts = pts
+        self.rel_stops = [project(p["lat"], p["lon"]) for p in rec.get("stops") or []]   # the route's own stops (OSM relation)
+        self.lane = {}                                  # vertex -> offset of the rightmost lane (filled while driving)
         self.cum = [0.0]
         for a, b in zip(self.pts, self.pts[1:]):
             self.cum.append(self.cum[-1] + math.dist(a, b))
@@ -65,6 +68,16 @@ class Line:
     @property
     def length(self):
         return self.cum[-1] if self.cum else 0.0
+
+
+def current(osm_dir):
+    """transit.json exists and carries every line's own stops (v 2, see tools/fetch_extras.current_transit)."""
+    try:
+        with open(os.path.join(osm_dir, "transit.json"), encoding="utf-8") as f:
+            recs = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return not recs or recs[0].get("v") == 2
 
 
 def load(osm_dir):
@@ -79,30 +92,51 @@ def load(osm_dir):
         op = (r.get("operator") or "").lower()
         if not ("jsp" in op or TXT("transit.0005") in op or "skopje:local" in op) or not r.get("ref"):
             continue
-        ln = Line(r)
-        if len(ln.pts) > 10 and ln.length > 1500:
-            lines.append(ln)
+        for pts in _chain(r.get("ways", [])):
+            ln = Line(r, pts)
+            if len(ln.pts) > 10 and ln.length > 1500:
+                lines.append(ln)
     return lines
 
 
 def attach_stops(lines, stops):
-    """For every line: the real stops along it as [(distance along the line, stop index)], sorted."""
+    """For every line: the real stops along it as [(distance along the line, stop index)], sorted.  A stop counts when
+    the shelter stands beside a segment of the line on its right-hand side (the one across the road is the other
+    direction's); the stops the route relation itself lists are always taken."""
     grid = {}
     for k, st in enumerate(stops):
         grid.setdefault((int(st[0] // 40), int(st[1] // 40)), []).append(k)
+    R = 25.0
     for ln in lines:
-        best = {}
-        for j, (x, y) in enumerate(ln.pts):
-            for gx in (int(x // 40) - 1, int(x // 40), int(x // 40) + 1):
-                for gy in (int(y // 40) - 1, int(y // 40), int(y // 40) + 1):
+        best, segs = {}, []
+        for j in range(len(ln.pts) - 1):
+            (ax, ay), (bx, by) = ln.pts[j], ln.pts[j + 1]
+            sl = ln.cum[j + 1] - ln.cum[j]
+            if sl <= 0:
+                continue
+            ux, uy = (bx - ax) / sl, (by - ay) / sl
+            segs.append((ax, ay, ux, uy, sl, ln.cum[j]))
+            for gx in range(int((min(ax, bx) - R) // 40), int((max(ax, bx) + R) // 40) + 1):
+                for gy in range(int((min(ay, by) - R) // 40), int((max(ay, by) + R) // 40) + 1):
                     for k in grid.get((gx, gy), ()):
-                        d = math.hypot(stops[k][0] - x, stops[k][1] - y)
-                        ax, ay = (ln.pts[j + 1][0] - x, ln.pts[j + 1][1] - y) if j + 1 < len(ln.pts) else (x - ln.pts[j - 1][0], y - ln.pts[j - 1][1])
-                        al = math.hypot(ax, ay) or 1.0
-                        if (-(stops[k][0] - x) * ay + (stops[k][1] - y) * ax) / al < -2.0:
-                            continue                                     # the shelter across the road is the other direction's
-                        if d < 22 and (k not in best or d < best[k][0]):
-                            best[k] = (d, ln.cum[j])
+                        rx, ry = stops[k][0] - ax, stops[k][1] - ay
+                        t = rx * ux + ry * uy
+                        lat = -rx * uy + ry * ux
+                        if -2.0 < t < sl + 2.0 and -2.0 < lat < R and (k not in best or lat < best[k][0]):
+                            best[k] = (lat, ln.cum[j] + max(0.0, min(sl, t)))
+        for x, y in ln.rel_stops:
+            near = [k for gx in (int(x // 40) - 1, int(x // 40), int(x // 40) + 1)
+                    for gy in (int(y // 40) - 1, int(y // 40), int(y // 40) + 1) for k in grid.get((gx, gy), ())]
+            near = [k for k in near if math.hypot(stops[k][0] - x, stops[k][1] - y) < 35.0]
+            if not near or not segs:
+                continue
+            k = min(near, key=lambda k: math.hypot(stops[k][0] - x, stops[k][1] - y))
+            if k in best:
+                continue
+            d, c = min((math.hypot(x - ax - ux * t, y - ay - uy * t), c0 + t) for ax, ay, ux, uy, sl, c0 in segs
+                       for t in (max(0.0, min(sl, (x - ax) * ux + (y - ay) * uy)),))
+            if d < 30.0:
+                best[k] = (d, c)
         ln.stops = sorted((c, k) for k, (d, c) in best.items())
 
 
@@ -110,7 +144,7 @@ class Bus:
     def __init__(self, line, body, i):
         self.line, self.body, self.i = line, body, i
         self.stop_k = None
-        self.next_stop = line.cum[i] + STOP_EVERY
+        self.next_stop = math.inf                 # past the last stop of the line: drive on to the end
         for c, k in getattr(line, "stops", ()):
             if c > line.cum[max(0, i - 1)] + 15:
                 self.next_stop, self.stop_k = c, k
@@ -180,9 +214,11 @@ class Transit:
             return
         ln, k = self.rng.choice(cand)
         x, y = ln.pts[k]
+        h = math.atan2(ln.pts[k + 1][1] - y, ln.pts[k + 1][0] - x)
+        right = self._lane(ln, k)[0]                                         # in its lane, not on the road's centre line
+        x, y = x - math.sin(h) * right, y + math.cos(h) * right
         if any(math.hypot(o.x - x, o.y - y) < 14 for o in sim.bodies):       # never on top of another vehicle
             return
-        h = math.atan2(ln.pts[k + 1][1] - y, ln.pts[k + 1][0] - x)
         b = actors.Body(x, y, h, self.rng.choice(self.kinds), 0)
         b.empty = False
         b.ctl = (0.0, 0.0, True)
@@ -206,6 +242,7 @@ class Transit:
         bus.i = max(bus.i, bi)
         bus.off = best
         s_bus, bus.off = ln.cum[bus.i], best                     # exact distance along the line (vertices can be far apart)
+        seg = min(bus.i, len(ln.pts) - 2)
         for i0 in (bus.i - 1, bus.i):
             if 0 <= i0 < len(ln.pts) - 1:
                 ax, ay = ln.pts[i0]
@@ -214,7 +251,7 @@ class Transit:
                 tt = 0.0 if sl <= 0 else max(0.0, min(1.0, ((b.x - ax) * (bx_ - ax) + (b.y - ay) * (by_ - ay)) / (sl * sl)))
                 dd = math.hypot(b.x - ax - (bx_ - ax) * tt, b.y - ay - (by_ - ay) * tt)
                 if dd < bus.off + 1e-6:
-                    s_bus, bus.off = ln.cum[i0] + tt * sl, dd
+                    s_bus, bus.off, seg = ln.cum[i0] + tt * sl, dd, i0
         bus.s = s_bus
         j = bus.i
         while j < len(ln.pts) - 1 and ln.cum[j] - s_bus < 10.0 + abs(vf) * 0.8:   # look-ahead point (from the true position)
@@ -224,22 +261,31 @@ class Transit:
         ddx, ddy = tx - ln.pts[pj][0], ty - ln.pts[pj][1]           # and pull in to the kerb for a stop
         dd = math.hypot(ddx, ddy) or 1.0
         nx, ny = -ddy / dd, ddx / dd
-        off = 2.6 if bus.next_stop - s_bus < 40.0 else 1.8
         w = self.sim.w
+        right, hw = self._lane(ln, j)                               # centre of the rightmost lane, half the road
+        off = max(right, hw - vehicles.DIMS[b.kind][1] / 2 - 0.4) if bus.next_stop - s_bus < 40.0 else right
         while off > 0.5 and hasattr(w, "kerb") and w.kerb(tx + nx * (off + 1.3), ty + ny * (off + 1.3)):
             off -= 0.5                                              # narrow street: don't scrape the pavement
         bus.dodge_t -= dt
         if bus.dodge_t > 0:
             off += bus.dodge                                        # going round something standing in the lane
-        tx, ty = tx + nx * off, ty + ny * off
-        err = _wrap(math.atan2(ty - b.y, tx - b.x) - b.h)
+        # follow the lane line itself (heading of the road a little ahead + a pull towards the lane), not a far-off point
+        # that cuts across the markings: pure pursuit from the centre line left the buses half a lane out
+        (ax, ay), (bx_, by_) = ln.pts[seg], ln.pts[seg + 1]
+        sl = math.hypot(bx_ - ax, by_ - ay) or 1.0
+        lat = (-(b.x - ax) * (by_ - ay) + (b.y - ay) * (bx_ - ax)) / sl     # where the bus is, across the line
+        k2 = bus.i
+        while k2 < len(ln.pts) - 1 and ln.cum[k2] - s_bus < 4.0 + abs(vf) * 0.4:
+            k2 += 1
+        h_road = math.atan2(ln.pts[k2][1] - ln.pts[max(k2 - 1, 0)][1], ln.pts[k2][0] - ln.pts[max(k2 - 1, 0)][0])
+        err = _wrap(h_road - b.h) + math.atan2(1.2 * (off - lat), abs(vf) + 3.0)
         if bus.wait > 0:                                            # at a stop: doors open
             bus.wait -= dt
             b.ctl = (0.0, 0.0, True)
             return
         if s_bus >= bus.next_stop - 3.0 and abs(vf) < 6:
             k = bus.stop_k
-            bus.next_stop, bus.stop_k = s_bus + STOP_EVERY, None
+            bus.next_stop, bus.stop_k = math.inf, None
             for c, k2 in getattr(ln, "stops", ()):
                 if c > s_bus + 15:
                     bus.next_stop, bus.stop_k = c, k2
@@ -405,6 +451,31 @@ class Transit:
                     continue
                 keep.append(p)
         self.movers = keep
+
+    def _lane(self, ln, j):
+        """(offset of the rightmost lane's centre, half width) of the road under vertex j of the line, from the road
+        graph's lane layout (the same one the cars and the painted markings use)."""
+        r = ln.lane.get(j)
+        if r is None:
+            r = (1.8, 3.5)
+            w = self.sim.w
+            x, y = ln.pts[j]
+            a, b_ = ln.pts[max(j - 1, 0)], ln.pts[min(j + 1, len(ln.pts) - 1)]
+            hx, hy = b_[0] - a[0], b_[1] - a[1]
+            hl = math.hypot(hx, hy) or 1.0
+            sg, bd = w.sg, 6.0
+            for ei in {ei for cx in (int(x // sg) - 1, int(x // sg), int(x // sg) + 1)
+                       for cy in (int(y // sg) - 1, int(y // sg), int(y // sg) + 1) for ei in w.drive_cells.get((cx, cy), ())}:
+                e = w.edges[ei]
+                for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
+                    dx, dy = bx - ax, by - ay
+                    l2 = dx * dx + dy * dy or 1e-9
+                    t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
+                    d = math.hypot(x - ax - dx * t, y - ay - dy * t)
+                    if d < bd and abs(dx * hx + dy * hy) / (math.sqrt(l2) * hl) > 0.7:     # the road the line runs along
+                        bd, r = d, (max(actors.Traffic.lanes_of(e)), e["w"] / 2)
+            ln.lane[j] = r
+        return r
 
     def _blocked(self, b, lat=0.0, standing=False, moving=False):
         """Something (car, the player, a pedestrian) right in front: wait instead of ramming it.  `lat` probes from a
