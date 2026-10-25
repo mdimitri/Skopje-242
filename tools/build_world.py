@@ -1082,8 +1082,8 @@ def main():
         if cls in ("residential", "unclassified", "tertiary") and L > 40 and w >= 6.0:
             # round 23: streets among many buildings are quiet and full of cars; the dense ones park both kerbs, diagonally where wide enough
             mx, my, _, _ = at(L / 2)
-            dense = cls != "tertiary" and w <= 9.5 and _bld_share(mx, my) >= 0.14
-            diag = dense and w >= 7.0
+            dense = cls != "tertiary" and w <= 9.5 and _bld_share(mx, my) >= 0.06
+            diag = dense and w >= 6.0
             sides = (1, -1) if dense and not e["ow"] else (None,)
             for fixed in sides:
                 s = 14.0 if diag else 11.0
