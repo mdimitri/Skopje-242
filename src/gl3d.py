@@ -1547,11 +1547,14 @@ void main(){
   float grass = clamp((base.g - max(base.r, base.b)) * 8.0, 0.0, 1.0);
   float k = max(max(ground, grass), 0.3);                          // roads keep a light asphalt grain
   vec3 c = base.rgb * mix(1.0, lit * (0.88 + 0.24 * d.g), k);
-  c = mix(c, c * vec3(0.93, 0.88, 0.8), ground * smoothstep(0.55, 0.8, big) * 0.8);   // dirt patches
+  float big2 = texture(texture1, mat2(0.8, -0.6, 0.6, 0.8) * wpos / 67.3 + 0.5).b;   // incommensurate scales: no visible repeat
+  float macro = texture(texture1, mat2(0.6, 0.8, -0.8, 0.6) * wpos / 211.0 + 0.3).b * 0.6 + texture(texture1, wpos / 577.0 + 0.7).b * 0.4;
+  c = mix(c, c * vec3(0.93, 0.88, 0.8), ground * smoothstep(0.55, 0.8, big * 0.55 + big2 * 0.45) * 0.8);   // dirt patches
+  c *= mix(vec3(1.0), mix(vec3(1.08, 0.97, 0.78), vec3(0.84, 1.04, 0.82), smoothstep(0.3, 0.7, macro)), ground * 0.85);   // dry ochre ... fresh green stretches
   c = mix(c, c * vec3(0.8, 0.95, 0.75), grass * d.a * 0.6);                           // grass blades
   float lum = dot(base.rgb, vec3(0.333));
   float grey = 1.0 - clamp((max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b))) * 9.0, 0.0, 1.0);
-  float paved = grey * (1.0 - grass);                                 // asphalt and concrete: cracks and patches
+  float paved = grey * (1.0 - grass) * (1.0 - ground);                                 // asphalt and concrete: cracks and patches
   vec4 cr = texture(texture2, wpos / 7.0);
   float crack = cr.r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);   // cracks come in worn zones
   c *= 1.0 - paved * crack * (lum > 0.5 ? 0.35 : 0.55);

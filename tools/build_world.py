@@ -1281,6 +1281,25 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
+    try:                                                        # round 29: open ground gets gardens, scrub, boulders, vines
+        import fill
+        am = Image.new("L", (NCX, NCY), 0)
+        amd = ImageDraw.Draw(am)
+        for ar in areas:
+            if ar["kind"] in ("park", "playground", "pitch", "cemetery", "wood", "water", "plaza", "parking", "sand", "rock", "grass", "scrub"):
+                amd.polygon([to_cell(px, py) for px, py in ar["outer"]], fill=1)
+        am_a = np.asarray(am)
+        fp, ft = fill.build(lambda x, y: _bld_share(x, y, 80.0),
+                            lambda x, y: free(x, y) and not _is_water(x, y) and _not_building(x, y),
+                            lambda x, y: not am_a[to_cell(x, y)[1], to_cell(x, y)[0]],
+                            None, add_c, chunk_of, HX, HY)
+        posts = list(posts) + fp
+        trees = list(trees) + ft
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] fill skipped: {e}")
+
     # ---- leftovers on the carriageway: lamps, trees and collision posts that stand inside a drivable lane (OSM street_lamp
     # nodes on the centre line, links, bridge lamps above a road, fence panels of a site that overlaps a street) block
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
