@@ -64,24 +64,34 @@ def _ngon(r, n, rot=0.0, cy=0.0):
 
 
 def signal_pole(x, z, fx, fz, rx, rz, lit, arm=0.75, mast=False):
-    """Kerb pole with a head hanging over the road; mast=True: a tall pole whose arm reaches `arm` m over the lanes and carries the head."""
+    """Kerb pole with a European signal head hanging over the road (black housing, white-edged backplate, a visor over each lamp, bracket
+    arm); mast=True: a tall pole whose arm reaches `arm` m over the lanes and carries the head. The head faces (fx, fz) and is turned to it."""
     g = G()
     col = (62, 64, 70)
     hb = 4.75 if mast else 2.95                                 # underside of the housing
+    yaw = math.atan2(fx, -fz)                                   # local x of a box = the plate's right (-fz, fx)
     g.box(x, 0, z, 0.2 if mast else 0.14, 6.1 if mast else 3.9, 0.2 if mast else 0.14, col)
+    g.box(x, 0, z, 0.3 if mast else 0.22, 0.3, 0.3 if mast else 0.22, col)           # base plate
     hx, hz = x - rx * arm, z - rz * arm                         # housing hangs over the road
-    if mast:
-        g.box(x - rx * arm / 2, 5.75, z - rz * arm / 2, 0.14 + abs(rx) * arm, 0.12, 0.14 + abs(rz) * arm, col)
-    else:
-        g.box(x - rx * 0.38, 3.55, z - rz * 0.38, 0.1 + abs(rx) * 0.7, 0.07, 0.1 + abs(rz) * 0.7, col)
-    g.box(hx, hb, hz, 0.34, 1.05, 0.34, (28, 28, 32))
+    ay = 5.75 if mast else 3.55                                 # arm height; the head is hung from it
+    ex, ez = hx - x, hz - z
+    g.box(x + ex / 2, ay, z + ez / 2, math.hypot(ex, ez), 0.12 if mast else 0.07, 0.14 if mast else 0.08, col, math.atan2(ez, ex))
+    t = (-fz, fx)
+    g.box(hx - fx * 0.14, hb - 0.16, hz - fz * 0.14, 0.7, 1.4, 0.03, (236, 236, 228), yaw)     # backplate: white edge ...
+    g.box(hx - fx * 0.125, hb - 0.12, hz - fz * 0.125, 0.6, 1.32, 0.03, (22, 22, 26), yaw)     # ... black centre
+    g.box(hx, hb, hz, 0.3, 1.05, 0.26, (28, 28, 32), yaw)
     cols = ((230, 40, 40), (240, 190, 30), (50, 220, 90))
     for k, c in enumerate(cols):
         on = (k == lit)                                         # lit = -1: all dark, the game draws the live lamp
         cc = c if on else tuple(int(v * 0.22) for v in c)
-        g.vpoly(hx, hb + 0.05 + 0.30 * (2 - k) + 0.12, hz, fx, fz, _ngon(0.1, 8, 0.4), cc, 0.18)
+        ly = hb + 0.05 + 0.30 * (2 - k) + 0.12
+        g.vpoly(hx, ly, hz, fx, fz, _ngon(0.105, 10, 0.3), cc, 0.14)
+        vx, vz = hx + fx * 0.22, hz + fz * 0.22                 # visor: roof and two cheeks projecting from above the lamp
+        g.box(vx, ly + 0.11, vz, 0.27, 0.03, 0.2, (24, 24, 28), yaw)
+        for sd in (-1, 1):
+            g.box(vx + t[0] * 0.13 * sd, ly - 0.02, vz + t[1] * 0.13 * sd, 0.03, 0.15, 0.2, (24, 24, 28), yaw)
     if lit >= 0:
-        g.box(hx, hb + 1.05, hz, 0.38, 0.05, 0.38, tuple(cols[lit]))    # lit lamp is also visible from above
+        g.box(hx, hb + 1.05, hz, 0.24, 0.05, 0.22, tuple(cols[lit]), yaw)    # lit lamp is also visible from above
     return g
 
 

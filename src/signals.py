@@ -91,5 +91,8 @@ class Signals:
             if x0 - 5 < lx < x1 + 5 and y0 - 5 < lz < y1 + 5:
                 st = self.state(i)
                 y = ground_y(lx, lz)
-                rl.draw_cube(rl.Vector3(lx, y + hb + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), lz), 0.38, 0.22, 0.38, COLS[st])
-                rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.4, 0.05, 0.4, COLS[st])
+                ax, ay = self._axis(i)                      # the head faces the approaching traffic, so its lamps sit on that side
+                ly = y + hb + 0.17 + 0.30 * (2 - (2, 1, 0)[st])
+                a = rl.Vector3(lx - ax * 0.135, ly, lz - ay * 0.135)
+                rl.draw_cylinder_ex(a, rl.Vector3(a.x - ax * 0.03, ly, a.z - ay * 0.03), 0.105, 0.105, 10, COLS[st])
+                rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.24, 0.05, 0.22, COLS[st])
