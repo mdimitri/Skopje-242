@@ -187,6 +187,16 @@ class Services:
         while j.pi < len(j.path) - 1 and math.hypot(j.path[j.pi][0] - b.x, j.path[j.pi][1] - b.y) < 7.0:
             j.pi += 1
         tx, ty = j.path[j.pi]
+        if math.hypot(tx - b.x, ty - b.y) > 30.0:         # missed the turn / pushed off the route: plan a new one from here, over roads
+            j.lost = getattr(j, "lost", 0.0) + dt
+            if j.lost > 2.0:
+                j.lost = 0.0
+                new = self.route(b.x, b.y, j.path[-1][0], j.path[-1][1])
+                if len(new) > 1:
+                    j.path, j.pi = new, 1
+                    tx, ty = j.path[1]
+        else:
+            j.lost = 0.0
         # a siren may swing onto the oncoming lane or briefly up the kerb round whatever blocks the road, then comes back
         gap0 = self._gap(b, 9.0 + max(vf, 0.0) * 1.5)
         j.cool = max(0.0, j.cool - dt)

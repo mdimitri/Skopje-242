@@ -122,6 +122,9 @@ def bump(b, impact, wx, wy, nx, ny):
     b.dirty = True
 
 
+TURN = 0.67                  # turning radius of every vehicle relative to the bicycle model: 33 % tighter
+
+
 def drive(p, throttle, steer_in, handbrake, dt, world):
     VMAX, ACC, STEER, GRIP, _M = vehicles.PERF[p.kind]
     if p.exploded or (p.health <= 0 and p.ctl is not None):   # a burnt-out wreck never drives again; a burning AI car stops
@@ -137,7 +140,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     p.wheel = p.steer * maxang
     om = 0.0
     if abs(vf) > 0.15:
-        om = vf / wb * math.tan(p.steer * maxang)
+        om = vf / (wb * TURN) * math.tan(p.steer * maxang)
         if handbrake:
             om *= 1.4
         p.h += om * dt
@@ -1050,7 +1053,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq")
 
     def __init__(self):
         self.cab = random.random() < 0.1        # one in ten has its radio on (heard muffled from outside)
@@ -1064,6 +1067,7 @@ class Car:
         self.shift = 0.0           # extra sideways offset while it works its way out of a jam
         self.shift_t = 0.0
         self.rev = 0.0             # seconds of reversing left
+        self.rq = None             # [delay, seconds, side]: queued reverse in a convoy backing out of a head-on knot
         self.cool = 0.0            # pause before it tries another jam manoeuvre
         self.nxt = None            # (edge, direction) it will take at the end of this one
         self.avoid = 0.0           # sideways swerve around curb-parked cars
@@ -1335,6 +1339,9 @@ class Traffic:
             if self._free(c, off, 26.0 if (not e["ow"] and off < 0) else 14.0):
                 c.shift, c.shift_t = off, 0.0
                 return
+        o = c.blk
+        if isinstance(o, Car) and o.e == c.e and o.d != c.d and c.stuck > self.WAIT[ag] * 1.5 and self._convoy(c, o):
+            return
         if self.rng.random() < dt * (0.6, 0.8, 1.2, 2.0)[ag] and self.scan(c, 7.0, flip=True) is None \
                 and not any(o.rev > 0 and (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 400.0 for o in self.cars):
             c.rev = self.rng.uniform(1.2, 2.8)                             # nothing behind: back up to give way, one car
@@ -1342,6 +1349,21 @@ class Traffic:
             self._make_way(c)
         elif c.stuck > self.WAIT[ag] * 4:
             c.cool = 4.0
+
+    def _convoy(self, c, o):
+        """Two queues meet head-on in a street: instead of one car at a time, the smaller queue (the lower id when equal)
+        backs out as a whole, rearmost car first and the rest 0.7 s apart so the gaps hold, while the other side waits."""
+        def queue(a):
+            return sorted((x for x in self.cars if x.e == a.e and x.d == a.d and x.v < 0.5 and x.rev <= 0 and x.rq is None
+                           and 0.0 <= a.s - x.s < 40.0), key=lambda x: x.s)
+        mine, theirs = queue(c), queue(o)
+        if len(mine) > len(theirs) or (len(mine) == len(theirs) and id(c) > id(o)):
+            return False
+        for k, x in enumerate(mine):
+            x.rq = [k * 0.7, self.rng.uniform(2.5, 3.5), 1.2]
+        for x in theirs:
+            x.cool = max(x.cool, 4.0 + 0.7 * len(mine))
+        return True
 
     def _make_way(self, c):
         """c backs up to let the car facing it through (a narrow street, parked cars both sides): for the next few seconds
@@ -1405,7 +1427,7 @@ class Traffic:
             fwd = dx * ex + dy * ey
             if 0.0 < fwd < 70.0 and abs(-dx * ey + dy * ex) < 8.0:
                 side = 1.0 if c.lane > 0 else -1.0
-                ytgt = side * (e["w"] / 2 - hwc - 0.5) - c.lane
+                ytgt = side * (e["w"] / 2 - hwc - 0.25) - c.lane
                 if abs(c.avoid) > 0.3:
                     ytgt = 0.0
                 vlim = min(vlim, 4.5 if fwd > 14.0 else (1.0 if abs(c.yld - ytgt) > 0.4 else 0.0))
@@ -1639,6 +1661,10 @@ class Traffic:
                     continue
                 if d2 > 90 ** 2 and c.ghost <= 0:
                     c.ghost, c.stuck = 4.0, 0.0                   # nearer, still unseen: slips through the knot
+            if c.rq:
+                c.rq[0] -= dt
+                if c.rq[0] <= 0:
+                    c.rev, c.rside, c.man, c.rq = c.rq[1], c.rq[2], 4.0, None
             if c.man > 0:
                 c.man -= dt
             if c.ghost > 0:
@@ -1673,7 +1699,7 @@ class Traffic:
                 lock = self.LOCK_WAY if c.man > 0 else self.LOCK_MAN if (c.shift or abs(c.avoid) > 0.3 or c.cool > 0) else 0.55     # going round / out of a jam:
                 want = max(-lock, min(lock, math.atan2(2.0 * wb * math.sin(max(-1.5708, min(1.5708, err))), la)))  # tighter turns
                 c.str += (want - c.str) * min(1.0, dt * 5.0)
-                c.h += c.v * math.tan(c.str) / wb * dt
+                c.h += c.v * math.tan(c.str) / (wb * TURN) * dt
                 slip = math.atan(0.52 * math.tan(c.str))           # about the rear axle: the middle moves a little into
                 c.x += math.cos(c.h + slip) * c.v * dt              # the turn (rear axle 0.31 L behind it, wheelbase 0.6 L)
                 c.y += math.sin(c.h + slip) * c.v * dt
