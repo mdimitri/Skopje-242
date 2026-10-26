@@ -306,6 +306,12 @@ class Transit:
         g = self._gap(bus)                                          # cautious: brakes gently for anything in its path
         if g is not None:
             v = min(v, math.sqrt(2.0 * 1.8 * max(0.0, g - 2.0)))
+        sg = getattr(self.sim, "lights", None)
+        if sg is not None:                                          # red or yellow ahead: stop at the line like every other vehicle
+            rem = sg.red_ahead(b.x, b.y, b.h)
+            if rem is not None:
+                rem -= vehicles.DIMS[b.kind][0] / 2
+                v = min(v, math.sqrt(2.0 * 2.5 * max(rem, 0.0)) if rem > -2.5 else v)
         ahead = self._blocked(bus)
         if ahead:
             v = 0.0

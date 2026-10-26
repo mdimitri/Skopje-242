@@ -310,8 +310,10 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         maxw = max(edges[ei]["w"] for ei, _ in lst)
         cell = (int(nx_ // 70), int(ny_ // 70))
         if osm_sig:                                       # the real lights where the map has them, plus main junctions the map left out
-            want_light = node in lit_osm or (len(lst) >= 3 and sum(1 for r in ranks if r >= 3) >= 2 and not any(
-                (nx_ - qx_) ** 2 + (ny_ - qy_) ** 2 < 110.0 ** 2 for qx_, qy_ in lit_pts))
+            gap = min(110.0, max(60.0, 6.0 * maxw))           # lit junctions sit further apart on wide roads (a boulevard's cross streets all get lights)
+            want_light = node in lit_osm or (len(lst) >= 3 and (sum(1 for r in ranks if r >= 3) >= 2 or (
+                len(lst) >= 4 and sum(1 for r in ranks if r >= 2) >= 2)) and not any(
+                (nx_ - qx_) ** 2 + (ny_ - qy_) ** 2 < gap ** 2 for qx_, qy_ in lit_pts))
             if want_light and node not in lit_osm:
                 lit_pts.append((nx_, ny_))
         else:

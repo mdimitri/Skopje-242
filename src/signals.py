@@ -65,6 +65,24 @@ class Signals:
             if grp is not None and best > 0.5:
                 self.pre[node] = (grp, self.t + 2.0)
 
+    def red_ahead(self, x, y, h, reach=60.0):
+        """Distance from (x, y) to the stop line of the nearest signal that is not green on the approach a vehicle at (x, y)
+        heading h is driving up to (None when there is none): for vehicles that follow a line of their own, not the road graph."""
+        hx, hy = math.cos(h), math.sin(h)
+        best = None
+        for node, ((jx, jz), idx) in self.nodes.items():
+            dx, dy = jx - x, jz - y
+            if abs(dx) > reach + 12 or abs(dy) > reach + 12:
+                continue
+            fwd = dx * hx + dy * hy
+            if not -2.0 < fwd < reach + 9.0 or abs(dy * hx - dx * hy) > 14.0:
+                continue
+            for i in idx:
+                ax, ay = self._axis(i)
+                if ax * hx + ay * hy > 0.8 and self.state(i) != 0 and (best is None or fwd - 9.0 < best):
+                    best = fwd - 9.0                      # the stop line, like the cars' 9 m before the junction
+        return best
+
     def _axis(self, i):
         """Unit direction in which traffic on signal i's approach drives into the junction."""
         a = self.__dict__.setdefault("_ax", {})
