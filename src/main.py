@@ -1430,6 +1430,7 @@ def main():
         else:
             tgt_ppm = 26.0 * user_zoom * cfg["zoom_walk"]
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)
+        sim.view_r = max(150.0, min(300.0, 1250.0 / max(ppm, 1.0) + 60.0))      # parked cars are placed this far round the camera
         k = min(1.0, 6.0 * dt)
         if snap:                                   # teleported: jump the camera instead of flying across the city
             snap = False

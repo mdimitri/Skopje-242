@@ -2693,30 +2693,39 @@ class Sim:
     def _parked(self, fx, fy):
         w = self.w
         P = w.parked
+        R = getattr(self, "view_r", 150.0)                   # the camera sets how far the screen reaches (zoomed out: further)
         # despawn untouched parked cars that are far away
         for idx, b in list(self.parked.items()):
             if b.parked_idx is None or b not in self.bodies:
                 del self.parked[idx]
-            elif (b.x - fx) ** 2 + (b.y - fy) ** 2 > 230 ** 2 and b.speed < 0.2 and not b.dents:
+            elif (b.x - fx) ** 2 + (b.y - fy) ** 2 > (R + 90) ** 2 and b.speed < 0.2 and not b.dents:
                 self.bodies.remove(b)
                 del self.parked[idx]
             elif b.speed > 0.4 or b.dents:
                 self.gone.add(idx)
                 b.parked_idx = None
                 del self.parked[idx]
-        # spawn near ones (a slice of the list each frame keeps this cheap)
-        n = len(P)
-        if not n:
+        if not len(P):
             return
-        self._pi = getattr(self, "_pi", 0)
-        for _ in range(min(n, 600)):
-            self._pi = (self._pi + 1) % n
-            idx = self._pi
-            if idx in self.parked or idx in self.gone:
-                continue
-            x, y, ang, col, kind = P[idx]
-            if (x - fx) ** 2 + (y - fy) ** 2 < 140 ** 2:
-                b = Body(x, y, ang, kind, col)
-                b.parked_idx = idx
-                self.bodies.append(b)
-                self.parked[idx] = b
+        grid = getattr(self, "_pgrid", None)
+        if grid is None:                                      # 48 m cells, built once: only the cells round the camera are looked at
+            grid = self._pgrid = {}
+            for i, q in enumerate(P):
+                grid.setdefault((int(q[0] // 48), int(q[1] // 48)), []).append(i)
+        r2, k0, n_new = R * R, int(R // 48) + 1, 0
+        cx, cy = int(fx // 48), int(fy // 48)
+        cells = sorted(((gx, gy) for gx in range(cx - k0, cx + k0 + 1) for gy in range(cy - k0, cy + k0 + 1) if (gx, gy) in grid),
+                       key=lambda c: (c[0] * 48 + 24 - fx) ** 2 + (c[1] * 48 + 24 - fy) ** 2)       # nearest first: the street you look at fills first
+        for c in cells:
+            for idx in grid[c]:
+                if idx in self.parked or idx in self.gone:
+                    continue
+                x, y, ang, col, kind = P[idx]
+                if (x - fx) ** 2 + (y - fy) ** 2 < r2:
+                    b = Body(x, y, ang, kind, col)
+                    b.parked_idx = idx
+                    self.bodies.append(b)
+                    self.parked[idx] = b
+                    n_new += 1
+            if n_new >= 160:                                  # at most this many new bodies a frame, so a sudden zoom-out doesn't stall
+                break

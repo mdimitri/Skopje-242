@@ -23,7 +23,7 @@ from progress import Bar, each, phase
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 28
+VERSION = 29
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1136,7 +1136,7 @@ def main():
             dense = cls != "tertiary" and w <= 9.5 and _bld_share(mx, my) >= 0.06
             diag = dense and w >= 6.0
             if diag:
-                e["sw"] = roads3d.SW_W * 1.3                             # wider pavement so the bays sit on it, not in the lane
+                e["sw"] = roads3d.SW_W * 1.5                             # wider pavement so the bays sit on it, not in the lane
             ctr = min(1.0, max(0.35, math.hypot(mx, my) / 1800.0))      # fewer on wide roads towards the centre
             sides = (1, -1) if dense and not e["ow"] else (None,)
             for fixed in sides:
@@ -1145,8 +1145,13 @@ def main():
                     busy = 1.0 if dense else min(1.0, min(s if _deg.get(e["a"], 0) >= 3 else 99.0, (L - s) if _deg.get(e["b"], 0) >= 3 else 99.0) / 50.0)
                     if r.random() < (0.78 if diag else 0.7 if dense else 0.10 * busy * ctr):     # wide roads: half the cars, tapering at busy junctions
                         x, y, dx, dy = at(s)
+                        _, _, dx0, dy0 = at(max(s - 7.0, 0.0))
+                        _, _, dx1, dy1 = at(min(s + 7.0, L))
+                        if dx0 * dx1 + dy0 * dy1 < 0.97:                          # a bend or curve: nobody parks there
+                            s += 3.0
+                            continue
                         side = fixed or (1 if e["ow"] else r.choice((1, -1)))     # one-way (boulevard halves): right kerb only, never the median
-                        off = w / 2 + (2.45 if diag else 0.55)                   # half up on the pavement, as in Skopje; diagonal bays sit wholly on pavement and grass
+                        off = w / 2 + (2.45 if diag else 0.98)                  # wholly on the pavement (Skopje parks on it); diagonal bays on pavement and grass
                         px, py = x - dy * off * side, y + dx * off * side
                         dg = diag
                         if dg:                                                   # a building beside the pavement leaves no room: park parallel
@@ -1157,7 +1162,7 @@ def main():
                                     dg = False
                                     break
                             if not dg:
-                                off = w / 2 + 0.55
+                                off = w / 2 + 0.98
                                 px, py = x - dy * off * side, y + dx * off * side
                         if abs(px) < HX - 5 and abs(py) < HY - 5:
                             ix, iy = to_cell(px, py)
@@ -1167,7 +1172,30 @@ def main():
                                     hd += r.choice((0.72, 0.8, 0.88))             # ~45 deg, nose towards the kerb (kerb is at +90 deg of travel)
                                 parked.append((px, py, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
                     s += r.uniform(2.6, 3.1) if diag else r.uniform(5.2, 6.0) if dense else r.uniform(6.0, 9.0)
-    parked += _fill_lots(areas, bld_a, to_cell, NCX, NCY, HX, HY)
+    lot_cars = _fill_lots(areas, bld_a, to_cell, NCX, NCY, HX, HY)
+    asph = {}                                                   # round 26: nobody parks on asphalt: not on any road (parking-lot aisles and service lanes included)
+    for rd_ in roads:
+        if rd_["bridge"] or rd_["cls"] in ("footway", "path", "steps", "cycleway", "track", "pedestrian"):
+            continue
+        for (ax_, ay_), (bx_, by_) in zip(rd_["pts"], rd_["pts"][1:]):
+            for gx_ in range(int((min(ax_, bx_) - 4) // 16), int((max(ax_, bx_) + 4) // 16) + 1):
+                for gy_ in range(int((min(ay_, by_) - 4) // 16), int((max(ay_, by_) + 4) // 16) + 1):
+                    asph.setdefault((gx_, gy_), []).append((ax_, ay_, bx_, by_, rd_["w"] / 2 - 0.02))
+
+    def _on_asphalt(px_, py_):
+        for ax_, ay_, bx_, by_, hw_ in asph.get((int(px_ // 16), int(py_ // 16)), ()):
+            dx_, dy_ = bx_ - ax_, by_ - ay_
+            l2_ = dx_ * dx_ + dy_ * dy_ or 1.0
+            t_ = max(0.0, min(1.0, ((px_ - ax_) * dx_ + (py_ - ay_) * dy_) / l2_))
+            if (px_ - ax_ - dx_ * t_) ** 2 + (py_ - ay_ - dy_ * t_) ** 2 < hw_ * hw_:
+                return True
+        return False
+
+    def _clear_of_asphalt(q, pad=0.0):
+        c_, s_ = math.cos(q[2]), math.sin(q[2])
+        return not any(_on_asphalt(q[0] + c_ * u_ - s_ * v_, q[1] + s_ * u_ + c_ * v_)
+                       for u_ in (-2.1 - pad, 0.0, 2.1 + pad) for v_ in (-0.85 - pad, 0.0, 0.85 + pad))
+    parked = [q for q in parked if _clear_of_asphalt(q)] + [q for q in lot_cars if _clear_of_asphalt(q, 0.5)]     # car-park bays leave aisles and access lanes open
     kept, taken = [], {}                                        # round 23: cars of crossing streets must not overlap
     for q in parked:
         gx_, gy_ = int(q[0] // 4), int(q[1] // 4)
