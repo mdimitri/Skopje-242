@@ -863,11 +863,11 @@ def _line(out, cov, me, e, pts, fr, off, y, width, col, dashed, rank):
 
 def lanes_per_way(e):
     """Lanes in each travel direction: the OSM lanes count where the map has one, otherwise from the width (one-way
-    roads round(w/3.2), two-way roads two each way from 11 m).  src/actors.Traffic.lanes_of drives on these."""
+    roads round(w/3.5), two-way roads two each way from 13 m).  src/actors.Traffic.lanes_of drives on these."""
     n, w = e.get("lanes", 0), e["w"]
     if e["ow"]:
-        return n if n else max(1, int(round(w / 3.2)))
-    return max(1, n // 2) if n else (2 if w >= 11.0 else 1)
+        return n if n else max(1, int(round(w / 3.5)))
+    return max(1, n // 2) if n else (2 if w >= 13.0 else 1)
 
 
 def _markings(out, cov, i, e, pts, fr, y):

@@ -1107,12 +1107,12 @@ class Traffic:
     def lanes_of(e):
         """Lateral centres of the lanes in the travel direction (positive = to the left of travel), matching the painted
         markings in tools/roads3d._markings: the OSM lanes count where the map has one, otherwise one-way roads split
-        into round(w/3.2) lanes and two-way roads keep a lane in the middle of each half (two per direction from 11 m)."""
+        into round(w/3.5) lanes and two-way roads keep a lane in the middle of each half (two per direction from 13 m)."""
         w, n = e["w"], e.get("lanes", 0)
         if e["ow"]:
-            n = n or max(1, int(round(w / 3.2)))
+            n = n or max(1, int(round(w / 3.5)))
             return [-w / 2 + (k + 0.5) * w / n for k in range(n)]
-        n = max(1, n // 2) if n else (2 if w >= 11.0 else 1)
+        n = max(1, n // 2) if n else (2 if w >= 13.0 else 1)
         if n == 1:
             return [max(1.3, w / 4)]
         return [(k + 0.5) * w / 2 / n for k in range(n)]

@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 30
+VERSION = 31
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -33,10 +33,10 @@ NCY = int(2 * HY / CELL)
 # ----------------------------------------------------------------- road classes
 # cls: (width m, speed m/s, drivable, walkable)
 ROAD = {
-    "motorway": (14, 27, 1, 0), "motorway_link": (8, 14, 1, 0), "trunk": (12, 22, 1, 0), "trunk_link": (7, 12, 1, 0),
-    "primary": (11, 15, 1, 1), "primary_link": (7, 10, 1, 1), "secondary": (9.5, 13.5, 1, 1),
-    "secondary_link": (6.5, 9, 1, 1), "tertiary": (8, 12.5, 1, 1), "tertiary_link": (6, 9, 1, 1),
-    "unclassified": (6.5, 10, 1, 1), "residential": (6.5, 9, 1, 1), "living_street": (5.5, 4.5, 1, 1),
+    "motorway": (14, 27, 1, 0), "motorway_link": (7, 14, 1, 0), "trunk": (14, 22, 1, 0), "trunk_link": (7, 12, 1, 0),
+    "primary": (14, 15, 1, 1), "primary_link": (7, 10, 1, 1), "secondary": (7, 13.5, 1, 1),
+    "secondary_link": (7, 9, 1, 1), "tertiary": (7, 12.5, 1, 1), "tertiary_link": (7, 9, 1, 1),
+    "unclassified": (7, 10, 1, 1), "residential": (7, 9, 1, 1), "living_street": (7, 4.5, 1, 1),
     "service": (4.4, 5, 1, 1), "pedestrian": (4, 0, 0, 1), "footway": (2.2, 0, 0, 1), "path": (1.8, 0, 0, 1),
     "steps": (2, 0, 0, 1), "cycleway": (2.2, 0, 0, 1), "track": (3.5, 0, 0, 1),
 }
@@ -840,7 +840,7 @@ def main():
             if t.get("lanes"):
                 try:
                     lanes = max(0, int(t["lanes"]))
-                    w = max(w, lanes * 3.1)
+                    w = max(w, lanes * 3.5)
                 except ValueError:
                     pass
             ms = t.get("maxspeed", "")

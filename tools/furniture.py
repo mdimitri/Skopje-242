@@ -198,8 +198,8 @@ def lanes_n(e):
     """Lanes per travel direction (same rule as roads3d.lanes_per_way)."""
     n, w = e.get("lanes", 0), e["w"]
     if e["ow"]:
-        return n if n else max(1, int(round(w / 3.2)))
-    return max(1, n // 2) if n else (2 if w >= 11.0 else 1)
+        return n if n else max(1, int(round(w / 3.5)))
+    return max(1, n // 2) if n else (2 if w >= 13.0 else 1)
 
 
 SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junction x, junction z, housing height) - filled by build()
