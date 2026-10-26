@@ -301,8 +301,11 @@ class Transit:
             self._at_stop(bus, k)
             return
         to_stop = bus.next_stop - s_bus
-        v = 11.0 * (1.0 - min(0.8, abs(err) / 1.0))
+        v = 13.5 * (1.0 - min(0.8, abs(err) / 1.0))                # 45-50 km/h on the open road
         v = min(v, max(2.0, to_stop * 0.25))
+        g = self._gap(bus)                                          # cautious: brakes gently for anything in its path
+        if g is not None:
+            v = min(v, math.sqrt(2.0 * 1.8 * max(0.0, g - 2.0)))
         ahead = self._blocked(bus)
         if ahead:
             v = 0.0
@@ -349,7 +352,8 @@ class Transit:
             a = math.atan2(fx, -fy) + self.rng.uniform(-0.9, 0.9)          # away from the road, spread out
             p.vx, p.vy = math.cos(a) * p.v, math.sin(a) * p.v
             p.h = a
-            self.movers.append(p)
+            if not self.sim.peds.adopt(p):                          # off the bus: an ordinary passer-by from here on
+                self.movers.append(p)
             self.served[1] += 1
         if k is not None and math.hypot(self.stops[k][0] - b.x, self.stops[k][1] - b.y) < 25:
             for p in self.queue.pop(k, []):
@@ -419,7 +423,8 @@ class Transit:
                     p.t = 8.0
                     p.vx, p.vy = math.cos(p.h) * -1.0, math.sin(p.h) * -1.0
                     p.mode = "alight"
-                    keep.append(p)
+                    if not sim.peds.adopt(p):                      # walks on like anyone else
+                        keep.append(p)
                     continue
                 tx, ty = self.door(b)
                 dx, dy = tx - p.x, ty - p.y
@@ -521,9 +526,20 @@ class Transit:
         for gap, lat, hw in self._near(bus, standing, moving, look + 2.0):
             if -1.0 < gap < look:
                 at = (bus.lat + extra) if gap < 3.0 else tgt
-                if abs(lat - at) < hw_b + hw - 0.15:                     # (mirrors may pass over a kerb-side bonnet)
+                if abs(lat - at) < (hw_b + hw) * 1.1:                     # its width and the other's, 10 % spare
                     return True
         return False
+
+    def _gap(self, bus, reach=45.0):
+        """Free road ahead along the bus's path (as wide as the bus and the other thing, 10 % spare), or None."""
+        hw_b = vehicles.HALF_W[bus.body.kind]
+        tgt = getattr(bus, "lane_off", 0.0) + bus.dodge
+        best = None
+        for gap, lat, hw in self._near(bus, reach=reach):
+            at = bus.lat if gap < 3.0 else tgt
+            if -1.0 < gap and abs(lat - at) < (hw_b + hw) * 1.1 and (best is None or gap < best):
+                best = gap
+        return best
 
     def _squeeze(self, bus):
         """How far (< 0, to the left) the bus must step out of its lane to pass a car standing in it (a parked or
@@ -532,7 +548,8 @@ class Transit:
         hw_b, off = vehicles.HALF_W[b.kind], getattr(bus, "lane_off", 0.0)
         need = 0.0
         for gap, lat, hw in self._near(bus, standing=True, reach=30.0):
-            if gap > -vehicles.DIMS[b.kind][0] and abs(lat - off) < hw_b + hw + 0.35:    # in the way, or still beside it
-                need = min(need, lat - hw - hw_b - 0.35 - off)
+            spare = (hw_b + hw) * 0.15                                 # a little more than the 10 % the brakes look for
+            if gap > -vehicles.DIMS[b.kind][0] and abs(lat - off) < hw_b + hw + spare:    # in the way, or still beside it
+                need = min(need, lat - hw - hw_b - spare - off)
         lo = -self._lane(bus.line, bus.i)[1] + hw_b + 0.3 - off       # as far as the far edge of the road (one-ways: the
         return need if need >= lo else 0.0                          # other lanes) -- no way round at all: wait

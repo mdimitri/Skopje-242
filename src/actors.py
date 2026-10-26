@@ -290,12 +290,13 @@ def collide_static(p, world):
                 cx += nx * pen
                 cy += ny * pen
                 vn = p.vx * nx + p.vy * ny
-                tree = tr >= 0.45
-                if -vn > (9.0 if tree else 2.5) and hasattr(world, "break_point"):   # everything breaks, the car pays
+                tree = tr >= 0.45 and hi - lo > 4.0
+                light = hi - lo < 3.5                              # benches, bins, junk: knocked over by any real touch
+                if -vn > (9.0 if tree else 1.2 if light else 2.5) and hasattr(world, "break_point"):   # everything breaks, the car pays
                     world.break_point((tx, ty, tr, lo, hi))
                     p.x -= nx * pen
                     p.y -= ny * pen
-                    k = 0.55 if tree else (0.8 if tr > 0.3 else 0.88)
+                    k = 0.55 if tree else (0.95 if light else 0.8 if tr > 0.3 else 0.88)
                     p.vx *= k
                     p.vy *= k
                     p.h += (o * (fx * ny - fy * nx)) * vn * 0.01
@@ -667,6 +668,35 @@ class Peds:
         if (p.x - px) ** 2 + (p.y - py) ** 2 < rmin * rmin * 0.7:
             return
         self.list.append(p)
+
+    def adopt(self, p):
+        """Make p (a bus passenger, ...) an ordinary passer-by on the nearest footway / pavement from where it stands."""
+        w = self.w
+        best = None
+        cx, cy = int(p.x // w.sg), int(p.y // w.sg)
+        for ix in (cx - 1, cx, cx + 1):
+            for iy in (cy - 1, cy, cy + 1):
+                for ei in w.walk_cells.get((ix, iy), ()):
+                    e = w.edges[ei]
+                    pts, cum = e["pts"], e["cum"]
+                    for k in range(len(pts) - 1):
+                        (ax, ay), (bx, by) = pts[k], pts[k + 1]
+                        dx, dy = bx - ax, by - ay
+                        l2 = dx * dx + dy * dy or 1.0
+                        t = max(0.0, min(1.0, ((p.x - ax) * dx + (p.y - ay) * dy) / l2))
+                        d2 = (p.x - ax - dx * t) ** 2 + (p.y - ay - dy * t) ** 2
+                        if best is None or d2 < best[0]:
+                            best = (d2, ei, cum[k] + t * (cum[k + 1] - cum[k]), -dy * (p.x - ax) + dx * (p.y - ay))
+        if best is None:
+            return False
+        _d, ei, s, lat = best
+        e = w.edges[ei]
+        p.e, p.d = ei, self.rng.choice((1, -1))
+        p.s = s if p.d == 1 else e["len"] - s
+        p.side = (1 if lat > 0 else -1) * p.d
+        p.mode, p.t = "walk", 0.0
+        p.v = self.rng.uniform(1.0, 1.7) * vehicles.PED_SPEED[p.arch]
+        return True
 
     def eject(self, x, y, h, shirt=None, gz=None):
         """A driver pulled out of their car: angry, then runs away."""
@@ -1218,13 +1248,59 @@ class Traffic:
                     else:                                             # the other car's box, seen from this car's heading:
                         ca, sa = abs(math.cos(o[5] - c.h)), abs(math.sin(o[5] - c.h))
                         hw, hl = ca * o[2] + sa * o[3], ca * o[3] + sa * o[2]     # (a car crossing sideways is wide)
-                    if lat > hw + (0.0 if o[5] is None else vehicles.HALF_W[c.kind] + 0.25):     # a hand's width spare: no grazing
+                    if lat > (hw if o[5] is None else (hw + vehicles.HALF_W[c.kind]) * 1.1):     # both widths + 10 % spare: no grazing
                         continue
                     gap = fwd - vehicles.HALF_L[c.kind] - hl
                     if fwd < (0.3 if o[5] is None else back):                          # beside or behind: not in the way
                         continue
                     if best is None or gap < best:
                         best, self.lead = gap, o
+        return best
+
+    def _cross(self, c, horizon=3.5):
+        """Look along the line of motion of everything moving nearby: if a crossing vehicle and car c would meet (their
+        boxes, widths + 10 %, overlapping at the moment of closest approach within `horizon` s), the distance c may still
+        drive before that point, else None.  Priority to the right; the player, sirens and buses are always let by."""
+        v = c.v
+        hx, hy = math.cos(c.h), math.sin(c.h)
+        hwc, hlc = vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]
+        R = 8.0 + v * horizon
+        best = None
+        hash_get = self.hash.get
+        for ix in range(int((c.x - R) // 16), int((c.x + R) // 16) + 1):
+            for iy in range(int((c.y - R) // 16), int((c.y + R) // 16) + 1):
+                for o in hash_get((ix, iy), ()):
+                    ob = o[4]
+                    if ob is c or o[5] is None:
+                        continue
+                    ch = math.cos(o[5] - c.h)
+                    if abs(ch) > 0.8:                             # same way or head-on: the lane scan handles those
+                        continue
+                    if isinstance(ob, Car):
+                        ovx, ovy = ob.v * math.cos(ob.h), ob.v * math.sin(ob.h)
+                        boss = False
+                    else:
+                        ovx, ovy = ob.vx, ob.vy
+                        boss = True                               # driven by the player or a script: it won't yield
+                    dx, dy = o[0] - c.x, o[1] - c.y
+                    lat0 = -dx * hy + dy * hx
+                    if not boss and lat0 > 0:                     # it comes from our left: it gives way to us
+                        continue
+                    rvx, rvy = ovx - v * hx, ovy - v * hy
+                    vv = rvx * rvx + rvy * rvy
+                    if vv < 0.04:
+                        continue
+                    t = -(dx * rvx + dy * rvy) / vv
+                    if t <= 0.0 or t > horizon:
+                        continue
+                    px, py = dx + rvx * t, dy + rvy * t           # where it is, relative to us, when we are closest
+                    sa = abs(math.sin(o[5] - c.h))
+                    hw = abs(ch) * o[2] + sa * o[3]
+                    hl = abs(ch) * o[3] + sa * o[2]
+                    if abs(-px * hy + py * hx) < (hwc + hw) * 1.1 and abs(px * hx + py * hy) < (hlc + hl) * 1.1 + 0.5:
+                        g = v * t - hlc
+                        if best is None or g < best:
+                            best = g
         return best
 
     WAIT = (9.0, 6.0, 4.0, 2.5)      # seconds a stopped car waits before trying to get out, by aggression setting
@@ -1351,6 +1427,22 @@ class Traffic:
             return False                                      # it has waited long enough to edge out
         if c.nxt is not None and self.occ.get(c.nxt, 1e9) < 6.0 + vehicles.HALF_L[c.kind]:
             return True                                       # keep the box clear
+        e = self.w.edges[c.e]
+        jx, jy = e["pts"][-1] if c.d == 1 else e["pts"][0]
+        rj = e["w"] * 0.5 + 6.0                               # the junction box, about
+        for ix in range(int((jx - rj) // 16), int((jx + rj) // 16) + 1):
+            for iy in range(int((jy - rj) // 16), int((jy + rj) // 16) + 1):
+                for o in self.hash.get((ix, iy), ()):
+                    ob = o[4]
+                    if ob is c or o[5] is None or (o[0] - jx) ** 2 + (o[1] - jy) ** 2 > rj * rj:
+                        continue
+                    if isinstance(ob, Car):
+                        if (ob.e == c.e and ob.d == c.d) or (c.nxt is not None and (ob.e, ob.d) == c.nxt) or ob.stuck > 6.0:
+                            continue                          # ahead of us on our way in or out: the lane scan follows it
+                        dh = abs((o[5] - h1 + math.pi) % (2 * math.pi) - math.pi)
+                        if dh > 2.6 and c.turn > -0.5 and ob.turn > -0.5:
+                            continue                          # oncoming, nobody turns across
+                    return True                               # someone is still crossing the box: let it clear first
         for key2, o, h2, eta2 in self.appr.get(node, ()):
             if o is c or (o.e == c.e and o.d == c.d) or o.blk is c or o.stuck > 6.0:
                 continue                                      # (nor wait for a car that is not going to move soon)
@@ -1524,6 +1616,10 @@ class Traffic:
                 vlim = min(vlim, max(0.0, (gap - slack) * 0.7, lv + 0.6 * (gap - slack - lv)))
                 if c.shift and gap > 0.6:
                     vlim = max(vlim, 1.2)                          # edging round the blocker (the lane was checked)
+                braking = True
+            cg = self._cross(c) if c.ghost <= 0 and c.v > 0.5 else None
+            if cg is not None:                                     # someone will cut across our path: let them by
+                vlim = min(vlim, max(0.0, (cg - 1.5) * 0.7))
                 braking = True
             if not at_red:
                 self._untangle(c, e, gap, dt, fx, fy)

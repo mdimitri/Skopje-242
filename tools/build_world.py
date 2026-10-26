@@ -131,6 +131,53 @@ def connect_roads(roads, radius=7.0, drive_radius=12.0):
     return merged + snapped
 
 
+def _inside(x, y, ring):
+    c = False
+    for (ax, ay), (bx, by) in zip(ring, ring[1:] + ring[:1]):
+        if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+            c = not c
+    return c
+
+
+def _fill_lots(areas, bld_a, to_cell, ncx, ncy, hx, hy, occupancy=(0.62, 0.85)):
+    """Car parks (amenity=parking areas): rows of 2.6 x 5.2 m bays along the lot's longest side, two rows nose to
+    nose between 6 m aisles, filled to 62-85 %.  A bay is used only when the whole car stands inside the lot, clear of
+    holes and buildings."""
+    out = []
+    for ar in areas:
+        if ar["kind"] != "parking" or ar["area"] < 120:
+            continue
+        ring = ar["outer"]
+        r = random.Random(ar["id"])
+        occ = r.uniform(*occupancy)
+        (ax, ay), (bx, by) = max(zip(ring, ring[1:] + ring[:1]), key=lambda q: (q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+        L = math.hypot(bx - ax, by - ay) or 1.0
+        ux, uy = (bx - ax) / L, (by - ay) / L                   # along the rows
+        vx, vy = -uy, ux                                        # across them
+        us = [(p[0] - ax) * ux + (p[1] - ay) * uy for p in ring]
+        vs = [(p[0] - ax) * vx + (p[1] - ay) * vy for p in ring]
+        v, k = min(vs) + 2.8, 0
+        while v < max(vs) - 2.6:
+            face = 1.0 if k % 2 == 0 else -1.0                  # each pair of rows faces its aisle
+            u = min(us) + 1.5
+            while u < max(us) - 1.4:
+                x, y = ax + ux * u + vx * v, ay + uy * u + vy * v
+                corners = [(x + ux * a_ * 1.2 + vx * b_ * 2.5, y + uy * a_ * 1.2 + vy * b_ * 2.5) for a_ in (-1, 1) for b_ in (-1, 1)]
+                ok = abs(x) < hx - 5 and abs(y) < hy - 5 and all(_inside(cx, cy, ring) for cx, cy in corners) \
+                    and not any(_inside(x, y, h) for h in ar["holes"])
+                if ok:
+                    ix, iy = to_cell(x, y)
+                    ok = 0 <= ix < ncx and 0 <= iy < ncy and not bld_a[iy, ix]
+                if ok and r.random() < occ:
+                    hd = math.atan2(vy, vx) + (0.0 if face > 0 else math.pi) + r.uniform(-0.06, 0.06)
+                    out.append((x, y, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
+                u += 2.6
+            v += 5.4 if k % 2 == 0 else 5.4 + 6.0                # aisle after every second row
+            k += 1
+    print(f"[build] car parks: {sum(1 for a in areas if a['kind'] == 'parking')} lots, {len(out)} parked cars")
+    return out
+
+
 def area_kind(t):
     if t.get("natural") == "water" or t.get("waterway") == "riverbank" or t.get("landuse") in ("reservoir", "basin"):
         return "water"
@@ -1120,6 +1167,7 @@ def main():
                                     hd += r.choice((0.72, 0.8, 0.88))             # ~45 deg, nose towards the kerb (kerb is at +90 deg of travel)
                                 parked.append((px, py, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
                     s += r.uniform(2.6, 3.1) if diag else r.uniform(5.2, 6.0) if dense else r.uniform(6.0, 9.0)
+    parked += _fill_lots(areas, bld_a, to_cell, NCX, NCY, HX, HY)
     kept, taken = [], {}                                        # round 23: cars of crossing streets must not overlap
     for q in parked:
         gx_, gy_ = int(q[0] // 4), int(q[1] // 4)

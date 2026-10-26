@@ -572,9 +572,15 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             dx, dy = dx / ln, dy / ln
             rx, ry = dy, -dx
             side = 1 if (sx_ - qx) * rx + (sy_ - qy) * ry >= 0 else -1
-            rx, ry = rx * side, ry * side
+            if e["ow"]:
+                side = -1                                  # one-way (a boulevard half): always the outer, right-hand kerb
             off = e["w"] / 2 + 2.3
+            if on_road(qx + rx * side * off, qy + ry * side * off, 0.5):
+                side = -side                               # that side is another carriageway (a median): use the other kerb
+            rx, ry = rx * side, ry * side
             px, py = qx + rx * off, qy + ry * off
+            if on_road(px, py, 0.5):
+                continue
             if not_building(px, py) and not is_water(px, py):
                 put(bus_shelter(px, py, math.atan2(dy, dx)), px, py, False)
                 put(sign(px + dx * 2.2, py + dy * 2.2, rx, ry, "bus"), px + dx * 2.2, py + dy * 2.2, False)
