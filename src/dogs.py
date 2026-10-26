@@ -338,8 +338,8 @@ class Dogs:
                 ts = math.hypot(t.vx, t.vy)
                 self._step(d, t.x + t.vx * 0.4, t.y + t.vy * 0.4, RUN if dist > 3.0 else max(2.0, min(RUN, ts * 1.1)), dt,
                            self._on_road(d) or not self._busy(d))
-                if d.bark_cd <= 0 and dist < 14:
-                    d.bark_cd = self.rng.uniform(0.7, 1.3)
+                if d.bark_cd <= 0 and dist < 30:
+                    d.bark_cd = self.rng.uniform(0.5, 0.9)
                     self.sim.ev("dog_bark", x=d.x, y=d.y, voice=d.voice, pitch=d.pitch)
         elif d.state == "come":
             p = self.player

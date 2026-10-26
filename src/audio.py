@@ -202,13 +202,14 @@ def build():
             y *= np.minimum(1, tt / 0.006) * np.exp(-tt / (dur * 0.45))
             i0 = int(k * (dur + gap) * SR)
             out[i0:i0 + len(y)] += y * (1.0 - 0.12 * k)
-        return out / np.abs(out).max() * 0.55
+        out = np.tanh(3.0 * out / np.abs(out).max()) / np.tanh(3.0)       # driven: a bark is short and peaky, so it needs the loudness squeezed up to be heard over the city
+        return out * 0.9
     S["bark_a"] = bark(780, 560, 0.11, ((1100, 500, 1.0), (2400, 700, 0.5)), 1.2, 11, n=2, gap=0.12)
     S["bark_b"] = bark(520, 340, 0.15, ((750, 350, 1.0), (1700, 600, 0.5)), 1.0, 12, n=1)
     S["bark_c"] = bark(310, 190, 0.2, ((520, 260, 1.0), (1250, 450, 0.45)), 1.6, 13, n=1)
     tt = _t(0.16)
     fr = 900 + 1500 * (tt / 0.16) ** 1.3
-    S["yip"] = np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.minimum(1, tt / 0.01) * np.exp(-tt / 0.07) * 0.4
+    S["yip"] = np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.minimum(1, tt / 0.01) * np.exp(-tt / 0.07) * 0.8
     t = _t(3.0)
     x = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((196, 1.0), (392, 0.5), (588, 0.3), (237, 0.4))) * np.exp(-t / 0.9)
     S["bell"] = x / np.abs(x).max() * 0.5
