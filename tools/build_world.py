@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 29
+VERSION = 30
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1209,6 +1209,7 @@ def main():
         taken.setdefault((gx_, gy_), []).append(q)
         kept.append(q)
     parked = kept
+    parked = [q for q in parked if random.Random(int(q[0] * 7.0) * 100003 + int(q[1] * 13.0)).random() < 0.5]     # round 27: half as many everywhere, the centre-to-suburb gradient stays
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
     import furniture
