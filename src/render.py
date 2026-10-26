@@ -5,6 +5,7 @@ import numpy as np
 import pyray as rl
 
 import actors
+import fx
 import gl3d
 import weaponart
 import projectiles
@@ -232,6 +233,7 @@ class Renderer:
         rl.rl_disable_depth_mask()
         rl.rl_begin(rl.RL_QUADS)
         n = 0
+        blobs = []
         for cx in range(math.floor(rect[0] / S), math.floor(rect[2] / S) + 1):
             for cy in range(math.floor(rect[1] / S), math.floor(rect[3] / S) + 1):
                 for d in self.st.decals.get((cx, cy), ()):
@@ -245,18 +247,29 @@ class Renderer:
                         rl.rl_vertex3f(x1 + nx, y, z1 + nz); rl.rl_vertex3f(x2 + nx, y, z2 + nz)
                         rl.rl_vertex3f(x2 - nx, y, z2 - nz); rl.rl_vertex3f(x1 - nx, y, z1 - nz)
                     else:
-                        _, x, z, r, col = d
-                        y = w.ground_y(x, z) + 0.035
-                        rl.rl_color4ub(col[0], col[1], col[2], col[3])
-                        for k in range(2):                       # an octagon-ish blob from two rotated squares
-                            a = k * math.pi / 4
-                            ca, sa = math.cos(a) * r, math.sin(a) * r
-                            rl.rl_vertex3f(x - ca + sa, y, z - sa - ca); rl.rl_vertex3f(x + ca + sa, y, z + sa - ca)
-                            rl.rl_vertex3f(x + ca - sa, y, z + sa + ca); rl.rl_vertex3f(x - ca - sa, y, z - sa + ca)
+                        blobs.append(d)
                     n += 1
                     if n > 2500:
                         break
         rl.rl_end()
+        if blobs:                                    # blood / scorch: a few overlapping soft discs, no hard square edges
+            rl.rl_set_texture(fx.soft_id())
+            rl.rl_begin(rl.RL_QUADS)
+            for _, x, z, r, col in blobs:
+                y = w.ground_y(x, z) + 0.035
+                hs = int(x * 31.7 + z * 17.3) & 0xFFFF
+                for k in range(3):                   # main pool plus two smaller lobes, offset and turned by the position
+                    a = (hs * 0.37 + k * 2.1) % 6.283
+                    off, rr = (0.0, r * 1.25) if k == 0 else (r * 0.45, r * (0.8 - 0.15 * k))
+                    cx, cz = x + math.cos(a) * off, z + math.sin(a) * off
+                    ca, sa = math.cos(a) * rr, math.sin(a) * rr
+                    rl.rl_color4ub(col[0], col[1], col[2], col[3] if k == 0 else col[3] * 2 // 3)
+                    rl.rl_tex_coord2f(0, 0); rl.rl_vertex3f(cx - ca + sa, y, cz - sa - ca)
+                    rl.rl_tex_coord2f(1, 0); rl.rl_vertex3f(cx + ca + sa, y, cz + sa - ca)
+                    rl.rl_tex_coord2f(1, 1); rl.rl_vertex3f(cx + ca - sa, y, cz + sa + ca)
+                    rl.rl_tex_coord2f(0, 1); rl.rl_vertex3f(cx - ca - sa, y, cz - sa + ca)
+            rl.rl_end()
+            rl.rl_set_texture(0)
         rl.rl_enable_depth_mask()
 
     @staticmethod

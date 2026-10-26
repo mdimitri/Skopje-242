@@ -165,6 +165,15 @@ def _soft_texture(ring=False):
     return tex
 
 
+def soft_id():
+    """Texture id of the shared soft disc (also used for ground blobs)."""
+    global _SOFT, _RING
+    if _SOFT is None:
+        _SOFT = _soft_texture()
+        _RING = _soft_texture(ring=True)
+    return _SOFT.id
+
+
 def read_time(text, secs):
     """Show time grows with the text length: about 14 characters a second plus a pause, never shorter than asked, a bit longer in general."""
     return max(secs * 1.3, 1.4 + len(text) * 0.075)

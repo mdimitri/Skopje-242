@@ -9,7 +9,7 @@ import vehicles
 
 # kind -> (speed m/s, radius m, tracer colour)
 KINDS = {"bullet": (38.0, 0.06, (255, 236, 150)), "pellet": (32.0, 0.05, (255, 220, 140)),
-         "rocket": (15.0, 0.16, (255, 160, 60))}
+         "rocket": (20.0, 0.16, (255, 160, 60))}
 PAY = {"ped": 5, "kill": 20, "car": 8, "wreck": 40, "wall": 1, "tree": 1}
 MARKS_MAX = 600
 STEP = 1.2                                   # metres per collision sub-step

@@ -597,7 +597,7 @@ class Walker:
         if jump and self.z <= 0.001:
             self.vz = 6.4
             self.az += 0.02
-        sp = 7.6 if run else 4.6
+        sp = 9.5 if run else 5.75
         self.h += turn * (3.4 if not run else 3.0) * dt
         k = min(1.0, 12 * dt)
         if world.hilly and self.z <= 0.001:                      # Tobler's hiking function: slow uphill, a little faster gently downhill
@@ -937,7 +937,7 @@ class Peds:
                     p.h = math.atan2(dy, dx)
                     p.anim += dt * 9
                     if d > 1.1:
-                        sp = 4.4
+                        sp = 5.5
                         p.x += dx / d * sp * dt
                         p.y += dy / d * sp * dt
                         for ax, ay, bx, by in w.edges_near(p.x, p.y, 0.5):
@@ -971,7 +971,7 @@ class Peds:
                     if p.t <= 0:
                         p.mode, p.t = "flee", 6.0
                         d = math.hypot(p.x - fx, p.y - fy) or 1.0
-                        p.vx, p.vy = (p.x - fx) / d * 4.0, (p.y - fy) / d * 4.0
+                        p.vx, p.vy = (p.x - fx) / d * 5.0, (p.y - fy) / d * 5.0
                 else:
                     p.x += p.vx * dt
                     p.y += p.vy * dt
@@ -1006,7 +1006,7 @@ class Peds:
                     self._bumped(p, wk_, ev)
             # ------------- walking along the graph
             e = w.edges[p.e]
-            vv = p.v
+            vv = p.v * 1.25                                      # +25% walking pace
             if w.hilly:                                           # Tobler's hiking function
                 gr = w.slope_at(p.x, p.y, math.cos(p.h), math.sin(p.h), p.gz if p.gz is not None else -1e9, 1.0)
                 vv *= max(0.2, min(1.25, math.exp(-3.5 * (abs(gr + 0.05) - 0.05))))
@@ -1758,6 +1758,7 @@ class Sim:
     def _pay(self, amount, x, y):
         """Денари for mayhem: destruction, car hits, run-over people, punches."""
         if amount > 0:
+            amount *= 3                                   # crime pays triple
             self.money += int(amount)
             self.ev("pay", x=x, y=y, amount=int(amount))
 
@@ -1989,6 +1990,7 @@ class Sim:
                 self.stats["peds"] += 1
                 pay += 25
         if pay:
+            pay *= 3                                       # crime pays triple
             self.money += pay
             self.ev("pay", x=x, y=y, amount=pay)
         wk = self.walker
