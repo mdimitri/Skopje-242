@@ -92,6 +92,8 @@ class Chaos:
     def blast(self, x, y, r=9.0, peds=True):
         """Shock wave: props in range break or fly, flyers are pushed, people are thrown, the player is hurt."""
         sim, w, rng = self.sim, self.sim.w, self.rng
+        if getattr(sim, "dogs", None) is not None:
+            sim.dogs.scare(x, y, r * 5.5)
         for pt in w.points_near(x, y, r):
             d = math.hypot(pt[0] - x, pt[1] - y)
             if d > r:

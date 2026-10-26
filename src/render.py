@@ -48,6 +48,7 @@ class Renderer:
         self._frames = 0
         self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
         self.ped_models = {}
+        self.dog_models = {}
         self.pick_models = {}
         self.wreck_models = {}
         self.t = 0.0
@@ -162,6 +163,16 @@ class Renderer:
                     return fb                                  # (none yet: build it now, a person is never just a shadow)
             self._built += 1
             m = self.ped_models[key] = gl3d.ped_model(arch, tone, frame, skin)
+        return m
+
+    def dog_model(self, coat, frame):
+        key = (coat, frame)
+        m = self.dog_models.get(key)
+        if m is None:
+            if self._built >= self.BUILD_BUDGET:
+                return self.dog_models.get((coat, 11)) or self.dog_models.get((0, 11))      # (none yet: the next frame builds it)
+            self._built += 1
+            m = self.dog_models[key] = gl3d.dog_model(coat, frame)
         return m
 
     def pick_model(self, kind):
@@ -412,6 +423,15 @@ class Renderer:
                 peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean))
                 if p.mode not in ("dead", "ko"):
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
+        dogs = getattr(sim, "dogs", None)
+        if dogs is not None:                                           # stray dogs: small, so culled early when zoomed out
+            for d in dogs.live:
+                if self._in(d.x, d.y, rect) and (d.x - mcx) ** 2 + (d.y - mcz) ** 2 < min(far2, 70.0 ** 2):
+                    dm = self.dog_model(d.coat, dogs.frame(d, t))
+                    if dm is not None:
+                        dg = d.gz if d.gz is not None else w.ground_y(d.x, d.y)
+                        rl.draw_model_ex(dm, V3(d.x, dg, d.y), UP, -math.degrees(d.h), V3(1.3, 1.3, 1.3), WHITE)           # a bit bigger than life: cute and readable from above
+                        sh.append((d.x, d.y, d.h, 0.4 if d.pose != "sleep" else 0.32, 0.22, 55, dg))
         cb = sim.car
         if sim.mode == "car" and cb is not None and cb.kind in vehicles.BIKES and getattr(sim, "riding", None) is None:
             gy = cb.az if cb.az is not None else w.ground_y(cb.x, cb.y)       # you, sitting on (or standing on) the two-wheeler

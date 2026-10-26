@@ -1449,6 +1449,11 @@ def weapon_model(kind):
     return _boxes_model([(x + w / 2, y, 0.0, w, h, d, c) for x, y, w, h, c in weaponart.BOXES[kind]])
 
 
+def dog_model(coat, frame):
+    import dogart
+    return _boxes_model(dogart.boxes(coat, frame))
+
+
 def wreck_model(kind, seed):
     """What is left of a broken tree / post / prop: a charred stump, a bent pole lying down, a crumpled heap."""
     rg = random.Random(seed)

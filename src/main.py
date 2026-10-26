@@ -424,6 +424,8 @@ def main():
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
     log(f"[game] playgrounds / schools / pitches: {len(sim.kids.sites)}")
+    import dogs as dogs_mod
+    sim.dogs = dogs_mod.Dogs(sim)
     import rentals
     sim.rentals = rentals.Rentals(sim)
     log(f"[game] rental e-scooters: {len(sim.rentals.spots)}")
@@ -490,6 +492,8 @@ def main():
     except (OSError, ValueError):
         hud.pois = []
     print(f"[game] map points of interest: {len(hud.pois)}")
+    sim.dogs.add_pois(hud.pois)
+    log(f"[game] stray dog hubs (kiosks, food places): {sum(len(v) for v in sim.dogs.hubs.values())}")
     labels += [(nm_, x_, world.ground_y(x_, y_) + 3.2, y_, "poi:" + c_) for x_, y_, c_, nm_ in hud.pois if nm_]
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
@@ -607,6 +611,13 @@ def main():
                 if d["hit"]:
                     particles.sparks(d["x"], d["y"], 5, 1.1)
                     shake = max(shake, 0.25)
+            elif kind == "dog_bark":
+                aud.at("bark_" + "abc"[d["voice"]], d["x"], d["y"], 0.55, d["pitch"], maxd=70.0, ref=6.0)
+            elif kind == "dog_yip":
+                aud.at("yip", d["x"], d["y"], 0.5, d["pitch"], maxd=50.0, ref=5.0)
+            elif kind == "dog_pet":
+                aud.at("yip", d["x"], d["y"], 0.35, d["pitch"] * 0.8, maxd=30.0, ref=4.0)
+                particles.emit("b", d["x"], d["y"], 0.9, 0, 0, 1.4, 6, 0.16, 1.1, (255, 120, 160), 1.0, 0.8, 0.0)
             elif kind == "hit":
                 particles.emit("b", d["x"], d["y"], 1.0, 0, 0, 1.5, 4, 0.18, 0.5, (190, 20, 24), 2.0, 0.8, -6.0)
             elif kind == "ko":
@@ -1232,6 +1243,19 @@ def main():
                 inp["move"] = (0.0, 0.0)
                 inp["attack"] = frame % 14 == 0
                 inp["jump"] = frame in (300, 322)
+            if os.environ.get("SK242_TEST_DOGS") and sim.walker is not None:       # stand still beside the nearest stray and pet it
+                inp["move"], inp["run"] = (0.0, 0.0), False
+                if frame == 100:
+                    wk_ = sim.walker
+                    if not sim.dogs.live:                    # none spawned near here: put two beside the player
+                        for k_ in range(2):
+                            sim.dogs.live.append(dogs_mod.Dog(wk_.x + 3.0 + k_, wk_.y + 2.0 * k_, random.Random(k_), (wk_.x, wk_.y), ("test", k_, 0)))
+                    q_ = min(sim.dogs.live, key=lambda q: (q.x - wk_.x) ** 2 + (q.y - wk_.y) ** 2)
+                    wk_.x, wk_.y, wk_.h = q_.x - 1.0, q_.y, 0.0
+                    q_.state, q_.t = "idle", 9.0
+                if frame == 110:
+                    sim.walker.atk_cd = 0.0
+                    sim.attack()
             if frame == 30 and sim.mode == "car":          # emergency services: a dead pedestrian and a burning wreck
                 from actors import Ped
                 px_, py_ = sim.car.x, sim.car.y

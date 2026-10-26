@@ -184,6 +184,31 @@ def build():
         fr = 520 - 700 * tt
         x[i0:i0 + len(tt)] += (np.sin(np.cumsum(2 * np.pi * fr / SR)) + 0.4 * _lp(rng.standard_normal(len(tt)).astype(np.float32), 4)) * np.exp(-tt / 0.06)
     S["dog"] = x / np.abs(x).max() * 0.5
+    # stray dogs, synthesized: a bark is a pitch-sweeping glottal pulse train through two formants plus a breathy onset;
+    # three dog "voices" (small yapper, mid mutt, big gruff one) and a short rising yip
+    def bark(f0, f1, dur, fmts, rough, seed, n=1, gap=0.17):
+        r = np.random.default_rng(seed)
+        out = np.zeros(int(SR * (dur * n + gap * n + 0.1)), np.float32)
+        for k in range(n):
+            tt = _t(dur)
+            f = f0 + (f1 - f0) * (tt / dur) ** 0.7
+            ph = np.cumsum(2 * np.pi * f * (1 + rough * r.standard_normal(len(tt)).astype(np.float32) * 0.02) / SR)
+            y = np.zeros(len(tt), np.float32)
+            for h in range(1, 28):
+                fh = h * f
+                amp = sum(a * np.exp(-((fh - fc) / bw) ** 2) for fc, bw, a in fmts) + 0.02
+                y += np.sin(h * ph) * amp / h ** 0.35
+            y += _lp(r.standard_normal(len(tt)).astype(np.float32), 3) * 0.5 * np.exp(-tt / 0.02)
+            y *= np.minimum(1, tt / 0.006) * np.exp(-tt / (dur * 0.45))
+            i0 = int(k * (dur + gap) * SR)
+            out[i0:i0 + len(y)] += y * (1.0 - 0.12 * k)
+        return out / np.abs(out).max() * 0.55
+    S["bark_a"] = bark(780, 560, 0.11, ((1100, 500, 1.0), (2400, 700, 0.5)), 1.2, 11, n=2, gap=0.12)
+    S["bark_b"] = bark(520, 340, 0.15, ((750, 350, 1.0), (1700, 600, 0.5)), 1.0, 12, n=1)
+    S["bark_c"] = bark(310, 190, 0.2, ((520, 260, 1.0), (1250, 450, 0.45)), 1.6, 13, n=1)
+    tt = _t(0.16)
+    fr = 900 + 1500 * (tt / 0.16) ** 1.3
+    S["yip"] = np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.minimum(1, tt / 0.01) * np.exp(-tt / 0.07) * 0.4
     t = _t(3.0)
     x = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((196, 1.0), (392, 0.5), (588, 0.3), (237, 0.4))) * np.exp(-t / 0.9)
     S["bell"] = x / np.abs(x).max() * 0.5

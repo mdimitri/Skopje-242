@@ -1894,6 +1894,11 @@ class Sim:
             d = math.hypot(dx, dy)
             if d < reach and (d < 0.5 or (dx * fx + dy * fy) / d > 0.5) and d < bd:
                 best, bd = p, d
+        dg = self.dogs.pettable(wk.x, wk.y, wk.h, 1.8) if getattr(self, "dogs", None) is not None else None
+        if dg is not None and (best is None or dg[1] < bd):        # the strays are friendly: a "hit" at one pets it
+            wk.atk_t, wk.atk_cd = 0.0, 0.5
+            self.dogs.pet(dg[0])
+            return
         self.ev("kick" if kick else "punch", x=wk.x + fx, y=wk.y + fy, hit=best is not None)
         if best is None:
             self.chaos.punch(wk, kick)                 # nobody there: street furniture takes it
@@ -1953,6 +1958,8 @@ class Sim:
         """Gunfire / blasts: everyone walking nearby panics, runs away and some shout about it."""
         rng = self.rng
         n = 0
+        if getattr(self, "dogs", None) is not None:
+            self.dogs.scare(x, y, r)
         for p in self.peds.list:
             if p.mode in ("walk", "brawl") and (p.x - x) ** 2 + (p.y - y) ** 2 < r * r:
                 d = math.hypot(p.x - x, p.y - y) or 1.0
@@ -2483,6 +2490,8 @@ class Sim:
             self.transit.update(dt)
         if getattr(self, "kids", None) is not None:
             self.kids.update(dt)
+        if getattr(self, "dogs", None) is not None:
+            self.dogs.update(dt)
         if getattr(self, "rentals", None) is not None:
             self.rentals.update(dt)
         if getattr(self, "works", None) is not None:
