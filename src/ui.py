@@ -40,7 +40,7 @@ BUILD_DEFAULT = {
 }
 MK_LOG = "Тек на работата"
 MK_LEG = {"roads": "Патишта", "buildings": "Згради", "areas": "Зеленило", "water": "Води", "pois": "Знаменитости", "places": "Населби",
-          "trees": "Дрвја", "parked": "Паркирани коли", "chunk": "Делови на градот"}
+          "trees": "Дрвја", "parked": "Паркирани коли", "chunk": "Делови на градот", "props": "Опрема"}
 MK_PART = {"meta": "основни податоци", "areas": "површини и води", "roads": "патишта", "edges": "сообраќајни врски",
            "buildings": "згради", "props": "дрвја, лампи и коли", "chunks": "делови на градот", "surf": "површини на земјата",
            "terrain": "рељеф"}
@@ -58,7 +58,8 @@ MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам
          (re.compile(r"^chunk (\d+)/(\d+)\s+\((-?\d+),(-?\d+)\)$"), lambda m: f"Дел од градот {m[1]}/{m[2]} ({m[3]}, {m[4]})")]
 # map pixel colours per kind of thing
 MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
-           "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255)}
+           "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255),
+           "bmesh": (255, 240, 170), "graph": (120, 190, 250), "bridge": (200, 160, 255), "road3d": (255, 255, 255), "props": (190, 120, 255)}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TIMES = os.path.join(ROOT, "data", "cache", "build_times.json")
 
@@ -267,7 +268,7 @@ class Loader:
         elif t == "geo":
             layer, lines = ev.get("layer", ""), ev.get("lines", [])
             pls = [np.asarray(fl, np.float64).reshape(-1, 2) for fl in lines if len(fl) >= 2]
-            if layer in ("buildings", "pois", "places"):
+            if layer in ("buildings", "bmesh", "pois", "places", "trees", "parked", "props", "chunk"):
                 self.plot(layer, [p[0] for p in pls])
             else:
                 self.plot_lines(layer, pls)
@@ -455,7 +456,7 @@ class Loader:
                     font.draw_text(name, px + 5, py - 6, 11, rl.Color(255, 255, 255, 215))
         ly = y + mh + 4                                                 # legend: what each colour is
         lx = x
-        for k in ("roads", "buildings", "areas", "water", "trees", "parked", "pois", "chunk"):
+        for k in ("roads", "buildings", "areas", "water", "trees", "parked", "props", "pois", "chunk"):
             c = MAP_COL[k]
             wd = font.measure_text(MK_LEG[k], 12) + 24
             if lx + wd > x + w:

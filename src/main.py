@@ -129,9 +129,10 @@ def run_tool(args, loader, stage, max_sec=3600):
         while True:
             try:
                 line = q.get(timeout=0.05)
-                if line.startswith("@@"):
+                at = line.find("@@")                  # a text progress bar may precede the event on the same line
+                if at >= 0:
                     try:
-                        loader.event(stage, json.loads(line[2:]))
+                        loader.event(stage, json.loads(line[at + 2:]))
                     except ValueError:
                         pass
                 else:

@@ -13,6 +13,29 @@ def _ev(**kw):
         sys.stdout.flush()
 
 
+def geo(layer, flat_lines):
+    """Things that now exist, for the loading screen's map: a list of flat [x0, y0, x1, y1, ...] lists in world metres
+    (a single [x, y] is a point).  The game paints them as pixels."""
+    if EVENTS and flat_lines:
+        sys.stdout.write("@@" + json.dumps({"t": "geo", "layer": layer, "lines": [[int(v) for v in fl] for fl in flat_lines]}) + "\n")
+        sys.stdout.flush()
+
+
+def spread(layer, items, fn, slices=10):
+    """A phase that cannot report while it runs: when it is over, send what it made in `slices` parts, so the map fills in steps."""
+    if not EVENTS:
+        return
+    items = list(items)
+    for k in range(slices):
+        geo(layer, [fl for fl in (fn(it) for it in items[k * len(items) // slices:(k + 1) * len(items) // slices]) if fl])
+
+
+def flat(pts, keep=40):
+    """[(x, y), ...] -> flat coordinate list, thinned to about `keep` points."""
+    step = max(1, len(pts) // keep)
+    return [c for q in pts[::step] for c in (q[0], q[1])]
+
+
 def phase(label):
     """A step without a counter (graph, decks, ...): tells the game which phase is running."""
     _ev(label=label, n=0, total=0)
@@ -26,8 +49,12 @@ def _fmt(sec):
 
 
 class Bar:
-    def __init__(self, label, total=0, width=28, unit=""):
+    def __init__(self, label, total=0, width=28, unit="", feed=None):
         self.label, self.total, self.width, self.unit = label, total, width, unit
+        # feed = (layer, list, fn) or a tuple of those: every 5 % what has been added to `list` goes to the map via fn(item) -> flat coords
+        self.feed = [feed] if feed and not isinstance(feed[0], tuple) else list(feed or [])
+        self.sent = [0] * len(self.feed)
+        self.next_feed = 0.05
         self.t0 = time.time()
         self.n = 0
         self.last = 0.0
@@ -39,7 +66,16 @@ class Bar:
             self.n = n
         if note is not None:
             self.note = note
+        if self.feed and self.total and self.n >= self.next_feed * self.total:
+            self.next_feed = self.n / self.total + 0.05
+            self._send()
         self._draw()
+
+    def _send(self):
+        for k, (layer, lst, fn) in enumerate(self.feed):
+            new = lst[self.sent[k]:] if lst is not None else self.items[self.sent[k]:self.n]
+            self.sent[k] = len(lst) if lst is not None else self.n
+            geo(layer, [fl for fl in map(fn, new) if fl])
 
     def step(self, k=1, note=None):
         self.update(self.n + k, note)
@@ -71,6 +107,8 @@ class Bar:
     def done(self, note=""):
         if self.total:
             self.n = self.total
+        if self.feed:
+            self._send()
         self._draw(force=True)
         _ev(label=self.label, n=self.total or self.n, total=self.total or self.n, done=1, sec=round(time.time() - self.t0, 2))
         sys.stdout.write(f"\r{self.label}: done in {_fmt(time.time() - self.t0)} {note}".ljust(118) + "\n")
@@ -81,10 +119,11 @@ class Bar:
         sys.stdout.flush()
 
 
-def each(seq, label, unit=""):
-    """for x in each(list, 'label'): ..."""
+def each(seq, label, unit="", feed=None):
+    """for x in each(list, 'label'): ...   `feed`: see Bar; a feed with list None draws the items being looped over."""
     seq = list(seq)
-    b = Bar(label, len(seq), unit=unit)
+    b = Bar(label, len(seq), unit=unit, feed=feed)
+    b.items = seq
     for i, x in enumerate(seq):
         yield x
         b.update(i + 1)

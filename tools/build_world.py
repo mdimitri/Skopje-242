@@ -19,7 +19,7 @@ import mapbox_earcut as earcut
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from geo import HX, HY, project
-from progress import Bar, each, phase
+from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -720,7 +720,7 @@ def main():
     buildings = []
     pending = []                      # mesh emission waits until the river bed is carved into the terrain
     for el in each([e for e in elements if "building" in e.get("tags", {}) and e["tags"].get("building") != "no"],
-                   "buildings -> 3D meshes"):
+                   "buildings -> 3D meshes", feed=("buildings", buildings, lambda b: list(b["ring"][0]))):
         t = el["tags"]
         try:
             polys = polygons_of(el)
@@ -772,7 +772,7 @@ def main():
 
     # ---- areas / water / rails ---------------------------------------------------------------
     areas, wlines, rails = [], [], []
-    for el in each(elements, "areas / water / rails"):
+    for el in each(elements, "areas / water / rails", feed=("areas", areas, lambda a: flat(a["v"]))):
         t = el.get("tags", {})
         if not t or "building" in t:
             continue
@@ -821,7 +821,8 @@ def main():
 
     # ---- roads ---------------------------------------------------------------------------------
     roads = []
-    for el in each([e for e in elements if e.get("type") == "way" and e.get("tags", {}).get("highway") in ROAD], "roads"):
+    for el in each([e for e in elements if e.get("type") == "way" and e.get("tags", {}).get("highway") in ROAD], "roads",
+                   feed=("roads", roads, lambda r: flat(r["pts"], 60))):
         t = el["tags"]
         hw = t["highway"]
         try:
@@ -868,7 +869,7 @@ def main():
         T = terrain_mod.carve_water(T, water_a, CELL)
 
     # ---- building meshes, now that the ground under them is known ------------------------------
-    for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain"):
+    for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
         ring = np.asarray(outer, np.float64)
         tz = T.h(ring[:, 0], ring[:, 1])
         cxm, cym = ring[:, 0].mean(), ring[:, 1].mean()
@@ -958,6 +959,7 @@ def main():
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
     print(f"[build] graph: {len(node_ids)} nodes, {len(edges)} edges ({sum(1 for e in edges if e['drive'])} drivable)")
+    spread("graph", edges, lambda e: flat(e["pts"], 60))
     phase("bridge decks")
 
     # ---- bridge decks: ends meet the terrain, the middle clears whatever runs underneath ---------------
@@ -992,6 +994,7 @@ def main():
                 print(f"   deck for road {rd['id']} skipped: {ex}")
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
+    spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
     phase("places")
 
     # ---- procedural props -------------------------------------------------------------------------
@@ -1037,6 +1040,7 @@ def main():
         except Exception as e:  # noqa: BLE001 - a bad boundary must not stop the build
             print(f"   skipped place {t.get('name')}: {e}")
     print(f"[build] places: {len(places)} ({sum(1 for p in places if p[5])} with outlines)")
+    spread("places", places, lambda p: [p[2], p[3]])
     phase("street furniture")
     trees, lamps, parked = [], [], []
     rr = random.Random(1234)
@@ -1051,7 +1055,7 @@ def main():
             elif t.get("highway") == "street_lamp":
                 lamps.append((x, y))
 
-    for ar in each(areas, "procedural trees in parks/woods"):
+    for ar in each(areas, "procedural trees in parks/woods", feed=("trees", trees, lambda t: [t[0], t[1]])):
         spacing = {"wood": 6.0, "park": 5.5, "cemetery": 6.0, "playground": 9.0, "grass": 19.0, "scrub": 9.0}.get(ar["kind"])   # round 8: 4x denser
         if not spacing:
             continue
@@ -1094,7 +1098,8 @@ def main():
         n_ = (x1_ - x0_) * (y1_ - y0_)
         return float(_bi[y1_, x1_] - _bi[y0_, x1_] - _bi[y1_, x0_] + _bi[y0_, x0_]) / n_ if n_ > 0 else 0.0
 
-    for e in each([e for e in edges if e["drive"] and not e["bridge"]], "street trees, lamps, parked cars"):
+    for e in each([e for e in edges if e["drive"] and not e["bridge"]], "street trees, lamps, parked cars",
+                  feed=(("parked", parked, lambda p: [p[0], p[1]]), ("props", lamps, lambda p: [p[0], p[1]]))):
         r = random.Random(e["a"] * 100003 + e["b"])
         cls, w = e["cls"], e["w"]
         pts, cum, L = e["pts"], e["cum"], e["len"]
@@ -1349,6 +1354,7 @@ def main():
         traceback.print_exc()
         print(f"[build] 3D roads failed ({e}); using flat roads")
         roads3d_ok = False
+    spread("road3d", edges, lambda e: flat(e["pts"], 60))
     phase("ground rasters")
     hg = Image.new("L", (NCX, NCY), 0)       # ground height class: 0 ground, 1 asphalt, 2 pavement
     hd = ImageDraw.Draw(hg)
@@ -1363,9 +1369,9 @@ def main():
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
     posts = [p if len(p) == 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in posts]
 
-    for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes")):
+    for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]]))):
         add_c(chunk_of(x, y), MAT_SOLID, *tree_geo(x, y, r_, sh, i))
-    for x, y in each(lamps, "lamp meshes"):
+    for x, y in each(lamps, "lamp meshes", feed=("props", None, lambda p: [p[0], p[1]])):
         add_c(chunk_of(x, y), MAT_SOLID, *lamp_geo(x, y))
 
     # ---- chunk index (for ground baking) ---------------------------------------------------------
@@ -1383,7 +1389,7 @@ def main():
         h = b["h"]
         for c in chunk_range(x0, y0, x1 + h * 0.3, y1 + h * 0.2):
             slot(c)["b"].append(i)
-    for i, ar in enumerate(each(areas, "chunk index: areas")):
+    for i, ar in enumerate(each(areas, "chunk index: areas", feed=("areas", None, lambda a: flat(a["v"])))):
         pass
     for i, ar in enumerate(areas):
         x0, y0, x1, y1 = ar["bb"]
@@ -1444,7 +1450,8 @@ def main():
     off = 0
     nverts_total = 0
     with open(os.path.join(tmp, "meshes.bin"), "wb") as f:
-        for (key, mat), (P, U, C) in each(sorted(mesh.d.items()), "write mesh blob"):
+        for (key, mat), (P, U, C) in each(sorted(mesh.d.items()), "write mesh blob",
+                                         feed=("chunk", None, lambda it: [(it[0][0][0] + 0.5) * CHUNK, (it[0][0][1] + 0.5) * CHUNK])):
             pos = np.concatenate(P).astype(np.float32)
             uv = np.concatenate(U).astype(np.float32)
             col = np.concatenate(C).astype(np.uint8)
