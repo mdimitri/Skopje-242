@@ -136,8 +136,6 @@ def run_tool(args, loader, stage, max_sec=3600):
                         pass
                 else:
                     log("[tool] " + line)
-                    if not line.startswith(("[#", "[-", "[osm] cutting")):    # text progress bars: the bar shows those
-                        loader.say(line.split("@@")[0].strip()[:160])
             except queue.Empty:
                 loader.draw()
             if proc.poll() is None and time.time() - t0 > max_sec and not killed:
@@ -239,7 +237,7 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
 
     def attempt(path):
         loader.begin("world")
-        return World(path, lambda f, note="": loader.tick(f, note))
+        return World(path, lambda f, note="": loader.tick(f, note), loader.world_part)
 
     rebuild = bool(need.get("build"))
     if os.path.isdir(real) and (arg_world or not rebuild) and not demo_only:
@@ -518,6 +516,7 @@ def main():
     for i, key in enumerate(first):
         loader.tick(i / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
         streamer.update([key], True, 1e9)
+        loader.mark_rect(key[0] * S, key[1] * S, (key[0] + 1) * S, (key[1] + 1) * S)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
     gc.collect()

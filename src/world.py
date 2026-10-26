@@ -43,7 +43,7 @@ def _read_with_progress(fn, progress, label, base, span):
 
 
 class World:
-    def __init__(self, path, progress=None):
+    def __init__(self, path, progress=None, on_part=None):
         P = progress or (lambda f, note="": None)
         err = validate(path)
         if err:
@@ -54,6 +54,8 @@ class World:
             for i, name in enumerate(PARTS):
                 d = _read_with_progress(os.path.join(path, name + ".pkl"), P, name, i / n * 0.6, 0.6 / n)
                 self.__dict__.update(d)
+                if on_part:
+                    on_part(name, d)
                 P((i + 1) / n * 0.6, f"{name}: ok")
             self.stamp = os.path.getmtime(os.path.join(path, "manifest.json"))
             self.surf = zlib.decompress(self.surf)

@@ -1,7 +1,7 @@
 """Loading screen, real 3D and endless: an infinitely scrolling street built with the game's own generators
 (tools/build_world: facades with the game's window textures, roofs, parapets, trees, lamps; tools/furniture: benches,
 bins, bus shelters) and the game's own car / character models.  Cars and characters appear in random order, each with a
-joke or an unhinged quote; characters walk, fight, shoot, chase or rage.  Sun shadows are drawn like in the game.
+joke or an unhinged quote; characters walk, fight (fists, kicks, a bat), chase or rage.  Sun shadows are drawn like in the game.
 The loader shows it as the big panel; progress is the small window beside it."""
 from texts import TXT
 import math
@@ -22,7 +22,9 @@ V3 = rl.Vector3
 UP = V3(0, 1, 0)
 ONE = V3(1, 1, 1)
 MSG = TXT("splash3d.0001")
-SPEED = {"car": 9.0, "walk": 2.4, "fight": 0.0, "shoot": 0.0, "chase": 5.5, "rage": 0.0}
+SPEED = {"car": 9.0, "walk": 2.4, "fight": 0.0, "chase": 5.5, "rage": 0.0}
+FIGHTERS = {"kumplung", "stojan", "pandur", "vojnik", "navivac", "fitka", "bilder", "palavko"}      # only these punch and kick; never a weapon on the splash
+BAT_FIGHTERS = {"kumplung", "navivac", "bilder"}                                                    # ... and these swing a bat
 CH = 40.0                                     # street chunk length (m)
 SHADOW = (0.5625, 0.5)                        # shadow shift per metre of height (the game's sun)
 ASPH, PAVE, KERB = (96, 98, 104), (188, 182, 170), (160, 160, 164)
@@ -83,8 +85,9 @@ class Splash3D(showcase.Showcase):
             kind, i = "char", self.char_bag.pop()
             q = showcase.PERSONAS[i - showcase.PERS][2] if i >= showcase.PERS else showcase.peds_lines.idle(vehicles.PED_IDS[i - showcase.NPC]) if i >= showcase.NPC else showcase.L.QUOTE.get(characters.LIKOVI[i][0]) or [""]
             text, secs = self.rng.choice(q), showcase.CHAR_SECS
-            act = self.rng.choice(("walk", "fight", "shoot", "chase", "rage"))
-            extra = {"act": act, "dummy": self.rng.randrange(9)}
+            name = characters.LIKOVI[i][0] if i < showcase.NPC else ""
+            act = self.rng.choice(("walk", "fight", "chase", "rage") if name in FIGHTERS else ("walk", "chase", "rage"))
+            extra = {"act": act, "bat": name in BAT_FIGHTERS and self.rng.random() < 0.5, "dummy": self.rng.randrange(9)}
         else:
             if not self.car_bag:
                 self.car_bag = list(range(vehicles.N))
@@ -394,7 +397,7 @@ class Splash3D(showcase.Showcase):
         rl.draw_rectangle_lines(int(x), int(y), int(w), int(h), rl.Color(90, 92, 98, 255))
 
     def _char_act(self, c, t, now, wx, dyn):
-        """Walk / fight / shoot / chase / rage with the character's in-game model; returns the point above the head."""
+        """Walk / fight / chase / rage with the character's in-game model; returns the point above the head."""
         arch, act, Z = (showcase._arch(c["i"]) if c["i"] >= showcase.NPC else 100 + c["i"]), c["act"], 1.9
         d = c["dummy"]
         if act == "walk":
@@ -404,21 +407,14 @@ class Splash3D(showcase.Showcase):
         if act == "fight":
             hit = int((now - c["t0"]) / 0.32)
             self._put(arch, 4 if hit % 2 == 0 else 5, wx, Z, dyn)
+            if c["bat"]:                                                                # a plain bat swung at the dummy
+                sw = math.sin((now - c["t0"]) * 9.0)
+                rl.draw_cylinder_ex(V3(wx + 0.45, 1.25, Z + 0.3), V3(wx + 0.45 + 0.7 * sw, 1.25 + 0.55 * abs(sw) + 0.2, Z + 0.3), 0.05, 0.08,
+                                    6, rl.Color(150, 105, 60, 255))
             ko = t > 0.6
             jit = 0.0 if ko else (0.12 * math.sin(now * 40) if hit >= 1 else 0.0)
             self._put(d, 2 if ko else 0, wx + 1.25 + jit + (0.3 if ko else 0.0), Z, dyn, math.pi)
             return V3(wx, 2.15, Z)
-        if act == "shoot":
-            px, tgt = wx - 2.2, wx + 2.8
-            self._put(arch, 4, px, Z, dyn)
-            ko = t > 0.55
-            self._put(d, 2 if ko else 0, tgt + (0.5 if ko else 0.0), Z, dyn, math.pi)
-            shot = (now - c["t0"]) % 0.9
-            if shot < 0.12:
-                bx = px + 0.9 + (tgt - px - 0.9) * (shot / 0.12)
-                rl.draw_sphere(V3(bx, 1.08, Z + 0.3), 0.07, rl.Color(255, 230, 90, 255))
-                rl.draw_sphere(V3(px + 0.85, 1.08, Z + 0.3), 0.22 * (1 - shot / 0.12), rl.Color(255, 190, 60, 255))
-            return V3(px, 2.15, Z)
         if act == "chase":
             fr = int(now * 7) % 2
             self._put(arch, fr, wx - 0.5, Z, dyn)

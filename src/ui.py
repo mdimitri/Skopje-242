@@ -1,12 +1,15 @@
-"""Loading screen: one monotone overall bar, a map of what is being downloaded and where it goes, the real transfer
-speed, warnings when a server stalls or rejects, and a random poster that illustrates the joke under the bar."""
+"""Loading screen: the showcase on the left; on the right one monotone overall bar, a live map of the city that fills with
+a pixel for everything downloaded, generated or loaded (and where it sits), the real transfer speed, warnings, and under
+the map a verbose progress log in Macedonian."""
 from texts import TXT
 import collections
 import json
 import os
 import random
+import re
 import time
 
+import numpy as np
 import pyray as rl
 import font   # noqa: E402
 
@@ -24,13 +27,8 @@ ORANGE = rl.Color(255, 170, 60, 255)
 RED = rl.Color(235, 85, 75, 255)
 GREEN = rl.Color(95, 200, 125, 255)
 BLUE = rl.Color(120, 190, 250, 255)
-C_PENDING = rl.Color(52, 56, 68, 255)
-C_ACTIVE = rl.Color(255, 205, 70, 255)
-C_DONE = rl.Color(70, 185, 110, 255)
-C_CACHED = rl.Color(60, 140, 120, 255)
 C_FAIL = rl.Color(220, 70, 60, 255)
 C_SPLIT = rl.Color(185, 120, 235, 255)
-LAYER_ORDER = ["roads", "buildings", "areas", "pois", "places"]
 
 # rough seconds of a full-city build per phase; used only until the first real build has recorded its own timings
 BUILD_DEFAULT = {
@@ -40,6 +38,27 @@ BUILD_DEFAULT = {
     "tree meshes": 10, "lamp meshes": 5, "chunk index: areas": 10, "spawn point": 1, "write world": 2,
     "write mesh blob": 10, "write world parts": 10,
 }
+MK_LOG = "Тек на работата"
+MK_LEG = {"roads": "Патишта", "buildings": "Згради", "areas": "Зеленило", "water": "Води", "pois": "Знаменитости", "places": "Населби",
+          "trees": "Дрвја", "parked": "Паркирани коли", "chunk": "Делови на градот"}
+MK_PART = {"meta": "основни податоци", "areas": "површини и води", "roads": "патишта", "edges": "сообраќајни врски",
+           "buildings": "згради", "props": "дрвја, лампи и коли", "chunks": "делови на градот", "surf": "површини на земјата",
+           "terrain": "рељеф"}
+MK_NOTE = {"textures": "Текстури", "overview mesh": "Мрежа за прегледната мапа", "car & pedestrian models": "Модели на возила и пешаци",
+           "your character": "Твојот лик", "pickups & weapons": "Предмети и оружје", "simulation": "Симулација",
+           "pavement grid": "Мрежа на тротоарите", "traffic lights": "Семафори", "sound": "Звук", "collision ready": "Судирите се подготвени",
+           "routing graph": "Сообраќајна мрежа", "cached": "од кешот", "land use & parks": "Паркови и површини", "rivers": "Реки",
+           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја"}
+MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам {MK_PART.get(m[1], m[1])}: {m[2]}/{m[3]} {T.MB}"),
+         (re.compile(r"^(\w+): unpacking$"), lambda m: f"Распакувам {MK_PART.get(m[1], m[1])}"),
+         (re.compile(r"^(\w+): ok$"), lambda m: ""),
+         (re.compile(r"^building collision (\d+)/(\d+)$"), lambda m: f"Судири со згради {m[1]}/{m[2]}"),
+         (re.compile(r"^car models (\d+)/(\d+)$"), lambda m: f"Модели на возила {m[1]}/{m[2]}"),
+         (re.compile(r"^pedestrian models (\d+)/(\d+)$"), lambda m: f"Модели на пешаци {m[1]}/{m[2]}"),
+         (re.compile(r"^chunk (\d+)/(\d+)\s+\((-?\d+),(-?\d+)\)$"), lambda m: f"Дел од градот {m[1]}/{m[2]} ({m[3]}, {m[4]})")]
+# map pixel colours per kind of thing
+MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
+           "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255)}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TIMES = os.path.join(ROOT, "data", "cache", "build_times.json")
 
@@ -92,8 +111,14 @@ class Loader:
         except Exception:  # noqa: BLE001
             pass
         self.measured = {}
-        self.geo_pending = []               # sketches of downloaded tiles, drawn into geo_rt (a texture of the whole box)
-        self.geo_rt = None
+        self.mq = collections.deque()       # map work: (layer, "pts" | "lines", array / polylines), painted a time slice per frame
+        self.cv = None                      # RGBA canvas of the whole box; one pixel per thing that arrived
+        self.cv_tex = None
+        self.cv_dirty = False
+        self.fresh = []                     # (rows, cols, colour) painted white by the last slices; they settle to their layer colour
+        self.fresh_t = 0.0
+        self.last_note = ("", 0.0)
+        self.rng = np.random.default_rng(242)
         self.rate_hist = collections.deque()
         self.b_label = None
         self.b_t0 = 0.0
@@ -120,6 +145,8 @@ class Loader:
             self.f[self.cur] = 1.0
         self.cur = key
         self.note = note
+        if key not in self.stage_t0:
+            self.say(f"▶ {T.STAGE.get(key, key)}")
         self.stage_t0.setdefault(key, time.time())
         self.draw(force=True)
 
@@ -137,14 +164,29 @@ class Loader:
     def finish(self):
         for k in self.keys:
             self.f[k] = 1.0
+        self.say("✓ " + T.TITLE)
         self.draw(force=True)
 
     def tick(self, frac, note=None):
         if self.cur:
             self.f[self.cur] = max(self.f[self.cur], max(0.0, min(1.0, frac)))
         if note is not None:
-            self.note = note
+            self.note = self._tr(note)
+            if self.note and self.note != self.last_note[0] and time.time() - self.last_note[1] > 0.3:
+                self.last_note = (self.note, time.time())
+                self.say("· " + self.note)
         self.draw()
+
+    @staticmethod
+    def _tr(note):
+        """Notes of world.py / bake.py / main.py are English; the player reads Macedonian."""
+        if note in MK_NOTE:
+            return MK_NOTE[note]
+        for rx_, fn in MK_RE:
+            m = rx_.match(note)
+            if m:
+                return fn(m)
+        return note
 
     def overall(self):
         tot = sum(self.w.values()) or 1.0
@@ -223,7 +265,12 @@ class Loader:
                 self.say(f"» {T.CUTTING}: {ev.get('nodes', 0):,} {T.C_NODES}, {ev.get('ways', 0):,} {T.C_WAYS}, "
                          f"{ev.get('found', 0):,} {T.C_FOUND}".replace(",", " "))
         elif t == "geo":
-            self.geo_pending.append((ev.get("layer", ""), ev.get("lines", [])))
+            layer, lines = ev.get("layer", ""), ev.get("lines", [])
+            pls = [np.asarray(fl, np.float64).reshape(-1, 2) for fl in lines if len(fl) >= 2]
+            if layer in ("buildings", "pois", "places"):
+                self.plot(layer, [p[0] for p in pls])
+            else:
+                self.plot_lines(layer, pls)
             return
         elif t == "prog":
             self._build_event(ev, now)
@@ -257,6 +304,7 @@ class Loader:
                 self.b_done.add(self.b_label)
                 self.measured[self.b_label] = now - self.b_t0
             self.b_label, self.b_t0 = lab, now
+            self.say(f"▶ {T.BUILD.get(lab, lab)}")
             self.build_times.setdefault(lab, 3.0)
         total, n = ev.get("total", 0), ev.get("n", 0)
         part = (n / total) if total else 0.0
@@ -300,7 +348,7 @@ class Loader:
             self.quip_t = now
             self.quip = random.choice(slang.LOADING_QUIPS)
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        self._flush_geo()
+        self._paint()
         rl.begin_drawing()
         rl.clear_background(rl.Color(18, 20, 25, 255))
         m = max(16, W // 60)
@@ -323,7 +371,7 @@ class Loader:
                         pass
         y = m
         font.draw_text(T.TITLE, rx, y, 28, GOLD, bold=True)
-        y += 46
+        y += 42
         ov = self.overall()
         el = now - self.t0
         eta = (el / ov - el) if ov > 0.05 else 0
@@ -332,37 +380,32 @@ class Loader:
         font.draw_text(right, rx + rw - font.measure_text(right, 16), y + 3, 16, GREY)
         self._bar(rx, y + 26, rw, 14, ov, GOLD)
         y += 48
-        for ln in font.wrap(self.quip, 17, rw)[:2]:
-            font.draw_text(ln, rx, y, 17, rl.Color(215, 200, 150, 255))
-            y += 22
-        y += 6
-        # ---- stages (compact)
-        for k in self.keys:
-            if self.f[k] >= 0.999:
-                font.draw_text("✓ " + T.STAGE[k], rx, y, 15, GREEN)
-            elif k == self.cur:
-                font.draw_text("▶ " + T.STAGE[k], rx, y, 15, WHITE, bold=True)
-                pc = f"{self.f[k] * 100:3.0f}%"
-                font.draw_text(pc, rx + rw - font.measure_text(pc, 15), y, 15, WHITE)
-                self._bar(rx, y + 19, rw, 6, self.f[k], BLUE)
-                y += 10
-            else:
-                font.draw_text("· " + T.STAGE[k], rx, y, 15, DIM)
+        for ln in font.wrap(self.quip, 16, rw)[:2]:
+            font.draw_text(ln, rx, y, 16, rl.Color(215, 200, 150, 255))
             y += 21
+        y += 4
+        if self.cur:                                                   # the running stage; the log below tells the details
+            fr = self.f[self.cur]
+            font.draw_text("▶ " + T.STAGE[self.cur], rx, y, 15, WHITE, bold=True)
+            pc = f"{fr * 100:3.0f}%"
+            font.draw_text(pc, rx + rw - font.measure_text(pc, 15), y, 15, WHITE)
+            self._bar(rx, y + 19, rw, 6, fr, BLUE)
+            y += 30
         if self.note:
-            font.draw_text(font.fit(self.note, 15, rw), rx + 14, y, 15, GREY)
-            y += 22
-        # ---- the download map
-        if self.cells:
-            y = self._map(rx, y + 4, rw, H - y - 4 - m - 150)
+            font.draw_text(font.fit(self.note, 14, rw), rx, y, 14, GREY)
+            y += 20
+        # ---- top right: the live map
+        y = self._map(rx, y + 4, rw, int((H - y - m) * 0.55))
         # ---- speed / alerts
-        y = self._net_lines(rx, y + 4, rw, now)
-        # ---- live activity log: every tile, server, retry and step as it happens
-        lines = (H - m - y - 4) // 17
+        y = self._net_lines(rx, y + 6, rw, now)
+        # ---- under the map: the verbose progress log
+        font.draw_text(MK_LOG, rx, y + 4, 15, GREY, bold=True)
+        y += 26
+        lines = (H - m - y) // 17
         if lines > 0 and self.log:
             for ln in self.log[-lines:]:
-                c = GREEN if "✓" in ln else (RED if "✗" in ln else (rl.Color(255, 220, 90, 255) if "↓" in ln else GREY))
-                font.draw_text(font.fit(ln, 13, rw), rx, y + 4, 13, c)
+                c = GREEN if "✓" in ln else (RED if "✗" in ln else (rl.Color(255, 220, 90, 255) if "↓" in ln or "▶" in ln else GREY))
+                font.draw_text(font.fit(ln, 13, rw), rx, y, 13, c)
                 y += 17
         if self.hint and int(now * 1.6) % 2 == 0:
             font.draw_text(self.hint, m + 14, H - m - 30, 20, rl.Color(255, 245, 210, 255), bold=True)
@@ -380,114 +423,168 @@ class Loader:
         self.hint = ""
 
     def _map(self, x, y, w, h_avail):
-        mw = min(w, int(max(120, h_avail - 40) * (self.box[2] - self.box[0]) / (self.box[3] - self.box[1])))
-        mh = int(mw * (self.box[3] - self.box[1]) / (self.box[2] - self.box[0]))
-        if h_avail < 90:
-            return y
-        sx = mw / (self.box[2] - self.box[0])
-        sy = mh / (self.box[3] - self.box[1])
-        font.draw_text(T.L_MAP, x, y, 15, GREY, bold=True)
-        y += 22
+        bx = self.box
+        aspect = (bx[3] - bx[1]) / (bx[2] - bx[0])
+        mh = max(60, min(int(w * aspect), h_avail - 24))
+        mw = int(mh / aspect)
+        sx, sy = mw / (bx[2] - bx[0]), mh / (bx[3] - bx[1])
         rl.draw_rectangle(x, y, mw, mh, rl.Color(26, 29, 36, 255))
+        if self.cv_tex is not None:                                     # everything that has arrived so far, one pixel each
+            rl.draw_texture_pro(self.cv_tex, rl.Rectangle(0, 0, self.cv_tex.width, self.cv_tex.height), rl.Rectangle(x, y, mw, mh),
+                                rl.Vector2(0, 0), 0.0, rl.WHITE)
         pulse = 0.5 + 0.5 * ((time.time() * 2.2) % 1.0)
-        cells = list(self.cells.values())
-        layers = [l for l in LAYER_ORDER if any(c["layer"] == l for c in cells)]
-        for c in cells:
-            x0, y0, x1, y1 = c["r"]
-            px, py = x + (x0 - self.box[0]) * sx, y + (y0 - self.box[1]) * sy
-            pw_, ph_ = (x1 - x0) * sx, (y1 - y0) * sy
-            col = self._cell_col(c, pulse)
-            if c["layer"] == "dem":                                     # heights: a tinted frame over the whole tile
-                rl.draw_rectangle(int(px), int(py), int(pw_), int(ph_), _col(col, 38))
-                rl.draw_rectangle_lines_ex(rl.Rectangle(px + 1, py + 1, pw_ - 2, ph_ - 2), 2, _col(col, 200))
+        for c in self.cells.values():                                   # download tiles: only the ones in flight or in trouble are framed
+            if c["st"] in ("done", "cached"):
                 continue
-            n = max(1, len(layers))
-            idx = layers.index(c["layer"]) if c["layer"] in layers else 0
-            sh = ph_ / n
-            r = rl.Rectangle(px + 2, py + sh * idx + 1, pw_ - 4, max(2, sh - 2))
-            rl.draw_rectangle_rec(r, col)
-            age = time.time() - c.get("t", 0)
-            if c["st"] in ("done", "cached") and age < 2.0:             # just landed: white flash fading out
-                rl.draw_rectangle_rec(r, rl.Color(255, 255, 255, int(200 * (1 - age / 2.0))))
-            elif c["st"] == "active":
-                rl.draw_rectangle_lines_ex(rl.Rectangle(px + 1, py + 1, pw_ - 2, ph_ - 2), 2, rl.Color(255, 220, 90, 255))
-            if sh >= 14 and c["r"][0] <= self.box[0] + 1 and mw > 300:       # name the stripes once, on the western tiles
-                font.draw_text(T.LAYER[c["layer"]], int(r.x) + 5, int(r.y) + int(sh / 2) - 7, 11, rl.Color(10, 12, 16, 230))
-            if c["st"] == "split":                                      # quarters done so far
-                for q in range(c["kids"]):
-                    qx = r.x + (q % 2) * r.width / 2
-                    rl.draw_rectangle_rec(rl.Rectangle(qx, r.y, r.width / 2 - 1, r.height), C_DONE)
-        if self.geo_rt is not None:                                     # what has arrived so far, drawn as a map
-            t = self.geo_rt.texture
-            rl.draw_rectangle(x, y, mw, mh, rl.Color(14, 16, 22, 150))
-            rl.draw_texture_pro(t, rl.Rectangle(0, 0, t.width, -t.height), rl.Rectangle(x, y, mw, mh), rl.Vector2(0, 0), 0.0,
-                                rl.Color(255, 255, 255, 235))
-        for ln in range(1, 4):                                          # a light grid: kilometres
-            gx = x + mw * ln / 4
-            rl.draw_line(int(gx), y, int(gx), y + mh, rl.Color(255, 255, 255, 14))
+            x0, y0, x1, y1 = c["r"]
+            col = {"active": rl.Color(255, int(170 + 60 * pulse), 60, 255), "fail": C_FAIL, "split": C_SPLIT}.get(c["st"], rl.Color(60, 64, 76, 255))
+            rl.draw_rectangle_lines_ex(rl.Rectangle(x + (x0 - bx[0]) * sx + 1, y + (y0 - bx[1]) * sy + 1,
+                                                    (x1 - x0) * sx - 2, (y1 - y0) * sy - 2), 1 if c["st"] == "pending" else 2, col)
         rl.draw_rectangle_lines(x, y, mw, mh, rl.Color(90, 92, 98, 255))
         taken = []
         for name, lat, lon, _n in slang.LANDMARKS:                      # orientation: well-known places
             lx, ly = geo.project(lat, lon)
-            if self.box[0] <= lx <= self.box[2] and self.box[1] <= ly <= self.box[3]:
-                px, py = int(x + (lx - self.box[0]) * sx), int(y + (ly - self.box[1]) * sy)
-                rl.draw_circle(px, py, 3, WHITE)
+            if bx[0] <= lx <= bx[2] and bx[1] <= ly <= bx[3]:
+                px, py = int(x + (lx - bx[0]) * sx), int(y + (ly - bx[1]) * sy)
+                rl.draw_circle(px, py, 2, WHITE)
                 if mw > 300 and all(abs(px - qx) > 70 or abs(py - qy) > 12 for qx, qy in taken):
                     taken.append((px, py))
                     font.draw_text(name, px + 5, py - 6, 11, rl.Color(255, 255, 255, 215))
-        # ---- legend + per-layer counters on the right / below
-        lx = x + mw + 12
-        ly = y
-        if lx + 150 < x + w:
-            for l in layers + (["dem"] if any(c["layer"] == "dem" for c in cells) else []):
-                mine = [c for c in cells if c["layer"] == l]
-                done = sum(1 for c in mine if c["st"] in ("done", "cached"))
-                font.draw_text(f"{T.LAYER[l]}  {done}/{len(mine)}", lx, ly, 14, WHITE if done < len(mine) else GREEN)
-                ly += 19
-            ly += 8
-            for col, txt in ((C_PENDING, T.LEG_PENDING), (C_ACTIVE, T.LEG_ACTIVE), (C_DONE, T.LEG_DONE),
-                             (C_CACHED, T.LEG_CACHED), (C_SPLIT, T.LEG_SPLIT), (C_FAIL, T.LEG_FAIL)):
-                rl.draw_rectangle(lx, ly + 2, 12, 10, col)
-                font.draw_text(txt, lx + 18, ly, 13, GREY)
-                ly += 17
-        return max(y + mh, ly)
+        ly = y + mh + 4                                                 # legend: what each colour is
+        lx = x
+        for k in ("roads", "buildings", "areas", "water", "trees", "parked", "pois", "chunk"):
+            c = MAP_COL[k]
+            wd = font.measure_text(MK_LEG[k], 12) + 24
+            if lx + wd > x + w:
+                lx, ly = x, ly + 16
+            rl.draw_rectangle(lx, ly + 3, 9, 9, rl.Color(c[0], c[1], c[2], 255))
+            font.draw_text(MK_LEG[k], lx + 13, ly, 12, GREY)
+            lx += wd
+        return ly + 18
 
-    GEO_W, GEO_H = 1100, 700
-    GEO_COL = {"roads": rl.Color(225, 225, 230, 255), "buildings": rl.Color(240, 200, 60, 255), "areas": rl.Color(90, 190, 110, 255),
-               "pois": rl.Color(235, 90, 80, 255), "places": rl.Color(255, 255, 255, 255)}
+    # ---------------------------------------------------------------- the live map: one pixel per thing that arrived
+    GEO_W = 960
 
-    def _flush_geo(self):
-        if not self.geo_pending:
+    def set_box(self, hx, hy):
+        """The map covers the world box; called once the real extent is known (a different box starts the picture afresh)."""
+        nb = [-hx, -hy, hx, hy]
+        if nb != self.box:
+            self.box = nb
+            self.cv = None
+
+    def plot(self, layer, pts):
+        """Things placed at points (x, y in world metres): buildings, trees, parked cars, places."""
+        if len(pts):
+            self.mq.append((layer, "pts", np.asarray(pts, np.float64).reshape(-1, 2)))
+
+    def plot_lines(self, layer, polylines):
+        """Roads, rivers, outlines: a list of (N, 2) polylines (or lists of points), sampled along their length when painted."""
+        if len(polylines):
+            self.mq.append((layer, "lines", polylines))
+
+    def mark_rect(self, x0, y0, x1, y1):
+        """A baked / streamed city chunk: its outline on the map."""
+        self._canvas()
+        bx = self.box
+        h, w = self.cv.shape[:2]
+        c0, r0 = int((x0 - bx[0]) / (bx[2] - bx[0]) * w), int((y0 - bx[1]) / (bx[3] - bx[1]) * h)
+        c1, r1 = int((x1 - bx[0]) / (bx[2] - bx[0]) * w), int((y1 - bx[1]) / (bx[3] - bx[1]) * h)
+        c0, c1, r0, r1 = max(0, c0), min(w - 1, c1), max(0, r0), min(h - 1, r1)
+        col = (*MAP_COL["chunk"], 255)
+        self.cv[r0, c0:c1 + 1] = self.cv[r1, c0:c1 + 1] = col
+        self.cv[r0:r1 + 1, c0] = self.cv[r0:r1 + 1, c1] = col
+        self.cv_dirty = True
+
+    def world_part(self, name, d):
+        """World.__init__ read one part of the baked world: put what it contains on the map."""
+        hx = d.get("hx", d.get("half"))
+        if hx:
+            self.set_box(float(hx), float(d.get("hy", hx)))
+        if "areas" in d:
+            self.plot_lines("areas", [a["v"] for a in d["areas"]])
+        if "wlines" in d:
+            self.plot_lines("water", [w["pts"] for w in d["wlines"]])
+        if "roads" in d:
+            self.plot_lines("roads", [r["pts"] for r in d["roads"]])
+        if "buildings" in d:
+            self.plot("buildings", [b["ring"][0] for b in d["buildings"]])
+        if len(d.get("trees", ())):
+            self.plot("trees", np.asarray(d["trees"], np.float64).reshape(-1, 4)[::2, :2])
+        if len(d.get("parked", ())):
+            self.plot("parked", [p[:2] for p in d["parked"]])
+        self.say("✓ " + MK_PART.get(name, name).capitalize())
+
+    def _canvas(self):
+        if self.cv is None:
+            if self.cv_tex is not None:
+                rl.unload_texture(self.cv_tex)
+                self.cv_tex = None
+            bx = self.box
+            h = max(8, int(self.GEO_W * (bx[3] - bx[1]) / (bx[2] - bx[0])))
+            self.cv = np.zeros((h, self.GEO_W, 4), np.uint8)
+            img = rl.gen_image_color(self.GEO_W, h, rl.Color(0, 0, 0, 0))
+            self.cv_tex = rl.load_texture_from_image(img)
+            rl.unload_image(img)
+            self.cv_dirty = True
+            self.fresh = []
+
+    def _paint(self, budget=0.012):
+        """Paint queued map work for about `budget` seconds and upload the canvas.  New pixels flash white, then settle."""
+        if not self.mq and not self.fresh and not self.cv_dirty:
             return
         try:
-            if self.geo_rt is None:
-                self.geo_rt = rl.load_render_texture(self.GEO_W, self.GEO_H)
-                rl.begin_texture_mode(self.geo_rt)
-                rl.clear_background(rl.Color(0, 0, 0, 0))
-                rl.end_texture_mode()
-            sx = self.GEO_W / (self.box[2] - self.box[0])
-            sy = self.GEO_H / (self.box[3] - self.box[1])
-            rl.begin_texture_mode(self.geo_rt)
-            for layer, lines in self.geo_pending[:40]:          # a few tiles per frame keeps the screen fluid
-                col = self.GEO_COL.get(layer, rl.WHITE)
-                for fl in lines:
-                    pts = [((fl[k] - self.box[0]) * sx, (fl[k + 1] - self.box[1]) * sy) for k in range(0, len(fl) - 1, 2)]
-                    if len(pts) == 1 or layer in ("buildings", "pois", "places"):
-                        rl.draw_rectangle(int(pts[0][0]), int(pts[0][1]), 2, 2, col)
-                    else:
-                        for a, b in zip(pts, pts[1:]):
-                            rl.draw_line(int(a[0]), int(a[1]), int(b[0]), int(b[1]), col)
-            rl.end_texture_mode()
-            del self.geo_pending[:40]
-        except Exception:  # noqa: BLE001 - the sketch is decoration; never break loading for it
-            self.geo_pending = []
-
-    @staticmethod
-    def _cell_col(c, pulse):
-        st = c["st"]
-        if st == "active":
-            return rl.Color(255, int(170 + 60 * pulse), 60, 255)
-        return {"done": C_DONE, "cached": C_CACHED, "fail": C_FAIL, "split": C_SPLIT}.get(st, C_PENDING)
+            self._canvas()
+            h, w = self.cv.shape[:2]
+            bx = self.box
+            kx, ky = w / (bx[2] - bx[0]), h / (bx[3] - bx[1])
+            now = time.time()
+            if self.fresh and (self.mq or now - self.fresh_t > 0.25):   # settle the white flash into the layer colours
+                for rr, cc, col in self.fresh:
+                    self.cv[rr, cc] = col
+                self.fresh = []
+                self.cv_dirty = True
+            t0 = time.perf_counter()
+            while self.mq and time.perf_counter() - t0 < budget:
+                layer, kind, data = self.mq.popleft()
+                col = (*MAP_COL.get(layer, (255, 255, 255)), 255)
+                if kind == "lines":
+                    if len(data) > 400:                                  # a long list is painted in slices, in random order
+                        data = list(data)
+                        self.rng.shuffle(data)
+                        self.mq.appendleft((layer, "lines", data[400:]))
+                        data = data[:400]
+                    parts = []
+                    for p in data:
+                        p = np.asarray(p, np.float64).reshape(-1, 2)
+                        if len(p) < 2:
+                            parts.append(p)
+                            continue
+                        seg = np.hypot(*np.diff(p, axis=0).T)
+                        n = np.maximum(1, np.ceil(seg * kx / 0.7)).astype(int)    # a sample about every 0.7 pixel
+                        i0 = np.repeat(np.arange(len(seg)), n)
+                        t = np.concatenate([np.arange(k) / k for k in n])
+                        parts.append(p[i0] + (p[i0 + 1] - p[i0]) * t[:, None])
+                    pts = np.concatenate(parts) if parts else np.zeros((0, 2))
+                else:
+                    pts = data
+                    if len(pts) > 6000:
+                        idx = self.rng.permutation(len(pts))
+                        self.mq.appendleft((layer, "pts", pts[idx[6000:]]))
+                        pts = pts[idx[:6000]]
+                cc = ((pts[:, 0] - bx[0]) * kx).astype(int)
+                rr = ((pts[:, 1] - bx[1]) * ky).astype(int)
+                ok = (cc >= 0) & (cc < w) & (rr >= 0) & (rr < h)
+                rr, cc = rr[ok], cc[ok]
+                self.cv[rr, cc] = (255, 255, 255, 255)
+                self.fresh.append((rr, cc, col))
+                self.fresh_t = time.time()
+                self.cv_dirty = True
+            if self.cv_dirty:
+                rl.update_texture(self.cv_tex, rl.ffi.cast("void *", rl.ffi.from_buffer(self.cv)))
+                self.cv_dirty = False
+        except Exception:  # noqa: BLE001 - the picture is decoration; never break loading for it
+            self.mq.clear()
+            self.fresh = []
 
     def _net_lines(self, x, y, w, now):
         active = any(c["st"] in ("active", "split") for c in self.cells.values())
