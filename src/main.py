@@ -1536,7 +1536,12 @@ def main():
             elif avg_ < 1 / 55:
                 auto_q = min(1.0, auto_q + 0.002)
             sim.dens_traffic, sim.dens_peds = cfg.traffic_mult * auto_q, cfg.ped_mult * auto_q
-        if a.test and a.shot and frame in (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1):
+        boom_ = int(os.environ.get("SK242_TEST_BOOM", "-1"))
+        if a.test and boom_ > 0 and frame == boom_:       # test hook: blow something up in front of the camera, shots follow
+            particles.explosion(cam_x, cam_y)
+            for _ in range(6):
+                particles.fire(cam_x + rng.uniform(-2, 2), cam_y + rng.uniform(-2, 2), 2, 0.9, 1.0)
+        if a.test and a.shot and (frame in (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1) or (boom_ > 0 and frame - boom_ in (4, 12, 24, 45, 90))):
             img = rl.load_image_from_screen()
             rl.export_image(img, f"{a.shot}_{frame}.png")
             rl.unload_image(img)

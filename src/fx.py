@@ -18,7 +18,7 @@ class Particles:
     """Flat camera-facing quads (the camera is top-down). One immediate-mode batch per frame."""
     __slots__ = ("p", "rng", "max")
 
-    def __init__(self, rng=None, max_particles=900):
+    def __init__(self, rng=None, max_particles=1500):
         self.p = []
         self.rng = rng or random.Random(3)
         self.max = max_particles
@@ -30,7 +30,7 @@ class Particles:
                 self.p.pop(0)
             self.p.append([x + r.uniform(-spread, spread) * 0.3, y + _gy(x, z), z + r.uniform(-spread, spread) * 0.3,
                            vx + r.uniform(-spread, spread), vy + r.uniform(0, spread * 0.5) if vy == 0 else vy + r.uniform(-.3, .3),
-                           vz + r.uniform(-spread, spread), life * r.uniform(0.7, 1.2), life, size * r.uniform(0.7, 1.3), col, grow, grav, r.uniform(0, 6.28)])
+                           vz + r.uniform(-spread, spread), life * r.uniform(0.7, 1.2), life, size * r.uniform(0.7, 1.3), col, grow, grav, r.uniform(0, 6.28), kind])
 
     def smoke(self, x, z, dark=0.0, n=1, y=0.8, vx=0, vz=0, big=1.0):
         c = int(210 - 170 * dark)
@@ -40,7 +40,10 @@ class Particles:
         self.emit("k", x, z, y, 0, 0, 2.5, n, 0.14, 0.45, (255, 220, 120), 5.0, 0.6, -9.0)
 
     def fire(self, x, z, n=2, y=1.0, big=1.0):
-        self.emit("f", x, z, y, 0, 0, 2.2, n, 0.9 * big, 0.8, (255, 150, 30), 0.9, 1.6)
+        # licking flames: hot yellow core fading to red as they rise, plus the odd ember
+        self.emit("f", x, z, y, 0, 0, 2.6, n, 0.9 * big, 0.75, (255, 150, 30), 0.9, 0.5)
+        if self.rng.random() < 0.25 * n:
+            self.emit("k", x, z, y + 0.5, 0, 0, 3.0, 1, 0.1, 1.2, (255, 170, 60), 1.2, 0.5, 0.8)
 
     def debris(self, x, z, col, n=6, y=0.6):
         self.emit("d", x, z, y, 0, 0, 4.0, n, 0.26, 1.4, col, 6.0, 0.9, -9.0)
@@ -48,10 +51,22 @@ class Particles:
     def leaves(self, x, z, n=8):
         self.emit("l", x, z, 3.0, 0, 0, 1.0, n, 0.22, 1.3, (84, 140, 60), 3.5, 1.0, -2.2)
 
-    def explosion(self, x, z):
-        self.emit("f", x, z, 1.0, 0, 0, 3.0, 36, 1.6, 1.0, (255, 170, 40), 7.0, 1.8, -0.5)
-        self.emit("s", x, z, 1.5, 0, 0, 2.0, 22, 1.8, 2.6, (60, 60, 60), 6.0, 2.2)
-        self.emit("k", x, z, 1.5, 0, 0, 5.0, 24, 0.16, 1.2, (255, 230, 140), 10.0, 0.7, -9.0)
+    def explosion(self, x, z, big=1.0):
+        e = self.emit
+        e("b", x, z, 1.2, 0, 0, 0.0, 1, 16.0 * big, 0.18, (255, 245, 210), 0.0, 40.0)             # white-hot flash
+        e("w", x, z, 0.2, 0, 0, 0.0, 1, 2.0, 0.55, (255, 200, 120), 0.0, 85.0 * big)             # shockwave ring
+        for _ in range(40):                                                                       # fireball: fast outward, then rising
+            a, v = self.rng.uniform(0, 6.28), self.rng.uniform(1.0, 9.0) * big
+            e("f", x, z, 0.8, math.cos(a) * v, math.sin(a) * v, self.rng.uniform(2.0, 5.0), 1, 5.0 * big, 1.1, (255, 170, 40), 0.3, 3.5)
+        for _ in range(20):                                                                       # black smoke column, lightens as it cools
+            a, v = self.rng.uniform(0, 6.28), self.rng.uniform(0.5, 3.5) * big
+            e("s", x, z, 1.5, math.cos(a) * v, math.sin(a) * v, self.rng.uniform(2.5, 5.0), 1, 4.5 * big, 3.4, (38, 34, 32), 0.5, 3.5)
+        for _ in range(28):                                                                       # glowing sparks / embers
+            a, v = self.rng.uniform(0, 6.28), self.rng.uniform(4.0, 16.0)
+            e("k", x, z, 1.0, math.cos(a) * v, math.sin(a) * v, self.rng.uniform(3.0, 9.0), 1, 0.13, 1.4, (255, 190, 80), 0.0, 0.5, -9.0)
+        for _ in range(12):                                                                       # charred metal chunks
+            a, v = self.rng.uniform(0, 6.28), self.rng.uniform(3.0, 11.0)
+            e("d", x, z, 1.0, math.cos(a) * v, math.sin(a) * v, self.rng.uniform(4.0, 9.0), 1, 0.3, 1.6, (52, 48, 46), 0.0, 0.9, -12.0)
 
     def update(self, dt):
         out = []
@@ -76,19 +91,43 @@ class Particles:
     def draw(self):
         if not self.p:
             return
-        global _SOFT
+        global _SOFT, _RING
         if _SOFT is None:
             _SOFT = _soft_texture()
+            _RING = _soft_texture(ring=True)
         rl.rl_disable_depth_mask()
-        for soft in (False, True):
-            rl.rl_set_texture(_SOFT.id if soft else 0)
+        buckets = {}
+        for q in self.p:
+            k = q[13]
+            tex = _RING.id if k == "w" else (_SOFT.id if (q[10] > 1.0 or k in _GLOW) else 0)
+            buckets.setdefault((k in _GLOW, tex), []).append(q)
+        for (add, tex), qs in sorted(buckets.items(), key=lambda kv: kv[0][0]):
+            if add:
+                rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+            rl.rl_set_texture(tex)
             rl.rl_begin(QUADS)
-            for x, y, z, _vx, _vy, _vz, life, life0, size, col, _g, _gr, rot in self.p:
-                if (_g > 1.0) != soft:   # growing puffs (smoke, fire, blasts) are soft discs
-                    continue
-                f = max(0.0, life / life0)
-                a = int(255 * min(1.0, f * 1.6) * (0.85 if col[0] > 200 and col[1] < 200 else 0.7))
-                rl.rl_color4ub(int(col[0]), int(col[1]), int(col[2]), a)
+            for x, y, z, _vx, _vy, _vz, life, life0, size, col, _g, _gr, rot, k in qs:
+                f = min(1.0, max(0.0, life / life0))
+                age = 1.0 - f
+                if k == "f":                                    # flame ramp: white-yellow -> orange -> deep red, shrinking
+                    r_, g_, b_ = 255, int(235 - 190 * min(1.0, age * 1.6)), int(170 - 160 * min(1.0, age * 3.0))
+                    a = int(255 * min(1.0, f * 2.0) * 0.9)
+                    size *= 0.35 + 0.65 * f
+                elif k == "b":
+                    r_, g_, b_, a = col[0], col[1], col[2], int(255 * f)
+                elif k == "w":
+                    r_, g_, b_, a = col[0], col[1], col[2], int(160 * f * f)
+                elif k == "s":                                  # smoke lightens as it cools
+                    lift = int(70 * age)
+                    r_, g_, b_ = min(255, col[0] + lift), min(255, col[1] + lift), min(255, col[2] + lift)
+                    a = int(255 * min(1.0, f * 1.6) * 0.7)
+                elif k == "k":
+                    r_, g_, b_ = 255, int(col[1] * (0.5 + 0.5 * f)), int(col[2] * f)
+                    a = int(255 * min(1.0, f * 2.0))
+                else:
+                    r_, g_, b_ = col[0], col[1], col[2]
+                    a = int(255 * min(1.0, f * 1.6) * (0.85 if col[0] > 200 and col[1] < 200 else 0.7))
+                rl.rl_color4ub(int(r_), int(g_), int(b_), a)
                 h = size * 0.5
                 c, s = math.cos(rot) * h, math.sin(rot) * h
                 rl.rl_tex_coord2f(0, 0)
@@ -100,21 +139,25 @@ class Particles:
                 rl.rl_tex_coord2f(0, 1)
                 rl.rl_vertex3f(x - c + s, y, z - s - c)
             rl.rl_end()
+            if add:
+                rl.end_blend_mode()
         rl.rl_set_texture(0)
         rl.rl_enable_depth_mask()
 
 
+_GLOW = frozenset("fbwk")     # kinds drawn additively
+_RING = None
 _SOFT = None
 
 
-def _soft_texture():
+def _soft_texture(ring=False):
     """64x64 white disc whose alpha falls smoothly to 0 at the rim, so puffs have no square edges."""
     n = 64
     img = rl.gen_image_color(n, n, rl.Color(255, 255, 255, 0))
     for j in range(n):
         for i in range(n):
             d = math.hypot((i + 0.5) / n * 2 - 1, (j + 0.5) / n * 2 - 1)
-            t = max(0.0, 1.0 - d)
+            t = max(0.0, 1.0 - abs(d - 0.8) / 0.2) if ring else max(0.0, 1.0 - d)
             rl.image_draw_pixel(img, i, j, rl.Color(255, 255, 255, int(255 * t * t * (3 - 2 * t))))
     tex = rl.load_texture_from_image(img)
     rl.unload_image(img)
