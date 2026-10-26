@@ -348,13 +348,16 @@ class Loader:
             self.quip_t = now
             self.quip = random.choice(slang.LOADING_QUIPS)
         W, H = rl.get_screen_width(), rl.get_screen_height()
+        m = max(16, W // 60)
+        lw = int(W * 0.55)
+        rx = m + lw + (m if lw else 0)
+        rw = W - rx - m
+        asp = (self.box[3] - self.box[1]) / (self.box[2] - self.box[0])
+        self.map_w = max(100, min(rw, int(H * 0.52 / asp)))
+        self.GEO_W = 2 * self.map_w                                   # painted at twice the size, shown at half with bilinear filtering
         self._paint()
         rl.begin_drawing()
         rl.clear_background(rl.Color(18, 20, 25, 255))
-        m = max(16, W // 60)
-        lw = int(W * 0.62)
-        rx = m + lw + (m if lw else 0)
-        rw = W - rx - m
         if lw:
             if now < self.title_until and self.posters.title():
                 ph = min(int(lw * 0.625), H - 2 * m)
@@ -380,6 +383,8 @@ class Loader:
         font.draw_text(right, rx + rw - font.measure_text(right, 16), y + 3, 16, GREY)
         self._bar(rx, y + 26, rw, 14, ov, GOLD)
         y += 48
+        # ---- the live map sits at a fixed place; everything that changes length goes below it
+        y = self._map(rx, y, rw, 0)
         for ln in font.wrap(self.quip, 16, rw)[:2]:
             font.draw_text(ln, rx, y, 16, rl.Color(215, 200, 150, 255))
             y += 21
@@ -394,8 +399,6 @@ class Loader:
         if self.note:
             font.draw_text(font.fit(self.note, 14, rw), rx, y, 14, GREY)
             y += 20
-        # ---- top right: the live map
-        y = self._map(rx, y + 4, rw, int((H - y - m) * 0.55))
         # ---- speed / alerts
         y = self._net_lines(rx, y + 6, rw, now)
         # ---- under the map: the verbose progress log
@@ -425,8 +428,8 @@ class Loader:
     def _map(self, x, y, w, h_avail):
         bx = self.box
         aspect = (bx[3] - bx[1]) / (bx[2] - bx[0])
-        mh = max(60, min(int(w * aspect), h_avail - 24))
-        mw = int(mh / aspect)
+        mw = self.map_w
+        mh = int(mw * aspect)
         sx, sy = mw / (bx[2] - bx[0]), mh / (bx[3] - bx[1])
         rl.draw_rectangle(x, y, mw, mh, rl.Color(26, 29, 36, 255))
         if self.cv_tex is not None:                                     # everything that has arrived so far, one pixel each
@@ -460,10 +463,11 @@ class Loader:
             rl.draw_rectangle(lx, ly + 3, 9, 9, rl.Color(c[0], c[1], c[2], 255))
             font.draw_text(MK_LEG[k], lx + 13, ly, 12, GREY)
             lx += wd
-        return ly + 18
+        return ly + 22
 
     # ---------------------------------------------------------------- the live map: one pixel per thing that arrived
-    GEO_W = 960
+    GEO_W = 1000
+    map_w = 500
 
     def set_box(self, hx, hy):
         """The map covers the world box; called once the real extent is known (a different box starts the picture afresh)."""
@@ -524,6 +528,7 @@ class Loader:
             self.cv = np.zeros((h, self.GEO_W, 4), np.uint8)
             img = rl.gen_image_color(self.GEO_W, h, rl.Color(0, 0, 0, 0))
             self.cv_tex = rl.load_texture_from_image(img)
+            rl.set_texture_filter(self.cv_tex, rl.TEXTURE_FILTER_BILINEAR)
             rl.unload_image(img)
             self.cv_dirty = True
             self.fresh = []
