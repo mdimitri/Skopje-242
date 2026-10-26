@@ -896,12 +896,13 @@ def main():
     def exhaust(dt):
         """Diesel smoke: city buses and big trucks puff dark smoke when pulling away, old cars a little."""
         fxs, fys = sim.focus()[:2]
+        pol = cfg.get("pollution", 1.0)
         for b in sim.bodies:
             bus = getattr(b, "bus_line", None) is not None
             if not (bus or vehicles.LARGE[b.kind]) or b.exploded or (b.x - fxs) ** 2 + (b.y - fys) ** 2 > 90 ** 2:
                 continue
             thr = b.ctl[0] if getattr(b, "ctl", None) else 0.0
-            rate = (9.0 if thr > 0.3 and b.speed < 6 else 2.5) * dt
+            rate = (9.0 if thr > 0.3 and b.speed < 6 else 2.5) * dt * pol
             if rng.random() < rate:
                 L = vehicles.DIMS[b.kind][0] / 2
                 hx, hy = math.cos(b.h), math.sin(b.h)
@@ -910,7 +911,7 @@ def main():
             if (c.x - fxs) ** 2 + (c.y - fys) ** 2 > 70 ** 2:
                 continue
             big = vehicles.LARGE[c.kind]
-            if rng.random() < (5.0 if big else 0.35) * dt * (2.0 if c.v < 4 else 1.0):
+            if rng.random() < (5.0 if big else 0.35) * dt * (2.0 if c.v < 4 else 1.0) * pol:
                 L = vehicles.DIMS[c.kind][0] / 2
                 hx, hy = math.cos(c.h), math.sin(c.h)
                 particles.smoke(c.x - hx * L, c.y - hy * L, 0.7 if big else 0.45, 1, 0.45, -hx * 2, -hy * 2, 0.7 if big else 0.45)
@@ -1467,7 +1468,7 @@ def main():
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh)
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
-                          min(1.0, sim.clock.traffic), 1.0, world.ground_y(cam_x, cam_y))
+                          min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
             guard.run("popups", popups.draw, cam)

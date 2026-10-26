@@ -42,6 +42,9 @@ def _rows(in_game, slots=()):
         (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
         (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (2, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
+        # new labels live here until they can be added to text/ (human-edited)
+        (2, Row("slider", "Јачина на смог", "smog_level", lo=0.0, hi=3.0, fmt=pct, note="над 100% е густ, тежок смог")),
+        (2, Row("slider", "Загадување од возила", "pollution", lo=0.0, hi=3.0, fmt=pct, note="колку чадат автомобилите")),
         (2, Row("toggle", TXT("menu.0014"), "labels")),
         (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
         (2, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
