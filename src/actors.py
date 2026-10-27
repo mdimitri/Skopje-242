@@ -867,6 +867,17 @@ class Peds:
                             if rng.random() < 0.5:
                                 ev("shout", text=talk.react("panic", p.arch, self.sim, lines("panic", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
                             break
+            if p.mode == "walk":                                  # traffic cars too: step out of the way of one that is coming at us
+                for b in _near(g_a, p.x, p.y):
+                    if type(b) is Car and b.v > 3.0 and abs(b.x - p.x) < 14 and abs(b.y - p.y) < 14:
+                        fxb, fyb = math.cos(b.h), math.sin(b.h)
+                        ax, ay = p.x - b.x, p.y - b.y
+                        fwd, lat = ax * fxb + ay * fyb, -ax * fyb + ay * fxb
+                        if 0.0 < fwd < 4.0 + b.v * 1.4 and abs(lat) < 2.6:
+                            side = 1 if lat >= 0 else -1
+                            p.mode, p.t = "flee", 1.6
+                            p.vx, p.vy = -fyb * side * 4.0, fxb * side * 4.0
+                            break
             if p.mode == "ko":                                    # knocked out cold
                 p.t -= dt
                 f = math.exp(-6.0 * dt)
@@ -1220,6 +1231,8 @@ class Traffic:
         if not good:
             return False
         c.e, c.d = c.nxt if c.nxt in good else self.rng.choice(good)
+        if abs(c.turn) > 2.6:
+            c.man = 5.0                                           # a U-turn: full lock, as a driver would in a narrow street
         c.nxt, c.turn, c.arr = None, 0.0, None
         c.shift, c.shift_t = 0.0, 0.0
         self._set_lane(c, self.w.edges[c.e])
@@ -1260,6 +1273,24 @@ class Traffic:
                     if best is None or gap < best:
                         best, self.lead = gap, o
         return best
+
+    def _ped_in_way(self, c):
+        """Is a person inside the footprint car c is about to sweep (its box + 0.5 m at the sides, reaching ahead by its stopping room)?"""
+        hx, hy = math.cos(c.h), math.sin(c.h)
+        hl, hw = vehicles.HALF_L[c.kind], vehicles.HALF_W[c.kind] + 0.5
+        ahead = hl + 0.8 + c.v * 0.6
+        hash_get = self.hash.get
+        for ix in range(int((c.x - 8.0) // 16), int((c.x + 8.0) // 16) + 1):
+            for iy in range(int((c.y - 8.0) // 16), int((c.y + 8.0) // 16) + 1):
+                for o in hash_get((ix, iy), ()):
+                    if o[5] is not None:
+                        continue
+                    dx, dy = o[0] - c.x, o[1] - c.y
+                    if dx * dx + dy * dy > 64.0:
+                        continue
+                    if -hl < dx * hx + dy * hy < ahead and abs(-dx * hy + dy * hx) < hw:
+                        return True
+        return False
 
     def _cross(self, c, horizon=3.5):
         """Look along the line of motion of everything moving nearby: if a crossing vehicle and car c would meet (their
@@ -1380,6 +1411,7 @@ class Traffic:
         hwc = vehicles.HALF_W[c.kind]
         ahead = 8.0 + c.v * 1.6
         tgt, near, worst, bgap = 0.0, False, None, None
+        tight = c.stuck > 2.0                                     # held up for a while: squeeze past with less spare room, up a kerb if need be
         if ph:
             inward = -1.0 if c.lane > 0 else 1.0                  # towards the middle of the road
             gx, gy = int(c.x // 16), int(c.y // 16)
@@ -1393,7 +1425,7 @@ class Traffic:
                             continue
                         ca, sa = abs(math.cos(oh - c.h)), abs(math.sin(oh - c.h))
                         hl = ca * ohl + sa * ohw
-                        need = hwc + ca * ohw + sa * ohl + 0.45
+                        need = hwc + ca * ohw + sa * ohl + (0.15 if tight else 0.45)
                         lat = dx * rx + dy * ry
                         if abs(lat) < need + 0.6:
                             near = True
@@ -1410,13 +1442,15 @@ class Traffic:
                     if tot < lo:
                         tgt += lo - tot
                 else:
-                    lo, hi = -e["w"] / 2 + hwc + 0.2, e["w"] / 2 - hwc - 0.2
+                    lo, hi = -e["w"] / 2 + hwc + 0.2 - (0.8 if tight else 0.0), e["w"] / 2 - hwc - 0.2 + (0.8 if tight else 0.0)
                     if tot < lo or tot > hi:
                         tgt += (lo - tot) if tot < lo else (hi - tot)
                 if worst is not None and abs(worst[1] - (tgt - c.avoid)) > 0.3:     # can't get round it: stop short
                     bgap = worst[0]
                     vlim = min(vlim, max(0.0, (bgap - 1.8) * 0.7))
-                vlim = min(vlim, 7.0)
+                vlim = min(vlim, 3.0 if tight else 7.0)
+                if worst is not None and abs(tgt - c.avoid) > 0.25:      # the swerve has not caught up yet: don't drive at the obstacle meanwhile
+                    vlim = min(vlim, max(0.0, (worst[0] - 1.5) * 0.7))
         c.avoid += max(-1.5 * dt, min(1.5 * dt, tgt - c.avoid))
         ytgt = 0.0
         for b in ems:
@@ -1639,6 +1673,8 @@ class Traffic:
                 if c.shift and gap > 0.6:
                     vlim = max(vlim, 1.2)                          # edging round the blocker (the lane was checked)
                 braking = True
+            if c.ghost <= 0 and c.v > 0.1 and self._ped_in_way(c):      # someone on foot beside/ahead of the swinging body (the straight scan misses them)
+                vlim, braking = 0.0, True
             cg = self._cross(c) if c.ghost <= 0 and c.v > 0.5 else None
             if cg is not None:                                     # someone will cut across our path: let them by
                 vlim = min(vlim, max(0.0, (cg - 1.5) * 0.7))
@@ -1659,8 +1695,8 @@ class Traffic:
                 if d2 > 150 ** 2 and c.stuck > 8.0:
                     self.despawned += 1                           # hopelessly stuck out of sight: gone, a new car comes
                     continue
-                if d2 > 90 ** 2 and c.ghost <= 0:
-                    c.ghost, c.stuck = 4.0, 0.0                   # nearer, still unseen: slips through the knot
+                if c.ghost <= 0 and (d2 > 90 ** 2 or (c.stuck > 20.0 and d2 > 45 ** 2) or (c.stuck > 35.0 and not isinstance(c.blk, Body))):
+                    c.ghost, c.stuck = 4.0, 0.0                   # a knot nobody can undo (or out of sight): slips through it rather than blocking the street for ever
             if c.rq:
                 c.rq[0] -= dt
                 if c.rq[0] <= 0:
@@ -1671,6 +1707,8 @@ class Traffic:
                 c.ghost -= dt
                 if c.ghost <= 0 and (self.scan(c, 1.0, back=-vehicles.HALF_L[c.kind]) or 0.0) < 0.0:
                     c.ghost = 0.5                                 # still inside another car: slip on until clear
+            if c.rev > 0 and abs((c.h - _th + math.pi) % (2 * math.pi) - math.pi) > 1.3:
+                c.rev, c.rside, c.cool = 0.0, 0.0, 2.0           # facing across / against the road (mid U-turn): backing up would run it off its lane
             if c.rev > 0:                                         # backing out of a jam (the way behind was checked),
                 c.rev -= dt                                       # swinging the nose towards the side it will pass on
                 c.s = max(0.0, c.s - 2.2 * dt)
@@ -1704,8 +1742,8 @@ class Traffic:
                 c.x += math.cos(c.h + slip) * c.v * dt              # the turn (rear axle 0.31 L behind it, wheelbase 0.6 L)
                 c.y += math.sin(c.h + slip) * c.v * dt
                 rx_, ry_, _rh = self._ref(e, c.d, c.s, c.lane + c.shift + c.avoid + c.yld)
-                if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0:     # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back
-                    c.x, c.y, c.h = rx_, ry_, _rh
+                if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0 and (c.ghost > 0 or (self.scan(c, 0.5, rx_ - c.x, ry_ - c.y, back=-vehicles.HALF_L[c.kind]) or 1.0) >= 0.0):
+                    c.x, c.y, c.h = rx_, ry_, _rh                   # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back, unless another car is there
             c.gz = w.level(c.x, c.y, 1e9 if e["bridge"] else -1e9)
             if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt follows the ground: every other frame is plenty
                 fx_, fy_ = math.cos(c.h), math.sin(c.h)
