@@ -1176,6 +1176,9 @@ class Traffic:
             t = (self._head(e2, o[1], False) - h0 + math.pi) % (2 * math.pi) - math.pi
             turns.append(t)
             wts.append((1.0 + _rank(e2["cls"])) * (1.6 if abs(t) < 0.35 else 1.0) / (1.0 + qk * self.queue.get(o, 0)))
+        keep = [i for i in range(len(good)) if abs(turns[i]) <= self.UTURN]      # never choose a U-turn when there is any other way on
+        if keep:
+            good, turns, wts = [good[i] for i in keep], [turns[i] for i in keep], [wts[i] for i in keep]
         k = self.rng.choices(range(len(good)), wts)[0]
         c.nxt, c.turn = good[k], turns[k]
 
@@ -1230,6 +1233,8 @@ class Traffic:
         good = [o for o in opts if o[0] != c.e] or opts
         if not good:
             return False
+        if c.nxt not in good:
+            self._pick(c)                                         # the same choice as ever, so a stray pick can't be a U-turn either
         c.e, c.d = c.nxt if c.nxt in good else self.rng.choice(good)
         if abs(c.turn) > 2.6:
             c.man = 5.0                                           # a U-turn: full lock, as a driver would in a narrow street
@@ -1338,7 +1343,7 @@ class Traffic:
                             best = g
         return best
 
-    WAIT = (9.0, 6.0, 4.0, 2.5)      # seconds a stopped car waits before trying to get out, by aggression setting
+    WAIT = (6.0, 4.0, 2.5, 1.8)      # seconds a stopped car waits before trying to get out, by aggression setting
     LOCK_MAN = math.atan(1.5 * math.tan(0.55))   # front-wheel lock while manoeuvring: turns 50 % tighter than normal driving
     LOCK_WAY = math.atan(2.0 * math.tan(0.55))   # making way for an oncoming car: half the normal turning radius
 
@@ -1371,7 +1376,7 @@ class Traffic:
                 c.shift, c.shift_t = off, 0.0
                 return
         o = c.blk
-        if isinstance(o, Car) and o.e == c.e and o.d != c.d and c.stuck > self.WAIT[ag] * 1.5 and self._convoy(c, o):
+        if isinstance(o, Car) and o.e == c.e and o.d != c.d and c.stuck > self.WAIT[ag] and self._convoy(c, o):
             return
         if self.rng.random() < dt * (0.6, 0.8, 1.2, 2.0)[ag] and self.scan(c, 7.0, flip=True) is None \
                 and not any(o.rev > 0 and (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 400.0 for o in self.cars):
@@ -1410,10 +1415,11 @@ class Traffic:
         rx, ry = -hy, hx
         hwc = vehicles.HALF_W[c.kind]
         ahead = 8.0 + c.v * 1.6
-        tgt, near, worst, bgap = 0.0, False, None, None
+        tgt, near, bgap = 0.0, False, None
         tight = c.stuck > 2.0                                     # held up for a while: squeeze past with less spare room, up a kerb if need be
         if ph:
-            inward = -1.0 if c.lane > 0 else 1.0                  # towards the middle of the road
+            m = 0.15 if tight else 0.45
+            obs = []                                              # standing vehicles near the path: (lateral offset, half-width, gap ahead)
             gx, gy = int(c.x // 16), int(c.y // 16)
             n = int(ahead // 16) + 1
             for ix in range(gx - n, gx + n + 1):
@@ -1424,33 +1430,38 @@ class Traffic:
                         if fwd > ahead + ohl or fwd < -(vehicles.HALF_L[c.kind] + ohl):
                             continue
                         ca, sa = abs(math.cos(oh - c.h)), abs(math.sin(oh - c.h))
-                        hl = ca * ohl + sa * ohw
-                        need = hwc + ca * ohw + sa * ohl + (0.15 if tight else 0.45)
+                        wid = ca * ohw + sa * ohl
                         lat = dx * rx + dy * ry
-                        if abs(lat) < need + 0.6:
-                            near = True
-                            side = inward if abs(lat) < 0.5 else (-1.0 if lat > 0 else 1.0)     # pass on the open side
-                            d = (need + 0.25 - abs(lat) if side * lat <= 0 else need + 0.25 + abs(lat)) * side
-                            if abs(d) > abs(tgt - c.avoid):
-                                tgt, worst = c.avoid + d, (fwd - vehicles.HALF_L[c.kind] - hl, d)
-            if near:
-                tot = c.lane + c.shift + tgt + c.yld
-                if not e["ow"]:                                   # may graze the middle of the road, or use the
-                    lo = hwc - 0.6                                # oncoming lane when it is clear
-                    if tot < lo and self._free(c, -e["w"] / 4 - (c.lane + c.shift + c.avoid + c.yld), 30.0):
-                        lo = -e["w"] / 4
-                    if tot < lo:
-                        tgt += lo - tot
-                else:
-                    lo, hi = -e["w"] / 2 + hwc + 0.2 - (0.8 if tight else 0.0), e["w"] / 2 - hwc - 0.2 + (0.8 if tight else 0.0)
-                    if tot < lo or tot > hi:
-                        tgt += (lo - tot) if tot < lo else (hi - tot)
-                if worst is not None and abs(worst[1] - (tgt - c.avoid)) > 0.3:     # can't get round it: stop short
-                    bgap = worst[0]
+                        if abs(lat) < hwc + wid + m + 0.6:
+                            obs.append((lat, wid, fwd - vehicles.HALF_L[c.kind] - (ca * ohl + sa * ohw)))
+            if obs:
+                near = True
+                base = c.lane + c.shift + c.avoid + c.yld
+                ext = 0.8 if tight else 0.0                       # a kerb may be mounted a little when held up
+                if e["ow"]:
+                    tmin, tmax = -e["w"] / 2 + hwc + 0.2 - ext, e["w"] / 2 - hwc - 0.2 + ext
+                else:                                             # may graze the middle of the road, or use the oncoming lane when it is clear
+                    tmin = -e["w"] / 4 if self._free(c, -e["w"] / 4 - base, 30.0) else hwc - 0.6
+                    tmax = e["w"] / 2 - hwc - 0.1 + ext
+                dlo, dhi = tmin - base, tmax - base               # sideways moves that stay on the road (or its kerb)
+                need = [(lat, hwc + wid + m) for lat, wid, _g in obs]
+                cands = [0.0, dlo, dhi]
+                for lat, r in need:
+                    cands += [lat - r - 0.02, lat + r + 0.02]
+                best = None
+                for d_ in cands:
+                    if dlo - 1e-6 <= d_ <= dhi + 1e-6 and all(abs(lat - d_) >= r - 0.01 for lat, r in need) and (best is None or abs(d_) < abs(best)):
+                        best = d_
+                block = [g for lat, wid, g in obs if abs(lat) < hwc + wid + m]
+                gap0 = min(block) if block else min(g for _l, _w, g in obs)
+                if best is None:                                  # no room to get round it: stop short
+                    tgt, bgap = c.avoid, gap0
                     vlim = min(vlim, max(0.0, (bgap - 1.8) * 0.7))
+                else:
+                    tgt = c.avoid + best
+                    if abs(best) > 0.25:                          # the swerve has not caught up yet: don't drive at the obstacle meanwhile
+                        vlim = min(vlim, max(0.0, (gap0 - 1.5) * 0.7))
                 vlim = min(vlim, 3.0 if tight else 7.0)
-                if worst is not None and abs(tgt - c.avoid) > 0.25:      # the swerve has not caught up yet: don't drive at the obstacle meanwhile
-                    vlim = min(vlim, max(0.0, (worst[0] - 1.5) * 0.7))
         c.avoid += max(-1.5 * dt, min(1.5 * dt, tgt - c.avoid))
         ytgt = 0.0
         for b in ems:
@@ -1468,6 +1479,24 @@ class Traffic:
                 break
         c.yld += max(-1.8 * dt, min(1.8 * dt, ytgt - c.yld))
         return vlim, bgap
+
+    UTURN = 2.2                      # rad: a turn sharper than this (126 degrees) is a U-turn
+
+    def _uturn_hold(self, c, e, rem, d2):
+        """A U-turn (a dead end, the only way on) is only made on a single-lane road and when no other vehicle is within 30 m;
+        until then the car waits at the end.  Returns the stopping distance to hold at, None to go ahead, or -1 to remove the car
+        (a multi-lane road it cannot turn on, out of sight)."""
+        multi = len(self.lanes_of(e)) >= 2 if e["ow"] else e["w"] >= 8.0
+        if multi and d2 > 70 ** 2:
+            return -1.0
+        if multi:
+            return rem - 2.0
+        for ix in range(int((c.x - 30.0) // 16), int((c.x + 30.0) // 16) + 1):
+            for iy in range(int((c.y - 30.0) // 16), int((c.y + 30.0) // 16) + 1):
+                for o in self.hash.get((ix, iy), ()):
+                    if o[4] is not c and o[5] is not None and (o[0] - c.x) ** 2 + (o[1] - c.y) ** 2 < 900.0:
+                        return rem - 2.0
+        return None
 
     APPR = 24.0                      # m before a junction where cars sort out who goes first
 
@@ -1643,6 +1672,13 @@ class Traffic:
             vlim = min(vlim, max(2.0, math.sqrt(3.0 * la / max(2.0 * math.sin(min(abs(err), 1.5708)), 0.02))))      # slow for the bend it is steering into
             braking = False
             at_red = False
+            if c.nxt is not None and abs(c.turn) > self.UTURN and L - c.s < 40.0:
+                hold_at = self._uturn_hold(c, e, L - c.s, (c.x - fx) ** 2 + (c.y - fy) ** 2)
+                if hold_at is not None:
+                    if hold_at < 0:
+                        self.despawned += 1
+                        continue
+                    vlim, at_red = min(vlim, math.sqrt(2 * 3.5 * max(hold_at, 0.0))), True
             if (sg is not None and sg.stop_for(c.e, 1 if c.d == 1 else 0) and -2.5 < L - c.s - 9.0 < 150.0) or hold:
                 at_red = True                                      # queueing for a red light / giving way is not a jam to escape
             tr = getattr(self.sim, "trains", None)
@@ -1727,6 +1763,9 @@ class Traffic:
                     c.rside = 0.0
             else:
                 c.s += c.v * dt * max(0.0, math.cos(c.h - _th))     # progress along the road, not along the clock
+                if L - c.s < 10.0:                                  # a car swinging round a tight corner is turned away from the road by the time it is
+                    ex_, ey_, eh_ = self._ref(e, c.d, L, 0.0)       # level with the junction: count how far it really is (else it circles for its
+                    c.s = max(c.s, L - ((ex_ - c.x) * math.cos(eh_) + (ey_ - c.y) * math.sin(eh_)))   # turn instead of taking it)
                 if c.s >= L:
                     c.s -= L
                     if not self._next_edge(c):                   # dead end: U-turn instead of vanishing
