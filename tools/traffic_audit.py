@@ -91,8 +91,10 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
         ok = orig_next(c)
         if abs(turn) > T.UTURN and math.hypot(x - cx, y - cy) < VIEW and clock[0] > warm:
             near = [o for o in T.cars if o is not c and math.hypot(o.x - x, o.y - y) < 30.0] + \
-                   [b for b in sim.bodies if math.hypot(b.x - x, b.y - y) < 30.0]
+                   [b for b in sim.bodies if b.speed >= 0.3 and math.hypot(b.x - x, b.y - y) < 30.0]    # parked cars do not move into the turn
             multi = len(T.lanes_of(e0)) >= 2 if e0["ow"] else e0["w"] >= 8.0
+            if not (not multi and not near) and os.environ.get("UDBG"):
+                print("UT", clock[0], c.stuck, c.ghost, c.v, [(round(math.hypot(o.x - x, o.y - y)), round(getattr(o, "v", 0), 1)) for o in near][:6], flush=True)
             out["uturn"].append(dict(t=round(clock[0], 1), x=round(x), y=round(y), cls=e0["cls"], w=e0["w"], multi=multi, others=len(near),
                                      legal=(not multi and not near)))
         return ok

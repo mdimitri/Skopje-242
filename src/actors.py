@@ -1491,10 +1491,10 @@ class Traffic:
             return -1.0
         if multi:
             return rem - 2.0
-        for ix in range(int((c.x - 30.0) // 16), int((c.x + 30.0) // 16) + 1):
-            for iy in range(int((c.y - 30.0) // 16), int((c.y + 30.0) // 16) + 1):
+        for ix in range(int((c.x - 34.0) // 16), int((c.x + 34.0) // 16) + 1):
+            for iy in range(int((c.y - 34.0) // 16), int((c.y + 34.0) // 16) + 1):
                 for o in self.hash.get((ix, iy), ()):
-                    if o[4] is not c and o[5] is not None and (o[0] - c.x) ** 2 + (o[1] - c.y) ** 2 < 900.0:
+                    if o[4] is not c and o[5] is not None and (o[0] - c.x) ** 2 + (o[1] - c.y) ** 2 < 1089.0:       # 33 m: a margin over the 30 m rule so a car easing in cannot slip through
                         return rem - 2.0
         return None
 
