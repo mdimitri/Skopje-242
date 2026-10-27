@@ -4,6 +4,13 @@ counts the faults a player would notice, only for vehicles within VIEW m of the 
   redrun    a vehicle crosses the stop line (9 m before the junction centre) while its approach shows red, at >= 1 m/s
   runover   a vehicle moving at >= 1.5 m/s drives through a walking pedestrian
   jam       a vehicle stands (< 0.3 m/s) for more than 25 s outside a red-light queue
+  uturn     a U-turn (turn > 126 degrees) at a junction; 'legal' only on a single-lane road with nothing within 30 m
+  loop      a car's heading sweeps more than 240 degrees within 12 s (circling to come back)
+  wrongway  a car faces against its lane's direction for 3 s at > 2 m/s outside a manoeuvre
+  oncoming  a car drives in the oncoming half of a two-way road for 4 s at > 3 m/s
+  speeding  more than 1.4 x the limit
+  tailgate  closer than 1 m behind another car at > 6 m/s
+  boxblock  standing still inside a junction for more than 6 s
 Usage: python3 tools/traffic_audit.py <world_dir> <osm_dir> <out.jsonl> [hood ...]      (one JSON line per hood)"""
 import collections
 import json
@@ -71,12 +78,31 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
     ghost_at = {}                      # id(car) -> last time it was ghosting
     ov_open, rr_state, ro_open = {}, {}, {}
     standing = collections.defaultdict(float)
-    out = dict(overlap=[], redrun=[], runover=[], jam=[])
+    out = dict(overlap=[], redrun=[], runover=[], jam=[], uturn=[], loop=[], wrongway=[], oncoming=[], speeding=[], tailgate=[], boxblock=[])
+    yaw = collections.defaultdict(lambda: collections.deque(maxlen=48))        # unwrapped heading, every 0.25 s for 12 s
+    flagged = collections.defaultdict(float)                                   # (kind, car) -> time of the last report
+    state = collections.defaultdict(float)                                     # seconds a condition has held
+    clock = [0.0]
+    orig_next = T._next_edge
+
+    def next_edge(c):
+        e0 = world.edges[c.e]
+        turn, x, y = c.turn, c.x, c.y
+        ok = orig_next(c)
+        if abs(turn) > T.UTURN and math.hypot(x - cx, y - cy) < VIEW and clock[0] > warm:
+            near = [o for o in T.cars if o is not c and math.hypot(o.x - x, o.y - y) < 30.0] + \
+                   [b for b in sim.bodies if math.hypot(b.x - x, b.y - y) < 30.0]
+            multi = len(T.lanes_of(e0)) >= 2 if e0["ow"] else e0["w"] >= 8.0
+            out["uturn"].append(dict(t=round(clock[0], 1), x=round(x), y=round(y), cls=e0["cls"], w=e0["w"], multi=multi, others=len(near),
+                                     legal=(not multi and not near)))
+        return ok
+    T._next_edge = next_edge
     trail = collections.defaultdict(lambda: collections.deque(maxlen=80))
     nodes = [(n, jx, jz, idx) for n, ((jx, jz), idx) in lights.nodes.items()]
     for k in range(int((warm + secs) / dt)):
         t = k * dt
         lights.update(dt)
+        clock[0] = t
         sim.update(dt, inp, 1)
         if t < warm:
             continue
@@ -177,7 +203,47 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
                         out["jam"].append(dict(t=round(t, 1), x=round(c.x), y=round(c.y), cls=e["cls"], rem=round(e["len"] - c.s), edge=c.e,
                                                blk=type(c.blk).__name__ if c.blk is not None else None, rev=c.rev > 0))
                 else:
+                    if standing[v[0]] >= 25.0:
+                        out["jam"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), freed_after=standing[v[0]]))      # how long it took to get going again
                     standing[v[0]] = 0.0
+        # --- traffic law checks, one pass per 0.25 s
+        if k % 5 == 0:
+            for v in veh:
+                if v[6] != "car":
+                    continue
+                c = v[7]
+                e = world.edges[c.e]
+                key = v[0]
+                h = yaw[key]
+                prev = h[-1] if h else v[4]
+                h.append(prev + (v[4] - prev + math.pi) % (2 * math.pi) - math.pi)
+                if len(h) >= 48 and max(h) - min(h) > 4.2 and t - flagged[("loop", key)] > 30:
+                    flagged[("loop", key)] = t
+                    out["loop"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"], edge=c.e, turn=round(max(h) - min(h), 1), trail=list(trail[key])[-48::4]))
+                rh = T._ref(e, c.d, c.s, c.lane)[2]
+                against = abs((c.h - rh + math.pi) % (2 * math.pi) - math.pi) > 2.3 and v[5] > 2.0 and c.man <= 0 and c.rev <= 0
+                state[("ww", key)] = state[("ww", key)] + 0.25 if against else 0.0
+                if state[("ww", key)] > 3.0 and t - flagged[("ww", key)] > 20:
+                    flagged[("ww", key)] = t
+                    out["wrongway"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"], edge=c.e, v=round(v[5], 1)))
+                onc = (not e["ow"]) and (c.lane + c.shift + c.avoid) * c.lane < 0 and abs(c.lane + c.shift + c.avoid) > 0.9 and v[5] > 3.0
+                state[("oc", key)] = state[("oc", key)] + 0.25 if onc else 0.0
+                if state[("oc", key)] > 4.0 and t - flagged[("oc", key)] > 20:
+                    flagged[("oc", key)] = t
+                    out["oncoming"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"], edge=c.e, v=round(v[5], 1), blk=type(c.blk).__name__))
+                if v[5] > max(e["speed"] * 1.4, e["speed"] + 4.0) and t - flagged[("sp", key)] > 20:
+                    flagged[("sp", key)] = t
+                    out["speeding"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"], v=round(v[5], 1), limit=round(e["speed"], 1)))
+                T.lead = None
+                g = T.scan(c, 6.0)
+                if g is not None and g < 1.0 and v[5] > 6.0 and isinstance(T.lead[4] if T.lead else None, type(c)) and t - flagged[("tg", key)] > 20:
+                    flagged[("tg", key)] = t
+                    out["tailgate"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), v=round(v[5], 1), gap=round(g, 2)))
+                inbox = any(abs(jx - v[2]) < 5 and abs(jz - v[3]) < 5 for _n, jx, jz, _i in nodes)
+                state[("bb", key)] = state[("bb", key)] + 0.25 if (inbox and v[5] < 0.3) else 0.0
+                if state[("bb", key)] > 6.0 and t - flagged[("bb", key)] > 30:
+                    flagged[("bb", key)] = t
+                    out["boxblock"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"]))
     return dict(name=name, cars=cars, secs=secs, counts={k: len(v) for k, v in out.items()}, **out)
 
 
