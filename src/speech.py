@@ -4,8 +4,10 @@ Text -> phoneme list (letters / digraphs map one-to-one in Macedonian) -> per-sa
 tracks -> harmonic source shaped by three formant resonances plus band-shaped noise for fricatives and bursts.
 It is deliberately robotic; it only needs to be recognisably 'someone saying this'.  numpy only.
 """
-from texts import TXT
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # embedded Python (._pth) does not add the script folder
+from texts import TXT  # noqa: E402
 import hashlib
 import queue
 import threading
