@@ -613,7 +613,7 @@ def main():
                     particles.sparks(d["x"], d["y"], 5, 1.1)
                     shake = max(shake, 0.25)
             elif kind == "dog_bark":
-                aud.at("bark_" + "abc"[d["voice"]], d["x"], d["y"], 1.0, d["pitch"], maxd=110.0, ref=16.0)
+                aud.at("bark_" + "abcd"[d["voice"]], d["x"], d["y"], 1.0, d["pitch"], maxd=110.0, ref=16.0)
             elif kind == "dog_yip":
                 aud.at("yip", d["x"], d["y"], 0.9, d["pitch"], maxd=80.0, ref=12.0)
             elif kind == "dog_pet":

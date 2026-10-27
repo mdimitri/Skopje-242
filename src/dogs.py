@@ -28,7 +28,7 @@ class Dog:
         self.x, self.y, self.h, self.gz = x, y, rng.uniform(0, 6.28), None
         self.state, self.pose, self.t = "idle", "stand", rng.uniform(0.5, 3.0)
         self.spd, self.anim = 0.0, rng.uniform(0, 9)
-        self.coat, self.voice, self.pitch = rng.randrange(4), rng.randrange(3), rng.uniform(0.85, 1.3)
+        self.coat, self.voice, self.pitch = rng.randrange(4), rng.randrange(4), rng.uniform(0.92, 1.1)
         self.hub, self.tgt, self.key = hub, None, key
         self.bark_cd, self.cool, self.happy = 0.0, rng.uniform(0, 8), 0.0
         self.chaser, self.friend, self.curious = rng.random() < 0.45, rng.random() < 0.5, rng.random() < 0.3

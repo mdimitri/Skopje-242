@@ -44,6 +44,16 @@ def _env(n, a=0.005, d=0.3):
     return np.minimum(1, t / a) * np.exp(-t / d)
 
 
+# fitted to four real dog-bark recordings: (f0 Hz at 8 points, amplitude at 8 points, spectrum dB every 300 Hz from 0, duration s, harmonic share)
+DOG_VOICES = {
+    "a": ([326, 384, 418, 444, 432, 438, 431, 356], [0.08, 0.35, 0.71, 0.75, 0.74, 0.61, 0.28, 0.09], [-45, -31, -26, 0, -20, -16, -18, -16, -25, -31, -33, -37, -41, -39, -41, -38, -38, -40, -42, -39], 0.14, 0.75),
+    "b": ([405, 432, 450, 455, 469, 469, 447, 441], [0.04, 0.41, 0.68, 0.81, 0.68, 0.54, 0.22, 0.08], [-43, -34, -15, 0, -16, -17, -27, -28, -38, -45, -45, -45, -45, -45, -43, -39, -39, -38, -38, -39], 0.16, 0.76),
+    "c": ([507, 478, 451, 430, 400, 380, 368, 347], [0.03, 0.36, 0.75, 0.88, 0.82, 0.59, 0.25, 0.06], [-30, -18, -4, 0, -6, -18, -24, -28, -32, -36, -38, -38, -40, -42, -40, -38, -38, -40, -40, -42], 0.14, 0.71),
+    "d": ([485, 441, 416, 401, 418, 408, 394, 401], [0.07, 0.38, 0.73, 0.72, 0.74, 0.46, 0.22, 0.08], [-45, -23, -5, -18, -16, -25, -27, -35, -39, -44, -41, -41, -41, -45, -45, -42, -38, -42, -43, -44], 0.15, 0.69),
+}
+F1BOOST = {'a': 6.0, 'b': 7.5, 'c': 1.3, 'd': 1.3}
+
+
 def build():
     rng = np.random.default_rng(4)
     S = {}
@@ -184,48 +194,44 @@ def build():
         fr = 520 - 700 * tt
         x[i0:i0 + len(tt)] += (np.sin(np.cumsum(2 * np.pi * fr / SR)) + 0.4 * _lp(rng.standard_normal(len(tt)).astype(np.float32), 4)) * np.exp(-tt / 0.06)
     S["dog"] = x / np.abs(x).max() * 0.5
-    # stray dogs, synthesized: a bark is a glottal pulse train (falling harmonic spectrum, a little pitch wobble, rough amplitude
-    # flutter) pushed through moving vocal-tract formants, with a breathy noise burst at the start and noise riding on the formants
-    # after it; three dog "voices" (small yapper, mid mutt, big gruff one) and a short yip
-    def bark(f0, dur, fm, seed, n=1, gap=0.16, drop=0.75, hiss=0.5, rough=0.35):
+    # stray dogs, synthesized and fitted to four real recordings (pitch ~400-450 Hz and nearly flat, energy mostly 400-1300 Hz
+    # with a peak near 900 Hz, 0.14-0.16 s long, a ~60 ms swell instead of a click, about 70% harmonic and 30% breath):
+    # harmonics shaped by each recording's average spectrum, plus noise through the same shape.  "a".."d" = the four dogs.
+    def bark(v, seed, n=1, gap=0.1, fs=1.0, ds=1.0):
+        f0p, ap, db, dur, hnr = DOG_VOICES[v]
         r = np.random.default_rng(seed)
-        out = np.zeros(int(SR * (dur * n + gap * n + 0.12)), np.float32)
-
-        def smooth(n_, k):
-            w = _lp(r.standard_normal(n_).astype(np.float32), k)
-            return w / (np.abs(w).std() + 1e-9)
+        hz = np.arange(len(db)) * 300.0
+        out = np.zeros(int(SR * (dur * ds * n + gap * n + 0.1)), np.float32)
         for k in range(n):
-            N = int(dur * SR)
+            N = int(dur * ds * SR * (1 + 0.1 * r.uniform(-1, 1)))
             u = np.arange(N, dtype=np.float32) / N
-            tt = u * dur
-            f = f0 * (0.88 + 0.2 * np.minimum(1.0, u / 0.12)) * (1.0 - (1.0 - drop) * u) * (1.0 + 0.03 * smooth(N, 300)) * (1.0 + 0.04 * k)
+            env = np.interp(u, np.linspace(0, 1, 8), ap)
+            w = _lp(r.standard_normal(N).astype(np.float32), 300)
+            w /= np.abs(w).std() + 1e-9
+            f = np.interp(u, np.linspace(0, 1, 8), f0p) * fs * (1 + 0.015 * w) * (1 - 0.04 * k)
             ph = np.cumsum(2 * np.pi * f / SR)
-            sh = 0.85 + 0.3 * np.sin(np.pi * np.minimum(1.0, u * 1.1))                  # the mouth opens then closes: the formants move
             y = np.zeros(N, np.float32)
-            for h in range(1, 46):
+            for h in range(1, 20):
                 fh = h * f
-                if fh.min() > 6000:
+                if fh.min() > 5500:
                     break
-                g = sum(a * np.exp(-((fh - fc * sh) / bw) ** 2) for fc, bw, a in fm) + 0.05 * np.exp(-fh / 2500.0)
-                y += np.sin(h * ph + h * 0.3) * g * h ** -0.9
-            y *= 1.0 + rough * smooth(N, 40) * 0.5                                     # irregular vocal-fold pulses
-            nz = r.standard_normal(N + 400).astype(np.float32)
-            spec = np.fft.rfft(nz)
-            fr = np.fft.rfftfreq(len(nz), 1.0 / SR)
-            G = sum(a * np.exp(-((fr - fc) / (bw * 1.6)) ** 2) for fc, bw, a in fm) + 0.15 * np.exp(-fr / 3000.0)
-            hs = np.fft.irfft(spec * G, len(nz))[:N].astype(np.float32)
-            hs /= np.abs(hs).max() + 1e-9
-            y = y / (np.abs(y).max() + 1e-9) + hiss * hs * (0.35 + 1.4 * np.exp(-tt / 0.025))
-            y *= np.minimum(1.0, tt / 0.004) * np.exp(-u * 2.0) * np.minimum(1.0, (1.0 - u) / 0.12)
-            i0 = int(k * (dur + gap) * SR)
-            out[i0:i0 + N] += y * (1.0 - 0.15 * k)
-        out -= _lp(out, 90)                                                             # no rumble below ~100 Hz
-        out = np.tanh(2.0 * out / np.abs(out).max()) / np.tanh(2.0)                      # a little throat distortion, and loud enough to be heard
+                y += np.sin(h * ph + 0.7 * h) * 10 ** (np.interp(fh, hz, db) / 20) * (F1BOOST[v] if h == 1 else 1.0)
+            y *= 1.0 + 0.1 * _lp(r.standard_normal(N).astype(np.float32), 30) * 3                       # uneven vocal-fold pulses
+            nz = r.standard_normal(N + 512).astype(np.float32)
+            G = 10 ** (np.interp(np.fft.rfftfreq(len(nz), 1 / SR), hz, db) / 20)
+            hs = np.fft.irfft(np.fft.rfft(nz) * G, len(nz))[:N].astype(np.float32)
+            y = y / (np.abs(y).max() + 1e-9) * hnr + hs / (np.abs(hs).max() + 1e-9) * (1 - hnr) * 0.7
+            y *= env
+            i0 = int(k * (dur * ds + gap) * SR)
+            out[i0:i0 + N] += y * (1 - 0.1 * k)
+        out -= _lp(out, 60)
+        out = np.tanh(1.6 * out / np.abs(out).max()) / np.tanh(1.6)
         return (out * 0.9).astype(np.float32)
-    S["bark_a"] = bark(690, 0.11, ((1000, 420, 1.0), (2500, 700, 0.6), (3800, 800, 0.25)), 11, n=2, gap=0.09, drop=0.8)
-    S["bark_b"] = bark(430, 0.17, ((720, 320, 1.0), (1700, 600, 0.55), (3100, 800, 0.2)), 12, n=1, drop=0.7)
-    S["bark_c"] = bark(235, 0.27, ((480, 240, 1.0), (1250, 450, 0.5), (2500, 700, 0.18)), 13, n=1, drop=0.6, hiss=0.65, rough=0.5)
-    S["yip"] = bark(1250, 0.12, ((1500, 500, 1.0), (3300, 800, 0.5)), 14, n=1, drop=0.55, hiss=0.35, rough=0.2)
+    S["bark_a"] = bark("a", 11)
+    S["bark_b"] = bark("b", 12)
+    S["bark_c"] = bark("c", 13)
+    S["bark_d"] = bark("d", 14)
+    S["yip"] = bark("a", 15, fs=1.7, ds=0.55)
     t = _t(3.0)
     x = sum(np.sin(2 * np.pi * f * t) * a for f, a in ((196, 1.0), (392, 0.5), (588, 0.3), (237, 0.4))) * np.exp(-t / 0.9)
     S["bell"] = x / np.abs(x).max() * 0.5
