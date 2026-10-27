@@ -5,10 +5,15 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 $rt = Join-Path $root '.runtime'
 New-Item -ItemType Directory -Force -Path $rt | Out-Null
+# install log: everything printed below plus a system summary goes to logs\install.log (overwritten each run)
+New-Item -ItemType Directory -Force -Path "$root\logs" | Out-Null
+try { Start-Transcript -Path "$root\logs\install.log" -Force | Out-Null } catch {}
+Write-Host ("[log] {0}  Windows {1}  PowerShell {2}  user {3}" -f (Get-Date -Format s), [Environment]::OSVersion.Version, $PSVersionTable.PSVersion, $env:USERNAME)
+Write-Host "[log] folder: $root  (src\texts.py present: $(Test-Path "$root\src\texts.py"), text\ present: $(Test-Path "$root\text"))"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
 $script:step = 0
-$script:steps = 4
+$script:steps = 5
 function Say($m) { Write-Host "[setup] $m" }
 function Step($name) {
     $script:step++
@@ -82,7 +87,8 @@ if ($LASTEXITCODE -ne 0) {
 Step 'Voice (Suze, RHVoice)'
 & $py -c "import comtypes" 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { & $py -m pip install --disable-pip-version-check --no-warn-script-location comtypes }
-& $py "$root\src\speech.py" 2>$null | Out-Null
+$vo = & $py "$root\src\speech.py" 2>&1 | Out-String
+Write-Host "[log] voice check (exit $LASTEXITCODE): $vo"
 if ($LASTEXITCODE -ne 0 -and (Test-Path "$root\tools\rhvoice_urls.txt")) {
     Say "Installing the Macedonian voice Suze (RHVoice engine + voice, Windows may ask for permission) ..."
     $dl = "$rt\rhvoice"; New-Item -ItemType Directory -Force -Path $dl | Out-Null
@@ -99,6 +105,15 @@ if ($LASTEXITCODE -ne 0 -and (Test-Path "$root\tools\rhvoice_urls.txt")) {
     if ($LASTEXITCODE -ne 0) { Say "Suze is not available - the built-in voice is used. Run run.bat again to retry." }
 }
 Set-Content -Path "$rt\python.txt" -Value $py -Encoding ASCII
+
+# final self-check, so the log proves the game's own imports work with this exact Python
+Step 'Self-check'
+Write-Host "[log] python: $py"
+& $py -c "import sys; print(sys.version); print(sys.path)" 2>&1 | Out-Host
+& $py -m pip list --disable-pip-version-check 2>&1 | Out-Host
+$chk = & $py -c "import sys; sys.path.insert(0, r'$root\src'); from texts import TXT; import pyray, numpy, PIL, mapbox_earcut; print('imports OK')" 2>&1 | Out-String
+Write-Host "[log] self-check (exit $LASTEXITCODE): $chk"
+try { Stop-Transcript | Out-Null } catch {}
 
 Write-Progress -Activity "Skopje 242 setup" -Completed
 Say "Ready - starting the game (the map is downloaded and built inside the game window, with a progress screen)."
