@@ -24,6 +24,9 @@ class Signals:
             self.by_edge[(ei, end)] = i
             self.nodes.setdefault(node, [(jx, jz), []])[1].append(i)
             r = RANK.get(world.edges[ei]["cls"].replace("_link", ""), 0) if hasattr(world, "edges") else 0
+            if hasattr(world, "edges"):
+                e_ = world.edges[ei]
+                r += min(0.9, (e_["w"] if e_["ow"] else e_["w"] / 2.0) / 20.0)      # same class: the wider carriageway (a boulevard) wins
             rank[(node, grp)] = max(rank.get((node, grp), 0), r)
         self.major = {n: (1 if rank.get((n, 1), 0) > rank.get((n, 0), 0) else 0) for n in self.nodes}
         self.pre = {}                                    # junction -> (group held green, until)

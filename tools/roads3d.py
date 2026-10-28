@@ -486,7 +486,46 @@ def _isect(p, d, q, e):
     return (p[0] + d[0] * t, p[1] + d[1] * t)
 
 
-def _corners(out, edges, plates, ribs, trims):
+def _clip_foot(L, R, covered):
+    """Cut a footway strip back at both ends to where it leaves the asphalt of the road it joins (it used to run on to the
+    node on the carriageway's centre line, a slab of pavement across the road).  None when all of it lies on asphalt."""
+    def at(L, R, k, k2, t):
+        return ((L[k][0] + (L[k2][0] - L[k][0]) * t, L[k][1] + (L[k2][1] - L[k][1]) * t),
+                (R[k][0] + (R[k2][0] - R[k][0]) * t, R[k][1] + (R[k2][1] - R[k][1]) * t))
+
+    def mid(l, r):
+        return (l[0] + r[0]) / 2, (l[1] + r[1]) / 2
+
+    def head(L, R):
+        for k in range(len(L) - 1):
+            if not covered(*mid(L[k], R[k])):
+                return L[k:], R[k:]
+            if not covered(*mid(L[k + 1], R[k + 1])):
+                lo, hi = 0.0, 1.0                                  # the asphalt's edge, by bisection along the segment
+                for _ in range(7):
+                    m = (lo + hi) / 2
+                    lo, hi = (m, hi) if covered(*mid(*at(L, R, k, k + 1, m))) else (lo, m)
+                nl, nr = at(L, R, k, k + 1, hi)
+                return [nl] + L[k + 1:], [nr] + R[k + 1:]
+        return None
+
+    h = head(L, R)
+    if h is None:
+        return None
+    t = head(h[0][::-1], h[1][::-1])
+    return None if t is None else (t[0][::-1], t[1][::-1])
+
+
+def _in_hulls(hulls, x, y):
+    """Is (x, y) inside a junction plate (the convex asphalt hull)?"""
+    for x0, y0, x1, y1, H in hulls:
+        if x0 <= x <= x1 and y0 <= y <= y1 and all((H[(k + 1) % len(H)][0] - H[k][0]) * (y - H[k][1]) - (H[(k + 1) % len(H)][1] - H[k][1]) * (x - H[k][0]) >= -0.05 for k in range(len(H))) \
+                or x0 <= x <= x1 and y0 <= y <= y1 and all((H[(k + 1) % len(H)][0] - H[k][0]) * (y - H[k][1]) - (H[(k + 1) % len(H)][1] - H[k][1]) * (x - H[k][0]) <= 0.05 for k in range(len(H))):
+            return True
+    return False
+
+
+def _corners(out, edges, plates, ribs, trims, cov, hulls):
     """Curb corners at every junction: the pavements of neighbouring roads join in a smooth arc (shared vertices at both
     ends), with asphalt filling the space between the arc and the junction plate."""
     for node, (lst, maxhw) in plates.items():
@@ -550,13 +589,19 @@ def _corners(out, edges, plates, ribs, trims):
             else:
                 I, O = [A, B], [A2, B2]
             pc = (178, 174, 166)
+            br = edges[top[0]]["bridge"]
             for j in range(len(I) - 1):
+                mx_ = (I[j][0] + I[j + 1][0] + O[j][0] + O[j + 1][0]) / 4
+                my_ = (I[j][1] + I[j + 1][1] + O[j][1] + O[j + 1][1]) / 4
+                ix_, iy_ = (I[j][0] + I[j + 1][0]) / 2, (I[j][1] + I[j + 1][1]) / 2
+                if (cov.covered(mx_, my_, -1, br) or _in_hulls(hulls, mx_, my_)) and (cov.covered(ix_, iy_, -1, br) or _in_hulls(hulls, ix_, iy_)):
+                    continue                                       # that stretch lies on a carriageway: no kerb across asphalt
                 out.quad((I[j][0], SW_H, I[j][1]), (I[j + 1][0], SW_H, I[j + 1][1]), (O[j + 1][0], SW_H, O[j + 1][1]), (O[j][0], SW_H, O[j][1]), pc)
                 out.quad((I[j][0], yv - 0.012, I[j][1]), (I[j + 1][0], yv - 0.012, I[j + 1][1]), (I[j + 1][0], SW_H, I[j + 1][1]),
                          (I[j][0], SW_H, I[j][1]), (150, 148, 142), 0.78)
 
 
-def _junctions(out, edges, plates):
+def _junctions(out, edges, plates, hulls):
     """One seamless asphalt plate over every junction where roads of different classes (or 3+ roads) meet: no steps
     between their heights, no gutter lines or end caps showing, one colour (that of the most important road)."""
     n = 0
@@ -585,6 +630,7 @@ def _junctions(out, edges, plates):
         H = _hull(P)
         if len(H) < 3:
             continue
+        hulls.append((min(p[0] for p in H), min(p[1] for p in H), max(p[0] for p in H), max(p[1] for p in H), H))
         cx = sum(p[0] for p in H) / len(H)
         cz = sum(p[1] for p in H) / len(H)
         for k in range(len(H)):                         # fan, both windings (cheap; no culling surprises)
@@ -668,7 +714,12 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
             _strip(out, R2, R, y, dark)
             _strip(out, L2, R2, y, col)
         else:
-            _strip(out, L, R, y, col)
+            if not e["drive"] and not e["bridge"]:
+                lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False))
+                if lr is not None:
+                    _strip(out, lr[0], lr[1], y, col)
+            else:
+                _strip(out, L, R, y, col)
         # round fill at both ends so mitred junctions have no gaps
         for p, end_ in ((pts[0], 0), (pts[-1], 1)):
             if (i, end_) in joints:                            # shared cross-section: nothing to fill
@@ -677,6 +728,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                 continue
             if e["bridge"] and deg.get(e["a"] if end_ == 0 else e["b"], 0) >= 2:     # deck meets its approach road: no bulge over it
                 continue
+            if foot and not e["drive"] and cov.covered(p[0], p[1], i, False):
+                continue                                       # a footway's end on a carriageway: no disc of pavement there
             r = hw - (0.0 if foot else 0.0)
             ring = [(p[0] + math.cos(a * math.pi / 6) * r, p[1] + math.sin(a * math.pi / 6) * r) for a in range(12)]
             for k in range(0, 12, 2):
@@ -758,8 +811,9 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                 pier_done.add(e["road"])
                 _piers(pout, piers, deck, T)
         out.deck = None
-    _junctions(out, edges, plates)
-    _corners(out, edges, plates, ribs, trims)
+    hulls = []
+    _junctions(out, edges, plates, hulls)
+    _corners(out, edges, plates, ribs, trims, cov, hulls)
     for x, yy, ax, ay, w, *_r in xwalks:                      # zebra crossings + stop lines
         _zebra(out, x, yy, ax, ay, w)
     if os.environ.get("ROADS_DEBUG"):
