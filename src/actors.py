@@ -172,7 +172,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     sf = world.surface(p.x, p.y)
     if sf == 0:
         vf *= math.exp(-0.45 * dt)
-    vf -= vf * abs(vf) * 0.00085 * dt + (0.25 * dt if vf > 0 else -0.25 * dt if vf < 0 else 0)
+    lift = 1.25 if throttle == 0 else 1.0                           # off the gas the car slows 25 % faster
+    vf -= (vf * abs(vf) * 0.00085 * dt + (0.25 * dt if vf > 0 else -0.25 * dt if vf < 0 else 0)) * lift
     if handbrake:
         vf *= math.exp(-1.1 * dt)
         p.braking = True
@@ -2381,6 +2382,17 @@ class Sim:
         self.stats["stolen"] += 1
         self.ev("stolen", body=b)
 
+    def _shore(self, x, y, fallback):
+        """The nearest dry bank point to (x, y): rings of growing radius, first land that is not water or a bare bridge gap."""
+        w = self.w
+        for r in range(2, 90, 2):
+            for k in range(max(8, r)):
+                a = k * 2 * math.pi / max(8, r)
+                px, py = x + math.cos(a) * r, y + math.sin(a) * r
+                if w.surface(px, py) in (2, 3) and not w.wet(px, py, w.ground_y(px, py)):
+                    return px, py
+        return fallback[0], fallback[1]
+
     def exit_car(self):
         if self.mode != "car":
             return
@@ -2468,7 +2480,14 @@ class Sim:
                 c.drown += dt
                 c.vx *= math.exp(-2.5 * dt)
                 c.vy *= math.exp(-2.5 * dt)
-                if c.drown > 1.3:
+                if c.drown > 1.3 and c is self.car and self.mode == "car":
+                    ev("splash", x=c.x, y=c.y, big=True)             # the car sinks with you in it
+                    ev("walker_dead", cause="drown")
+                    self.exit_car()
+                    self.walker.health = 0
+                    self.walker.cause = "drown"
+                    c.drown = 0.0
+                elif c.drown > 1.3:
                     ev("splash", x=c.x, y=c.y)
                     c.x, c.y, c.h = self.safe
                     c.az, c.vz = self.safe_z, 0.0
@@ -2512,8 +2531,8 @@ class Sim:
                     wk.dead_t += dt
                     if wk.dead_t > 1.0:
                         ev("splash", x=wk.x, y=wk.y)
-                        wk.x, wk.y = self.safe[0], self.safe[1]
-                        wk.az, wk.vz = self.safe_z, 0.0
+                        wk.x, wk.y = self._shore(wk.x, wk.y, self.safe)      # you swim to the nearest bank
+                        wk.az, wk.vz = w.ground_y(wk.x, wk.y), 0.0
                         wk.dead_t = 0
                 elif sf in (2, 3) and wk.z < 0.3:
                     wk.dead_t = 0

@@ -614,6 +614,8 @@ def main():
                     shake = max(shake, 0.25)
             elif kind == "dog_bark":
                 aud.at("bark_" + "abcd"[d["voice"]], d["x"], d["y"], 1.0, d["pitch"], maxd=110.0, ref=16.0)
+                if d.get("text") and near(d["x"], d["y"], 30.0):
+                    popups.add(d["text"], d["x"], d["y"], 1.4, 1.2, (255, 235, 200), 18)
             elif kind == "dog_yip":
                 aud.at("yip", d["x"], d["y"], 0.9, d["pitch"], maxd=80.0, ref=12.0)
             elif kind == "dog_pet":

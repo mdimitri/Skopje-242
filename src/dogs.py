@@ -6,6 +6,7 @@ chase cyclists, scooters, mopeds and the horse cart.  A fist "attack" in front o
 and blasts, step back from brawls, and always jump clear of cars.
 
 Dogs only exist near the player (spawned at hubs 70-150 m away, dropped beyond 190 m); what is where is deterministic per hub."""
+import dog_lines
 import math
 import random
 
@@ -21,7 +22,7 @@ HUB_POIS = ("food", "market")
 
 
 class Dog:
-    __slots__ = ("x", "y", "h", "gz", "state", "pose", "t", "spd", "anim", "coat", "voice", "pitch", "hub", "tgt", "bark_cd", "cool",
+    __slots__ = ("x", "y", "h", "gz", "state", "pose", "t", "spd", "anim", "coat", "voice", "pitch", "hub", "tgt", "bark_cd", "talk_cd", "cool",
                  "chaser", "friend", "curious", "happy", "thr", "gx", "gy", "dx", "dy", "key")
 
     def __init__(self, x, y, rng, hub, key):
@@ -30,7 +31,7 @@ class Dog:
         self.spd, self.anim = 0.0, rng.uniform(0, 9)
         self.coat, self.voice, self.pitch = rng.randrange(4), rng.randrange(4), rng.uniform(0.92, 1.1)
         self.hub, self.tgt, self.key = hub, None, key
-        self.bark_cd, self.cool, self.happy = 0.0, rng.uniform(0, 8), 0.0
+        self.bark_cd, self.talk_cd, self.cool, self.happy = 0.0, 0.0, rng.uniform(0, 8), 0.0
         self.chaser, self.friend, self.curious = rng.random() < 0.45, rng.random() < 0.5, rng.random() < 0.3
         self.thr = None
         self.gx = self.gy = self.dx = self.dy = 0.0
@@ -227,8 +228,10 @@ class Dogs:
         rng = self.rng
         for d in self.live:
             if (d.x - x) ** 2 + (d.y - y) ** 2 < r * r:
+                was = d.state
                 d.state, d.thr, d.t, d.tgt = "flee", (x, y), rng.uniform(4.0, 7.0), None
-                if rng.random() < 0.4:
+                if was != "flee" and d.bark_cd <= 0 and rng.random() < 0.4:      # one yip per scare, not one per bullet of a burst
+                    d.bark_cd = rng.uniform(6.0, 10.0)
                     self.sim.ev("dog_yip", x=d.x, y=d.y, pitch=d.pitch * 1.15)
 
     def pettable(self, x, y, h, reach):
@@ -272,6 +275,7 @@ class Dogs:
         w = self.sim.w
         d.t -= dt
         d.bark_cd -= dt
+        d.talk_cd -= dt
         d.cool -= dt
         d.happy = max(0.0, d.happy - dt)
         d.spd = 0.0
@@ -340,7 +344,11 @@ class Dogs:
                            self._on_road(d) or not self._busy(d))
                 if d.bark_cd <= 0 and dist < 30:
                     d.bark_cd = self.rng.uniform(0.5, 0.9)
-                    self.sim.ev("dog_bark", x=d.x, y=d.y, voice=d.voice, pitch=d.pitch)
+                    near = dist < 6.0
+                    self.sim.ev("dog_bark", x=d.x, y=d.y, voice=d.voice, pitch=d.pitch,
+                                text=(dog_lines.GROWL if near else dog_lines.BARK) if d.talk_cd <= 0 else "")
+                    if d.talk_cd <= 0:
+                        d.talk_cd = self.rng.uniform(2.5, 4.0)
         elif d.state == "come":
             p = self.player
             if d.t <= 0 or p is None or math.hypot(p.x - d.x, p.y - d.y) < 1.7:
