@@ -316,7 +316,7 @@ class Loader:
         num = sum(bt[k] for k in self.b_done if k in bt) + bt.get(lab, 3.0) * min(1.0, part)
         self.b_frac = max(self.b_frac, min(0.99, num / den))
         self.f["build"] = max(self.f["build"], self.b_frac)
-        self.note = T.BUILD.get(lab, lab)
+        self.note = T.BUILD.get(lab, lab) + (f"  {n}/{total}  ({n * 100 // total}%)" if total else "")
 
     def build_finished(self, record=True):
         """Tool exited fine: remember how long each phase really took (next run's weights; not for the small demo city)."""

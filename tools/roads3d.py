@@ -10,6 +10,8 @@ import os
 
 import numpy as np
 
+from progress import Bar
+
 SUN = np.array([-0.45, 0.80, -0.40])
 SUN = SUN / np.linalg.norm(SUN)
 TOP = 0.52 + 0.55 * float(SUN[1])                       # flat surfaces facing up
@@ -682,7 +684,9 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
-    for i in order:
+    bar = Bar("3D roads", len(order) + 3, unit=" steps")
+    for n_, i in enumerate(order):
+        bar.update(n_)
         e = edges[i]
         if not (e["drive"] or e["walk"]):
             continue
@@ -811,15 +815,19 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                 pier_done.add(e["road"])
                 _piers(pout, piers, deck, T)
         out.deck = None
+    bar.update(len(order), "junctions")
     hulls = []
     _junctions(out, edges, plates, hulls)
+    bar.update(len(order) + 1, "corners")
     _corners(out, edges, plates, ribs, trims, cov, hulls)
+    bar.update(len(order) + 2, "crossings")
     for x, yy, ax, ay, w, *_r in xwalks:                      # zebra crossings + stop lines
         _zebra(out, x, yy, ax, ay, w)
     if os.environ.get("ROADS_DEBUG"):
         _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
     out.flush(add, mat)
     pout.flush(add, mat)
+    bar.done()
     return out.n + pout.n, piers
 
 
