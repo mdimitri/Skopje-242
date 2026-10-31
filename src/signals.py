@@ -39,6 +39,8 @@ class Signals:
             else:
                 anchors.append((jx, jz))
                 self.anchor[n] = jx
+        self._order = sorted(range(len(self.items)), key=lambda i: self.items[i][4])      # by x: draw() only walks the strip in view
+        self._xs = [self.items[i][4] for i in self._order]
         self.pre = {}                                    # junction -> (group held green, until)
         self.t = 0.0
 
@@ -121,10 +123,12 @@ class Signals:
     def draw(self, rect, ground_y):
         """The live lamp of every visible signal (the poles themselves are baked meshes)."""
         x0, y0, x1, y1 = rect
-        for i, it in enumerate(self.items):
+        import bisect
+        for i in self._order[bisect.bisect_right(self._xs, x0 - 5):bisect.bisect_left(self._xs, x1 + 5)]:
+            it = self.items[i]
             lx, lz = it[4], it[5]
             hb = it[8] if len(it) > 8 else 2.95
-            if x0 - 5 < lx < x1 + 5 and y0 - 5 < lz < y1 + 5:
+            if y0 - 5 < lz < y1 + 5:
                 st = self.state(i)
                 y = ground_y(lx, lz)
                 ax, ay = self._axis(i)                      # the head faces the approaching traffic, so its lamps sit on that side

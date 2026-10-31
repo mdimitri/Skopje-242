@@ -1551,35 +1551,35 @@ vec3 wear(vec3 c, float road, float crack){
 }
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
-  float warp = texture(texture1, wpos / 53.0 + 0.31).b;          // large-scale warp + scale drift: the 3.5 m grain tile never lines up twice
-  vec2 uv = wpos / (3.5 + 1.6 * warp) + (texture(texture1, wpos / 19.0).gb - 0.5) * 1.3;
+  vec4 w = texture(texture1, wpos / 53.0 + 0.31);                // large-scale warp + scale drift: the 3.5 m grain tile never lines up twice
+  vec2 uv = wpos / (3.5 + 1.6 * w.b) + (w.gr - 0.5) * 1.3;
   vec4 d = texture(texture1, uv);
-  vec4 d2 = texture(texture1, mat2(0.8, 0.6, -0.6, 0.8) * wpos / 5.9 + 0.17);
-  d.g = mix(d.g, d2.g, 0.5); d.a = max(d.a * 0.8, d2.a);
-  float e = 1.0 / 256.0;
-  float hx = texture(texture1, uv + vec2(e, 0.0)).r - d.r;      // bump: height gradient -> normal, fixed sun
-  float hz = texture(texture1, uv + vec2(0.0, e)).r - d.r;
-  vec3 n = normalize(vec3(-hx * 7.0, 1.0, -hz * 7.0));
-  float lit = clamp(dot(n, normalize(vec3(-0.45, 0.8, -0.4))) / 0.8, 0.6, 1.25);
-  float big = texture(texture1, wpos / 41.0).b;                  // large patches of dirt / worn ground
+  d.a *= 0.9;
+  float hl = texture(texture1, uv + vec2(0.45, 0.4) / 256.0).r - d.r;   // bump: height step towards the fixed sun (one fetch)
+  float lit = clamp((0.8 + 7.0 * hl) * 1.25, 0.6, 1.25);
   float ground = 1.0 - smoothstep(0.05, 0.16, distance(base.rgb, GROUND));
   float grass = clamp((base.g - max(base.r, base.b)) * 8.0, 0.0, 1.0);
   float k = max(max(ground, grass), 0.3);                          // roads keep a light asphalt grain
   vec3 c = base.rgb * mix(1.0, lit * (0.88 + 0.24 * d.g), k);
-  float big2 = texture(texture1, mat2(0.8, -0.6, 0.6, 0.8) * wpos / 67.3 + 0.5).b;   // incommensurate scales: no visible repeat
-  float macro = texture(texture1, mat2(0.6, 0.8, -0.8, 0.6) * wpos / 211.0 + 0.3).b * 0.6 + texture(texture1, wpos / 577.0 + 0.7).b * 0.4;
-  c = mix(c, c * vec3(0.93, 0.88, 0.8), ground * smoothstep(0.55, 0.8, big * 0.55 + big2 * 0.45) * 0.8);   // dirt patches
-  c *= mix(vec3(1.0), mix(vec3(1.08, 0.97, 0.78), vec3(0.84, 1.04, 0.82), smoothstep(0.3, 0.7, macro)), ground * 0.85);   // dry ochre ... fresh green stretches
+  if (ground > 0.0) {                                              // dirt / ochre-green patches: only on bare ground (texture fetches skipped elsewhere)
+    float big = texture(texture1, wpos / 41.0).b;                  // large patches of dirt / worn ground
+    float big2 = w.b;                                              // the 53 m warp sample doubles as the second, incommensurate patch scale
+    float macro = texture(texture1, mat2(0.6, 0.8, -0.8, 0.6) * wpos / 211.0 + 0.3).b;
+    c = mix(c, c * vec3(0.93, 0.88, 0.8), ground * smoothstep(0.55, 0.8, big * 0.55 + big2 * 0.45) * 0.8);   // dirt patches
+    c *= mix(vec3(1.0), mix(vec3(1.08, 0.97, 0.78), vec3(0.84, 1.04, 0.82), smoothstep(0.3, 0.7, macro)), ground * 0.85);   // dry ochre ... fresh green stretches
+  }
   c = mix(c, c * vec3(0.8, 0.95, 0.75), grass * d.a * 0.6);                           // grass blades
   float lum = dot(base.rgb, vec3(0.333));
   float grey = 1.0 - clamp((max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b))) * 9.0, 0.0, 1.0);
   float paved = grey * (1.0 - grass) * (1.0 - ground);                                 // asphalt and concrete: cracks and patches
-  vec4 cr = texture(texture2, wpos / 7.0);
-  float crack = cr.r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);   // cracks come in worn zones
-  c *= 1.0 - paved * crack * (lum > 0.5 ? 0.35 : 0.55);
-  c = mix(c, c * 0.82, paved * cr.g * 0.7);                            // tar patches / potholes
-  float road = paved * (1.0 - smoothstep(0.38, 0.52, lum));
-  c = wear(c, road, crack);
+  if (paved > 0.0) {
+    vec4 cr = texture(texture2, wpos / 7.0);
+    float crack = cr.r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);   // cracks come in worn zones
+    c *= 1.0 - paved * crack * (lum > 0.5 ? 0.35 : 0.55);
+    c = mix(c, c * 0.82, paved * cr.g * 0.7);                            // tar patches / potholes
+    float road = paved * (1.0 - smoothstep(0.38, 0.52, lum));
+    c = wear(c, road, crack);
+  }
   float wet = 1.0 - smoothstep(0.04, 0.12, distance(base.rgb, WATER));   // rivers / lakes: moving ripples
   if (wet > 0.0) {
     float r1 = texture(texture1, wpos / 9.0 + vec2(time * 0.031, time * 0.012)).r;
