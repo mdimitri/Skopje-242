@@ -462,7 +462,7 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
         return None
     P, U, C = [], [], []
     for i in rng.sample(order, min(len(order), n_max)):
-        w = rng.uniform(1.8, 3.6) * (2.2 if big else 1.0)
+        w = rng.uniform(2.6, 4.8) * (2.0 if big else 1.0)
         if w > ln[i] - 1.0:
             w = ln[i] - 1.0
         if w < 1.4:
@@ -484,7 +484,7 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
         A, B, Cc, D = (ax, y0, az), (bx, y0, bz), (bx, y1, bz), (ax, y1, az)
         P += [A, B, Cc, A, Cc, D]
         U += [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
-        sh = int(min(255, 255 * min(1.1, 0.52 + 0.55 * max(0.0, float(nx * SUN[0] + nz * SUN[2]))) * 0.92))
+        sh = int(255 * min(1.0, 0.82 + 0.3 * max(0.0, float(nx * SUN[0] + nz * SUN[2]))))     # paint stays vivid on shaded walls
         C += [(sh, sh, sh, 255)] * 6
     if not P:
         return None

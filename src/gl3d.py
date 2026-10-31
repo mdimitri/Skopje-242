@@ -190,7 +190,8 @@ def build_textures():
         import graffiti
         tex["graf"] = graffiti.build_atlas()
     except Exception:  # noqa: BLE001 - no graffiti rather than no game
-        pass
+        import traceback
+        print("[graffiti] atlas failed:\n" + traceback.format_exc())
     img = rl.gen_image_color(4, 4, rl.WHITE)
     tex["white"] = rl.load_texture_from_image(img)
     rl.unload_image(img)
