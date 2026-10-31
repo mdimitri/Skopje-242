@@ -5,6 +5,7 @@ import numpy as np
 import pyray as rl
 
 import actors
+import birdart
 import fx
 import gl3d
 import weaponart
@@ -49,6 +50,7 @@ class Renderer:
         self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
         self.ped_models = {}
         self.dog_models = {}
+        self.bird_models = {}
         self.pick_models = {}
         self.wreck_models = {}
         self.t = 0.0
@@ -163,6 +165,16 @@ class Renderer:
                     return fb                                  # (none yet: build it now, a person is never just a shadow)
             self._built += 1
             m = self.ped_models[key] = gl3d.ped_model(arch, tone, frame, skin)
+        return m
+
+    def bird_model(self, art, frame):
+        key = (art, frame)
+        m = self.bird_models.get(key)
+        if m is None:
+            if self._built >= self.BUILD_BUDGET:
+                return self.bird_models.get((art, 0))
+            self._built += 1
+            m = self.bird_models[key] = gl3d.bird_model(art, frame)
         return m
 
     def dog_model(self, coat, frame):
@@ -432,6 +444,16 @@ class Renderer:
                         dg = d.gz if d.gz is not None else w.ground_y(d.x, d.y)
                         rl.draw_model_ex(dm, V3(d.x, dg, d.y), UP, -math.degrees(d.h), V3(1.3, 1.3, 1.3), WHITE)           # a bit bigger than life: cute and readable from above
                         sh.append((d.x, d.y, d.h, 0.4 if d.pose != "sleep" else 0.32, 0.22, 55, dg))
+        birds = getattr(sim, "birds", None)
+        if birds is not None:                                          # ducks, pigeons, crows: tiny, culled early
+            for b in birds.live:
+                if self._in(b.x, b.y, rect) and (b.x - mcx) ** 2 + (b.y - mcz) ** 2 < min(far2, 60.0 ** 2):
+                    bm = self.bird_model(b.art, birds.frame(b))
+                    if bm is not None:
+                        sc = 1.9 * birdart.SIZE[b.art]
+                        rl.draw_model_ex(bm, V3(b.x, b.z, b.y), UP, -math.degrees(b.h), V3(sc, sc, sc), WHITE)
+                        if b.state not in ("fly", "land"):
+                            sh.append((b.x, b.y, b.h, 0.25 * sc, 0.15 * sc, 50, b.z))
         cb = sim.car
         if sim.mode == "car" and cb is not None and cb.kind in vehicles.BIKES and getattr(sim, "riding", None) is None:
             gy = cb.az if cb.az is not None else w.ground_y(cb.x, cb.y)       # you, sitting on (or standing on) the two-wheeler

@@ -2064,6 +2064,8 @@ class Sim:
         n = 0
         if getattr(self, "dogs", None) is not None:
             self.dogs.scare(x, y, r)
+        if getattr(self, "birds", None) is not None:
+            self.birds.flush(x, y, r * 1.5)
         for p in self.peds.list:
             if p.mode in ("walk", "brawl") and (p.x - x) ** 2 + (p.y - y) ** 2 < r * r:
                 d = math.hypot(p.x - x, p.y - y) or 1.0
@@ -2614,6 +2616,8 @@ class Sim:
             self.kids.update(dt)
         if getattr(self, "dogs", None) is not None:
             self.dogs.update(dt)
+        if getattr(self, "birds", None) is not None:
+            self.birds.update(dt)
         if getattr(self, "rentals", None) is not None:
             self.rentals.update(dt)
         if getattr(self, "works", None) is not None:

@@ -1459,6 +1459,11 @@ def dog_model(coat, frame):
     return _boxes_model(dogart.boxes(coat, frame))
 
 
+def bird_model(art, frame):
+    import birdart
+    return _boxes_model(birdart.boxes(art, frame))
+
+
 def wreck_model(kind, seed):
     """What is left of a broken tree / post / prop: a charred stump, a bent pole lying down, a crumpled heap."""
     rg = random.Random(seed)

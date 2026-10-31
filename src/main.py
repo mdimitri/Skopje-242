@@ -429,6 +429,8 @@ def main():
     log(f"[game] playgrounds / schools / pitches: {len(sim.kids.sites)}")
     import dogs as dogs_mod
     sim.dogs = dogs_mod.Dogs(sim)
+    import birds as birds_mod
+    sim.birds = birds_mod.Birds(sim)
     import rentals
     sim.rentals = rentals.Rentals(sim)
     log(f"[game] rental e-scooters: {len(sim.rentals.spots)}")
@@ -618,6 +620,8 @@ def main():
                 aud.at("bark_" + "abcd"[d["voice"]], d["x"], d["y"], 1.0, d["pitch"], maxd=110.0, ref=16.0)
                 if d.get("text") and near(d["x"], d["y"], 30.0):
                     popups.add(d["text"], d["x"], d["y"], 1.4, 1.2, (255, 235, 200), 18)
+            elif kind == "bird_call":
+                aud.at(d["call"], d["x"], d["y"], 0.7, 1.0, maxd=70.0, ref=8.0)
             elif kind == "dog_yip":
                 aud.at("yip", d["x"], d["y"], 0.9, d["pitch"], maxd=80.0, ref=12.0)
             elif kind == "dog_pet":
@@ -1248,6 +1252,15 @@ def main():
                 inp["move"] = (0.0, 0.0)
                 inp["attack"] = frame % 14 == 0
                 inp["jump"] = frame in (300, 322)
+            if os.environ.get("SK242_TEST_BIRDS") and sim.walker is not None:      # one of each, right in front of the camera
+                inp["move"], inp["run"] = (0.0, 0.0), False
+                if frame == 60:
+                    for k_, sp_ in enumerate(("duck", "pigeon", "crow", "duck", "pigeon", "crow")):
+                        b_ = birds_mod.Bird(sim.walker.x + 3.0 + 1.6 * (k_ % 3), sim.walker.y - 3.0 + 3.0 * (k_ // 3), sp_, random.Random(k_))
+                        b_.z = b_.gy = sim.w.ground_y(b_.x, b_.y)
+                        b_.state, b_.t = "idle", 99.0
+                        sim.birds.live.append(b_)
+                sim.birds.spawn_t = 9.0
             if os.environ.get("SK242_TEST_DOGS") and sim.walker is not None:       # stand still beside the nearest stray and pet it
                 inp["move"], inp["run"] = (0.0, 0.0), False
                 if frame == 100:
@@ -1592,6 +1605,8 @@ def main():
         print(f"[test] frames={frame} avg_frame={avg:.2f}ms worst={max(ft_hist) * 1000:.1f}ms ground={len(streamer.ground)} "
               f"meshes={len(streamer.meshes)} baked={streamer.baked} cars={len(sim.traffic.cars)} bodies={len(sim.bodies)} "
               f"peds={len(sim.peds.list)} jobs={[(j.kind, j.state) for j in sim.services.jobs]} stats={sim.stats} errors={guard.errors} stream_errors={streamer.errors}")
+        from collections import Counter
+        print("[test] birds", dict(Counter((b.species, b.state) for b in sim.birds.live)))
         print(f"[test] mode={sim.mode} focus={sim.focus()[:2]} health={sim.car.health:.0f} dents={len(sim.car.dents)}")
         import collections as _c
         print(f"[test] ped modes {dict(_c.Counter(p.mode for p in sim.peds.list))} queues {sum(len(q) for q in sim.transit.queue.values())} "
