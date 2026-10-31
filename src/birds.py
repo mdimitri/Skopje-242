@@ -1,4 +1,4 @@
-"""Round 26: ducks, pigeons and crows.
+"""Round 26: pigeons and crows (ducks were removed again).
 
 Not pedestrians: nothing can hurt them.  Ducks swim on the river and lakes and waddle about on the banks, pigeons peck about
 on squares and in parks (in little flocks), crows strut around parks and green patches.  Anything fast or loud (the player on
@@ -12,10 +12,10 @@ import soundlib
 CAP = 36
 SPAWN_MIN, SPAWN_MAX, DESPAWN = 25.0, 95.0, 140.0
 # kind -> (layers it likes in order of preference, flock size range, walk speed, flee distance)
-SPECIES = {"duck": (("water", "water", "park"), (2, 5), 0.9, 7.0), "pigeon": (("plaza", "plaza", "park"), (3, 8), 1.0, 5.5),
+SPECIES = {"pigeon": (("plaza", "plaza", "park"), (3, 8), 1.0, 5.5),
            "crow": (("park", "tree", "park"), (1, 3), 1.3, 8.0)}
-ART = {"duck": (0, 1), "pigeon": (2, 3), "crow": (4,)}
-CALLS = {"duck": "bird_duck", "pigeon": "bird_pigeon", "crow": "bird_crow"}
+ART = {"pigeon": (2, 3), "crow": (4,)}
+CALLS = {"pigeon": "bird_pigeon", "crow": "bird_crow"}
 
 
 class Bird:

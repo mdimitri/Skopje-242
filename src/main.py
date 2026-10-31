@@ -1255,7 +1255,7 @@ def main():
             if os.environ.get("SK242_TEST_BIRDS") and sim.walker is not None:      # one of each, right in front of the camera
                 inp["move"], inp["run"] = (0.0, 0.0), False
                 if frame == 60:
-                    for k_, sp_ in enumerate(("duck", "pigeon", "crow", "duck", "pigeon", "crow")):
+                    for k_, sp_ in enumerate(("pigeon", "crow", "pigeon", "crow", "pigeon", "crow")):
                         b_ = birds_mod.Bird(sim.walker.x + 3.0 + 1.6 * (k_ % 3), sim.walker.y - 3.0 + 3.0 * (k_ // 3), sp_, random.Random(k_))
                         b_.z = b_.gy = sim.w.ground_y(b_.x, b_.y)
                         b_.state, b_.t = "idle", 99.0
