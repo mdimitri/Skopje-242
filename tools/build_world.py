@@ -1337,6 +1337,7 @@ def main():
     parked = [q for q in parked if random.Random(int(q[0] * 7.0) * 100003 + int(q[1] * 13.0)).random() < 0.5]     # round 27: half as many everywhere, the centre-to-suburb gradient stays
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
+    phase("furniture")
     import furniture
 
     def _cell_ok(x, y):
@@ -1369,6 +1370,7 @@ def main():
     except Exception as e:  # noqa: BLE001 - furniture is decoration, never fatal
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
+    phase("leisure")
     sites = []
     try:                                                        # round 13: bushes, playgrounds, pitches, school yards
         import leisure
@@ -1382,6 +1384,7 @@ def main():
         traceback.print_exc()
         print(f"[build] leisure skipped: {e}")
 
+    phase("construction sites")
     works = []
     try:                                                        # round 20: fenced building sites on empty lots in built-up areas
         import construction
@@ -1412,6 +1415,7 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
+    phase("fill: gardens, scrub, boulders")
     try:                                                        # round 29: open ground gets gardens, scrub, boulders, vines
         import fill
         am = Image.new("L", (NCX, NCY), 0)
@@ -1434,6 +1438,7 @@ def main():
     # ---- leftovers on the carriageway: lamps, trees and collision posts that stand inside a drivable lane (OSM street_lamp
     # nodes on the centre line, links, bridge lamps above a road, fence panels of a site that overlaps a street) block
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
+    phase("carriageway cleanup")
     cgrid_ = {}
     for e_ in edges:
         if e_["drive"] and not e_["bridge"]:
@@ -1456,6 +1461,7 @@ def main():
     posts = [q for q in posts if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
+    phase("railway")
     stations, track = [], {"lines": [], "crossings": []}
     try:                                                        # round 21: railway viaducts, level crossings, stations
         import rail

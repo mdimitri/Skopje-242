@@ -37,6 +37,8 @@ BUILD_DEFAULT = {
     "procedural trees in parks/woods": 15, "street trees, lamps, parked cars": 25, "3D roads": 40, "ground rasters": 10,
     "tree meshes": 10, "lamp meshes": 5, "chunk index: areas": 10, "spawn point": 1, "write world": 2,
     "write mesh blob": 10, "write world parts": 10,
+    "furniture": 30, "leisure": 5, "construction sites": 20, "fill: gardens, scrub, boulders": 260,
+    "carriageway cleanup": 10, "railway": 3,
 }
 MK_LOG = "Тек на работата"
 MK_LEG = {"roads": "Патишта", "buildings": "Згради", "areas": "Зеленило", "water": "Води", "pois": "Знаменитости", "places": "Населби",

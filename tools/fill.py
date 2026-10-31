@@ -10,6 +10,7 @@ import random
 import numpy as np
 
 from furniture import G
+from progress import Bar
 from junk import _prism
 
 DRY = ((128, 124, 70), (146, 134, 78), (110, 118, 64), (150, 140, 96), (118, 108, 66))
@@ -154,7 +155,9 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
     def ok(x, z, r):
         return all(free(x + dx, z + dz) and area_ok(x + dx, z + dz) for dx, dz in ((0, 0), (r, 0), (-r, 0), (0, r), (0, -r)))
 
+    bar = Bar("fill: gardens, scrub, boulders", nb, unit=" rows")
     for by in range(nb):
+        bar.update(by)
         for bx in range(n):
             x0, z0 = -HX + bx * BLK, -HY + by * BLK
             r = random.Random(bx * 73856093 ^ by * 19349663)
@@ -207,6 +210,7 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
                 if r.random() < 0.16 and m > 0.4 and ok(cx, cz, 3.5):          # a lone walnut / mulberry / poplar
                     trees.append((cx + r.uniform(-4, 4), cz + r.uniform(-4, 4), r.uniform(2.4, 4.0), r.randint(0, 3)))
                     cnt["tree"] += 1
+    bar.done()
     log("[build] fill: " + ", ".join(f"{v} {k}" for k, v in cnt.items()))
     log(f"[build] fill samples: {samples[::max(1, len(samples) // 8)]}")
     return posts, trees
