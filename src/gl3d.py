@@ -1540,8 +1540,11 @@ vec3 wear(vec3 c, float road, float crack){
 }
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
-  vec2 uv = wpos / 3.5;
+  float warp = texture(texture1, wpos / 53.0 + 0.31).b;          // large-scale warp + scale drift: the 3.5 m grain tile never lines up twice
+  vec2 uv = wpos / (3.5 + 1.6 * warp) + (texture(texture1, wpos / 19.0).gb - 0.5) * 1.3;
   vec4 d = texture(texture1, uv);
+  vec4 d2 = texture(texture1, mat2(0.8, 0.6, -0.6, 0.8) * wpos / 5.9 + 0.17);
+  d.g = mix(d.g, d2.g, 0.5); d.a = max(d.a * 0.8, d2.a);
   float e = 1.0 / 256.0;
   float hx = texture(texture1, uv + vec2(e, 0.0)).r - d.r;      // bump: height gradient -> normal, fixed sun
   float hz = texture(texture1, uv + vec2(0.0, e)).r - d.r;
@@ -1587,6 +1590,18 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")].replace("in vec2 wpos;", 
   float crack = texture(texture2, wpos / 7.0).r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);
   c *= 1.0 - road * crack * 0.3;
   c = wear(c, road, crack);
+  float sw = step(0.55, lum) * step(lum, 0.8) * grey * step(0.92, abs(nrm.y));   // pale flat concrete = pavement: slabs, tone, grit
+  if (sw > 0.0) {
+    vec2 sp = wpos / vec2(0.95, 0.62) + vec2(0.0, 0.0);
+    vec2 cell = floor(sp);
+    float tone = h21(cell + 3.7);
+    vec2 f = abs(fract(sp) - 0.5);
+    float fw = fwidth(wpos.x) + fwidth(wpos.y);
+    float seam = smoothstep(0.455, 0.485, max(f.x, f.y)) * (1.0 - smoothstep(0.05, 0.2, fw));
+    float grit = texture(texture1, wpos / 1.7).r - 0.5;
+    float stain = smoothstep(0.55, 0.8, texture(texture1, wpos / 23.0).b);
+    c *= 1.0 + sw * ((tone - 0.5) * 0.09 + grit * 0.1 - stain * 0.07 - seam * 0.16);
+  }
   finalColor = vec4(c, base.a);
 }"""
 _solid = None
