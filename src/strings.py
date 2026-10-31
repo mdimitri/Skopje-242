@@ -70,6 +70,12 @@ BUILD = {
     "write world": TXT("strings.0064"),
     "write mesh blob": TXT("strings.0065"),
     "write world parts": TXT("strings.0066"),
+    "furniture": "Улична опрема",
+    "leisure": "Клупи, игралишта, терени",
+    "construction sites": "Градилишта",
+    "fill: gardens, scrub, boulders": "Градини, грмушки, камења",
+    "carriageway cleanup": "Чистење на коловозите",
+    "railway": "Железница",
 }
 
 # warnings by failure kind (tools/net.py)

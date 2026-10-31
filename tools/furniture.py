@@ -15,8 +15,11 @@ RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, 
         "living_street": 0, "service": 0}
 
 
+_SX, _SY, _SZ = (float(v) for v in SUN)
+
+
 def _sh(n):
-    return 0.52 + 0.55 * max(0.0, float(np.dot(n, SUN)))
+    return 0.52 + 0.55 * max(0.0, n[0] * _SX + n[1] * _SY + n[2] * _SZ)
 
 
 class G:
@@ -26,9 +29,10 @@ class G:
         self.p, self.c = [], []
 
     def tri(self, a, b, c, col, n):
-        s = _sh(np.array(n, float))
+        s = _sh(n)
         self.p += [a, b, c]
-        self.c += [(*[min(255, v * s) for v in col], 255)] * 3
+        r, g, b = col
+        self.c += [(min(255, r * s), min(255, g * s), min(255, b * s), 255)] * 3
 
     def quad(self, a, b, c, d, col, n):
         self.tri(a, b, c, col, n)
