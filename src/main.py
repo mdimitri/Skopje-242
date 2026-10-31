@@ -44,6 +44,7 @@ import talk   # noqa: E402
 import settings as settings_mod   # noqa: E402
 import geo as geo_mod   # noqa: E402
 import gl3d          # noqa: E402
+import fxaa as fxaa_mod   # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
@@ -290,6 +291,27 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
 
 
 # ----------------------------------------------------------------------- main
+def keep_window_alive(on):
+    """While loading, one long Python/numpy step (several seconds) used to stop the window from polling OS events, so it
+    froze and Alt+Tab / moving it hung.  A profile hook on the main thread polls events at least every 0.2 s, between any two
+    calls, without drawing (so it is safe even inside a render-texture pass)."""
+    if not on:
+        sys.setprofile(None)
+        return
+    last = [time.perf_counter()]
+
+    def hook(frame, event, arg):
+        now = time.perf_counter()
+        if now - last[0] > 0.2:
+            last[0] = now
+            sys.setprofile(None)
+            try:
+                rl.poll_input_events()
+            finally:
+                sys.setprofile(hook)
+    sys.setprofile(hook)
+
+
 def is_borderless():
     return bool(rl.is_window_state(rl.FLAG_BORDERLESS_WINDOWED_MODE))
 
@@ -329,7 +351,7 @@ def main():
     W, H = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["res"]]
 
     rl.set_trace_log_level(rl.LOG_WARNING)
-    flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] else 0)
+    flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0)
     rl.set_config_flags(flags)
     rl.init_window(W, H, TXT("main.0002"))
     if not rl.is_window_ready():                       # fallback: no MSAA / vsync
@@ -345,6 +367,8 @@ def main():
     rl.set_target_fps(0 if a.test else 144)
 
     need = plan_needs(a)
+    fxaa = fxaa_mod.Fxaa()
+    keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
@@ -539,6 +563,7 @@ def main():
         loader.mark_rect(key[0] * S, key[1] * S, (key[0] + 1) * S, (key[1] + 1) * S)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
+    keep_window_alive(False)
     gc.collect()
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
@@ -1509,6 +1534,9 @@ def main():
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()
+        fx_on = cfg["aa"] >= 2
+        if fx_on:
+            fxaa.begin(sw, sh)
         try:
             rl.clear_background(rl.Color(26, 28, 32, 255))
             if sf_on:
@@ -1571,6 +1599,8 @@ def main():
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
+            if fx_on:
+                fxaa.end()
             t_sw = time.perf_counter()
             rl.end_drawing()
         ft_hist.append(dt_real)
