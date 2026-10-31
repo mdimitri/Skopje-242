@@ -131,4 +131,6 @@ class Signals:
                 ly = y + hb + 0.17 + 0.30 * (2 - (2, 1, 0)[st])
                 a = rl.Vector3(lx - ax * 0.135, ly, lz - ay * 0.135)
                 rl.draw_cylinder_ex(a, rl.Vector3(a.x - ax * 0.03, ly, a.z - ay * 0.03), 0.105, 0.105, 10, COLS[st])
-                rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.24, 0.05, 0.22, COLS[st])
+                rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.6, 0.05, 0.6, COLS[st])      # from the top-down camera the lamp is a dot: bigger cap ...
+                bw, bd = (0.45, 2.4) if abs(ax) > abs(ay) else (2.4, 0.45)
+                rl.draw_cube(rl.Vector3(lx, y + 0.09, lz), bw, 0.03, bd, COLS[st])             # ... and a stop-line bar on the road in the lamp's colour
