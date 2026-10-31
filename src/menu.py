@@ -55,6 +55,8 @@ def _rows(in_game, slots=()):
         (2, H("Екран")),
         (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
         (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
+        # new labels live here until they can be added to text/ (human-edited)
+        (2, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
         (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (2, H("Камера")),
         (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),

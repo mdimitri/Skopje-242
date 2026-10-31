@@ -6,7 +6,9 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.path.join(ROOT, "settings.json")
 
-RESOLUTIONS = [(1280, 720), (1600, 900), (1920, 1080), (2560, 1440)]
+RESOLUTIONS = [(1280, 720), (1600, 900), (1920, 1080), (2560, 1440), (960, 540), (1024, 768), (1366, 768), (1440, 900),
+               (1680, 1050), (1920, 1200), (2560, 1080), (3440, 1440), (3840, 2160)]
+AA = ["Исклучено", "MSAA 4x"]
 DETAIL = [TXT("settings.0001"), TXT("settings.0002"), TXT("settings.0003")]
 TIME_SPEEDS = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
 DENSITY = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
@@ -19,7 +21,7 @@ LANGUAGE = [TXT("settings.0011"), TXT("settings.0012"), TXT("settings.0013")]
 VOICES = [TXT("settings.0014"), TXT("settings.0015")]
 
 DEFAULTS = {
-    "res": 1, "fullscreen": False, "detail": 2,
+    "res": 1, "aa": 1, "fullscreen": False, "detail": 2,
     "vol_master": 0.8, "vol_sfx": 1.0, "vol_engine": 0.8, "vol_ambient": 0.8, "vol_speech": 1.0, "vol_radio": 0.7,
     "lik": 0, "hour": 17.0, "time_speed": 3, "traffic": 3, "peds": 3,
     "ambulance": True, "fire": True, "voice": 1, "speech_speed": 2, "speech_freq": 3, "aggro": 1, "lang": 1, "osm_source": 0, "smog": True, "smog_level": 1.0, "pollution": 1.0,

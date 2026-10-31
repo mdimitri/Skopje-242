@@ -290,6 +290,17 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
 
 
 # ----------------------------------------------------------------------- main
+def is_borderless():
+    return bool(rl.is_window_state(rl.FLAG_BORDERLESS_WINDOWED_MODE))
+
+
+def set_borderless(on):
+    """Fullscreen as a borderless window on the monitor.  Exclusive fullscreen (rl.toggle_fullscreen) changes the
+    video mode and made Alt+Tab to other windows unreliable; a borderless window switches like any other window."""
+    if is_borderless() != on:
+        rl.toggle_borderless_windowed()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--world", help="world directory (default data/cache/world)")
@@ -318,7 +329,7 @@ def main():
     W, H = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["res"]]
 
     rl.set_trace_log_level(rl.LOG_WARNING)
-    flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | rl.FLAG_MSAA_4X_HINT
+    flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] else 0)
     rl.set_config_flags(flags)
     rl.init_window(W, H, TXT("main.0002"))
     if not rl.is_window_ready():                       # fallback: no MSAA / vsync
@@ -330,7 +341,7 @@ def main():
         log("[font] Cyrillic font not loaded: " + "; ".join(font.ERR or ["files missing in assets/fonts"]))
     rl.set_exit_key(rl.KEY_NULL)
     if a.fullscreen or cfg["fullscreen"]:
-        rl.toggle_fullscreen()
+        set_borderless(True)
     rl.set_target_fps(0 if a.test else 144)
 
     need = plan_needs(a)
@@ -461,8 +472,8 @@ def main():
         particles.max = (250, 600, 900)[d]
         night.detail = d
         if not a.test:
-            if bool(rl.is_window_fullscreen()) != bool(c["fullscreen"]):
-                rl.toggle_fullscreen()
+            if is_borderless() != bool(c["fullscreen"]):
+                set_borderless(bool(c["fullscreen"]))
             elif not c["fullscreen"] and not a.size:
                 w_, h_ = settings_mod.RESOLUTIONS[c["res"]]
                 if (rl.get_screen_width(), rl.get_screen_height()) != (w_, h_):
@@ -1351,7 +1362,7 @@ def main():
             if rl.is_key_pressed(rl.KEY_F3):
                 show_dbg = not show_dbg
             if rl.is_key_pressed(rl.KEY_F11):
-                rl.toggle_fullscreen()
+                set_borderless(not is_borderless())
             if rl.is_key_pressed(rl.KEY_ESCAPE) or want_menu:
                 want_menu = False
                 if show_map:
