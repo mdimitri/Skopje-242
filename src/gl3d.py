@@ -1121,14 +1121,15 @@ def _hero(i, frame):
     hc, hs = d["hair"]
     legc = d.get("legs") or sk
     shoe, belly, st = d["shoe"], d.get("belly", 0.0), d.get("stoop", 0.0)
-    frame, th, lean = _phase(frame)
+    jump = frame == 16                                   # airborne: arms up, both knees tucked, body upright
+    frame, th, lean = _phase(3 if jump else frame)
     if strike:
         th = lean = 0.0
     # legs: thigh swings from the hip, shin from the knee (the knee bends when the leg trails), foot with a sole
     for sg, z in ((1, -0.11), (-1, 0.11)):
         if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
             continue
-        a = th * sg
+        a = -0.9 if jump else th * sg
         i0 = len(parts)
         add(0.0, 0.42, z, 0.19, 0.42, 0.16, legc)
         _swing(parts, i0, 0.0, 0.84, a)
@@ -1139,7 +1140,7 @@ def _hero(i, frame):
         if "heels" in ex:
             add(-0.06, 0.0, z, 0.04, 0.12, 0.05, shoe)
         _swing(parts, i1, 0.0, 0.84, a)
-        flex = 0.9 * max(0.0, -a) + 0.15 * max(0.0, a)
+        flex = 1.5 if jump else 0.9 * max(0.0, -a) + 0.15 * max(0.0, a)
         _swing(parts, i1, 0.4 * math.sin(a), 0.84 - 0.4 * math.cos(a), -flex)
     if d.get("skirt") or d.get("legs") is None:
         add(0.0, 0.5, 0, 0.36, 0.34, 0.44, d.get("skirt") or top)                 # skirt / dress

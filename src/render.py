@@ -468,7 +468,7 @@ class Renderer:
             if wk.atk_t > 0:
                 frame = wk.atk_kind
             if wk.z > 0.05:
-                frame = 3
+                frame = 16                                 # jumping: upright, arms up, knees tucked
             if wk.duck_t > 0.0:
                 frame = 40 + (int(wk.anim * 3.0) & 7)      # crawling under a big vehicle: face down, limbs animated
             if wk.health <= 0:
