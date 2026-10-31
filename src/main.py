@@ -1,5 +1,7 @@
 """Скопје 242 - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
-from texts import TXT
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # embedded Python (._pth) does not add the script folder
+from texts import TXT  # noqa: E402
 import argparse
 import json
 import math

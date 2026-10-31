@@ -64,6 +64,10 @@ else {
     }
 }
 
+# embedded Python ignores the script folder (isolated ._pth mode): put src\ on its path for every script, old installs too
+$pth = Get-ChildItem "$rt\python" -Filter 'python*._pth' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($pth -and -not (Select-String -Path $pth.FullName -Pattern '^\.\.\\\.\.\\src$' -Quiet)) { Set-Content -Path $pth.FullName -Value (@(Get-Content $pth.FullName) + '..\..\src'); Say "added src to $($pth.Name)" }
+
 # ---------------------------------------------------------------- libraries
 Step 'Libraries'
 & $py -c "import pyray, numpy, PIL, mapbox_earcut" 2>$null | Out-Null
