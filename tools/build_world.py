@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 36
+VERSION = 37
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -523,6 +523,45 @@ def roof_graffiti(ring, bb, h, rng, n_max=1):
     return np.array(P, np.float32), np.array(U, np.float32), np.array(C, np.uint8)
 
 
+def pitched_graffiti(ring, h, apex_h, rng):
+    """One piece on the south-ish slope of a pyramid roof (the side the game camera sees) -> (pos, uv, col) or None."""
+    r = np.asarray(ring, dtype=np.float32)
+    cx, cz = float(r[:, 0].mean()), float(r[:, 1].mean())
+    d = np.roll(r, -1, axis=0) - r
+    ln = np.hypot(d[:, 0], d[:, 1])
+    best, bs = -1, -9.0
+    for i in range(len(r)):
+        if ln[i] < 3.2:
+            continue
+        nz = d[i, 0] / ln[i]                                   # outward z of the edge (outward = (dz, -dx))
+        sc = nz + 0.002 * float(ln[i])
+        if sc > bs:
+            best, bs = i, sc
+    if best < 0:
+        return None
+    i = best
+    w = min(float(ln[i]) * 0.85, 7.0)
+    s0 = rng.uniform(0.0, float(ln[i]) - w)
+    ux, uz = d[i, 0] / ln[i], d[i, 1] / ln[i]
+    a = (r[i, 0] + ux * s0, r[i, 1] + uz * s0)
+    b = (a[0] + ux * w, a[1] + uz * w)
+    dist = math.hypot((a[0] + b[0]) / 2 - cx, (a[1] + b[1]) / 2 - cz) or 1.0
+    L = math.hypot(dist, apex_h)
+    t0 = 0.12
+    t1 = min(0.8, t0 + (w * 0.5) / L)
+
+    def pt(q, t):
+        return (q[0] + (cx - q[0]) * t, h + apex_h * t + 0.05, q[1] + (cz - q[1]) * t)
+    A, B, Cc, D = pt(a, t0), pt(b, t0), pt(b, t1), pt(a, t1)
+    cell = rng.randrange(GRAF_N)
+    e = 3.0 / 1024
+    u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
+    v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+    P = [A, B, Cc, A, Cc, D]
+    U = [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
+    return np.array(P, np.float32), np.array(U, np.float32), np.array([(255, 255, 255, 255)] * 6, np.uint8)
+
+
 def flat_poly(v, tri, y, scale_uv, col):
     if not tri:
         return None
@@ -965,6 +1004,10 @@ def main():
                 badd(MAT_GRAF, *gg)
         if small:
             badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
+            if rg.random() < 0.7:                                              # a piece on the visible roof slope
+                pg = pitched_graffiti(outer, h, 1.8 + math.sqrt(ar) * 0.12, rg)
+                if pg:
+                    badd(MAT_GRAF, *pg)
         else:
             for hole in holes:
                 hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32))
