@@ -1030,7 +1030,7 @@ def main():
                     k_ = "step_run_asphalt" if run_ else "step_asphalt"
                 else:
                     k_ = "step_grass" if sx["env"].get("park", 0) + sx["env"].get("tree", 0) > 0.5 else "step_dirt"
-                aud.play(k_, 0.45 if run_ else 0.3, 1.0, "sfx")
+                aud.play(k_, 0.45 if run_ else 0.3, rng.uniform(0.88, 1.12), "sfx")
             if v > 0.6 and world.wet(wk.x, wk.y, wk.az) and t_game > sx["swim"]:
                 sx["swim"] = t_game + 3.0
                 aud.play("swim_stroke", 0.5, 1.0, "sfx")

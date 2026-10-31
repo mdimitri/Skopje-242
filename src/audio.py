@@ -253,6 +253,24 @@ def build():
         fr = 3000 + rng.uniform(0, 1200) + 900 * np.sin(2 * np.pi * rng.uniform(14, 26) * tt)
         x[i0:i0 + len(tt)] += np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.exp(-tt / 0.07) * 0.5
     S["birds"] = _loopify(x)
+    # footsteps: heel thud + scuff, tuned per surface (the game varies the pitch a little on every step)
+    def step(dur, thud_f, thud_d, nz_lp, nz_d, nz_g, click=0.0):
+        t = _t(dur)
+        nz = rng.standard_normal(len(t)).astype(np.float32)
+        x = np.sin(2 * np.pi * thud_f * (1.0 - 2.5 * t) * t) * np.exp(-t / thud_d)
+        x = x + _lp(nz, nz_lp) * np.exp(-t / nz_d) * nz_g
+        if click:
+            x = x + (nz - _lp(nz, 6)) * np.exp(-t / 0.004) * click
+        return (x / np.abs(x).max() * 0.7).astype(np.float32)
+    S["step_asphalt"] = step(0.14, 130, 0.035, 3, 0.03, 0.7, 0.35)
+    S["step_run_asphalt"] = step(0.12, 170, 0.028, 2, 0.025, 0.9, 0.55)
+    S["step_grass"] = step(0.2, 90, 0.04, 8, 0.07, 1.1)
+    S["step_dirt"] = step(0.17, 110, 0.035, 5, 0.05, 1.2, 0.1)
+    S["step_wood"] = step(0.22, 190, 0.06, 4, 0.03, 0.4, 0.15)
+    t = _t(0.3)
+    nz = _lp(rng.standard_normal(len(t)).astype(np.float32), 4)
+    x = nz * np.exp(-t / 0.06) + np.sin(2 * np.pi * (300 + 900 * t) * t) * np.exp(-t / 0.05) * 0.5
+    S["puddle_step"] = (x / np.abs(x).max() * 0.6).astype(np.float32)
     # crickets
     t = _t(4.0)
     carr = np.sin(2 * np.pi * 4300 * t)

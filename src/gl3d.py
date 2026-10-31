@@ -1043,7 +1043,7 @@ def _ped_special(arch, tone, frame, skin):
         elif k == "long":
             add(hx - 0.03 + bx, 1.5 + Y, 0, 0.27, 0.12, 0.26, col); add(hx - 0.12 + bx, 1.0 + Y, 0, 0.1, 0.55, 0.28, col)
     else:
-        add(hx - 0.03 + bx, 1.5 + Y, 0, 0.27, 0.12, 0.26, hair)
+        add(hx - 0.03 + bx, 1.54 + Y, 0, 0.27, 0.15, 0.26, hair)
     if strike:
         _strike(add, strike, sk, D["legs"], D["shoe"], ac)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
@@ -1285,6 +1285,13 @@ def _hero(i, frame):
 
 def ped_arrays(arch, tone, frame, skin=0):
     """arch = archetype (see vehicles.PED_NAMES), tone 0..2 = colour variant, frame 0/1 walk, 2 lying, 3 arms up, 4 punch, 5 kick."""
+    if frame >= 40:                                    # 40..47: crawling on all fours, face down, the walk cycle drives the limbs
+        pos, uv, rgba = ped_arrays(arch, tone, frame - 20, skin)
+        x, y = pos[:, 0].copy(), pos[:, 1].copy()
+        pos = pos.copy()
+        pos[:, 0] = y * 0.8 - 0.15                     # head forward, body stretched out along the ground
+        pos[:, 1] = np.maximum(0.0, 0.3 - x) * 0.8 + 0.05 + np.abs(np.sin(math.pi * (frame % 10) / 4)) * 0.03
+        return pos, uv, rgba
     if arch >= 100:
         if frame == 13:                                # riding a two-wheeler: knees forward, lowered onto the seat, leaning in
             pos, uv, rgba = _hero(arch - 100, 12)
@@ -1399,7 +1406,7 @@ def ped_arrays(arch, tone, frame, skin=0):
     elif arch == 9:
         add(0.0, 1.62, 0, 0.32, 0.08, 0.30, (40, 90, 40))
     else:
-        add(-0.03, 1.5, 0, 0.27, 0.12, 0.26, hair)
+        add(-0.03, 1.54, 0, 0.27, 0.15, 0.26, hair)
         if arch == 7:
             add(-0.1, 1.05, 0, 0.1, 0.55, 0.28, hair)                                                # long hair
     if arch in (3, 5):

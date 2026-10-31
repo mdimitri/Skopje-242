@@ -768,8 +768,6 @@ class Peds:
         w, rng = self.w, self.rng
         out = []
         aggro = getattr(self.sim, "aggro", 1) if self.sim else 1
-        if rng.random() < dt * (0.01, 0.03, 0.06, 0.12)[aggro % 4]:
-            self._start_brawl(fx, fy, ev)
         tc = self.sim.traffic.cars if self.sim is not None else ()
         g_b, g_a = _cells(bodies), _cells((*bodies, *tc))          # 10 m grids: each person only checks the cars next to them
         dt0 = dt
@@ -2552,9 +2550,11 @@ class Sim:
                 if wk.combo_t <= 0:
                     wk.combo = 0
                 px0, py0 = wk.x, wk.y
+                wk.jump_t = 0.35 if inp.get("jump") else getattr(wk, "jump_t", 0.0) - dt     # Space: hop over small / crawl under big vehicles in the way
                 if wk.duck_t > 0.0:
                     wk.duck_t -= dt
                     wk.update(dt, inp["move"][0], inp["move"][1] * 0.5, False, w, False)      # crawling: half speed, no running or jumping
+                    wk.anim += abs(inp["move"][1]) * dt * 1.2
                 else:
                     wk.update(dt, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
                 if inp.get("attack"):
@@ -2616,7 +2616,7 @@ class Sim:
                             continue
                     nx, ny, pen = hit
                     closing = -((b.vx - wk.vx) * nx + (b.vy - wk.vy) * ny)      # > 0 when the car moves into the player
-                    if wk.moving and inp["move"][1] > 0.3 and math.hypot(b.vx, b.vy) < 1.5 and not b.exploded and wk.z < 0.3:
+                    if getattr(wk, "jump_t", 0.0) > 0 and wk.moving and inp["move"][1] > 0.3 and math.hypot(b.vx, b.vy) < 1.5 and not b.exploded and wk.z < 0.3:
                         if top <= 1.15:                    # walking into a small vehicle: hop over it
                             wk.vz = 6.6
                             continue

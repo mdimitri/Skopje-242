@@ -425,7 +425,7 @@ class Renderer:
                 else:
                     frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), (p.hy if p.vault > 0.0 else 0.0)
                     if p.vault > 0.0 and not p.vault_up:
-                        frame = 2                          # ducking under a big vehicle: crawling
+                        frame = 40 + (int(p.anim * 3.0) & 7)       # ducking under a big vehicle: crawling
                 lean = 0.0
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
@@ -470,7 +470,7 @@ class Renderer:
             if wk.z > 0.05:
                 frame = 3
             if wk.duck_t > 0.0:
-                frame = 2                                  # crawling under a big vehicle: down on the ground
+                frame = 40 + (int(wk.anim * 3.0) & 7)      # crawling under a big vehicle: face down, limbs animated
             if wk.health <= 0:
                 frame = 2
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
