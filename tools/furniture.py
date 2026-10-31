@@ -63,7 +63,7 @@ def _ngon(r, n, rot=0.0, cy=0.0):
     return [(r * math.cos(rot + 2 * math.pi * i / n), cy + r * math.sin(rot + 2 * math.pi * i / n)) for i in range(n)]
 
 
-def signal_pole(x, z, fx, fz, rx, rz, lit, arm=0.75, mast=False):
+def signal_pole(x, z, fx, fz, rx, rz, lit, arm=0.75, mast=False, extra=()):
     """Kerb pole with a European signal head hanging over the road (black housing, white-edged backplate, a visor over each lamp, bracket
     arm); mast=True: a tall pole whose arm reaches `arm` m over the lanes and carries the head. The head faces (fx, fz) and is turned to it."""
     g = G()
@@ -72,26 +72,28 @@ def signal_pole(x, z, fx, fz, rx, rz, lit, arm=0.75, mast=False):
     yaw = math.atan2(fx, -fz)                                   # local x of a box = the plate's right (-fz, fx)
     g.box(x, 0, z, 0.2 if mast else 0.14, 6.1 if mast else 3.9, 0.2 if mast else 0.14, col)
     g.box(x, 0, z, 0.3 if mast else 0.22, 0.3, 0.3 if mast else 0.22, col)           # base plate
-    hx, hz = x - rx * arm, z - rz * arm                         # housing hangs over the road
-    ay = 5.75 if mast else 3.55                                 # arm height; the head is hung from it
-    ex, ez = hx - x, hz - z
+    ay = 5.75 if mast else 3.55                                 # arm height; the heads are hung from it
+    reach = max((arm,) + tuple(extra))
+    ex, ez = -rx * reach, -rz * reach
     g.box(x + ex / 2, ay, z + ez / 2, math.hypot(ex, ez), 0.12 if mast else 0.07, 0.14 if mast else 0.08, col, math.atan2(ez, ex))
     t = (-fz, fx)
-    g.box(hx - fx * 0.14, hb - 0.16, hz - fz * 0.14, 0.7, 1.4, 0.03, (236, 236, 228), yaw)     # backplate: white edge ...
-    g.box(hx - fx * 0.125, hb - 0.12, hz - fz * 0.125, 0.6, 1.32, 0.03, (22, 22, 26), yaw)     # ... black centre
-    g.box(hx, hb, hz, 0.3, 1.05, 0.26, (28, 28, 32), yaw)
     cols = ((230, 40, 40), (240, 190, 30), (50, 220, 90))
-    for k, c in enumerate(cols):
-        on = (k == lit)                                         # lit = -1: all dark, the game draws the live lamp
-        cc = c if on else tuple(int(v * 0.22) for v in c)
-        ly = hb + 0.05 + 0.30 * (2 - k) + 0.12
-        g.vpoly(hx, ly, hz, fx, fz, _ngon(0.105, 10, 0.3), cc, 0.14)
-        vx, vz = hx + fx * 0.22, hz + fz * 0.22                 # visor: roof and two cheeks projecting from above the lamp
-        g.box(vx, ly + 0.11, vz, 0.27, 0.03, 0.2, (24, 24, 28), yaw)
-        for sd in (-1, 1):
-            g.box(vx + t[0] * 0.13 * sd, ly - 0.02, vz + t[1] * 0.13 * sd, 0.03, 0.15, 0.2, (24, 24, 28), yaw)
-    if lit >= 0:
-        g.box(hx, hb + 1.05, hz, 0.24, 0.05, 0.22, tuple(cols[lit]), yaw)    # lit lamp is also visible from above
+    for off in (arm,) + tuple(extra):                           # one head over each group of lanes
+        hx, hz = x - rx * off, z - rz * off                     # housing hangs over the road
+        g.box(hx - fx * 0.14, hb - 0.16, hz - fz * 0.14, 0.7, 1.4, 0.03, (236, 236, 228), yaw)     # backplate: white edge ...
+        g.box(hx - fx * 0.125, hb - 0.12, hz - fz * 0.125, 0.6, 1.32, 0.03, (22, 22, 26), yaw)     # ... black centre
+        g.box(hx, hb, hz, 0.3, 1.05, 0.26, (28, 28, 32), yaw)
+        for k, c in enumerate(cols):
+            on = (k == lit)                                     # lit = -1: all dark, the game draws the live lamp
+            cc = c if on else tuple(int(v * 0.22) for v in c)
+            ly = hb + 0.05 + 0.30 * (2 - k) + 0.12
+            g.vpoly(hx, ly, hz, fx, fz, _ngon(0.105, 10, 0.3), cc, 0.14)
+            vx, vz = hx + fx * 0.22, hz + fz * 0.22             # visor: roof and two cheeks projecting from above the lamp
+            g.box(vx, ly + 0.11, vz, 0.27, 0.03, 0.2, (24, 24, 28), yaw)
+            for sd in (-1, 1):
+                g.box(vx + t[0] * 0.13 * sd, ly - 0.02, vz + t[1] * 0.13 * sd, 0.03, 0.15, 0.2, (24, 24, 28), yaw)
+        if lit >= 0:
+            g.box(hx, hb + 1.05, hz, 0.24, 0.05, 0.22, tuple(cols[lit]), yaw)    # lit lamp is also visible from above
     return g
 
 
@@ -202,6 +204,76 @@ def lanes_n(e):
     return max(1, n // 2) if n else (2 if w >= 13.0 else 1)
 
 
+def plan_lights(edges, inc):
+    """Which junctions get traffic lights, from the road network alone: nodes joined by short links (the two halves of a boulevard
+    crossing, slip roads) form one junction; it is signalised when enough significant roads / lanes meet in it for the crossing flows
+    to conflict (two real roads crossing, a boulevard meeting anything, three or more mid-size arms), never for a lone side street
+    onto a through road or a ramp merge.  Returns (set of lit nodes, node -> junction id)."""
+    nodes = [n for n, lst in inc.items() if len(lst) >= 3]
+    par = {n: n for n in nodes}
+
+    def find(n):
+        while par[n] != n:
+            par[n] = par[par[n]]
+            n = par[n]
+        return n
+
+    for n in nodes:
+        for ei, end in inc[n]:
+            e = edges[ei]
+            o = e["b"] if end == 0 else e["a"]
+            if o in par and e["len"] < 45.0:
+                par[find(n)] = find(o)
+    groups = {}
+    for n in nodes:
+        groups.setdefault(find(n), []).append(n)
+    cand = []
+    for gid, mem in groups.items():
+        ms = set(mem)
+        arms = []
+        for n in mem:
+            for ei, end in inc[n]:
+                e = edges[ei]
+                if (e["b"] if end == 0 else e["a"]) in ms and e["len"] < 45.0:
+                    continue                                           # internal link
+                arms.append((RANK[e["cls"]], lanes_n(e), e["w"], e["cls"].endswith("_link"), e["len"]))
+        if len(arms) < 3:
+            continue
+        n2 = sum(1 for a in arms if a[0] >= 2)
+        n3 = sum(1 for a in arms if a[0] >= 3)
+        maxw = max(a[2] for a in arms)
+        multi = sum(1 for a in arms if a[1] >= 2)
+        links = sum(1 for a in arms if a[3])
+        if links and len(arms) <= 3:
+            continue                                                   # a ramp joining a road: a merge, not a crossing
+        if min(a[4] for a in arms) < 6.0:
+            pass
+        lit = n2 >= 3 or (n2 >= 2 and (n3 >= 2 or maxw >= 9.0 or multi >= 1)) or (len(arms) >= 4 and n2 >= 2) or (multi >= 2 and len(arms) >= 3)
+        if not lit:
+            continue
+        score = sum(a[0] + a[1] for a in arms)
+        pts = [edges[inc[n][0][0]]["pts"][0] if inc[n][0][1] == 0 else edges[inc[n][0][0]]["pts"][-1] for n in mem]
+        cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        cand.append((score, gid, mem, cx, cy))
+    cand.sort(key=lambda c: -c[0])
+    kept, grid = [], {}
+    for score, gid, mem, cx, cy in cand:                               # two junctions within 40 m: the bigger one keeps its lights
+        k = (int(cx // 40), int(cy // 40))
+        if any((cx - qx) ** 2 + (cy - qy) ** 2 < 40.0 ** 2 for a in (-1, 0, 1) for b in (-1, 0, 1) for qx, qy in grid.get((k[0] + a, k[1] + b), ())):
+            continue
+        grid.setdefault(k, []).append((cx, cy))
+        kept.append((gid, mem))
+    lit_nodes, cluster_of = set(), {}
+    for gid, mem in kept:
+        for n in mem:
+            lit_nodes.add(n)
+            cluster_of[n] = gid
+    for gid, mem in groups.items():
+        for n in mem:
+            cluster_of.setdefault(n, gid)
+    return lit_nodes, cluster_of
+
+
 SIGNALS = []        # (node, edge, end 0=a/1=b, group 0/1, lamp x, lamp z, junction x, junction z, housing height) - filled by build()
 
 
@@ -276,27 +348,14 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         if e["drive"] and not e["bridge"] and e["cls"] in RANK:
             inc.setdefault(e["a"], []).append((ei, 0))
             inc.setdefault(e["b"], []).append((ei, 1))
-    light_cells = set()
-    osm_sig = {}                                          # real traffic_signals nodes (fetch_extras), in a 40 m grid
-    for sx, sy in signals or ():
-        osm_sig.setdefault((int(sx // 40), int(sy // 40)), []).append((sx, sy))
-
-    def osm_lit(x, y):
-        return any((sx - x) ** 2 + (sy - y) ** 2 < 35.0 ** 2 for a in (-1, 0, 1) for b in (-1, 0, 1)
-                   for sx, sy in osm_sig.get((int(x // 40) + a, int(y // 40) + b), ()))
-
-    lit_osm = {n for n, lst in inc.items() if osm_sig and len(lst) >= 3 and osm_lit(
-        *(edges[lst[0][0]]["pts"][0] if lst[0][1] == 0 else edges[lst[0][0]]["pts"][-1]))}
-
-    lit_pts = []                                          # positions of every lit junction so far (real ones first)
-    for n_ in lit_osm:
-        _e, _end = inc[n_][0]
-        lit_pts.append(edges[_e]["pts"][0] if _end == 0 else edges[_e]["pts"][-1])
+    lit_nodes, cluster_of = plan_lights(edges, inc)           # signals come from the road network itself (lane flow), not from OSM
+    lit_pts = [edges[inc[n_][0][0]]["pts"][0] if inc[n_][0][1] == 0 else edges[inc[n_][0][0]]["pts"][-1] for n_ in lit_nodes]
 
     def inner(ei, end):
-        """A short link between two lit nodes of one big junction: no lights inside the junction itself."""
+        """A short link between two nodes of one signalised junction: no lights inside the junction itself."""
         e = edges[ei]
-        return e["len"] < 40.0 and (e["b"] if end == 0 else e["a"]) in lit_osm
+        o = e["b"] if end == 0 else e["a"]
+        return e["len"] < 45.0 and o in lit_nodes and cluster_of.get(o) == cluster_of.get(e["a"] if end == 0 else e["b"])
 
     for node, lst in inc.items():
         if len(lst) < 3:
@@ -308,19 +367,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         ranks = [RANK[edges[ei]["cls"]] for ei, _ in lst]
         top = max(ranks)
         maxw = max(edges[ei]["w"] for ei, _ in lst)
-        cell = (int(nx_ // 70), int(ny_ // 70))
-        if osm_sig:                                       # the real lights where the map has them, plus main junctions the map left out
-            gap = min(110.0, max(60.0, 6.0 * maxw))           # lit junctions sit further apart on wide roads (a boulevard's cross streets all get lights)
-            want_light = node in lit_osm or (len(lst) >= 3 and (sum(1 for r in ranks if r >= 3) >= 2 or (
-                len(lst) >= 4 and sum(1 for r in ranks if r >= 2) >= 2)) and not any(
-                (nx_ - qx_) ** 2 + (ny_ - qy_) ** 2 < gap ** 2 for qx_, qy_ in lit_pts))
-            if want_light and node not in lit_osm:
-                lit_pts.append((nx_, ny_))
-        else:
-            want_light = sum(1 for r in ranks if r >= 2) >= 2 and not any(
-                (cell[0] + a, cell[1] + b) in light_cells for a in (-1, 0, 1) for b in (-1, 0, 1))
-        if want_light:
-            light_cells.add(cell)
+        want_light = node in lit_nodes
         phase = rr.randint(0, 1)
         e_a, end_a = max(lst, key=lambda q: RANK[edges[q[0]]["cls"]])           # the biggest road sets signal group 0
         _x, _y, ux0, uy0 = at(edges[e_a], 0.0 if end_a == 0 else edges[e_a]["len"])
@@ -334,8 +381,10 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             grp = 0 if abs(dx * ux0 + dy * uy0) > 0.7 else 1
             SIGNALS.append((node, ei, end, grp, float("nan"), float("nan"), round(nx_, 1), round(ny_, 1), 2.95))
 
+        lit_node = want_light
         for (ei, end), rk in zip(lst, ranks):
             e = edges[ei]
+            want_light = lit_node and not (e["ow"] and end == 0)      # a one-way road leaving the junction has no approach to light
             if e["len"] < 16:
                 if want_light:
                     head_only(ei, end)
@@ -360,18 +409,22 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             if want_light and inner(ei, end):
                 pass
             elif want_light:                              # right kerb, further back, else the left kerb; lamps lit live
-                mast = w >= 9.0 and rk >= 2                  # wide main road: the head hangs from an arm over the lanes
-                arm = min(w * 0.55, 8.0) if mast else 0.75
+                nl = lanes_n(e)
+                mast = nl >= 2 or (w >= 9.0 and rk >= 2)           # several lanes: the heads hang from an arm over them
+                own = min(3.4 * nl, w if e["ow"] else w / 2.0)
+                nh = min(3, nl) if mast else 1
+                offs = [1.0 + own * (k + 0.5) / nh for k in range(nh)] if mast else [0.75]    # one head over each group of lanes
                 for back, side in ((3.8, 1), (9.0, 1), (3.8, -1), (9.0, -1)):
                     qx, qy = px + ax * back + rx * (w / 2 + 1.0) * side, py + ay * back + ry * (w / 2 + 1.0) * side
                     if back < e["len"] - d and not_building(qx, qy) and ok(qx, qy) and put(
-                            signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1, arm, mast), qx, qy):
+                            signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1, offs[0], mast, offs[1:]), qx, qy):
                         posts.append((qx, qy, 0.22))
                         counts["lights"] += 1
                         counts["masts"] += mast
                         grp = 0 if abs(ax * ux0 + ay * uy0) > 0.7 else 1
-                        SIGNALS.append((node, ei, end, grp, round(qx - rx * side * arm, 2), round(qy - ry * side * arm, 2),
-                                        round(nx_, 1), round(ny_, 1), 4.75 if mast else 2.95))
+                        for off in offs:
+                            SIGNALS.append((node, ei, end, grp, round(qx - rx * side * off, 2), round(qy - ry * side * off, 2),
+                                            round(nx_, 1), round(ny_, 1), 4.75 if mast else 2.95))
                         break
                 else:
                     head_only(ei, end)                    # every approach of a lit junction gets its lights

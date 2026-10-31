@@ -423,7 +423,9 @@ class Renderer:
                 elif getattr(p, "v", 1.0) < 0.1 and p.mode not in ("flee", "brawl"):
                     frame, y = 12, 0.0                             # standing still: arms down
                 else:
-                    frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), 0.0
+                    frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), (p.hy if p.vault > 0.0 else 0.0)
+                    if p.vault > 0.0 and not p.vault_up:
+                        frame = 2                          # ducking under a big vehicle: crawling
                 lean = 0.0
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
                     frame = 4
@@ -467,6 +469,8 @@ class Renderer:
                 frame = wk.atk_kind
             if wk.z > 0.05:
                 frame = 3
+            if wk.duck_t > 0.0:
+                frame = 2                                  # crawling under a big vehicle: down on the ground
             if wk.health <= 0:
                 frame = 2
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:

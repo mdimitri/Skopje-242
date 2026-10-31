@@ -509,6 +509,10 @@ class Ped:
         self.x = self.y = self.h = 0.0
         self.gz = None               # height of the surface they stand on (terrain or bridge deck)
         self.ko_land = False         # thrown out of a car / off a bike: lands unconscious instead of dead
+        self.blk = 0.0               # seconds pressed against a standing vehicle
+        self.vault = 0.0             # > 0: hopping over (hy arcs) or ducking under a vehicle that stands in the way
+        self.vault_t = 1.0
+        self.vault_up = True
 
     @property
     def dead(self):
@@ -527,6 +531,8 @@ class Walker:
         self.run = False
         self.dead_t = 0.0
         self.z = 0.0                 # height above the surface under the feet (jumping / falling)
+        self.duck_t = 0.0            # > 0: crawling under a big vehicle (slow, crouched)
+        self.duck_b = None
         self.vz = 0.0
         self.az = None               # absolute feet height (None -> ground)
         self.land_v = 0.0            # vertical speed of the last landing (Sim turns hard ones into damage)
@@ -832,11 +838,26 @@ class Peds:
             if p.mode in ("queue", "board", "alight", "play"):       # moved by Transit / Kids (they can still be hit)
                 out.append(p)
                 continue
-            if p.mode in ("walk", "flee", "rage", "brawl"):         # people are not ghosts: parked cars, wrecks and traffic push them out
+            if p.vault > 0.0:                                       # over / under the vehicle in the way: nothing pushes back for a moment
+                p.vault -= dt
+                u = max(0.0, 1.0 - p.vault / p.vault_t)
+                p.hy = 0.95 * math.sin(math.pi * u) if p.vault_up else 0.0
+                if p.vault <= 0.0:
+                    p.vault, p.hy = 0.0, 0.0
+            elif p.mode in ("walk", "flee", "rage", "brawl"):         # people are not ghosts: parked cars, wrecks and traffic push them out
+                pressed = False
                 for b in _near(g_a, p.x, p.y):
                     if abs(b.x - p.x) > 7 or abs(b.y - p.y) > 7:
                         continue
                     hit_ = push_from_box(b, p.x, p.y, 0.3)
+                    if hit_ is not None and p.mode == "walk" and getattr(b, "speed", 9.0) < 1.0 and not getattr(b, "exploded", False):
+                        pressed = True
+                        p.blk += dt
+                        if p.blk > 0.8:                             # stuck against it: hop over a small one, duck under a big one
+                            small = vehicles.DIMS[b.kind][4] * 0.6 <= 1.15
+                            p.vault, p.vault_up, p.blk = (0.8 if small else 1.7), small, 0.0
+                            p.vault_t = p.vault
+                            break
                     if hit_ is not None:
                         p.x += hit_[0] * hit_[2]
                         p.y += hit_[1] * hit_[2]
@@ -851,6 +872,8 @@ class Peds:
                         if ah_ is not None:
                             p.x += ah_[0] * 1.6 * dt
                             p.y += ah_[1] * 1.6 * dt
+                if not pressed:
+                    p.blk = max(0.0, p.blk - dt)
             # ------------- panic near fast cars
             if p.mode == "walk":
                 for b in near_b:
@@ -1499,6 +1522,27 @@ class Traffic:
                         return rem - 2.0
         return None
 
+    def _red_rem(self, c, L, sg):
+        """Distance to the stop line of a red / yellow signal that applies to car c, or None: on its own edge, or on the next
+        one when that is a short link into the junction (the signal sits at the end of the link, the car is still before it)."""
+        if sg is None:
+            return None
+        st = sg.state_of(c.e, 1 if c.d == 1 else 0)
+        rem = None
+        if st:
+            rem = L - c.s - 9.0                                    # stop line before the junction
+        elif c.nxt is not None:
+            e2 = self.w.edges[c.nxt[0]]
+            if e2["len"] < 60.0:
+                st = sg.state_of(c.nxt[0], 1 if c.nxt[1] == 1 else 0)
+                if st:
+                    rem = L - c.s + e2["len"] - 9.0
+        if rem is None:
+            return None
+        if st == 1 and rem < c.v * c.v / 7.0 + 1.0:
+            return None                                            # yellow and too close to stop comfortably: carries on through
+        return rem
+
     APPR = 24.0                      # m before a junction where cars sort out who goes first
 
     def _give_way(self, c, rem, me):
@@ -1662,10 +1706,9 @@ class Traffic:
             hold = c in mine and self._give_way(c, L - c.s, mine[c])
             if hold:
                 vlim = min(vlim, math.sqrt(2 * 3.5 * max(L - c.s - 7.0, 0.0)))
-            if sg is not None and sg.stop_for(c.e, 1 if c.d == 1 else 0):
-                rem = L - c.s - 9.0                                # stop line before the junction
-                if -2.5 < rem < 45.0:
-                    vlim = min(vlim, math.sqrt(2 * 3.5 * max(rem, 0.0)))
+            red_rem = self._red_rem(c, L, sg)
+            if red_rem is not None and -2.5 < red_rem < 45.0:
+                vlim = min(vlim, math.sqrt(2 * 2.6 * max(red_rem - 1.0, 0.0)))     # eases off early and stops a metre short of the line
             wb = vehicles.DIMS[c.kind][0] * 0.6
             la = 3.0 + c.v * 0.55
             tx, ty, _th = self._target(c, e, la)
@@ -1680,7 +1723,7 @@ class Traffic:
                         self.despawned += 1
                         continue
                     vlim, at_red = min(vlim, math.sqrt(2 * 3.5 * max(hold_at, 0.0))), True
-            if (sg is not None and sg.stop_for(c.e, 1 if c.d == 1 else 0) and -2.5 < L - c.s - 9.0 < 150.0) or hold:
+            if (red_rem is not None and -2.5 < red_rem < 150.0) or hold:
                 at_red = True                                      # queueing for a red light / giving way is not a jam to escape
             tr = getattr(self.sim, "trains", None)
             if tr is not None and tr.closed:
@@ -2507,7 +2550,11 @@ class Sim:
                 if wk.combo_t <= 0:
                     wk.combo = 0
                 px0, py0 = wk.x, wk.y
-                wk.update(dt, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
+                if wk.duck_t > 0.0:
+                    wk.duck_t -= dt
+                    wk.update(dt, inp["move"][0], inp["move"][1] * 0.5, False, w, False)      # crawling: half speed, no running or jumping
+                else:
+                    wk.update(dt, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
                 if inp.get("attack"):
                     self.attack()
                 if inp.get("buy") is not None:
@@ -2553,6 +2600,8 @@ class Sim:
                     top = vehicles.DIMS[b.kind][4] * 0.6
                     if wk.z > top:                         # jumped onto / over the car
                         continue
+                    if wk.duck_t > 0.0 and getattr(wk, "duck_b", None) is b:
+                        continue                           # crawling under it
                     hit = push_from_box(b, wk.x, wk.y, 0.38)
                     if hit is None:                        # swept: player and car moved a lot this frame (run, big dt): test the path
                         mv = step_ + math.hypot(b.vx, b.vy) * dt
@@ -2565,6 +2614,12 @@ class Sim:
                             continue
                     nx, ny, pen = hit
                     closing = -((b.vx - wk.vx) * nx + (b.vy - wk.vy) * ny)      # > 0 when the car moves into the player
+                    if wk.moving and inp["move"][1] > 0.3 and math.hypot(b.vx, b.vy) < 1.5 and not b.exploded and wk.z < 0.3:
+                        if top <= 1.15:                    # walking into a small vehicle: hop over it
+                            wk.vz = 6.6
+                            continue
+                        wk.duck_t, wk.duck_b = 2.2, b      # a big one: crouch and crawl underneath
+                        continue
                     wk.x += nx * pen
                     wk.y += ny * pen
                     wk.push_out(w)

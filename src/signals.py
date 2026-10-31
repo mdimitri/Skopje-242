@@ -29,6 +29,16 @@ class Signals:
                 r += min(0.9, (e_["w"] if e_["ow"] else e_["w"] / 2.0) / 20.0)      # same class: the wider carriageway (a boulevard) wins
             rank[(node, grp)] = max(rank.get((node, grp), 0), r)
         self.major = {n: (1 if rank.get((n, 1), 0) > rank.get((n, 0), 0) else 0) for n in self.nodes}
+        self.anchor = {}                                 # junction -> x of the junction it belongs to: the parts of one big
+        anchors = []                                     # crossing (nodes a few metres apart) must switch together, not in a wave
+        for n, ((jx, jz), _idx) in sorted(self.nodes.items(), key=lambda kv: kv[1][0]):
+            for ax_, az_ in anchors:
+                if (ax_ - jx) ** 2 + (az_ - jz) ** 2 < 55.0 ** 2:
+                    self.anchor[n] = ax_
+                    break
+            else:
+                anchors.append((jx, jz))
+                self.anchor[n] = jx
         self.pre = {}                                    # junction -> (group held green, until)
         self.t = 0.0
 
@@ -41,7 +51,7 @@ class Signals:
         p = self.pre.get(node)
         if p is not None and p[1] > self.t:
             return 0 if grp == p[0] else 2
-        ph = (self.t - jx / WAVE) % CYCLE
+        ph = (self.t - self.anchor.get(node, jx) / WAVE) % CYCLE
         g1 = GREEN + YELLOW + CLEAR                      # the major group runs first, the minor one after it
         if grp == self.major.get(node, 0):
             return 0 if ph < GREEN else (1 if ph < GREEN + YELLOW else 2)
@@ -97,6 +107,11 @@ class Signals:
             d = math.hypot(dx, dy) or 1.0
             a[i] = (dx / d, dy / d)
         return a[i]
+
+    def state_of(self, ei, end):
+        """0 green, 1 yellow, 2 red for the approach (edge ei, end), None when it has no signal."""
+        i = self.by_edge.get((ei, end))
+        return None if i is None else self.state(i)
 
     def stop_for(self, ei, end):
         """True when a car on edge ei heading to its end (0 = a, 1 = b) must stop at the line."""
