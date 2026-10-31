@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 38
+VERSION = 40
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -386,7 +386,7 @@ def building_height(t, area, r):
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
-GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 8, 32
+GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 12, 48
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
@@ -457,12 +457,12 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
     r = np.asarray(ring, dtype=np.float32)
     d = np.roll(r, -1, axis=0) - r
     ln = np.hypot(d[:, 0], d[:, 1])
-    order = [i for i in np.argsort(-ln)[:4] if ln[i] >= 4.5]
+    order = [i for i in np.argsort(-(ln - 12.0 * (d[:, 0] / np.maximum(ln, 1e-3))))[:5] if ln[i] >= 4.5]      # long walls, south-facing ones first (the camera sees those)
     if not order or h < 3.0:
         return None
     P, U, C = [], [], []
     for i in rng.sample(order, min(len(order), n_max)):
-        w = rng.uniform(2.6, 4.8) * (2.0 if big else 1.0)
+        w = rng.uniform(3.0, 5.6) * (2.0 if big else 1.0)
         if w > ln[i] - 1.0:
             w = ln[i] - 1.0
         if w < 1.4:
@@ -479,7 +479,7 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
         y0, y1 = yc - hh / 2, yc + hh / 2
         cell = rng.randrange(GRAF_N)
         e = 3.0 / 1024                                      # keep clear of neighbouring cells
-        u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
+        u1, u0 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e       # u runs against the wall direction: seen from outside the text reads left to right
         v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
         A, B, Cc, D = (ax, y0, az), (bx, y0, bz), (bx, y1, bz), (ax, y1, az)
         P += [A, B, Cc, A, Cc, D]
@@ -533,7 +533,7 @@ def pitched_graffiti(ring, h, apex_h, rng):
     for i in range(len(r)):
         if ln[i] < 3.2:
             continue
-        nz = d[i, 0] / ln[i]                                   # outward z of the edge (outward = (dz, -dx))
+        nz = -d[i, 0] / ln[i]                                  # outward z of the edge (outward = (dz, -dx)): > 0 faces south, towards the camera
         sc = nz + 0.002 * float(ln[i])
         if sc > bs:
             best, bs = i, sc
@@ -555,7 +555,7 @@ def pitched_graffiti(ring, h, apex_h, rng):
     A, B, Cc, D = pt(a, t0), pt(b, t0), pt(b, t1), pt(a, t1)
     cell = rng.randrange(GRAF_N)
     e = 3.0 / 1024
-    u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
+    u1, u0 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e   # mirrored along the edge, see graffiti_geo
     v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
     P = [A, B, Cc, A, Cc, D]
     U = [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
@@ -998,8 +998,8 @@ def main():
         if w:
             badd(mat, *w)
         rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
-        if rg.random() < {MAT_HOUSE: 0.4, MAT_PANEL: 0.5}.get(mat, 0.3):          # graffiti on the street wall(s)
-            gg = graffiti_geo(outer, h, rg, 2 if mat != MAT_PANEL else 3, big=(mat == MAT_PANEL and rg.random() < 0.25))
+        if rg.random() < {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65):          # graffiti on the street wall(s)
+            gg = graffiti_geo(outer, h, rg, 3, big=(mat == MAT_PANEL and rg.random() < 0.25))
             if gg:
                 badd(MAT_GRAF, *gg)
         if small:

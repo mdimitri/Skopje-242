@@ -1,4 +1,4 @@
-"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (4 x 8 cells of 256 x 128).
+"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (4 x 12 cells of 256 x 128).
 
 tools/build_world.py puts a few alpha-keyed decal quads on building walls (material 6, "graf") that pick cells from this
 atlas: one extra texture and a few thousand quads, no per-frame cost.  The phrases come from docs/Skopje_slang_bible.txt.
@@ -10,27 +10,61 @@ import random
 import pyray as rl
 
 import font
+from texts import TXT
 
-COLS, ROWS, CELL_W, CELL_H = 4, 8, 256, 128
+COLS, ROWS, CELL_W, CELL_H = 4, 12, 256, 128
 
 # (style, lines, colour) - style: bubble | tag | stencil | scrawl | sticker | heart | crown
-PIECES = [
-    ("bubble", ["ЖИМИ МАЈКА"], (255, 214, 40)), ("bubble", ["ПЕЕР"], (80, 220, 255)),
-    ("tag", ["ВАРДАР"], (230, 40, 50)), ("crown", ["ЦАР"], (255, 200, 40)),
-    ("scrawl", ["ШО БЕ?"], (250, 250, 250)), ("stencil", ["ЗАБИ ВО ЅИД"], (20, 20, 22)),
-    ("bubble", ["КРИНЏ"], (255, 90, 190)), ("scrawl", ["ГРЕБАЧ", "БЕЗ ЦИГАРИ"], (255, 235, 120)),
-    ("tag", ["МРЗА"], (120, 255, 120)), ("bubble", ["СКОПЈЕ", "242"], (255, 140, 30)),
-    ("stencil", ["ГАЗДА ПЛАЌА"], (20, 20, 22)), ("sticker", ["ЏАБОЛЕБЧАНЦИ", "ВОН"], (255, 60, 60)),
-    ("scrawl", ["~ШМЕКЕР~", "ПАПАК"], (255, 255, 255)), ("tag", ["ЧУКНИ ВО ДРВО"], (170, 120, 255)),
-    ("stencil", ["ЈАДЕЊЕ ТРИЦИ"], (30, 30, 34)), ("scrawl", ["ТРТЕ-МРТЕ"], (255, 190, 90)),
-    ("tag", ["КАЛЕ ГЛЕДА"], (255, 120, 40)), ("bubble", ["ЛЕЛЕ ЕЈ"], (60, 230, 150)),
-    ("bubble", ["ГАЗИ ГАС"], (255, 70, 70)), ("scrawl", ["ЧАО", "АРИВЕДЕРЧИ"], (240, 240, 240)),
-    ("sticker", ["НПЦ", "ПОЗДРАВ"], (60, 140, 255)), ("sticker", ["БУРЕК > СЀ"], (255, 190, 40)),
-    ("tag", ["ЛЕГЕНДО"], (255, 255, 90)), ("bubble", ["ЗВЕР"], (255, 60, 150)),
-    ("scrawl", ["ДРАМА", "КВИН"], (255, 120, 200)), ("stencil", ["ТЕШКА", "КАТЕГОРИЈА"], (25, 25, 28)),
-    ("sticker", ["БОТ ИЛИ", "ЧОВЕК?"], (110, 220, 110)), ("heart", ["ЃОРЧЕ"], (255, 50, 90)),
-    ("bubble", ["ОПАА"], (90, 200, 255)), ("tag", ["АЕРОДРОМ", "ЗАСЕКОГАШ"], (255, 230, 60)),
-    ("scrawl", ["МРЗИ МЕ", "ДА РАБОТАМ"], (230, 230, 255)), ("heart", ["СКОПЈЕ"], (255, 70, 70)),
+# (style, colour) per piece; the phrases are text/09_graffiti.txt (graffiti.0001 ...)
+STYLES = [
+    ('bubble', (255, 214, 40)),
+    ('bubble', (80, 220, 255)),
+    ('tag', (230, 40, 50)),
+    ('crown', (255, 200, 40)),
+    ('scrawl', (250, 250, 250)),
+    ('stencil', (20, 20, 22)),
+    ('bubble', (255, 90, 190)),
+    ('scrawl', (255, 235, 120)),
+    ('tag', (120, 255, 120)),
+    ('bubble', (255, 140, 30)),
+    ('stencil', (20, 20, 22)),
+    ('sticker', (255, 60, 60)),
+    ('scrawl', (255, 255, 255)),
+    ('tag', (170, 120, 255)),
+    ('stencil', (30, 30, 34)),
+    ('scrawl', (255, 190, 90)),
+    ('tag', (255, 120, 40)),
+    ('bubble', (60, 230, 150)),
+    ('bubble', (255, 70, 70)),
+    ('scrawl', (240, 240, 240)),
+    ('sticker', (60, 140, 255)),
+    ('sticker', (255, 190, 40)),
+    ('tag', (255, 255, 90)),
+    ('bubble', (255, 60, 150)),
+    ('scrawl', (255, 120, 200)),
+    ('stencil', (25, 25, 28)),
+    ('sticker', (110, 220, 110)),
+    ('heart', (255, 50, 90)),
+    ('bubble', (90, 200, 255)),
+    ('tag', (255, 230, 60)),
+    ('scrawl', (230, 230, 255)),
+    ('heart', (255, 70, 70)),
+    ('stencil', (20, 20, 22)),
+    ('sticker', (255, 170, 40)),
+    ('scrawl', (250, 250, 250)),
+    ('stencil', (25, 25, 28)),
+    ('bubble', (255, 200, 60)),
+    ('scrawl', (255, 235, 120)),
+    ('sticker', (200, 60, 200)),
+    ('scrawl', (230, 230, 255)),
+    ('stencil', (30, 30, 34)),
+    ('tag', (255, 150, 50)),
+    ('bubble', (120, 230, 120)),
+    ('scrawl', (255, 160, 160)),
+    ('sticker', (80, 170, 255)),
+    ('stencil', (20, 20, 22)),
+    ('scrawl', (255, 210, 90)),
+    ('tag', (90, 230, 255)),
 ]
 
 
@@ -155,7 +189,8 @@ def build_atlas():
     rt = rl.load_render_texture(CELL_W * COLS, CELL_H * ROWS)
     rl.begin_texture_mode(rt)
     rl.clear_background(rl.Color(0, 0, 0, 0))
-    for i, (style, lines, col) in enumerate(PIECES[: COLS * ROWS]):
+    for i, (style, col) in enumerate(STYLES[: COLS * ROWS]):
+        lines = TXT(f"graffiti.{i + 1:04d}").split("\n")
         rl.rl_push_matrix()
         rl.rl_translatef(float((i % COLS) * CELL_W), float((i // COLS) * CELL_H), 0.0)
         try:

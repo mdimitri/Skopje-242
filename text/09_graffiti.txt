@@ -1,0 +1,156 @@
+##############################################################################
+#  9. WALL GRAFFITI (painted on buildings, roofs and roof slopes)
+##############################################################################
+#
+# CONTAINS: the phrases of the 48 graffiti pieces (src/graffiti.py paints them into one atlas texture at start-up).
+# NEW, FOR REVIEW BY THE HUMAN EDITOR: jokes and slang from docs/Skopje_slang_bible.txt, not native-reviewed.
+#
+# HOW TO READ THIS FILE (full rules: text/README.md)
+#   - Only edit the text AFTER " = ". Never change the key before it (e.g. graffiti.0042).
+#   - \n starts a new line inside one graffiti. Keep it to 1-2 lines and about 12-14 letters per line, longer
+#     lines are shrunk to fit.  A word between ~ ~ is painted struck through (e.g. ~ШМЕКЕР~\nПАПАК).
+#   - Order = piece number: pieces 1-32 are the first round, 33-48 the new ones. Style and colour are set in the code.
+
+# [graffiti 1 · bubble]
+graffiti.0001 = ЖИМИ МАЈКА
+
+# [graffiti 2 · bubble]
+graffiti.0002 = ПЕЕР
+
+# [graffiti 3 · tag]
+graffiti.0003 = ВАРДАР
+
+# [graffiti 4 · crown]
+graffiti.0004 = ЦАР
+
+# [graffiti 5 · scrawl]
+graffiti.0005 = ШО БЕ?
+
+# [graffiti 6 · stencil]
+graffiti.0006 = ЗАБИ ВО ЅИД
+
+# [graffiti 7 · bubble]
+graffiti.0007 = КРИНЏ
+
+# [graffiti 8 · scrawl]
+graffiti.0008 = ГРЕБАЧ\nБЕЗ ЦИГАРИ
+
+# [graffiti 9 · tag]
+graffiti.0009 = МРЗА
+
+# [graffiti 10 · bubble]
+graffiti.0010 = СКОПЈЕ\n242
+
+# [graffiti 11 · stencil]
+graffiti.0011 = ГАЗДА ПЛАЌА
+
+# [graffiti 12 · sticker]
+graffiti.0012 = ЏАБОЛЕБЧАНЦИ\nВОН
+
+# [graffiti 13 · scrawl]
+graffiti.0013 = ~ШМЕКЕР~\nПАПАК
+
+# [graffiti 14 · tag]
+graffiti.0014 = ЧУКНИ ВО ДРВО
+
+# [graffiti 15 · stencil]
+graffiti.0015 = ЈАДЕЊЕ ТРИЦИ
+
+# [graffiti 16 · scrawl]
+graffiti.0016 = ТРТЕ-МРТЕ
+
+# [graffiti 17 · tag]
+graffiti.0017 = КАЛЕ ГЛЕДА
+
+# [graffiti 18 · bubble]
+graffiti.0018 = ЛЕЛЕ ЕЈ
+
+# [graffiti 19 · bubble]
+graffiti.0019 = ГАЗИ ГАС
+
+# [graffiti 20 · scrawl]
+graffiti.0020 = ЧАО\nАРИВЕДЕРЧИ
+
+# [graffiti 21 · sticker]
+graffiti.0021 = НПЦ\nПОЗДРАВ
+
+# [graffiti 22 · sticker]
+graffiti.0022 = БУРЕК > СЀ
+
+# [graffiti 23 · tag]
+graffiti.0023 = ЛЕГЕНДО
+
+# [graffiti 24 · bubble]
+graffiti.0024 = ЗВЕР
+
+# [graffiti 25 · scrawl]
+graffiti.0025 = ДРАМА\nКВИН
+
+# [graffiti 26 · stencil]
+graffiti.0026 = ТЕШКА\nКАТЕГОРИЈА
+
+# [graffiti 27 · sticker]
+graffiti.0027 = БОТ ИЛИ\nЧОВЕК?
+
+# [graffiti 28 · heart]
+graffiti.0028 = ЃОРЧЕ
+
+# [graffiti 29 · bubble]
+graffiti.0029 = ОПАА
+
+# [graffiti 30 · tag]
+graffiti.0030 = АЕРОДРОМ\nЗАСЕКОГАШ
+
+# [graffiti 31 · scrawl]
+graffiti.0031 = МРЗИ МЕ\nДА РАБОТАМ
+
+# [graffiti 32 · heart]
+graffiti.0032 = СКОПЈЕ
+
+# [graffiti 33 · stencil]
+graffiti.0033 = ЕВРОПА ЌЕ\nДОЈДЕ ПОДОЦНА
+
+# [graffiti 34 · sticker]
+graffiti.0034 = САМО ЗА\nРОДНИНИ
+
+# [graffiti 35 · scrawl]
+graffiti.0035 = ТУКА ЌЕ БИДЕ МОЛ.\nЗАСЕКОГАШ.
+
+# [graffiti 36 · stencil]
+graffiti.0036 = НАСКОРО:\nПАТ ВО РАБОТА
+
+# [graffiti 37 · bubble]
+graffiti.0037 = БУРЕК\n+ ЈОГУРТ
+
+# [graffiti 38 · scrawl]
+graffiti.0038 = СТОЈАН КАЖА\nДЕКА ЌЕ ДОЈДЕ
+
+# [graffiti 39 · sticker]
+graffiti.0039 = ПАЈАКОТ\nТЕ ГЛЕДА
+
+# [graffiti 40 · scrawl]
+graffiti.0040 = ЌЕ ГО ПОПРАВАМ\nУТРЕ
+
+# [graffiti 41 · stencil]
+graffiti.0041 = СМОГ:\nНАШ ВОЗДУХ
+
+# [graffiti 42 · tag]
+graffiti.0042 = КАФЕ ПАУЗА\n24/7
+
+# [graffiti 43 · bubble]
+graffiti.0043 = ЏАБА!
+
+# [graffiti 44 · scrawl]
+graffiti.0044 = ВРАТИ МИ ЈА\nПАРКИНГ МЕСТОТО
+
+# [graffiti 45 · sticker]
+graffiti.0045 = ОСТАВИ\nГО ГОЛУБОТ
+
+# [graffiti 46 · stencil]
+graffiti.0046 = КАЛЕ ВИДЕ СЀ.\nМОЛЧИ.
+
+# [graffiti 47 · scrawl]
+graffiti.0047 = ПОВЕЌЕ ЛЕВОВИ\nОД ЛУЃЕ
+
+# [graffiti 48 · tag]
+graffiti.0048 = ТРОТОАРОТ Е\nМОЈ
