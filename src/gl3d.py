@@ -186,6 +186,11 @@ def build_textures():
     _speckle(rng, 520, S, 34)
     rl.end_texture_mode()
     tex["roof"] = _to_texture(rt)
+    try:
+        import graffiti
+        tex["graf"] = graffiti.build_atlas()
+    except Exception:  # noqa: BLE001 - no graffiti rather than no game
+        pass
     img = rl.gen_image_color(4, 4, rl.WHITE)
     tex["white"] = rl.load_texture_from_image(img)
     rl.unload_image(img)

@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 32
+VERSION = 33
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -385,6 +385,8 @@ def building_height(t, area, r):
 
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
+MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
+GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 8, 32
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
@@ -448,6 +450,45 @@ def walls(ring, h, tint, y0=None):
         col[:, i, :3] = np.clip(base[None, :] * (sh * ao)[:, None], 0, 255)
     col[:, :, 3] = 255
     return p.reshape(-1, 3), uv.reshape(-1, 2), col.reshape(-1, 4)
+
+
+def graffiti_geo(ring, h, rng, n_max=2, big=False):
+    """Alpha-keyed graffiti quads flat on the street-facing walls of one building -> (pos, uv, col) or None (y relative to the wall foot)."""
+    r = np.asarray(ring, dtype=np.float32)
+    d = np.roll(r, -1, axis=0) - r
+    ln = np.hypot(d[:, 0], d[:, 1])
+    order = [i for i in np.argsort(-ln)[:4] if ln[i] >= 4.5]
+    if not order or h < 3.0:
+        return None
+    P, U, C = [], [], []
+    for i in rng.sample(order, min(len(order), n_max)):
+        w = rng.uniform(1.8, 3.6) * (2.2 if big else 1.0)
+        if w > ln[i] - 1.0:
+            w = ln[i] - 1.0
+        if w < 1.4:
+            continue
+        hh = w * 0.5
+        yc = rng.uniform(4.0, min(h - hh - 0.5, 9.0)) if big and h > 12 else rng.uniform(0.2, 0.9) + hh / 2 + 0.8
+        if yc + hh / 2 > h - 0.3:
+            continue
+        ux, uz = d[i, 0] / ln[i], d[i, 1] / ln[i]
+        nx, nz = uz, -ux                                    # outward, as in walls()
+        s0 = rng.uniform(0.5, ln[i] - w - 0.5)
+        ax, az = r[i, 0] + ux * s0 + nx * 0.05, r[i, 1] + uz * s0 + nz * 0.05
+        bx, bz = ax + ux * w, az + uz * w
+        y0, y1 = yc - hh / 2, yc + hh / 2
+        cell = rng.randrange(GRAF_N)
+        e = 3.0 / 1024                                      # keep clear of neighbouring cells
+        u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
+        v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+        A, B, Cc, D = (ax, y0, az), (bx, y0, bz), (bx, y1, bz), (ax, y1, az)
+        P += [A, B, Cc, A, Cc, D]
+        U += [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
+        sh = int(min(255, 255 * min(1.1, 0.52 + 0.55 * max(0.0, float(nx * SUN[0] + nz * SUN[2]))) * 0.92))
+        C += [(sh, sh, sh, 255)] * 6
+    if not P:
+        return None
+    return np.array(P, np.float32), np.array(U, np.float32), np.array(C, np.uint8)
 
 
 def flat_poly(v, tri, y, scale_uv, col):
@@ -885,6 +926,11 @@ def main():
         w = walls(outer, h, wallc, skirt_a)
         if w:
             badd(mat, *w)
+        rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
+        if rg.random() < {MAT_HOUSE: 0.4, MAT_PANEL: 0.5}.get(mat, 0.3):          # graffiti on the street wall(s)
+            gg = graffiti_geo(outer, h, rg, 2 if mat != MAT_PANEL else 3, big=(mat == MAT_PANEL and rg.random() < 0.25))
+            if gg:
+                badd(MAT_GRAF, *gg)
         if small:
             badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
         else:

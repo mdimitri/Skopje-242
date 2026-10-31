@@ -205,7 +205,7 @@ class Splash3D(showcase.Showcase):
             for zl in (-4.9,):
                 add(BW.MAT_SOLID, *BW.lamp_geo(lx, zl))
                 shadows.append(_hull([(lx + dx, zl + dz) for dx, dz in ((0, 0), (0.15, 0.1), (3.6, 3.2), (3.8, 3.3))]))
-        names = ("A", "B", "roof", "white", "panel", "house")
+        names = ("A", "B", "roof", "white", "panel", "house", "graf")
         models = {}
         for mat, parts in acc.items():
             m = gl3d.make_model(np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts]), np.concatenate([p[2] for p in parts]))

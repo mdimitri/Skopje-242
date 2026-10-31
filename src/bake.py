@@ -242,9 +242,11 @@ class Streamer:
                 pos, uv, col = self.world.mesh_arrays(off, n)
                 if self.world.broken:
                     pos = self.world.hide_broken(pos, ch.get("bb"))
+                if mat == 6 and "graf" not in self.tex:
+                    continue                                     # atlas failed: no decals rather than facade-textured ones
                 m = gl3d.make_model(pos, uv, col)
                 if m is not None:
-                    names = ("A", "B", "roof", "white", "panel", "house")
+                    names = ("A", "B", "roof", "white", "panel", "house", "graf")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
                     if mat == 3 and getattr(self.world, "roads3d", False):
                         gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt

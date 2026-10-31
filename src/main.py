@@ -362,7 +362,7 @@ def main():
         log("[game] textures failed:\n" + traceback.format_exc())
         img = rl.gen_image_color(4, 4, rl.WHITE)
         t = rl.load_texture_from_image(img)
-        tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t}
+        tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t, "graf": t}
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
     renderer.log = log
