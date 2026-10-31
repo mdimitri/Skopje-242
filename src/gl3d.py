@@ -460,13 +460,18 @@ def _bike_parts(ex, body_c, A, box, quad, parts):
             box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
 
 
+_TYRE_R = {"mini": 0.27, "hatch": 0.30, "sedan": 0.31, "taxi": 0.31, "wagon": 0.31, "limo": 0.33, "van": 0.34,
+           "suv": 0.38, "pickup": 0.38}
+
+
 def _wheel_layout(st, L):
     """(x, radius, width) of every wheel pair, the front axle first."""
     if L > 11:
         return [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
-    return {"bus": [(L * 0.32, 0.45, 0.26), (-L * 0.30, 0.45, 0.26)],
+    r = _TYRE_R.get(st, 0.34)                                      # real tyre radii: 13" Yugo ~0.28 m, SUV ~0.38 m
+    return {"bus": [(L * 0.32, 0.50, 0.26), (-L * 0.30, 0.50, 0.26)],
             "truck": [(L * 0.36, 0.5, 0.34), (-L * 0.22, 0.5, 0.34), (-L * 0.36, 0.5, 0.34)],
-            "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, 0.34, 0.26), (-L * 0.31, 0.34, 0.26)])
+            "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, r, 0.26), (-L * 0.31, r, 0.26)])
 
 
 def front_wheel(kind):
