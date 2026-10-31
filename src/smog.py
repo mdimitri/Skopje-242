@@ -25,7 +25,7 @@ def draw(cam, cam_x, cam_y, ppm, sw, sh, hour, t, traffic=0.5, strength=1.0, gy=
     d = density(hour, traffic) * strength
     if d <= 0.02:
         return
-    rl.draw_rectangle(0, 0, sw, sh, rl.Color(150, 138, 112, min(200, int(36 * d))))
+    rl.draw_rectangle(0, 0, sw, sh, rl.Color(150, 138, 112, min(210, int(64 * d))))
     ox, oy = WIND[0] * t, WIND[1] * t
     half_w, half_h = sw / 2 / ppm + CELL, sh / 2 / ppm + CELL
     i0, i1 = int(math.floor((cam_x - ox - half_w) / CELL)), int(math.floor((cam_x - ox + half_w) / CELL))
@@ -38,8 +38,8 @@ def draw(cam, cam_x, cam_y, ppm, sw, sh, hour, t, traffic=0.5, strength=1.0, gy=
                 continue
             wx = (i + _h(i, j, 1)) * CELL + ox
             wy = (j + _h(i, j, 2)) * CELL + oy
-            r = (18 + 30 * _h(i, j, 3)) * ppm * (1.0 + 0.25 * max(0.0, d - 1))
-            v = rl.get_world_to_screen(rl.Vector3(wx, gy + 8.0, wy), cam)
+            r = (22 + 34 * _h(i, j, 3)) * ppm * (1.0 + 0.25 * max(0.0, d - 1))
+            v = rl.get_world_to_screen(rl.Vector3(wx, gy + 2.5, wy), cam)
             sx, sy = v.x, v.y
-            a = min(150, int(42 * d * (0.6 + 0.4 * math.sin(t * 0.2 + i * 1.7 + j))))
+            a = min(190, int(70 * d * (0.6 + 0.4 * math.sin(t * 0.2 + i * 1.7 + j))))
             rl.draw_circle_gradient(rl.Vector2(sx, sy), r, rl.Color(160, 148, 124, a), rl.Color(160, 148, 124, 0))

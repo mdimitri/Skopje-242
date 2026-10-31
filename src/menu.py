@@ -28,7 +28,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), TXT("menu.0004"), TXT("menu.0001"), TXT("menu.0003"), TXT("menu.0005")]   # Игра · Свет · Приказ · Звук · Мапа
+TABS = [TXT("menu.0006"), TXT("menu.0004"), "Приказ", "Воздух", TXT("menu.0003"), TXT("menu.0005")]   # Игра · Свет · Приказ · Воздух · Звук · Мапа
 
 
 def _rows(in_game, slots=()):
@@ -37,36 +37,46 @@ def _rows(in_game, slots=()):
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
     spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
+    H = lambda t: Row("head", t)
     R = [
-        (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
-        (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
-        (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
-        (2, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
-        # new labels live here until they can be added to text/ (human-edited)
-        (2, Row("slider", "Јачина на смог", "smog_level", lo=0.0, hi=3.0, fmt=pct, note="над 100% е густ, тежок смог")),
-        (2, Row("slider", "Загадување од возила", "pollution", lo=0.0, hi=3.0, fmt=pct, note="колку чадат автомобилите")),
-        (2, Row("toggle", TXT("menu.0014"), "labels")),
-        (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
-        (2, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
-        (2, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (3, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
-        (3, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
-        (3, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
-        (3, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
-        (3, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
-        (3, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
-        (3, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
-        (3, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        # tabs: 0 Игра · 1 Свет · 2 Приказ · 3 Воздух · 4 Звук · 5 Мапа  (new labels live here until they can be added to text/)
+        (1, H("Време")),
         (1, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
         (1, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
+        (1, H("Улица")),
         (1, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
         (1, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
         (1, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
         (1, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
         (1, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
+        (1, H("Служби")),
         (1, Row("toggle", TXT("menu.0038"), "ambulance")),
         (1, Row("toggle", TXT("menu.0039"), "fire")),
-        (4, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
+        (2, H("Екран")),
+        (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
+        (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
+        (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
+        (2, H("Камера")),
+        (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
+        (2, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
+        (2, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
+        (2, H("Ознаки")),
+        (2, Row("toggle", TXT("menu.0014"), "labels")),
+        (3, H("Смог")),
+        (3, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
+        (3, Row("slider", "Јачина на смог", "smog_level", lo=0.0, hi=3.0, fmt=pct, note="100% е нормално, над тоа е густ, тежок смог")),
+        (3, Row("slider", "Загадување од возила", "pollution", lo=0.0, hi=3.0, fmt=pct, note="колку чадат автомобилите")),
+        (4, H("Јачина")),
+        (4, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
+        (4, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
+        (4, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
+        (4, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
+        (4, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
+        (4, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
+        (4, H("Говор")),
+        (4, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
+        (4, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (5, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
     ]
     g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
     if in_game:
@@ -268,7 +278,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
         W, H = rl.get_screen_width(), rl.get_screen_height()
         pw = min(760, W - 40)
         x0 = (W - pw) // 2
-        rh = max(24, min(34, (H - 190) // max(len(rows), 1)))
+        rh = max(24, min(34, (H - 220) // max(len(rows), 1)))
         y0 = 130
         m = rl.get_mouse_position()
         changed = False
@@ -428,10 +438,18 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
                     font.draw_text(txt, vx + bw + 10, y + 4, 18, col)
             y += rh
         if rows[sel].note:
-            font.draw_text(rows[sel].note, x0, H - 56, 17, rl.Color(170, 190, 220, 255))
+            font.draw_text(rows[sel].note, x0, H - 84, 17, rl.Color(170, 190, 220, 255))
         if flash and time.time() - flash_t < 2.5:
             font.draw_text(flash, x0 + pw - font.measure_text(flash, 20, True), 24, 20, rl.Color(120, 220, 120, 255), bold=True)
         font.draw_text(TXT("menu.0062"),
                      x0, H - 30, 15, rl.Color(150, 150, 160, 255))
+        label = "Зачувај и затвори" if in_game else "Играј"
+        bwid, bx, by = font.measure_text(label, 20, True) + 40, x0 + pw - font.measure_text(label, 20, True) - 40, H - 62
+        over = bx <= m.x < bx + bwid and by <= m.y < by + 30
+        rl.draw_rectangle(bx, by, bwid, 30, GOLD if over else rl.Color(170, 140, 40, 255))
+        font.draw_text(label, bx + 20, by + 4, 20, rl.Color(20, 20, 20, 255), bold=True)
+        if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+            cfg.save()
+            return "play"
         font.exit_button()
         rl.end_drawing()
