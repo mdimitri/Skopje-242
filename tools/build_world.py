@@ -491,6 +491,38 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
     return np.array(P, np.float32), np.array(U, np.float32), np.array(C, np.uint8)
 
 
+def roof_graffiti(ring, bb, h, rng, n_max=1):
+    """Big graffiti pieces painted flat on a roof, upright for the (north-up) game camera -> (pos, uv, col) or None."""
+    bw, bd = bb[2] - bb[0], bb[3] - bb[1]
+    P, U, C = [], [], []
+    for _ in range(n_max):
+        for _try in range(8):
+            w = rng.uniform(4.5, 9.5)
+            hh = w * 0.5
+            if w > bw * 0.95 or hh > bd * 0.95:
+                continue
+            ang = math.radians(rng.uniform(-22, 22))
+            ca, sa = math.cos(ang), math.sin(ang)
+            cx, cz = rng.uniform(bb[0], bb[2]), rng.uniform(bb[1], bb[3])
+            ux, uz, vx, vz = ca, sa, -sa, ca                 # u along the text, v towards the bottom of the picture (south)
+            corn = [(cx + ux * a * w / 2 + vx * b * hh / 2, cz + uz * a * w / 2 + vz * b * hh / 2) for a, b in ((-1, 1), (1, 1), (1, -1), (-1, -1))]
+            if not all(pip(q, ring) for q in corn + [(cx, cz)]):
+                continue
+            cell = rng.randrange(GRAF_N)
+            e = 3.0 / 1024
+            u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
+            v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+            y = h + 0.07
+            A, B, Cc, D = ((q[0], y, q[1]) for q in corn)
+            P += [A, B, Cc, A, Cc, D]
+            U += [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
+            C += [(255, 255, 255, 255)] * 6
+            break
+    if not P:
+        return None
+    return np.array(P, np.float32), np.array(U, np.float32), np.array(C, np.uint8)
+
+
 def flat_poly(v, tri, y, scale_uv, col):
     if not tri:
         return None
@@ -944,6 +976,10 @@ def main():
             pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
             if pr:
                 badd(MAT_SOLID, *pr)
+            if ar > 70 and rg.random() < 0.85:                                  # roof pieces: the only graffiti a top-down camera reads
+                rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
+                if rgf:
+                    badd(MAT_GRAF, *rgf)
             for (px, py, sx, sz, hh) in rooftop:
                 badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
             rj = random.Random(hash(key) ^ len(outer) * 977 ^ int(cxm * 13))
