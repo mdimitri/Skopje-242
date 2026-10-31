@@ -1770,6 +1770,8 @@ class Traffic:
                 c.stuck += dt
             elif c.v > 1.0:                                       # creeping a metre at a time is still being stuck
                 c.stuck = 0.0
+            if c.stuck > 3.0 and c.ghost <= 0 and gap is not None and gap < 0.0 and isinstance(lead, Car) and lead.v < 0.3 and not at_red:
+                c.ghost, c.stuck = 4.0, 0.0                       # two standing cars sit inside each other: neither can ever back out, so slip apart now
             if c.stuck > 5.0 and c.v < 0.5 and not at_red:
                 d2 = (c.x - fx) ** 2 + (c.y - fy) ** 2
                 if d2 > 150 ** 2 and c.stuck > 8.0:

@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 34
+VERSION = 35
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1189,7 +1189,7 @@ def main():
             if diag:
                 e["sw"] = roads3d.SW_W * 1.5                             # wider pavement so the bays sit on it, not in the lane
             ctr = min(1.0, max(0.35, math.hypot(mx, my) / 1800.0))      # fewer on wide roads towards the centre
-            sides = (1, -1) if dense and not e["ow"] else (None,)
+            sides = (1, -1) if dense and not e["ow"] and w >= 7.5 else (None,)     # round 31: narrow streets park one kerb only (two-kerb rows stalled traffic)
             for fixed in sides:
                 s = 14.0 if diag else 11.0
                 while s < L - (14.0 if diag else 11.0):
