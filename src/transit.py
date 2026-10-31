@@ -26,10 +26,8 @@ def _chain(ways):
     """Join the member ways in order (flipping each to continue from the previous end) into gap-free runs, so a bus
     never has to cross a hole in the relation; every run can carry buses of its own."""
     runs, out = [], []
-    for g in ways:
-        pts = [project(p["lat"], p["lon"]) for p in g]
-        if not pts:
-            continue
+    ps = [pts for pts in ([project(p["lat"], p["lon"]) for p in g] for g in ways) if pts]
+    for k, pts in enumerate(ps):
         if out:
             e = out[-1]
             if math.dist(e, pts[-1]) < math.dist(e, pts[0]):
@@ -37,6 +35,10 @@ def _chain(ways):
             if math.dist(e, pts[0]) > 30:            # a hole in the relation: start a new run
                 runs.append(out)
                 out = []
+        if not out and k + 1 < len(ps):              # a run's first way has no predecessor: point it towards the way that follows,
+            n0, n1 = ps[k + 1][0], ps[k + 1][-1]     # else the whole run is driven backwards (against the carriageway)
+            if min(math.dist(pts[0], n0), math.dist(pts[0], n1)) < min(math.dist(pts[-1], n0), math.dist(pts[-1], n1)):
+                pts = pts[::-1]
         out.extend(pts)
     runs.append(out)
     res = []
@@ -97,6 +99,46 @@ def load(osm_dir):
             if len(ln.pts) > 10 and ln.length > 1500:
                 lines.append(ln)
     return lines
+
+
+def orient_to_traffic(lines, w):
+    """A relation's ways carry no travel direction, so a whole run can come out driven backwards (against the one-way
+    carriageways it runs on).  Count the segments that agree / disagree with the road graph's one-way edges and turn a
+    run round when it mostly disagrees."""
+    sg = w.sg
+    for ln in lines:
+        ag = dg = 0
+        for (ax, ay), (bx, by) in zip(ln.pts, ln.pts[1:]):
+            dx, dy = bx - ax, by - ay
+            hl = math.hypot(dx, dy)
+            if hl < 1.0:
+                continue
+            mx, my = (ax + bx) / 2, (ay + by) / 2
+            best = None
+            for ei in {ei for cx in (int(mx // sg) - 1, int(mx // sg), int(mx // sg) + 1)
+                       for cy in (int(my // sg) - 1, int(my // sg), int(my // sg) + 1) for ei in w.drive_cells.get((cx, cy), ())}:
+                e = w.edges[ei]
+                if not e["ow"]:
+                    continue
+                for (px, py), (qx, qy) in zip(e["pts"], e["pts"][1:]):
+                    ex, ey = qx - px, qy - py
+                    l2 = ex * ex + ey * ey or 1e-9
+                    t = max(0.0, min(1.0, ((mx - px) * ex + (my - py) * ey) / l2))
+                    d = math.hypot(mx - px - ex * t, my - py - ey * t)
+                    dot = (ex * dx + ey * dy) / (math.sqrt(l2) * hl)
+                    if d < 6.0 and abs(dot) > 0.7 and (best is None or d < best[0]):
+                        best = (d, dot)
+            if best:
+                if best[1] > 0:
+                    ag += 1
+                else:
+                    dg += 1
+        if dg >= 10 and dg > 2 * ag:
+            ln.pts.reverse()
+            ln.cum = [0.0]
+            for a_, b_ in zip(ln.pts, ln.pts[1:]):
+                ln.cum.append(ln.cum[-1] + math.dist(a_, b_))
+            ln.lane = {}
 
 
 def attach_stops(lines, stops):
@@ -165,6 +207,7 @@ class Transit:
         self.t = 0.0
         self.kinds = [i for i, n in enumerate(vehicles.IDS) if n.startswith("JSP ")] or [vehicles.BUS]
         self.stops = list(getattr(sim.w, "bus_stops", None) or [])
+        orient_to_traffic(self.lines, sim.w)
         attach_stops(self.lines, self.stops)
         self.queue = {}                   # stop index -> [ped]  (people waiting at the shelter)
         self.refill = {}                  # stop index -> seconds until new people turn up

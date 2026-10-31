@@ -28,7 +28,6 @@ class Signals:
                 e_ = world.edges[ei]
                 r += min(0.9, (e_["w"] if e_["ow"] else e_["w"] / 2.0) / 20.0)      # same class: the wider carriageway (a boulevard) wins
             rank[(node, grp)] = max(rank.get((node, grp), 0), r)
-        self.major = {n: (1 if rank.get((n, 1), 0) > rank.get((n, 0), 0) else 0) for n in self.nodes}
         self.anchor = {}                                 # junction -> x of the junction it belongs to: the parts of one big
         anchors = []                                     # crossing (nodes a few metres apart) must switch together, not in a wave
         for n, ((jx, jz), _idx) in sorted(self.nodes.items(), key=lambda kv: kv[1][0]):
@@ -39,6 +38,13 @@ class Signals:
             else:
                 anchors.append((jx, jz))
                 self.anchor[n] = jx
+        self.cl = {}                                     # junction -> its cluster, so a big crossing agrees on which group is major
+        for n in self.nodes:
+            self.cl[n] = self.anchor[n]
+        crank = {}
+        for (n, g), r in rank.items():
+            crank[(self.cl[n], g)] = max(crank.get((self.cl[n], g), 0), r)
+        self.major = {n: (1 if crank.get((self.cl[n], 1), 0) > crank.get((self.cl[n], 0), 0) else 0) for n in self.nodes}
         self._order = sorted(range(len(self.items)), key=lambda i: self.items[i][4])      # by x: draw() only walks the strip in view
         self._xs = [self.items[i][4] for i in self._order]
         self.pre = {}                                    # junction -> (group held green, until)

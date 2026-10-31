@@ -357,6 +357,16 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         o = e["b"] if end == 0 else e["a"]
         return e["len"] < 45.0 and o in lit_nodes and cluster_of.get(o) == cluster_of.get(e["a"] if end == 0 else e["b"])
 
+    cl_ref = {}                                               # cluster -> (rank, width, ux, uy) of its biggest road: signal group 0 runs along it for every node of the junction
+    for node, lst in inc.items():
+        if len(lst) < 3:
+            continue
+        ea, enda = max(lst, key=lambda q: (RANK[edges[q[0]]["cls"]], edges[q[0]]["w"]))
+        _px, _py, ux_, uy_ = at(edges[ea], 0.0 if enda == 0 else edges[ea]["len"])
+        sc = (RANK[edges[ea]["cls"]], edges[ea]["w"])
+        g_ = cluster_of.get(node, node)
+        if g_ not in cl_ref or sc > cl_ref[g_][0]:
+            cl_ref[g_] = (sc, ux_, uy_)
     for node, lst in inc.items():
         if len(lst) < 3:
             continue
@@ -371,6 +381,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         phase = rr.randint(0, 1)
         e_a, end_a = max(lst, key=lambda q: RANK[edges[q[0]]["cls"]])           # the biggest road sets signal group 0
         _x, _y, ux0, uy0 = at(edges[e_a], 0.0 if end_a == 0 else edges[e_a]["len"])
+        _sc, ux0, uy0 = cl_ref.get(cluster_of.get(node, node), (None, ux0, uy0))
 
         def head_only(ei, end):
             """A signal without a pole of its own (short approach, no room at the kerb): the lights still apply."""
