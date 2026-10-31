@@ -20,19 +20,45 @@ if /I "%~1"=="refresh" (set GAMEARGS=--refresh& shift)
 set SETUP_ARGS=
 if /I "%~1"=="aivoice" (set SETUP_ARGS=-AiVoice& shift)
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\setup.ps1" %SETUP_ARGS%
-if errorlevel 1 (
-    echo.
-    echo Setup failed - see the messages above.
+if not exist "src\main.py" (
+    echo The game folder is incomplete: src\main.py is missing. Copy or download the whole folder again.
+    pause
+    exit /b 1
+)
+if not exist "src\texts.py" (
+    echo The game folder is incomplete: src\texts.py is missing. Copy or download the whole folder again.
     pause
     exit /b 1
 )
 
+REM 64-bit Windows PowerShell by its full path (PATH may be broken, or a 32-bit shell may be running)
+set "PSH=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PSH%" set "PSH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PSH%" set "PSH=powershell"
+"%PSH%" -NoProfile -ExecutionPolicy Bypass -File "tools\setup.ps1" %SETUP_ARGS%
+if errorlevel 1 (
+    echo.
+    echo Setup failed - see the messages above and logs\install.log
+    pause
+    exit /b 1
+)
+
+if not exist ".runtime\python.txt" (
+    echo Setup did not finish: .runtime\python.txt is missing. See logs\install.log
+    pause
+    exit /b 1
+)
 set /p PY=<".runtime\python.txt"
+if not exist "%PY%" (
+    echo The Python recorded by setup was not found: %PY%
+    echo Delete the .runtime folder and run run.bat again.
+    pause
+    exit /b 1
+)
 "%PY%" "src\main.py" %GAMEARGS% %1 %2 %3 %4 %5 %6 %7 %8 %9
 if errorlevel 1 (
     echo.
-    echo The game exited with an error.
+    echo The game exited with an error. See logs\crash.log and logs\install.log
     pause
 )
 endlocal
