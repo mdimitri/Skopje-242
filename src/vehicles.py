@@ -9,7 +9,7 @@ BLACK, WHITE_, SILVER = (30, 30, 34), (236, 236, 240), (190, 192, 198)
 
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
 _V = [
-    ("Zastava Yugo", "hatch", 3.85, 1.75, 1.38, 6, None, ""),
+    ("Zastava Yugo", "hatch", 3.85, 1.67, 1.38, 6, None, ""),
     ("Golf Dvojka", "hatch", 4.05, 1.83, 1.40, 7, None, ""),
     ("Kombi", "van", 4.50, 1.90, None, 3, None, ""),
     ("Lada Niva", "suv", 3.75, 1.83, 1.64, 3, None, ""),
@@ -20,7 +20,7 @@ _V = [
     ("Pikap Tovarnik", "pickup", 5.00, 1.95, None, 2, None, ""),
     # ---- 50 more
     ("Zastava 101 Skala", "hatch", 3.99, 1.77, 1.4, 5, None, ""),
-    ("Zastava Koral", "hatch", 3.70, 1.75, 1.38, 4, None, ""),
+    ("Zastava Koral", "hatch", 3.70, 1.67, 1.38, 4, None, ""),
     ("Lada Samara", "hatch", 4.00, 1.77, 1.4, 4, None, ""),
     ("Lada 1500", "sedan", 4.10, 1.77, 1.4, 3, None, ""),
     ("Moskvich 412", "sedan", 4.10, 1.75, 1.45, 2, None, ""),

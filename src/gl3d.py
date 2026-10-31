@@ -251,6 +251,8 @@ _ERA = {
     "soft": (0.14, 0.06, 0.35, 0.06, 0.04, 0.02),     # 90s Uno / Clio / Corolla / Megane
 }
 _ERA_OF = {}
+_ROUND_LAMPS = {"Zastava Yugo", "Zastava 101 Skala", "Zastava Koral", "Golf Dvojka", "Lada Niva", "Fico", "Trabant 601",
+               "Pachuvka 2CV", "Renault 4 Katrca", "Fiat 126 Peglica", "Moskvich 412", "Wartburg 353"}
 for _n, _e in (("Zastava Yugo", "boxy"), ("Golf Dvojka", "boxy"), ("Lada Niva", "brick"), ("Mercedes 190", "boxy"),
                ("Taxi Zlatna Zolta", "boxy"), ("Fico", "bubble"), ("Zastava 101 Skala", "boxy"), ("Zastava Koral", "boxy"),
                ("Lada Samara", "boxy"), ("Lada 1500", "boxy"), ("Moskvich 412", "boxy"), ("Trabant 601", "bubble"),
@@ -587,8 +589,14 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
 
     # ---- lower body details
     xf, xb = L / 2, -L / 2
+    round_hl = V.IDS[kind] in _ROUND_LAMPS
     for s in (-1, 1):                                                       # headlights / taillights
-        quad((xf + 0.006, belt - 0.34, s * 0.26 * W if s > 0 else -0.46 * W), (0, 0, 0.20 * W), (0, 0.22, 0), (1, 0, 0), (255, 244, 180))
+        lz = s * 0.26 * W if s > 0 else -0.46 * W
+        if round_hl:                                                        # round lamp: an octagon of two crossed quads in a chrome ring
+            quad((xf + 0.004, belt - 0.36, lz - 0.01), (0, 0, 0.20 * W + 0.02), (0, 0.26, 0), (1, 0, 0), (200, 200, 204))
+            quad((xf + 0.006, belt - 0.34, lz), (0, 0, 0.20 * W), (0, 0.22, 0), (1, 0, 0), (255, 244, 180))
+        else:
+            quad((xf + 0.006, belt - 0.34, lz), (0, 0, 0.20 * W), (0, 0.22, 0), (1, 0, 0), (255, 244, 180))
         quad((xb - 0.006, belt - 0.34, s * 0.26 * W if s > 0 else -0.46 * W), (0, 0, 0.20 * W), (0, 0.22, 0), (-1, 0, 0), (210, 30, 30))
     if st not in ("bus", "van"):
         quad((xf + 0.006, y0 + 0.16, -0.22 * W), (0, 0, 0.44 * W), (0, belt - y0 - 0.38, 0), (1, 0, 0), (28, 28, 32), 2, 1)       # grille
