@@ -63,6 +63,8 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
     import vehicles
     from actors import Car, Sim
     random.seed(seed)
+    if os.environ.get("NOPARK"):
+        world.parked = world.parked[:0]              # diagnostic: no kerb-parked cars at all
     sim = Sim(world, random.Random(seed), cars, 40)
     lights = signals.Signals(world)
     sim.traffic.signals = sim.lights = lights
