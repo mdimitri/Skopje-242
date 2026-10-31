@@ -92,6 +92,40 @@ def _crosswalk(xw):
     seg(x + ax * 2.6, y + ay * 2.6, x + ax * 2.6 + rx * (w / 2 - 0.3), y + ay * 2.6 + ry * (w / 2 - 0.3), 0.14, white)   # stop line (right-hand lane)
 
 
+def _cast(b, a=26):
+    k = min(1.0, 9.0 / (b["h"] * 0.32 + 1e-6))      # cap the cast length so tall blocks don't leave detached ghost footprints
+    for f in (0.25, 0.5, 0.75, 1.0):               # sweep the footprint along the shadow direction
+        fill_tris(b["v"], b["tri"], (20, 20, 30, a), b["h"] * 0.32 * k * f, b["h"] * 0.22 * k * f)
+
+
+SHADOW_PPM = 2.0                # the shadow overlay is soft: half the ground resolution
+SHADOW_LIFT = 0.22              # metres above the terrain: above the 0.16 m pavements
+
+
+def bake_shadow(world, cx, cy, rt):
+    """Building and tree shadows alone, on a transparent texture drawn over the roads AND the raised pavements."""
+    S, M = world.chunk, world.margin
+    ox, oy = cx * S - M, cy * S - M
+    ch = world.chunks.get((cx, cy))
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(20, 20, 30, 0))
+    rl.begin_mode_2d(rl.Camera2D(rl.Vector2(0, 0), rl.Vector2(ox, oy), 0.0, SHADOW_PPM))
+    rl.rl_set_blend_factors_separate(rl.RL_SRC_ALPHA, rl.RL_ONE_MINUS_SRC_ALPHA, rl.RL_ONE, rl.RL_ONE_MINUS_SRC_ALPHA,
+                                     rl.RL_FUNC_ADD, rl.RL_FUNC_ADD)
+    rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)         # (factors first) alpha must accumulate linearly, not as a*a
+    try:
+        if ch is not None:
+            for i in ch["b"]:
+                _cast(world.buildings[i], 44)      # the overlay no longer gets the ground shader's extra darkening of dark texels
+            for ti in ch["t"]:
+                x, y, r, _sh = world.trees[ti]
+                disc(x + 1.6, y + 1.2, r * 0.95, (10, 25, 10, 70), 8)
+    finally:
+        rl.end_blend_mode()
+        rl.end_mode_2d()
+        rl.end_texture_mode()
+
+
 def bake_chunk(world, cx, cy, rt, decals=()):
     """Ground only: land use, water, roads, markings, building shadows/footprints, tree shadows, decals.
     Buildings / trees / lamps are real 3D meshes (see Streamer)."""
@@ -145,15 +179,16 @@ def bake_chunk(world, cx, cy, rt, decals=()):
                 for i in ch.get("x", ()):         # zebra crossings + stop lines
                     _crosswalk(xws[i])
             B = world.buildings
-            for i in ch["b"]:                 # ground contact + cast shadows
+            sep = getattr(world, "roads3d", False)       # shadows go to their own overlay so they also fall on the raised pavements
+            for i in ch["b"]:                 # ground contact (+ cast shadows when not split off)
                 b = B[i]
                 fill_tris(b["v"], b["tri"], (120, 116, 112, 255))
-                k = min(1.0, 9.0 / (b["h"] * 0.32 + 1e-6))      # cap the cast length so tall blocks don't leave detached ghost footprints
-                for f in (0.25, 0.5, 0.75, 1.0):               # sweep the footprint along the shadow direction
-                    fill_tris(b["v"], b["tri"], (20, 20, 30, 26), b["h"] * 0.32 * k * f, b["h"] * 0.22 * k * f)
-            for ti in ch["t"]:
-                x, y, r, _sh = world.trees[ti]
-                disc(x + 1.6, y + 1.2, r * 0.95, (10, 25, 10, 70), 8)
+                if not sep:
+                    _cast(b)
+            if not sep:
+                for ti in ch["t"]:
+                    x, y, r, _sh = world.trees[ti]
+                    disc(x + 1.6, y + 1.2, r * 0.95, (10, 25, 10, 70), 8)
         if not getattr(world, "roads3d", False):
             for d in decals:
                 draw_decal(d)
@@ -190,6 +225,8 @@ class Streamer:
         self.mesh_loaded = 0
         self.size = int((world.chunk + 2 * world.margin) * PPM)
         self.pool = []
+        self.shadow = {}      # key -> (rt, model): transparent shadow overlay of a baked chunk (roads3d worlds)
+        self.spool = []
         self.decals = {}      # key -> history list (replayed on rebake)
         self.pending = {}     # key -> new decals to draw this frame
         self.errors = 0
@@ -231,8 +268,41 @@ class Streamer:
         rl.set_texture_wrap(rt.texture, rl.TEXTURE_WRAP_CLAMP)
         old = self.ground.get(key)
         self.ground[key] = [rt, self.frame, self._ground_model(key, rt)]
+        self._free_shadow(key)
+        if getattr(self.world, "roads3d", False):
+            self._bake_shadow(key)
         self.baked += 1
         self.bake_ms = (time.perf_counter() - t0) * 1000
+
+    def _free_shadow(self, key):
+        e = self.shadow.pop(key, None)
+        if e:
+            self.spool.append(e[0])
+            gl3d.free_model(e[1])
+
+    def _bake_shadow(self, key):
+        n = int(self.size * SHADOW_PPM / PPM)
+        rt = self.spool.pop() if self.spool else rl.load_render_texture(n, n)
+        bake_shadow(self.world, key[0], key[1], rt)
+        rl.set_texture_filter(rt.texture, rl.TEXTURE_FILTER_BILINEAR)
+        rl.set_texture_wrap(rt.texture, rl.TEXTURE_WRAP_CLAMP)
+        w = self.world
+        S, M = w.chunk, w.margin
+        side = S + 2 * M
+        m_ = int(round(side / 4.0)) if w.hilly else 1
+        x0, z0 = key[0] * S - M, key[1] * S - M
+        xs = x0 + np.arange(m_ + 1) * (side / m_)
+        zs = z0 + np.arange(m_ + 1) * (side / m_)
+        X, Z = np.meshgrid(xs, zs)
+        Y = (w.th_v(X, Z) if w.hilly else np.zeros_like(X, np.float32)) + SHADOW_LIFT
+        P = np.stack([X, Y, Z], -1).astype(np.float32)
+        U = np.stack([(X - x0) / side, 1.0 - (Z - z0) / side], -1).astype(np.float32)
+        i00 = (np.arange(m_)[:, None] * (m_ + 1) + np.arange(m_)[None, :]).ravel()
+        idx = np.stack([i00, i00 + 1, i00 + m_ + 2, i00, i00 + m_ + 2, i00 + m_ + 1], 1).ravel()
+        model = gl3d.make_model(P.reshape(-1, 3)[idx], U.reshape(-1, 2)[idx], np.full((len(idx), 4), 255, np.uint8))
+        if model is not None:
+            gl3d.set_texture(model, rt.texture)
+        self.shadow[key] = (rt, model)
 
     def _load_meshes(self, key):
         ch = self.world.chunks.get(key)
@@ -322,6 +392,7 @@ class Streamer:
                 if e[1] < self.frame - 2:
                     self.pool.append(e[0])
                     gl3d.free_model(e[2])
+                    self._free_shadow(key)
                     del self.ground[key]
         if len(self.meshes) > self.max_mesh:
             for key, e in sorted(self.meshes.items(), key=lambda kv: kv[1][1])[: len(self.meshes) - self.max_mesh]:

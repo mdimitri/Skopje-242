@@ -235,6 +235,20 @@ class Renderer:
                     _last_touch = st.meshes[key]
                     _last_touch[1] = st.frame
             self.drawn_meshes = nm
+            if lod and show_meshes and st.shadow:             # shadows over roads and pavements alike (transparent, no depth write)
+                rl.rl_disable_depth_mask()
+                rl.rl_set_blend_factors_separate(rl.RL_SRC_ALPHA, rl.RL_ONE_MINUS_SRC_ALPHA, rl.RL_ZERO, rl.RL_ONE,       # keep the target's alpha
+                                                 rl.RL_FUNC_ADD, rl.RL_FUNC_ADD)
+                rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)
+                try:
+                    for cx in range(x0, x1 + 1):
+                        for cy in range(y0, y1 + 1):
+                            sm = st.shadow.get((cx, cy))
+                            if sm is not None and sm[1] is not None:
+                                rl.draw_model(sm[1], V3(0, 0, 0), 1.0, WHITE)
+                finally:
+                    rl.end_blend_mode()
+                    rl.rl_enable_depth_mask()
             if lod:
                 if getattr(w, "roads3d", False):
                     self._decals(rect)
