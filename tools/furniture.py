@@ -248,7 +248,7 @@ def plan_lights(edges, inc):
             continue                                                   # a ramp joining a road: a merge, not a crossing
         if min(a[4] for a in arms) < 6.0:
             pass
-        lit = n2 >= 3 or (n2 >= 2 and (n3 >= 2 or maxw >= 9.0 or multi >= 1)) or (len(arms) >= 4 and n2 >= 2) or (multi >= 2 and len(arms) >= 3)
+        lit = n2 >= 2 or (len(arms) >= 4 and (n2 >= 1 or maxw >= 7.0)) or (multi >= 2 and len(arms) >= 3)     # round 31: any two real roads meeting, and busy four-way crossings
         if not lit:
             continue
         score = sum(a[0] + a[1] for a in arms)
