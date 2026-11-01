@@ -1571,6 +1571,7 @@ def main():
             tgt_ppm = 1.18 * (10.5 - 4.6 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
         else:
             tgt_ppm = 26.0 * user_zoom * cfg["zoom_walk"]
+        tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)
         sim.view_r = max(150.0, min(300.0, 1250.0 / max(ppm, 1.0) + 60.0))      # parked cars are placed this far round the camera
         k = min(1.0, 6.0 * dt)

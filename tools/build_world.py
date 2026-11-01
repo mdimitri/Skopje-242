@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 42
+VERSION = 43
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1004,7 +1004,7 @@ def main():
                 badd(MAT_GRAF, *gg)
         if small:
             badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
-            if rg.random() < 0.7:                                              # a piece on the visible roof slope
+            if rg.random() < 0.14:                                             # a piece on the visible roof slope (80% fewer than v42)
                 pg = pitched_graffiti(outer, h, 1.8 + math.sqrt(ar) * 0.12, rg)
                 if pg:
                     badd(MAT_GRAF, *pg)
@@ -1019,7 +1019,7 @@ def main():
             pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
             if pr:
                 badd(MAT_SOLID, *pr)
-            if ar > 70 and rg.random() < 0.85:                                  # roof pieces: the only graffiti a top-down camera reads
+            if ar > 70 and rg.random() < 0.17:                                  # roof pieces (80% fewer than v42): the only graffiti a top-down camera reads
                 rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
                 if rgf:
                     badd(MAT_GRAF, *rgf)
