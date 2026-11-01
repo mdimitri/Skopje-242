@@ -167,11 +167,12 @@ def bus_shelter(x, z, yaw):
     g = G()
     ca, sa = math.cos(yaw), math.sin(yaw)          # along the road
     nx, nz = -sa, ca                                # towards the road side is +n or -n; we put the back wall on -n
-    g.box(x, 2.35, z, 3.0, 0.1, 1.5, (50, 110, 130), yaw)
+    g.box(x, 2.45, z, 4.8, 0.1, 2.0, (50, 110, 130), yaw)                                    # bigger shelter (round 31): 4.8 m long
+    for s in (-1, 0, 1):
+        g.box(x + ca * 2.3 * s, 0, z + sa * 2.3 * s, 0.1, 2.5, 0.1, (60, 62, 68))
+    g.box(x - nx * 0.8, 0.4, z - nz * 0.8, 4.6, 1.9, 0.05, (150, 200, 215), yaw)             # glass back wall
     for s in (-1, 1):
-        g.box(x + ca * 1.4 * s, 0, z + sa * 1.4 * s, 0.1, 2.4, 0.1, (60, 62, 68))
-    g.box(x - nx * 0.6, 0.4, z - nz * 0.6, 2.8, 1.8, 0.05, (150, 200, 215), yaw)             # glass back wall
-    g.box(x - nx * 0.3, 0.0, z - nz * 0.3, 1.8, 0.45, 0.4, (120, 84, 56), yaw)               # bench
+        g.box(x + ca * 1.15 * s - nx * 0.4, 0.0, z + sa * 1.15 * s - nz * 0.4, 1.8, 0.45, 0.45, (120, 84, 56), yaw)   # two benches
     return g
 
 
@@ -361,6 +362,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         o = e["b"] if end == 0 else e["a"]
         return e["len"] < 45.0 and o in lit_nodes and cluster_of.get(o) == cluster_of.get(e["a"] if end == 0 else e["b"])
 
+    xgrid = {}
     cl_ref = {}                                               # cluster -> (rank, width, ux, uy) of its biggest road: signal group 0 runs along it for every node of the junction
     for node, lst in inc.items():
         if len(lst) < 3:
@@ -420,8 +422,12 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 if want_light:
                     head_only(ei, end)
                 continue
-            has_x = w >= 6.0 and e["len"] >= 30 and rr.random() < (0.9 if (want_light and rk >= 2) else 0.5 if rk >= 2 else 0.3)
+            has_x = (lit_node and w >= 5.0 and e["len"] >= 10.0) or (w >= 6.0 and e["len"] >= 30 and rr.random() < (0.9 if (want_light and rk >= 2) else 0.5 if rk >= 2 else 0.3))     # every signalled street has its zebra
+            if has_x and any((px - qx) ** 2 + (py - qy) ** 2 < 42.0 for gx_ in (-1, 0, 1) for gy_ in (-1, 0, 1)
+                             for qx, qy in xgrid.get((int(px // 5) + gx_, int(py // 5) + gy_), ())):
+                has_x = False                              # another crossing within 6.5 m (a roundabout's arms, a divided junction's halves)
             if has_x:
+                xgrid.setdefault((int(px // 5), int(py // 5)), []).append((px, py))
                 xw.append((px, py, ax, ay, w, 1))
                 counts["cross"] += 1
             fx, fy = ax, ay                               # signs face the approaching traffic
@@ -490,7 +496,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     if ok(px, py) and not_building(px, py) and not_building(px + rx * 1.2, py + ry * 1.2):
                         put(bus_shelter(px, py, math.atan2(dy, dx)), px, py)
                         put(sign(px + dx * 2.2, py + dy * 2.2, rx, ry, "bus"), px + dx * 2.2, py + dy * 2.2)
-                        posts += [(px + dx * 1.4, py + dy * 1.4, 0.25), (px - dx * 1.4, py - dy * 1.4, 0.25)]
+                        posts += [(px + dx * 2.3, py + dy * 2.3, 0.25), (px - dx * 2.3, py - dy * 2.3, 0.25)]
                         counts["stops"] += 1
                 s += r.uniform(110, 200)
         if e["drive"] and not e["bridge"] and L > 30 and cls in RANK:      # one-way streets: the sign where they start, no entry where they end
@@ -658,8 +664,8 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 continue
             if not_building(px, py) and not is_water(px, py):
                 put(bus_shelter(px, py, math.atan2(dy, dx)), px, py, False)
-                put(sign(px + dx * 2.2, py + dy * 2.2, rx, ry, "bus"), px + dx * 2.2, py + dy * 2.2, False)
-                posts += [(px + dx * 1.4, py + dy * 1.4, 0.25), (px - dx * 1.4, py - dy * 1.4, 0.25)]
+                put(sign(px + dx * 3.2, py + dy * 3.2, rx, ry, "bus"), px + dx * 3.2, py + dy * 3.2, False)
+                posts += [(px + dx * 2.3, py + dy * 2.3, 0.25), (px - dx * 2.3, py - dy * 2.3, 0.25)]
                 bx_, by_ = qx + rx * (e["w"] / 2 - 1.2), qy + ry * (e["w"] / 2 - 1.2)
                 far = min(math.hypot(bx_ - e["pts"][0][0], by_ - e["pts"][0][1]), math.hypot(bx_ - e["pts"][-1][0], by_ - e["pts"][-1][1]))
                 if e["w"] >= 5.5 and far > 12.0:

@@ -1527,14 +1527,15 @@ class Traffic:
             return None
         st = sg.state_of(c.e, 1 if c.d == 1 else 0)
         rem = None
+        hl = vehicles.HALF_L[c.kind]
         if st:
-            rem = L - c.s - 9.0                                    # stop line before the junction
+            rem = L - c.s - sg.stopd.get((c.e, 1 if c.d == 1 else 0), 10.0) - hl           # the front bumper stops at the pole
         elif c.nxt is not None:
             e2 = self.w.edges[c.nxt[0]]
             if e2["len"] < 60.0:
                 st = sg.state_of(c.nxt[0], 1 if c.nxt[1] == 1 else 0)
                 if st:
-                    rem = L - c.s + e2["len"] - 9.0
+                    rem = L - c.s + e2["len"] - sg.stopd.get((c.nxt[0], 1 if c.nxt[1] == 1 else 0), 10.0) - hl
         if rem is None:
             return None
         if st == 1 and rem < c.v * c.v / 7.0 + 1.0:
@@ -1553,8 +1554,8 @@ class Traffic:
         node, (key, _c, h1, _eta), lit = me
         if c.stuck > 15.0:
             return False                                      # it has waited long enough to edge out
-        if c.nxt is not None and self.occ.get(c.nxt, 1e9) < 6.0 + vehicles.HALF_L[c.kind]:
-            return True                                       # keep the box clear
+        if c.nxt is not None and self.occ.get(c.nxt, 1e9) < self.w.edges[c.e]["w"] * 0.5 + 6.0 + 2.0 * vehicles.HALF_L[c.kind] + 1.0:
+            return True                                       # keep the box clear: do not enter unless the whole car fits on the far side
         e = self.w.edges[c.e]
         jx, jy = e["pts"][-1] if c.d == 1 else e["pts"][0]
         rj = e["w"] * 0.5 + 6.0                               # the junction box, about

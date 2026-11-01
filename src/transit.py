@@ -609,11 +609,19 @@ class Transit:
         self.sim.peds.list.append(p)
         return p
 
+    def _crowd(self):
+        """How busy the stops are: morning and afternoon rush hours, a quiet night (round 31)."""
+        h = getattr(getattr(self.sim, "clock", None), "hour", 12.0)
+        for lo, hi, f in ((7.0, 9.5, 2.0), (12.0, 14.0, 1.3), (15.5, 18.5, 2.0), (21.0, 24.0, 0.35), (0.0, 5.5, 0.15)):
+            if lo <= h < hi:
+                return f
+        return 1.0
+
     def _at_stop(self, bus, k):
         """Doors open: the queue walks to the door, a few people get off."""
         b = bus.body
         dx_, dy_ = self.door(b)
-        for _ in range(self.rng.choice((0, 1, 1, 2, 3))):
+        for _ in range(int(round(self.rng.choice((0, 1, 1, 2, 3, 4, 5)) * self._crowd() * self.rng.uniform(0.6, 1.4)))):
             p = self._new_ped(dx_ + self.rng.uniform(-0.6, 0.6), dy_ + self.rng.uniform(-0.6, 0.6), b.h - math.pi / 2, "alight")
             p.t = self.rng.uniform(5.0, 9.0)
             fx, fy = math.cos(b.h), math.sin(b.h)
@@ -650,8 +658,9 @@ class Transit:
             if q is None or (not q and self.refill.get(k, 0) <= 0):
                 q = self.queue.setdefault(k, [])
                 if not q:
-                    for j in range(rng.randint(1, 4)):
-                        u = (j - 1.5) * 1.1 + rng.uniform(-0.3, 0.3)
+                    n_q = max(0, int(round(rng.randint(1, 5) * self._crowd() * rng.uniform(0.6, 1.4))))
+                    for j in range(n_q):
+                        u = (j - (n_q - 1) / 2.0) * min(1.1, 3.8 / max(n_q, 1)) + rng.uniform(-0.25, 0.25)
                         x, y = st[0] + st[2] * u + (st[4] - st[0]) * 0.25, st[1] + st[3] * u + (st[5] - st[1]) * 0.25
                         face = math.atan2(st[5] - st[1], st[4] - st[0])
                         if d > 60:                              # out of sight: already waiting when you arrive

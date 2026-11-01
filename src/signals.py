@@ -6,8 +6,8 @@ import math
 
 import pyray as rl
 
-CYCLE = 32.0
-GREEN, YELLOW, CLEAR = 15.0, 2.5, 0.5          # green of the major group; the minor one gets the rest of the cycle
+CYCLE = 50.0
+GREEN, YELLOW, CLEAR = 24.0, 3.0, 1.5          # green of the major group; the minor one gets the rest of the cycle
 WAVE = 12.5                                     # m/s: speed of the green wave (≈ 45 km/h)
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}
 COLS = {0: rl.Color(60, 235, 100, 255), 1: rl.Color(250, 200, 40, 255), 2: rl.Color(240, 50, 40, 255)}
@@ -38,6 +38,16 @@ class Signals:
             else:
                 anchors.append((jx, jz))
                 self.anchor[n] = jx
+        self.stopd = {}                                  # (edge, end) -> metres before the junction where its cars stop: right at the pole
+        for i, it in enumerate(self.items):
+            lx, lz, jx, jz = it[4], it[5], it[6], it[7]
+            if lx == lx:
+                ax, ay = self._axis(i)
+                d = min(40.0, max(4.0, (jx - lx) * ax + (jz - lz) * ay - 0.6))
+            else:
+                d = 10.0
+            k = (it[1], it[2])
+            self.stopd[k] = min(self.stopd.get(k, 99.0), d)
         self.cl = {}                                     # junction -> its cluster, so a big crossing agrees on which group is major
         for n in self.nodes:
             self.cl[n] = self.anchor[n]
