@@ -1636,6 +1636,50 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")].replace("in vec2 wpos;", 
   }
   finalColor = vec4(c, base.a);
 }"""
+# facades and roofs: texture emboss towards the fixed sun (window frames, bricks, tiles get relief), fine grit and weathering streaks
+BUILD_FS = """#version 330
+in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
+uniform sampler2D texture0; uniform sampler2D texture1; uniform vec4 colDiffuse;
+out vec4 finalColor;
+void main(){
+  vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
+  vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
+  float wall = 1.0 - step(0.6, abs(nrm.y));
+  float l0 = dot(texture(texture0, fragTexCoord).rgb, vec3(0.333));
+  float l1 = dot(texture(texture0, fragTexCoord + vec2(0.0035, 0.0035)).rgb, vec3(0.333));
+  float emb = clamp((l1 - l0) * 1.8, -0.22, 0.22);                        // lit edges towards the sun, dark ones away
+  vec2 q = wall > 0.5 ? vec2(wp.x + wp.z, wp.y) : wpos;
+  float grit = texture(texture1, q / 2.1).r - 0.5;
+  float stain = texture(texture1, wall > 0.5 ? vec2((wp.x + wp.z) / 11.0, wp.y / 38.0) : wpos / 17.0).b;
+  float fade = 1.0 - smoothstep(60.0, 160.0, gl_FragCoord.z / gl_FragCoord.w);   // detail only up close (far away it would shimmer)
+  float k = 1.0 + fade * (emb + grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
+  finalColor = vec4(base.rgb * k, base.a);
+}"""
+_bld = None
+
+
+def building_detail():
+    global _bld
+    if _bld is None:
+        d = ground_detail()
+        _bld = False
+        if d is not None:
+            try:
+                sh = rl.load_shader_from_memory(DETAIL_VS, BUILD_FS)
+                if sh.id and sh.id != rl.rl_get_shader_id_default():
+                    _bld = (sh, d[1])
+            except Exception as e:  # noqa: BLE001
+                print(f"[gfx] building detail off: {e}")
+    return _bld or None
+
+
+def apply_building_detail(model):
+    d = building_detail()
+    if d is not None and model is not None:
+        model.materials[0].shader = d[0]
+        model.materials[0].maps[1].texture = d[1]
+
+
 _solid = None
 
 

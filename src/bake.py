@@ -93,9 +93,12 @@ def _crosswalk(xw):
 
 
 def _cast(b, a=26):
-    k = min(1.0, 9.0 / (b["h"] * 0.32 + 1e-6))      # cap the cast length so tall blocks don't leave detached ghost footprints
-    for f in (0.25, 0.5, 0.75, 1.0):               # sweep the footprint along the shadow direction
-        fill_tris(b["v"], b["tri"], (20, 20, 30, a), b["h"] * 0.32 * k * f, b["h"] * 0.22 * k * f)
+    # the shadow falls exactly away from gl3d.SUN: ground offset per metre of height = (sun.x, sun.z) / sun.y
+    k = min(1.0, 16.0 / (b["h"] * 0.75 + 1e-6))     # cap the cast length so tall blocks don't leave detached ghost footprints
+    dx, dy = -gl3d.SUN[0] / gl3d.SUN[1] * b["h"] * k, -gl3d.SUN[2] / gl3d.SUN[1] * b["h"] * k
+    n = max(2, int(math.hypot(dx, dy) / 1.5))        # sweep the footprint in ~1.5 m steps so the swept area has no gaps
+    for i in range(1, n + 1):
+        fill_tris(b["v"], b["tri"], (20, 20, 30, a), dx * i / n, dy * i / n)
 
 
 SHADOW_PPM = 2.0                # the shadow overlay is soft: half the ground resolution
@@ -110,13 +113,12 @@ def bake_shadow(world, cx, cy, rt):
     rl.begin_texture_mode(rt)
     rl.clear_background(rl.Color(20, 20, 30, 0))
     rl.begin_mode_2d(rl.Camera2D(rl.Vector2(0, 0), rl.Vector2(ox, oy), 0.0, SHADOW_PPM))
-    rl.rl_set_blend_factors_separate(rl.RL_SRC_ALPHA, rl.RL_ONE_MINUS_SRC_ALPHA, rl.RL_ONE, rl.RL_ONE_MINUS_SRC_ALPHA,
-                                     rl.RL_FUNC_ADD, rl.RL_FUNC_ADD)
-    rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)         # (factors first) alpha must accumulate linearly, not as a*a
+    rl.rl_set_blend_factors_separate(rl.RL_ONE, rl.RL_ONE, rl.RL_ONE, rl.RL_ONE, rl.RL_MAX, rl.RL_MAX)
+    rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)         # max-blend: overlapping sweep steps and trees give one even shadow, no dark banding
     try:
         if ch is not None:
             for i in ch["b"]:
-                _cast(world.buildings[i], 44)      # the overlay no longer gets the ground shader's extra darkening of dark texels
+                _cast(world.buildings[i], 70)      # the overlay no longer gets the ground shader's extra darkening of dark texels
             for ti in ch["t"]:
                 x, y, r, _sh = world.trees[ti]
                 disc(x + 1.6, y + 1.2, r * 0.95, (10, 25, 10, 70), 8)
@@ -320,6 +322,8 @@ class Streamer:
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
                     if mat == 3 and getattr(self.world, "roads3d", False):
                         gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
+                    elif mat in (0, 1, 2, 4, 5):
+                        gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
         self.mesh_loaded += 1
