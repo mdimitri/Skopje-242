@@ -44,7 +44,7 @@ import talk   # noqa: E402
 import settings as settings_mod   # noqa: E402
 import geo as geo_mod   # noqa: E402
 import gl3d          # noqa: E402
-import fxaa as fxaa_mod   # noqa: E402
+import present as present_mod   # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
@@ -367,7 +367,7 @@ def main():
     rl.set_target_fps(0 if a.test else 144)
 
     need = plan_needs(a)
-    fxaa = fxaa_mod.Fxaa()
+    present = present_mod.Present()
     keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
@@ -1269,10 +1269,21 @@ def main():
     snap = False
     last_phase = None
     hitch_t0 = time.perf_counter()
+    win_focus = True
     while not rl.window_should_close():
         dt_real = rl.get_frame_time()
         dt = 1 / 60 if a.test else min(dt_real, 0.05)
-        sw, sh = rl.get_screen_width(), rl.get_screen_height()
+        if present_mod.pending_quit:                    # the exit button was pressed inside the frame buffer
+            present_mod.pending_quit = False
+            present_mod.off()
+            if font.confirm_quit(True):
+                break
+        sw, sh = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["res"]]
+        present.activate(sw, sh)                        # the frame is drawn at the menu resolution and scaled to the window
+        focused_now = bool(rl.is_window_focused())
+        if focused_now != win_focus:
+            win_focus = focused_now
+            log(f"[window] {'focus gained' if focused_now else 'focus lost'} fullscreen={is_borderless()}")
         frame += 1
         t_game += dt
         # ------------------------------------------------ input
@@ -1377,7 +1388,10 @@ def main():
                     for nm in list(aud._cur):
                         aud.loop(nm, 0.0)
             enter_pressed = rl.is_key_pressed(rl.KEY_F) or rl.is_key_pressed(rl.KEY_ENTER)
-            if rl.is_key_pressed(rl.KEY_TAB) and sim.mode == "foot" and sim.walker is not None:   # Tab: next weapon
+            if rl.is_key_pressed(rl.KEY_TAB) and (rl.is_key_down(rl.KEY_LEFT_ALT) or rl.is_key_down(rl.KEY_RIGHT_ALT)):
+                log("[window] Alt+Tab reached the game (Windows did not switch) - minimising the window")
+                rl.minimize_window()
+            elif rl.is_key_pressed(rl.KEY_TAB) and sim.mode == "foot" and sim.walker is not None:   # Tab: next weapon
                 import actors as _a
                 wname = sim.walker.cycle()
                 hud.set_banner(_a.WEAPONS[wname][0] if wname in _a.WEAPONS else TXT("main.0037"), 1.2)
@@ -1534,9 +1548,7 @@ def main():
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()
-        fx_on = cfg["aa"] >= 2
-        if fx_on:
-            fxaa.begin(sw, sh)
+        present.begin()
         try:
             rl.clear_background(rl.Color(26, 28, 32, 255))
             if sf_on:
@@ -1599,8 +1611,7 @@ def main():
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
-            if fx_on:
-                fxaa.end()
+            present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
             t_sw = time.perf_counter()
             rl.end_drawing()
         ft_hist.append(dt_real)

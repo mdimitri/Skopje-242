@@ -8,6 +8,7 @@ import font   # noqa: E402
 
 import characters as C
 import poster
+import present
 import settings as S
 
 GOLD = rl.Color(240, 200, 60, 255)
@@ -56,6 +57,7 @@ def _rows(in_game, slots=()):
         (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
         (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
         # new labels live here until they can be added to text/ (human-edited)
+        (2, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
         (2, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
         (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (2, H("Камера")),
@@ -91,6 +93,8 @@ def _rows(in_game, slots=()):
 
 
 def _title_card(seconds=6.0):
+    present.off()                         # menus draw straight to the window
+
     """The title poster full screen until a key / click (or `seconds`).  -> True if the window was closed."""
     t0 = time.time()
     while True:
@@ -142,6 +146,8 @@ def _layout(n, W, H, aspect):
 
 
 def pick_character(cfg, aud=None):
+    present.off()                         # menus draw straight to the window
+
     """Избор на лик (стрелки / глушец, Enter). -> True ако е затворен прозорецот."""
     n = len(C.LIKOVI)
     sel = min(cfg["lik"], n - 1)
@@ -254,6 +260,8 @@ def _first(rows):
 
 
 def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
+    present.off()                         # menus draw straight to the window
+
     """Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game.
     -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'"""
     import savegame

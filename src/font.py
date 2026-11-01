@@ -151,7 +151,13 @@ def exit_button(x=None, y=10):
     """The always-there "× Излез" button: asks first, then closes the game."""
     if x is None:
         x = rl.get_screen_width() - 120
-    if button(TXT("font.0005"), x, y, 108, 34) and confirm_quit(True):
+    if button(TXT("font.0005"), x, y, 108, 34):
+        import present
+        if present.vw:                       # inside the game frame buffer: the main loop asks, outside it
+            present.pending_quit = True
+            return
+        if not confirm_quit(True):
+            return
         try:
             rl.close_window()
         finally:
