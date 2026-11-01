@@ -226,7 +226,7 @@ class Hud:
         N, NH = self.ov.width, self.ov.height
         k = N / (2 * HX)
         if not show_map:
-            ms = 240
+            ms = max(130, min(300, int(sh * 0.27)))                       # 240 px at 900 p; shrinks with the render resolution
             mx, my = 16, sh - ms - 16
             span = 380
             half = span * k / 2
@@ -254,6 +254,16 @@ class Hud:
                     rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(150, 40, 40, 255))
                     if name:
                         font.draw_text(name, int(qx) + 5, int(qy) - 7, 12, rl.Color(150, 40, 40, 255))
+            for bd in sim.bodies:                                            # parked and standing vehicles (the player's own is the arrow)
+                if bd is not c and bd.alive:
+                    qx, qy = to_mm(bd.x, bd.y)
+                    if mx < qx < mx + ms and my < qy < my + ms:
+                        rl.draw_rectangle(int(qx) - 1, int(qy) - 1, 3, 3, rl.Color(170, 175, 185, 230))
+            for bus in sim.transit.buses:
+                if bus.body is not None:
+                    qx, qy = to_mm(bus.body.x, bus.body.y)
+                    if mx < qx < mx + ms and my < qy < my + ms:
+                        rl.draw_rectangle(int(qx) - 2, int(qy) - 2, 5, 5, rl.Color(250, 190, 40, 255))
             for cc in sim.traffic.cars:
                 qx, qy = to_mm(cc.x, cc.y)
                 if mx < qx < mx + ms and my < qy < my + ms:
