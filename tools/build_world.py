@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 40
+VERSION = 42
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -386,7 +386,7 @@ def building_height(t, area, r):
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
-GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 12, 48
+GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
@@ -480,7 +480,7 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
         cell = rng.randrange(GRAF_N)
         e = 3.0 / 1024                                      # keep clear of neighbouring cells
         u1, u0 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e       # u runs against the wall direction: seen from outside the text reads left to right
-        v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+        v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e / 6, (cell // GRAF_COLS + 1) / GRAF_ROWS - e / 6
         A, B, Cc, D = (ax, y0, az), (bx, y0, bz), (bx, y1, bz), (ax, y1, az)
         P += [A, B, Cc, A, Cc, D]
         U += [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
@@ -497,7 +497,7 @@ def roof_graffiti(ring, bb, h, rng, n_max=1):
     P, U, C = [], [], []
     for _ in range(n_max):
         for _try in range(8):
-            w = rng.uniform(4.5, 9.5)
+            w = rng.uniform(6.0, 11.0)
             hh = w * 0.5
             if w > bw * 0.95 or hh > bd * 0.95:
                 continue
@@ -511,7 +511,7 @@ def roof_graffiti(ring, bb, h, rng, n_max=1):
             cell = rng.randrange(GRAF_N)
             e = 3.0 / 1024
             u0, u1 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e
-            v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+            v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e / 6, (cell // GRAF_COLS + 1) / GRAF_ROWS - e / 6
             y = h + 0.07
             A, B, Cc, D = ((q[0], y, q[1]) for q in corn)
             P += [A, B, Cc, A, Cc, D]
@@ -540,7 +540,7 @@ def pitched_graffiti(ring, h, apex_h, rng):
     if best < 0:
         return None
     i = best
-    w = min(float(ln[i]) * 0.85, 7.0)
+    w = min(float(ln[i]) * 0.9, 9.0)
     s0 = rng.uniform(0.0, float(ln[i]) - w)
     ux, uz = d[i, 0] / ln[i], d[i, 1] / ln[i]
     a = (r[i, 0] + ux * s0, r[i, 1] + uz * s0)
@@ -556,7 +556,7 @@ def pitched_graffiti(ring, h, apex_h, rng):
     cell = rng.randrange(GRAF_N)
     e = 3.0 / 1024
     u1, u0 = (cell % GRAF_COLS) / GRAF_COLS + e, (cell % GRAF_COLS + 1) / GRAF_COLS - e   # mirrored along the edge, see graffiti_geo
-    v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e, (cell // GRAF_COLS + 1) / GRAF_ROWS - e
+    v0, v1 = (cell // GRAF_COLS) / GRAF_ROWS + e / 6, (cell // GRAF_COLS + 1) / GRAF_ROWS - e / 6
     P = [A, B, Cc, A, Cc, D]
     U = [(u0, v1), (u1, v1), (u1, v0), (u0, v1), (u1, v0), (u0, v0)]
     return np.array(P, np.float32), np.array(U, np.float32), np.array([(255, 255, 255, 255)] * 6, np.uint8)

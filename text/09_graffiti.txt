@@ -2,14 +2,14 @@
 #  9. WALL GRAFFITI (painted on buildings, roofs and roof slopes)
 ##############################################################################
 #
-# CONTAINS: the phrases of the 48 graffiti pieces (src/graffiti.py paints them into one atlas texture at start-up).
+# CONTAINS: the phrases of the graffiti pieces (src/graffiti.py paints them into one atlas texture at start-up).
 # NEW, FOR REVIEW BY THE HUMAN EDITOR: jokes and slang from docs/Skopje_slang_bible.txt, not native-reviewed.
 #
 # HOW TO READ THIS FILE (full rules: text/README.md)
 #   - Only edit the text AFTER " = ". Never change the key before it (e.g. graffiti.0042).
 #   - \n starts a new line inside one graffiti. Keep it to 1-2 lines and about 12-14 letters per line, longer
 #     lines are shrunk to fit.  A word between ~ ~ is painted struck through (e.g. ~ШМЕКЕР~\nПАПАК).
-#   - Order = piece number: pieces 1-32 are the first round, 33-48 the new ones. Style and colour are set in the code.
+#   - Order = piece number: pieces 1-48 are the first round, 49 and up the second. Look (font, effect, colour) is picked by the code per piece; every piece is plain painted text, no backgrounds.
 
 # [graffiti 1 · bubble]
 graffiti.0001 = ЖИМИ МАЈКА
@@ -154,3 +154,474 @@ graffiti.0047 = ПОВЕЌЕ ЛЕВОВИ\nОД ЛУЃЕ
 
 # [graffiti 48 · tag]
 graffiti.0048 = ТРОТОАРОТ Е\nМОЈ
+
+# [graffiti 49]
+graffiti.0049 = ПЕЕР ЌЕ ТИ\nОБЈАСНАМ
+
+# [graffiti 50]
+graffiti.0050 = ШУПЕЛКА\nНА ДЕЖУРСТВО
+
+# [graffiti 51]
+graffiti.0051 = ПАПАК АЛЕРТ
+
+# [graffiti 52]
+graffiti.0052 = КОПУК ПО\nПРИЗВАНИЕ
+
+# [graffiti 53]
+graffiti.0053 = ФАЦА БЕЗ\nПОКРИТИЕ
+
+# [graffiti 54]
+graffiti.0054 = ЗАТУПАН\nДО СКОПЈЕ
+
+# [graffiti 55]
+graffiti.0055 = ЛИГУШ СО\nЛИЦЕНЦА
+
+# [graffiti 56]
+graffiti.0056 = КРАЧ\nЗАСЕКОГАШ
+
+# [graffiti 57]
+graffiti.0057 = ГЛУПЕРДА\nПРЕТСЕДАВА
+
+# [graffiti 58]
+graffiti.0058 = АБДАЛ БЕЗ\nПАУЗА
+
+# [graffiti 59]
+graffiti.0059 = БАЧЕ, ТУКА\nСЕ ПАРКИРА
+
+# [graffiti 60]
+graffiti.0060 = БРААААТ!
+
+# [graffiti 61]
+graffiti.0061 = ЈА ЈАДАМ\nТРИЦИТЕ
+
+# [graffiti 62]
+graffiti.0062 = ЗАБИ ВО ЅИД\nИ ТИ
+
+# [graffiti 63]
+graffiti.0063 = ЖИМИ СЀ,\nНЕ ЗНАМ ШТО
+
+# [graffiti 64]
+graffiti.0064 = ЖИМИ МАЈКА,\nПАК ПАУК
+
+# [graffiti 65]
+graffiti.0065 = ШО ИМА,\nШО НЕМА?
+
+# [graffiti 66]
+graffiti.0066 = АЈДЕ БЕ,\nПОЛЕКА
+
+# [graffiti 67]
+graffiti.0067 = ЛЕЛЕ ЕЈ,\nКОЈ ПАРКИРАШЕ
+
+# [graffiti 68]
+graffiti.0068 = ЧУКНИ ВО ДРВО,\nИМАМ ПАРКИНГ
+
+# [graffiti 69]
+graffiti.0069 = ЦАРЕ, КОЛКУ\nЕ КАФЕТО?
+
+# [graffiti 70]
+graffiti.0070 = МАЈСТОРЕ,\nИМА ВЕЗА?
+
+# [graffiti 71]
+graffiti.0071 = ЛЕГЕНДО,\nПЛАЌАЈ СМЕТКА
+
+# [graffiti 72]
+graffiti.0072 = ШЕФЕ, ДАЛИ\nОВА Е ДРУМ?
+
+# [graffiti 73]
+graffiti.0073 = ЧАО,\nАРИВЕДЕРЧИ!
+
+# [graffiti 74]
+graffiti.0074 = АЈВАР\nПРОТИВ СЀ
+
+# [graffiti 75]
+graffiti.0075 = БУРЕК ЗА\nДОРУЧЕК, РУЧЕК
+
+# [graffiti 76]
+graffiti.0076 = БУРЕК СО СИРЕЊЕ\nИЛИ СО ЖИВОТ
+
+# [graffiti 77]
+graffiti.0077 = БОЗА Е\nЗА ХЕРОИ
+
+# [graffiti 78]
+graffiti.0078 = КАФЕ ПА\nПРОТЕСТ
+
+# [graffiti 79]
+graffiti.0079 = МРЗИ МЕ\nИ ДА ДИШАМ
+
+# [graffiti 80]
+graffiti.0080 = СМОГОТ Е\nЛОЈАЛЕН
+
+# [graffiti 81]
+graffiti.0081 = ДИШИ ДУБОКО.\nНЕ, ШЕГА
+
+# [graffiti 82]
+graffiti.0082 = ВАРДАР ТЕЧЕ,\nПАРКИНГ СТОЈИ
+
+# [graffiti 83]
+graffiti.0083 = КАЛЕ ГЛЕДА,\nГРАДОТ ЗБОРУВА
+
+# [graffiti 84]
+graffiti.0084 = ГОЛУБИТЕ\nСЕ НАШИ
+
+# [graffiti 85]
+graffiti.0085 = ГАЛЕБИТЕ\nТОЛКУ НЕ
+
+# [graffiti 86]
+graffiti.0086 = КАМЕН МОСТ,\nПЛАЌАЈ ВЛЕЗ
+
+# [graffiti 87]
+graffiti.0087 = ВОЈНИКОТ НА\nКОЊ Е УМОРЕН
+
+# [graffiti 88]
+graffiti.0088 = ПЛОШТАДОТ\nПАК СЕ ГРАДИ
+
+# [graffiti 89]
+graffiti.0089 = СПОМЕНИК\nВО ДОЗВОЛА
+
+# [graffiti 90]
+graffiti.0090 = ПРОЕКТОТ\nНИКОГАШ НЕ СВРШУВА
+
+# [graffiti 91]
+graffiti.0091 = ТУКА ЌЕ БИДЕ\nПАРК. ИЛИ ЗГРАДА
+
+# [graffiti 92]
+graffiti.0092 = ИМА ИДЕЈА,\nНЕМА ПАРИ
+
+# [graffiti 93]
+graffiti.0093 = ДОЗВОЛА ЗА\nДОЗВОЛА
+
+# [graffiti 94]
+graffiti.0094 = ШАЛТЕР ЗА\nШАЛТЕР
+
+# [graffiti 95]
+graffiti.0095 = ЕЛА УТРЕ,\nУТРЕ СЕ НЕ РАБОТИ
+
+# [graffiti 96]
+graffiti.0096 = ЧЕКАЈ ВО\nРЕД ЗА РЕД
+
+# [graffiti 97]
+graffiti.0097 = ПОТПИС И\nПЕЧАТ И ЖИВЦИ
+
+# [graffiti 98]
+graffiti.0098 = ВО СРЕДА\nСАМО ВО ЧЕТВРТОК
+
+# [graffiti 99]
+graffiti.0099 = ЕВРОПА, АЛО,\nЈАВИ СЕ
+
+# [graffiti 100]
+graffiti.0100 = ЕВРОИНТЕГРАЦИЈА\n50%... СЕ ВЧИТУВА
+
+# [graffiti 101]
+graffiti.0101 = ПРОЕКТ ЗА\nЗАСЕКОГАШ
+
+# [graffiti 102]
+graffiti.0102 = БУЏЕТОТ\nИЗЛЕЗЕ НА КАФЕ
+
+# [graffiti 103]
+graffiti.0103 = ЦЕНИТЕ РАСТАТ,\nПЛАТАТА СПИЕ
+
+# [graffiti 104]
+graffiti.0104 = ПЛАТАТА ДОАЃА\nКАКО ГОСТИН
+
+# [graffiti 105]
+graffiti.0105 = ДО ПЛАТА\nТРИ ПОСТА
+
+# [graffiti 106]
+graffiti.0106 = ПАРИТЕ СЕ\nКАКО ТЕРМИН
+
+# [graffiti 107]
+graffiti.0107 = КРЕДИТ ЗА\nКРЕДИТ ЗА КРЕДИТ
+
+# [graffiti 108]
+graffiti.0108 = ТРОШИМ ДА\nНЕ ИМАМ
+
+# [graffiti 109]
+graffiti.0109 = ГАЗДА,\nРЕЗЕРВИРАНО
+
+# [graffiti 110]
+graffiti.0110 = ГАЗДА ПЛАЌА,\nПАК
+
+# [graffiti 111]
+graffiti.0111 = НА ГАЗДАТА\nМУ СЕ ТРЕС
+
+# [graffiti 112]
+graffiti.0112 = СПОНЗОРУША\nГЛЕДА КЛЕТВА
+
+# [graffiti 113]
+graffiti.0113 = ШМЕКЕР СО\nПОЗАЈМЕНА ЈАКНА
+
+# [graffiti 114]
+graffiti.0114 = ШМИНКЕР ИМА\nБРЗО ОГЛЕДАЛО
+
+# [graffiti 115]
+graffiti.0115 = ФЕЈКЕР НА\nПЕРМАНЕНТНО
+
+# [graffiti 116]
+graffiti.0116 = ИНФЛУЕНСЕР\nЗА ЕДЕН ДЕН
+
+# [graffiti 117]
+graffiti.0117 = ПОЗЕР, ПОЗЕР,\nПОЗЕР
+
+# [graffiti 118]
+graffiti.0118 = СЕЛФИ ПРЕД\nГРАДЕЖЕН
+
+# [graffiti 119]
+graffiti.0119 = ЛАЈКУВАЈ ГО\nПАТОТ
+
+# [graffiti 120]
+graffiti.0120 = КРИНЏ ДО\nКРАЈ
+
+# [graffiti 121]
+graffiti.0121 = ОВА Е\nУМЕТНОСТ
+
+# [graffiti 122]
+graffiti.0122 = ГРАФИТ ИЛИ\nШИРЕЊЕ НА МИСЛА?
+
+# [graffiti 123]
+graffiti.0123 = ЗА ПОРАНЕШНИОТ\nСОСЕД
+
+# [graffiti 124]
+graffiti.0124 = МРЗА МИ ДА\nПИШУВАМ ГРАФИТИ
+
+# [graffiti 125]
+graffiti.0125 = НПЦ КОЈ\nЗНАЕ ЗА ТЕБЕ
+
+# [graffiti 126]
+graffiti.0126 = БОТ БЕЗ\nЗАДАЧА
+
+# [graffiti 127]
+graffiti.0127 = ДРАМА КВИН,\nДРАМА КИНГ
+
+# [graffiti 128]
+graffiti.0128 = ТЕШКА КАТЕГОРИЈА\nЛЕК ЖИВОТ
+
+# [graffiti 129]
+graffiti.0129 = МУВА БЕЗ\nГЛАВА, СО ПЛАН
+
+# [graffiti 130]
+graffiti.0130 = ФИЛОЗОФ ОД\nДРУГ ТЕРМИН
+
+# [graffiti 131]
+graffiti.0131 = МААЛСКИ ФРАЕР\nСАМО НА ОВОЈ ЅИД
+
+# [graffiti 132]
+graffiti.0132 = ГРЕБАЧ,\nПАК ПРАШУВАШ?
+
+# [graffiti 133]
+graffiti.0133 = ДУДУЧЕ,\nИДИ ДОМА
+
+# [graffiti 134]
+graffiti.0134 = ЧУДАК\nНО СКОПСКИ
+
+# [graffiti 135]
+graffiti.0135 = КИСЕЛА ФАЦА\nЗА СЛАДОК ДЕН
+
+# [graffiti 136]
+graffiti.0136 = ОПАСЕН\nЗА ТЕСТОТО
+
+# [graffiti 137]
+graffiti.0137 = МАЛИОТ СЕ\nПРАВИ ГОЛЕМ
+
+# [graffiti 138]
+graffiti.0138 = БАБА ВИДЕ\nСЀ ПРЕКУ ПРОЗОРЕЦ
+
+# [graffiti 139]
+graffiti.0139 = ДЕДО ЗНАЕ\nКОЈ ГО ГРАДЕЛ
+
+# [graffiti 140]
+graffiti.0140 = ТЕТКИЦА ЈА ПРАВИ\nГОЛЕМАТА ПОЛИТИКА
+
+# [graffiti 141]
+graffiti.0141 = ДОКТОРОТ КАЖА:\nМЕНЕ ЛАЖАТ
+
+# [graffiti 142]
+graffiti.0142 = НАСТАВНИЦАТА\nПАК ДОАЃА
+
+# [graffiti 143]
+graffiti.0143 = СРЕДНОШКОЛЕЦ\nВО ВТОРА СМЕНА
+
+# [graffiti 144]
+graffiti.0144 = ГАЛАМА НА\nКОНЦЕРТ
+
+# [graffiti 145]
+graffiti.0145 = НАВИВАЧ ДО\nПОСЛЕДНАТА ЖИВЦИ
+
+# [graffiti 146]
+graffiti.0146 = ВАРДАР\nЌЕ ВИДИ
+
+# [graffiti 147]
+graffiti.0147 = КОМИТЕ,\nЗА НАС
+
+# [graffiti 148]
+graffiti.0148 = ГОРЧЕ ПЕТРОВ,\nПРИЈАТЕЛ БЕЗ ПАРКИНГ
+
+# [graffiti 149]
+graffiti.0149 = КАРПОШ СЕ\nШЕТА
+
+# [graffiti 150]
+graffiti.0150 = АЕРОДРОМ,\nАЕРОДРОМ
+
+# [graffiti 151]
+graffiti.0151 = ЧАИР НЕ СПИЕ,\nЧАИР ПИЕ
+
+# [graffiti 152]
+graffiti.0152 = ДЕБАР МААЛО\nГОВОРИ
+
+# [graffiti 153]
+graffiti.0153 = КАПИШТЕЦ\nГЛЕДА НАДОЛУ
+
+# [graffiti 154]
+graffiti.0154 = ВОДНО ГЛЕДА\nДАЛИ СМЕ ДОБРИ
+
+# [graffiti 155]
+graffiti.0155 = БИТ ПАЗАР,\nБИТ ЦЕНА
+
+# [graffiti 156]
+graffiti.0156 = СТАР БАЛКАН?\nСТАР ГРАД
+
+# [graffiti 157]
+graffiti.0157 = ЦРВЕНА\nМОЛЊА ПРЕТЕКНУВА
+
+# [graffiti 158]
+graffiti.0158 = ТАКСИ, ТАКСИ,\nТАКСИ НЕ СЕ ВРАЌА
+
+# [graffiti 159]
+graffiti.0159 = АВТОБУСОТ\nДОАЃА (МОЖЕ)
+
+# [graffiti 160]
+graffiti.0160 = СТОЈ,\nОДАМ ПЕШКИ
+
+# [graffiti 161]
+graffiti.0161 = ЗЕЛЕНО\nЗНАЧИ ПРОБАЈ
+
+# [graffiti 162]
+graffiti.0162 = СЕМАФОР\nПОЛОВИЧЕН
+
+# [graffiti 163]
+graffiti.0163 = ГАЗИ ГАС\nПА СЕ ВИДИ
+
+# [graffiti 164]
+graffiti.0164 = ПАУК, ПАУК,\nПАУК МОЈ
+
+# [graffiti 165]
+graffiti.0165 = МОЈОТ ПАРКИНГ,\nМОЈ ЈАЗИК
+
+# [graffiti 166]
+graffiti.0166 = ДВОЕН РЕД:\nДВОЈНА ВИНА
+
+# [graffiti 167]
+graffiti.0167 = СЕВЕРЕН ВЕТАР\nПАК НА СМОГ
+
+# [graffiti 168]
+graffiti.0168 = ТРОТОАР\nЗА СИТЕ
+
+# [graffiti 169]
+graffiti.0169 = ТРОТОАР КАКО\nПРЕЧКА ЗА СКОК
+
+# [graffiti 170]
+graffiti.0170 = ЗАКОН ЗА\nПАРКИРАЊЕ?
+
+# [graffiti 171]
+graffiti.0171 = ПАТЕКА ЗА\nВЕЛОСИПЕД. ХА.
+
+# [graffiti 172]
+graffiti.0172 = СКУТЕР НА\nЛЕВА ЛЕНТА
+
+# [graffiti 173]
+graffiti.0173 = МАЛКУ ОД СИТЕ\nНИШТО ОД НИКОЈ
+
+# [graffiti 174]
+graffiti.0174 = КАФЕ, ПА\nКАФЕ, ПА СОН
+
+# [graffiti 175]
+graffiti.0175 = СПИЈ УШТЕ,\nБУЏЕТОТ ЌЕ ДОЈДЕ
+
+# [graffiti 176]
+graffiti.0176 = НАМЕСТО\nРАБОТА: ПАУЗА
+
+# [graffiti 177]
+graffiti.0177 = МРТОВНА СМЕНА\nВО ЦЕНТАР
+
+# [graffiti 178]
+graffiti.0178 = ЛЕТО ВО\nСКОПЈЕ: 40 СТЕПЕНИ
+
+# [graffiti 179]
+graffiti.0179 = ЗИМА ВО\nСКОПЈЕ: ШМОГ
+
+# [graffiti 180]
+graffiti.0180 = ЕСЕН ВО\nСКОПЈЕ: РАЗМИСЛИ
+
+# [graffiti 181]
+graffiti.0181 = ПРОЛЕТ, ВО\nПРОЛЕТ СЕ ПЛАЌА
+
+# [graffiti 182]
+graffiti.0182 = НИШТО НЕ\nЕ БЕЗ ВЕЗА
+
+# [graffiti 183]
+graffiti.0183 = ВЕЗА Е\nПОБЕЗА ОД ПАРИ
+
+# [graffiti 184]
+graffiti.0184 = ЛИК ЗНАЕ\nЛИК. КОЈ ЛИК?
+
+# [graffiti 185]
+graffiti.0185 = ДОБАР ДЕН,\nДОБАР ЛИК
+
+# [graffiti 186]
+graffiti.0186 = ДОБАР ЛИК,\nЛОШ ПАРКИНГ
+
+# [graffiti 187]
+graffiti.0187 = ДОБРО ДОШЛИ\nВО НЕДОВРШЕНО
+
+# [graffiti 188]
+graffiti.0188 = КОЈ СЕ ПЛАШИ,\nПАРКИРА НА ТРОТОАР
+
+# [graffiti 189]
+graffiti.0189 = КОЈ ПАРКИРА\nПОСЛЕДЕН, ПЛАЌА
+
+# [graffiti 190]
+graffiti.0190 = ПОЛЕКА, ПОЛЕКА,\nСПИЕ ГРАДОТ
+
+# [graffiti 191]
+graffiti.0191 = НЕ ТРЧАЈ,\nЌЕ ТЕ ЗАМАЈАТ
+
+# [graffiti 192]
+graffiti.0192 = ЗАБРАНЕТО\nЗАБРАНЕТО
+
+# [graffiti 193]
+graffiti.0193 = ЗАБРАНЕТО\nСАМО ВО ПЕТОК
+
+# [graffiti 194]
+graffiti.0194 = ЗА ВРАЌАЊЕ\nВО ИДНИНА
+
+# [graffiti 195]
+graffiti.0195 = КУПИ ДВА,\nЗЕМИ ЕДЕН ДЕН
+
+# [graffiti 196]
+graffiti.0196 = ПРОДАВАМ\nВАЖНОСТ
+
+# [graffiti 197]
+graffiti.0197 = ПРОДАВАМ\nРАБОТА, ЧЕКАМ
+
+# [graffiti 198]
+graffiti.0198 = ИЗДАВАМ\nШАНСА
+
+# [graffiti 199]
+graffiti.0199 = ШАНСА, ШАНСА\nШАНСА, ШАНСА!
+
+# [graffiti 200]
+graffiti.0200 = ПАК ЌЕ СЕ\nСЛОЖИМЕ
+
+# [graffiti 201]
+graffiti.0201 = АМИН ЗА\nПОНЕДЕЛНИК
+
+# [graffiti 202]
+graffiti.0202 = МИР ВО\nКУЌАТА, ДОМ
+
+# [graffiti 203]
+graffiti.0203 = ХЕЈ, МАЛИ,\nВИДИ НАГОРЕ
+
+# [graffiti 204]
+graffiti.0204 = НИКОЈ НЕ\nГЛЕДА НАГОРЕ
+
+# [graffiti 205]
+graffiti.0205 = ТУКА БЕШЕ\nПЕЕР, ТУКА Е

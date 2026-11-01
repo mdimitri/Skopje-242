@@ -1,8 +1,9 @@
-"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (4 x 12 cells of 256 x 128).
+"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (4 x 52 cells of 256 x 128).
 
-tools/build_world.py puts a few alpha-keyed decal quads on building walls (material 6, "graf") that pick cells from this
-atlas: one extra texture and a few thousand quads, no per-frame cost.  The phrases come from docs/Skopje_slang_bible.txt.
-COLS / ROWS / CELL_W / CELL_H are mirrored in tools/build_world.py (GRAF_COLS / GRAF_ROWS).
+tools/build_world.py puts alpha-keyed decal quads on walls, roofs and roof slopes (material 6, "graf") that pick cells from
+this atlas: one extra texture and a few thousand quads, no per-frame cost.  The phrases are text/09_graffiti.txt
+(graffiti.0001 ...); the look of every piece (effect, decoration, colour, tilt) comes from look(i).  Plain painted text,
+no background plates.  COLS / ROWS / CELL_W / CELL_H / N_PIECES are mirrored in tools/build_world.py (GRAF_*).
 """
 import math
 import random
@@ -12,60 +13,23 @@ import pyray as rl
 import font
 from texts import TXT
 
-COLS, ROWS, CELL_W, CELL_H = 4, 12, 256, 128
+COLS, ROWS, CELL_W, CELL_H = 4, 52, 256, 128
+N_PIECES = 205                       # graffiti.0001 .. graffiti.0205
 
-# (style, lines, colour) - style: bubble | tag | stencil | scrawl | sticker | heart | crown
-# (style, colour) per piece; the phrases are text/09_graffiti.txt (graffiti.0001 ...)
-STYLES = [
-    ('bubble', (255, 214, 40)),
-    ('bubble', (80, 220, 255)),
-    ('tag', (230, 40, 50)),
-    ('crown', (255, 200, 40)),
-    ('scrawl', (250, 250, 250)),
-    ('stencil', (20, 20, 22)),
-    ('bubble', (255, 90, 190)),
-    ('scrawl', (255, 235, 120)),
-    ('tag', (120, 255, 120)),
-    ('bubble', (255, 140, 30)),
-    ('stencil', (20, 20, 22)),
-    ('sticker', (255, 60, 60)),
-    ('scrawl', (255, 255, 255)),
-    ('tag', (170, 120, 255)),
-    ('stencil', (30, 30, 34)),
-    ('scrawl', (255, 190, 90)),
-    ('tag', (255, 120, 40)),
-    ('bubble', (60, 230, 150)),
-    ('bubble', (255, 70, 70)),
-    ('scrawl', (240, 240, 240)),
-    ('sticker', (60, 140, 255)),
-    ('sticker', (255, 190, 40)),
-    ('tag', (255, 255, 90)),
-    ('bubble', (255, 60, 150)),
-    ('scrawl', (255, 120, 200)),
-    ('stencil', (25, 25, 28)),
-    ('sticker', (110, 220, 110)),
-    ('heart', (255, 50, 90)),
-    ('bubble', (90, 200, 255)),
-    ('tag', (255, 230, 60)),
-    ('scrawl', (230, 230, 255)),
-    ('heart', (255, 70, 70)),
-    ('stencil', (20, 20, 22)),
-    ('sticker', (255, 170, 40)),
-    ('scrawl', (250, 250, 250)),
-    ('stencil', (25, 25, 28)),
-    ('bubble', (255, 200, 60)),
-    ('scrawl', (255, 235, 120)),
-    ('sticker', (200, 60, 200)),
-    ('scrawl', (230, 230, 255)),
-    ('stencil', (30, 30, 34)),
-    ('tag', (255, 150, 50)),
-    ('bubble', (120, 230, 120)),
-    ('scrawl', (255, 160, 160)),
-    ('sticker', (80, 170, 255)),
-    ('stencil', (20, 20, 22)),
-    ('scrawl', (255, 210, 90)),
-    ('tag', (90, 230, 255)),
-]
+PALETTE = [(255, 214, 40), (80, 220, 255), (230, 40, 50), (255, 140, 30), (255, 90, 190), (120, 255, 120), (170, 120, 255),
+           (255, 255, 255), (255, 235, 120), (60, 230, 150), (255, 70, 70), (90, 200, 255), (25, 25, 28), (255, 160, 60)]
+STYLES = ("bubble", "tag", "scrawl", "wobble", "extrude", "neon", "stencil", "spray", "chalk", "outline2")
+DECOR = ("none", "none", "none", "underline", "drips", "sparks", "heart", "crown", "star", "arrow", "wave")
+
+
+def look(i):
+    """Deterministic (style, decor, colour, tilt) of piece i."""
+    r = random.Random(i * 7919 + 242)
+    st = STYLES[i % len(STYLES)]
+    col = r.choice(PALETTE)
+    if st == "stencil":
+        col = (25, 25, 28)
+    return st, r.choice(DECOR), col, r.uniform(-8, 8)
 
 
 def _f(bold=True):
@@ -112,75 +76,116 @@ def _heart(cx, cy, r, col):
     rl.draw_triangle(rl.Vector2(cx + r * 1.02, cy - r * 0.05), rl.Vector2(cx - r * 1.02, cy - r * 0.05), rl.Vector2(cx, cy + r * 1.05), c)
 
 
-def _paint(i, style, lines, col, rng):
-    """Draw one piece in a CELL_W x CELL_H area with its origin at (0, 0); the 6 px border stays transparent."""
-    W, H = CELL_W, CELL_H
-    mw, mh = W - 28, H - 28
-    cx, cy = W / 2, H / 2
-    n = len(lines)
-    rot = rng.uniform(-7, 7)
+def _darker(col, k=0.45):
+    return tuple(int(c * k) for c in col)
+
+
+def _star(cx, cy, r, col):
+    c = rl.Color(*col, 255)
+    pts = [(cx + math.cos(math.radians(-90 + 36 * k)) * (r if k % 2 == 0 else r * 0.42),
+            cy + math.sin(math.radians(-90 + 36 * k)) * (r if k % 2 == 0 else r * 0.42)) for k in range(10)]
+    for k in range(10):
+        a, b = pts[k], pts[(k + 1) % 10]
+        rl.draw_triangle(rl.Vector2(cx, cy), rl.Vector2(*b), rl.Vector2(*a), c)
+
+
+def _crown(cx, cy, col):
+    c = rl.Color(*col, 255)
+    pts = [(cx - 28, cy + 10), (cx - 28, cy - 12), (cx - 14, cy), (cx, cy - 16), (cx + 14, cy), (cx + 28, cy - 12), (cx + 28, cy + 10)]
+    for a, b in zip(pts, pts[1:] + pts[:1]):
+        rl.draw_line_ex(rl.Vector2(*a), rl.Vector2(*b), 4, c)
+    for px, py in pts[1:6:2]:
+        rl.draw_circle(int(px), int(py - 4), 4, c)
+
+
+def _line(style, s, cx, cy, size, rot, col, rng):
+    """One text line in the chosen painting style."""
+    dk = _darker(col)
     if style == "bubble":
-        size = _fit(lines, mw, mh - 18)
-        for k, s in enumerate(lines):
-            y = cy - 8 + (k - (n - 1) / 2) * size * 1.05
-            _outlined(s, cx, y, size, rot, col, r=4)
-            _text(s, cx - 2, y - 3, size, rot, rl.Color(255, 255, 255, 90))            # glossy highlight
-        _drips(rng, cx - mw / 2.6, cx + mw / 2.6, cy - 8 + (n - 1) * size * 0.55 + size * 0.45, col)
+        _outlined(s, cx, cy, size, rot, col, r=4)
+        _text(s, cx - 2, cy - 3, size, rot, rl.Color(255, 255, 255, 90))
     elif style == "tag":
-        size = _fit(lines, mw, mh - 14)
-        for k, s in enumerate(lines):
-            y = cy - 4 + (k - (n - 1) / 2) * size * 1.1
-            _text(s, cx + 3, y + 3, size, rot - 3, rl.Color(10, 10, 12, 190))             # drop shadow
-            _text(s, cx, y, size, rot - 3, rl.Color(*col, 255))
-        y_ = cy + size * 0.55 * n + 4
-        rl.draw_line_ex(rl.Vector2(cx - mw / 2.5, y_ + 6), rl.Vector2(cx + mw / 2.5, y_ - 4 + rot), 3.5, rl.Color(*col, 255))   # underline swoosh
-        for sx, sy in ((cx + mw / 2.3, cy - mh / 2.6), (cx - mw / 2.4, cy - mh / 3.2)):
-            rl.draw_line_ex(rl.Vector2(sx - 6, sy), rl.Vector2(sx + 6, sy), 2.0, rl.Color(*col, 255))
-            rl.draw_line_ex(rl.Vector2(sx, sy - 6), rl.Vector2(sx, sy + 6), 2.0, rl.Color(*col, 255))
-    elif style == "stencil":
-        size = _fit(lines, mw - 20, mh - 34)
-        h = size * 1.2 * n + 16
-        rl.draw_rectangle(int(cx - mw / 2), int(cy - h / 2), int(mw), int(h), rl.Color(236, 232, 222, 215))
-        for k, s in enumerate(lines):
-            _text(s, cx, cy + (k - (n - 1) / 2) * size * 1.15, size, 0, rl.Color(*col, 255))
-        for bx in (cx - mw / 2, cx + mw / 2 - 6):                                       # spray-paper edge ticks
-            for t in range(int(cy - h / 2), int(cy + h / 2), 9):
-                rl.draw_rectangle(int(bx), t, 6, 4, rl.Color(30, 30, 34, 200))
+        _text(s, cx + 3, cy + 3, size, rot, rl.Color(10, 10, 12, 200))
+        _text(s, cx, cy, size, rot, rl.Color(*col, 255))
     elif style == "scrawl":
-        size = _fit([s.strip("~") for s in lines], mw, mh - 10, 44)
-        for k, s in enumerate(lines):
-            struck = s.startswith("~")
-            s = s.strip("~")
-            y = cy + (k - (n - 1) / 2) * size * 1.25
-            _text(s, cx, y, size, rot, rl.Color(*col, 235), bold=False)
-            if struck:
-                w = font.measure_text(s, size)
-                rl.draw_line_ex(rl.Vector2(cx - w / 2 - 6, y + 2), rl.Vector2(cx + w / 2 + 6, y - 5), 4.0, rl.Color(230, 40, 40, 255))
-                rl.draw_line_ex(rl.Vector2(cx - w / 2 - 4, y - 8), rl.Vector2(cx + w / 2 + 4, y + 9), 3.0, rl.Color(230, 40, 40, 255))
-    elif style == "sticker":
-        size = _fit(lines, mw - 24, mh - 36, 40)
-        h = size * 1.2 * n + 18
-        r_ = rl.Rectangle(cx - mw / 2 + 4, cy - h / 2, mw - 8, h)
-        rl.draw_rectangle_rec(rl.Rectangle(r_.x + 3, r_.y + 3, r_.width, r_.height), rl.Color(0, 0, 0, 110))
-        rl.draw_rectangle_rec(r_, rl.Color(*col, 255))
-        rl.draw_rectangle_lines_ex(r_, 3, rl.Color(250, 250, 250, 255))
-        for k, s in enumerate(lines):
-            _text(s, cx, cy + (k - (n - 1) / 2) * size * 1.15, size, 0, rl.Color(255, 255, 255, 255))
-    elif style == "heart":
-        _heart(cx, cy - 20, 30, col)
-        rl.draw_circle(int(cx - 18), int(cy - 34), 6, rl.Color(255, 255, 255, 110))
-        size = _fit(lines, mw, 34, 32)
-        _outlined(lines[0], cx, cy + 36, size, rot, (250, 250, 250), r=2)
-    elif style == "crown":
-        c = rl.Color(*col, 255)
-        base_y = cy - 6
-        pts = [(cx - 44, base_y), (cx - 44, base_y - 30), (cx - 22, base_y - 12), (cx, base_y - 38), (cx + 22, base_y - 12), (cx + 44, base_y - 30), (cx + 44, base_y)]
-        for a, b in zip(pts, pts[1:] + pts[:1]):
-            rl.draw_line_ex(rl.Vector2(*a), rl.Vector2(*b), 5, c)
-        for px, py in pts[1:6:2]:
-            rl.draw_circle(int(px), int(py - 5), 5, c)
-        size = _fit(lines, mw, 48, 52)
-        _outlined(lines[0], cx, cy + 36, size, rot, col, r=3)
+        _outlined(s, cx, cy, size, rot, col, r=1)
+        for dx in (0, 1):
+            _text(s, cx + dx, cy, size, rot, rl.Color(*col, 255), bold=False)
+    elif style == "wobble":
+        total = font.measure_text(s, size, True)
+        x = cx - total / 2
+        for ch in s:
+            w = font.measure_text(ch, size, True)
+            if ch != " ":
+                _outlined(ch, x + w / 2, cy + rng.uniform(-6, 6), size, rot + rng.uniform(-14, 14), col, r=2)
+            x += w
+    elif style == "extrude":
+        for k in range(7, 0, -1):
+            _text(s, cx + k * 0.9, cy + k * 0.9, size, rot, rl.Color(*dk, 255))
+        _outlined(s, cx, cy, size, rot, col, r=1)
+    elif style == "neon":
+        for r_, a in ((6, 60), (4, 110)):
+            for dx in range(-r_, r_ + 1, 2):
+                for dy in range(-r_, r_ + 1, 2):
+                    if dx * dx + dy * dy <= r_ * r_:
+                        _text(s, cx + dx, cy + dy, size, rot, rl.Color(*col, a))
+        _text(s, cx, cy, size, rot, rl.Color(255, 255, 255, 255))
+    elif style == "stencil":
+        _outlined(s, cx, cy, size, rot, (22, 22, 26), out=(245, 245, 240), r=2)
+    elif style == "spray":
+        for _ in range(14):
+            _text(s, cx + rng.uniform(-3, 3), cy + rng.uniform(-3, 3), size, rot, rl.Color(*col, 55))
+        _text(s, cx, cy, size, rot, rl.Color(*col, 255))
+        for _ in range(26):
+            rl.draw_circle(int(cx + rng.uniform(-90, 90)), int(cy + rng.uniform(-size * 0.6, size * 0.7)), rng.uniform(0.8, 1.8), rl.Color(*col, 160))
+    elif style == "chalk":
+        _outlined(s, cx, cy, size, rot, (245, 245, 238), r=1, out=(40, 40, 44))
+        for _ in range(30):
+            rl.draw_circle(int(cx + rng.uniform(-100, 100)), int(cy + rng.uniform(-size * 0.5, size * 0.6)), 1, rl.Color(40, 40, 44, 130))
+    else:                                                      # outline2
+        _outlined(s, cx, cy, size, rot, col, out=(18, 18, 22), r=5)
+        _outlined(s, cx, cy, size, rot, col, out=(250, 250, 250), r=3)
+
+
+def _paint(i, lines, rng):
+    """Draw piece i into a CELL_W x CELL_H area with its origin at (0, 0); a 6 px border stays transparent."""
+    style, decor, col, rot = look(i)
+    W, H = CELL_W, CELL_H
+    cx = W / 2
+    top = 14
+    icon = decor in ("heart", "crown", "star")
+    if icon:
+        top = 44
+    mw, mh = W - 30, H - 14 - top - (16 if decor in ("underline", "drips", "arrow", "wave") else 0)
+    n = len(lines)
+    size = _fit(lines, mw, mh, 54 if style in ("scrawl", "chalk") else 62)
+    cy0 = top + mh / 2
+    for k, s in enumerate(lines):
+        _line(style, s, cx, cy0 + (k - (n - 1) / 2) * size * 1.12, size, rot, col, rng)
+    base = cy0 + n * size * 0.56 + 4
+    dc = rl.Color(*col, 255)
+    if decor == "underline":
+        rl.draw_line_ex(rl.Vector2(cx - mw / 2.4, base + 6), rl.Vector2(cx + mw / 2.4, base - 3 + rot * 0.6), 3.5, dc)
+    elif decor == "drips":
+        _drips(rng, cx - mw / 2.6, cx + mw / 2.6, base - 4, col)
+    elif decor == "sparks":
+        for sx, sy in ((cx + mw / 2.2, top + 4), (cx - mw / 2.3, top + 10), (cx + mw / 2.6, H - 26)):
+            rl.draw_line_ex(rl.Vector2(sx - 6, sy), rl.Vector2(sx + 6, sy), 2.2, dc)
+            rl.draw_line_ex(rl.Vector2(sx, sy - 6), rl.Vector2(sx, sy + 6), 2.2, dc)
+    elif decor == "arrow":
+        y = min(H - 12, base + 4)
+        rl.draw_line_ex(rl.Vector2(cx - 40, y), rl.Vector2(cx + 36, y), 3.5, dc)
+        rl.draw_triangle(rl.Vector2(cx + 46, y), rl.Vector2(cx + 30, y - 8), rl.Vector2(cx + 30, y + 8), dc)
+    elif decor == "wave":
+        y = min(H - 14, base + 4)
+        for k in range(10):
+            rl.draw_line_ex(rl.Vector2(cx - 60 + k * 12, y + (4 if k % 2 else -4)), rl.Vector2(cx - 48 + k * 12, y + (-4 if k % 2 else 4)), 3, dc)
+    elif decor == "heart":
+        _heart(cx, 24, 13, (255, 50, 90))
+    elif decor == "crown":
+        _crown(cx, 24, (255, 200, 40))
+    elif decor == "star":
+        _star(cx, 24, 14, (255, 220, 60))
 
 
 def build_atlas():
@@ -189,12 +194,15 @@ def build_atlas():
     rt = rl.load_render_texture(CELL_W * COLS, CELL_H * ROWS)
     rl.begin_texture_mode(rt)
     rl.clear_background(rl.Color(0, 0, 0, 0))
-    for i, (style, col) in enumerate(STYLES[: COLS * ROWS]):
-        lines = TXT(f"graffiti.{i + 1:04d}").split("\n")
+    for i in range(min(N_PIECES, COLS * ROWS)):
+        try:
+            lines = TXT(f"graffiti.{i + 1:04d}").split("\n")
+        except Exception:  # noqa: BLE001 - a missing text just leaves an empty cell
+            continue
         rl.rl_push_matrix()
         rl.rl_translatef(float((i % COLS) * CELL_W), float((i // COLS) * CELL_H), 0.0)
         try:
-            _paint(i, style, lines, col, rng)
+            _paint(i, lines, rng)
         finally:
             rl.rl_pop_matrix()
     rl.end_texture_mode()
