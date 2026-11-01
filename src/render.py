@@ -153,7 +153,7 @@ class Renderer:
         if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
             return int(anim * 2.2) & 1
         # one stride cycle (two steps) per ~1.5 m walking, ~2.6 m running: eight phases each
-        return (30 if run else 20) + (int(anim * (8 / 2.6 if run else 8 / 1.5)) & 7)
+        return (30 if run else 20) + (int(anim * (8 / 5.2 if run else 8 / 3.0)) & 7)
 
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)

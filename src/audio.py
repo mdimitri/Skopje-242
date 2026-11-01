@@ -253,20 +253,30 @@ def build():
         fr = 3000 + rng.uniform(0, 1200) + 900 * np.sin(2 * np.pi * rng.uniform(14, 26) * tt)
         x[i0:i0 + len(tt)] += np.sin(np.cumsum(2 * np.pi * fr / SR)) * np.exp(-tt / 0.07) * 0.5
     S["birds"] = _loopify(x)
-    # footsteps: heel thud + scuff, tuned per surface (the game varies the pitch a little on every step)
-    def step(dur, thud_f, thud_d, nz_lp, nz_d, nz_g, click=0.0):
+    # footsteps: a heel strike (short filtered noise burst + body thump), then the toe settling ~70 ms later, with a shoe-sole
+    # resonance per surface; three variants of each so a run of steps never repeats exactly
+    def step(hard, thud_f, res_f, res_q, scuff, toe, dur=0.26):
         t = _t(dur)
-        nz = rng.standard_normal(len(t)).astype(np.float32)
-        x = np.sin(2 * np.pi * thud_f * (1.0 - 2.5 * t) * t) * np.exp(-t / thud_d)
-        x = x + _lp(nz, nz_lp) * np.exp(-t / nz_d) * nz_g
-        if click:
-            x = x + (nz - _lp(nz, 6)) * np.exp(-t / 0.004) * click
+        n = len(t)
+        def burst(at, amp, lp_k, d):
+            nz = rng.standard_normal(n).astype(np.float32)
+            nz = _lp(nz, lp_k) if lp_k > 1 else nz
+            env = np.where(t >= at, np.exp(-np.maximum(t - at, 0) / d), 0.0).astype(np.float32)
+            env *= np.minimum(1.0, (t - at) / 0.0015).clip(0, 1)
+            return nz * env * amp
+        x = burst(0.0, hard, 2, 0.006) + burst(0.0, scuff, 7, 0.05)                      # heel click + scuff
+        th = np.where(t >= 0, np.sin(2 * np.pi * thud_f * (1.0 - 1.8 * t) * t) * np.exp(-t / 0.045), 0.0)
+        x = x + th * 0.9                                                                   # body weight
+        x = x + np.sin(2 * np.pi * res_f * t) * np.exp(-t / res_q) * 0.35 * hard           # sole / surface ring
+        x = x + burst(0.07, toe * hard, 4, 0.012) + np.where(t >= 0.07, np.sin(2 * np.pi * thud_f * 1.3 * (t - 0.07)) * np.exp(-(t - 0.07) / 0.03), 0.0) * toe * 0.6
         return (x / np.abs(x).max() * 0.7).astype(np.float32)
-    S["step_asphalt"] = step(0.14, 130, 0.035, 3, 0.03, 0.7, 0.35)
-    S["step_run_asphalt"] = step(0.12, 170, 0.028, 2, 0.025, 0.9, 0.55)
-    S["step_grass"] = step(0.2, 90, 0.04, 8, 0.07, 1.1)
-    S["step_dirt"] = step(0.17, 110, 0.035, 5, 0.05, 1.2, 0.1)
-    S["step_wood"] = step(0.22, 190, 0.06, 4, 0.03, 0.4, 0.15)
+    for suf in ("", "_b", "_c"):
+        j_ = rng.uniform(0.9, 1.12)
+        S["step_asphalt" + suf] = step(0.9, 95 * j_, 1500 * j_, 0.012, 0.35, 0.5)
+        S["step_run_asphalt" + suf] = step(1.1, 120 * j_, 1800 * j_, 0.01, 0.4, 0.25, 0.2)
+        S["step_grass" + suf] = step(0.1, 70 * j_, 400 * j_, 0.02, 1.0, 0.3, 0.3)
+        S["step_dirt" + suf] = step(0.35, 85 * j_, 800 * j_, 0.015, 1.3, 0.35, 0.28)
+        S["step_wood" + suf] = step(0.7, 150 * j_, 380 * j_, 0.07, 0.25, 0.5, 0.32)
     t = _t(0.3)
     nz = _lp(rng.standard_normal(len(t)).astype(np.float32), 4)
     x = nz * np.exp(-t / 0.06) + np.sin(2 * np.pi * (300 + 900 * t) * t) * np.exp(-t / 0.05) * 0.5

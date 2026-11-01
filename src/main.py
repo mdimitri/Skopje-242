@@ -1104,7 +1104,7 @@ def main():
         if sim.mode != "car":
             v = math.hypot(wk.vx, wk.vy)
             run_ = wk.speed > 6.0                                   # the same switch render.py uses for the run cycle
-            n_ = int(wk.anim * 2.0 / (2.6 if run_ else 1.5))        # a foot lands every 4 of the 8 gait phases (render._gait)
+            n_ = int(wk.anim * 2.0 / (5.2 if run_ else 3.0))        # a foot lands every 4 of the 8 gait phases (render._gait)
             fresh = n_ != sx.get("stepn", n_)
             sx["stepn"] = n_
             if v > 0.6 and wk.moving and fresh:
@@ -1117,7 +1117,9 @@ def main():
                     k_ = "step_run_asphalt" if run_ else "step_asphalt"
                 else:
                     k_ = "step_grass" if sx["env"].get("park", 0) + sx["env"].get("tree", 0) > 0.5 else "step_dirt"
-                aud.play(k_, 0.45 if run_ else 0.3, rng.uniform(0.88, 1.12), "sfx")
+                if not aud.lib.get(k_):                      # synthesized fallback: three variants so no two steps in a row are identical
+                    k_ += rng.choice(("", "_b", "_c"))
+                aud.play(k_, 0.45 if run_ else 0.3, rng.uniform(0.9, 1.1), "sfx", rng.uniform(0.46, 0.54))
             if v > 0.6 and world.wet(wk.x, wk.y, wk.az) and t_game > sx["swim"]:
                 sx["swim"] = t_game + 3.0
                 aud.play("swim_stroke", 0.5, 1.0, "sfx")

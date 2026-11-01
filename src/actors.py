@@ -2616,7 +2616,7 @@ class Sim:
                             continue
                     nx, ny, pen = hit
                     closing = -((b.vx - wk.vx) * nx + (b.vy - wk.vy) * ny)      # > 0 when the car moves into the player
-                    if getattr(wk, "jump_t", 0.0) > 0 and wk.moving and inp["move"][1] > 0.3 and math.hypot(b.vx, b.vy) < 1.5 and not b.exploded and wk.z < 0.3:
+                    if getattr(wk, "jump_t", 0.0) > 0 and wk.moving and inp["move"][1] > 0.3 and math.hypot(b.vx, b.vy) < 1.5 and wk.z < 0.3:
                         if top <= 1.15:                    # walking into a small vehicle: hop over it
                             wk.vz = 6.6
                             continue

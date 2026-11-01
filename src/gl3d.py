@@ -1129,7 +1129,7 @@ def _hero(i, frame):
     for sg, z in ((1, -0.11), (-1, 0.11)):
         if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
             continue
-        a = -0.9 if jump else th * sg
+        a = -0.45 if jump else th * sg
         i0 = len(parts)
         add(0.0, 0.42, z, 0.19, 0.42, 0.16, legc)
         _swing(parts, i0, 0.0, 0.84, a)
@@ -1140,7 +1140,7 @@ def _hero(i, frame):
         if "heels" in ex:
             add(-0.06, 0.0, z, 0.04, 0.12, 0.05, shoe)
         _swing(parts, i1, 0.0, 0.84, a)
-        flex = 1.5 if jump else 0.9 * max(0.0, -a) + 0.15 * max(0.0, a)
+        flex = 1.0 if jump else 0.9 * max(0.0, -a) + 0.15 * max(0.0, a)
         _swing(parts, i1, 0.4 * math.sin(a), 0.84 - 0.4 * math.cos(a), -flex)
     if d.get("skirt") or d.get("legs") is None:
         add(0.0, 0.5, 0, 0.36, 0.34, 0.44, d.get("skirt") or top)                 # skirt / dress
@@ -1303,8 +1303,8 @@ def ped_arrays(arch, tone, frame, skin=0):
         pos, uv, rgba = ped_arrays(arch, tone, frame - 20, skin)
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
         pos = pos.copy()
-        pos[:, 0] = y * 0.8 - 0.15                     # head forward, body stretched out along the ground
-        pos[:, 1] = np.maximum(0.0, 0.3 - x) * 0.8 + 0.05 + np.abs(np.sin(math.pi * (frame % 10) / 4)) * 0.03
+        pos[:, 0] = y * 0.55 - 0.1                     # on all fours: head forward, body shortened, belly off the ground
+        pos[:, 1] = np.maximum(0.0, 0.3 - x) * 0.8 + 0.22 + np.abs(np.sin(math.pi * (frame % 10) / 4)) * 0.03
         return pos, uv, rgba
     if arch >= 100:
         if frame == 13:                                # riding a two-wheeler: knees forward, lowered onto the seat, leaning in
