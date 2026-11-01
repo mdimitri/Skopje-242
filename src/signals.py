@@ -45,7 +45,7 @@ class Signals:
         for (n, g), r in rank.items():
             crank[(self.cl[n], g)] = max(crank.get((self.cl[n], g), 0), r)
         self.major = {n: (1 if crank.get((self.cl[n], 1), 0) > crank.get((self.cl[n], 0), 0) else 0) for n in self.nodes}
-        self._order = sorted(range(len(self.items)), key=lambda i: self.items[i][4])      # by x: draw() only walks the strip in view
+        self._order = sorted((i for i in range(len(self.items)) if self.items[i][4] == self.items[i][4]), key=lambda i: self.items[i][4])      # head-only signals (no pole: x is NaN) are never drawn, and NaN would break the sort      # by x: draw() only walks the strip in view
         self._xs = [self.items[i][4] for i in self._order]
         self.pre = {}                                    # junction -> (group held green, until)
         self.t = 0.0
@@ -125,6 +125,18 @@ class Signals:
         """True when a car on edge ei heading to its end (0 = a, 1 = b) must stop at the line."""
         i = self.by_edge.get((ei, end))
         return i is not None and self.state(i) != 0
+
+    def lit(self, rect):
+        """(x, z, lamp height, state 0/1/2) of the signal heads inside rect: the night pass lets them glow like tail lights."""
+        import bisect
+        x0, y0, x1, y1 = rect
+        out = []
+        for i in self._order[bisect.bisect_right(self._xs, x0 - 5):bisect.bisect_left(self._xs, x1 + 5)]:
+            it = self.items[i]
+            if y0 - 5 < it[5] < y1 + 5:
+                st = self.state(i)
+                out.append((it[4], it[5], (it[8] if len(it) > 8 else 2.95) + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), st))
+        return out
 
     def draw(self, rect, ground_y):
         """The live lamp of every visible signal (the poles themselves are baked meshes)."""

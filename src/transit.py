@@ -94,11 +94,108 @@ def load(osm_dir):
         op = (r.get("operator") or "").lower()
         if not ("jsp" in op or TXT("transit.0005") in op or "skopje:local" in op) or not r.get("ref"):
             continue
-        for pts in _chain(r.get("ways", [])):
+        for part, pts in enumerate(_chain(r.get("ways", []))):
             ln = Line(r, pts)
-            if len(ln.pts) > 10 and ln.length > 1500:
-                lines.append(ln)
+            ln.rid, ln.part = id(r), part
+            if len(ln.pts) >= 2:
+                lines.append(ln)                 # short runs too: join_runs() stitches the holes of a relation, then the short ones go
     return lines
+
+
+def _node_near(w, x, y, r=60.0):
+    """Nearest drivable junction node to (x, y) within r m: (node, x, y) or None."""
+    sg, best = w.sg, None
+    for cx in range(int((x - r) // sg), int((x + r) // sg) + 1):
+        for cy in range(int((y - r) // sg), int((y + r) // sg) + 1):
+            for ei in w.drive_cells.get((cx, cy), ()):
+                e = w.edges[ei]
+                for n, p in ((e["a"], e["pts"][0]), (e["b"], e["pts"][-1])):
+                    d = math.hypot(p[0] - x, p[1] - y)
+                    if d < r and (best is None or d < best[0]):
+                        best = (d, n, p[0], p[1])
+    return best and best[1:]
+
+
+def _road_path(w, n0, n1, limit=1500.0):
+    """Shortest drivable route (one-ways respected) from node n0 to n1 as a polyline, or None beyond `limit` metres."""
+    import heapq
+    dist, prev, h = {n0: 0.0}, {}, [(0.0, n0)]
+    while h:
+        d, n = heapq.heappop(h)
+        if n == n1:
+            break
+        if d > dist.get(n, 1e18) or d > limit:
+            continue
+        for ei, dr in w.out.get(n, ()):
+            e = w.edges[ei]
+            m = e["b"] if dr == 1 else e["a"]
+            nd = d + e["len"]
+            if nd < dist.get(m, 1e18):
+                dist[m], prev[m] = nd, (n, ei, dr)
+                heapq.heappush(h, (nd, m))
+    if n1 not in prev and n0 != n1:
+        return None
+    pts, n = [], n1
+    while n != n0:
+        n, ei, dr = prev[n]
+        seg = w.edges[ei]["pts"]
+        pts = (list(seg) if dr == 1 else list(seg[::-1])) + pts
+    return pts
+
+
+def join_runs(lines, w):
+    """A relation's ways have holes (missing members, platforms), which split a route into runs that end in the middle of town:
+    the bus then stood at the end until it was out of sight and 'respawned'.  Stitch consecutive runs of one route with the
+    road graph's own shortest drivable path from where one ends to where the next begins, so every route flows end to end."""
+    out, groups = [], {}
+    for ln in lines:
+        groups.setdefault(ln.rid, []).append(ln)
+    for runs in groups.values():
+        runs.sort(key=lambda l: l.part)
+        cur = runs[0]
+        for nxt in runs[1:]:
+            e0 = cur.pts[-1]
+            if math.dist(e0, nxt.pts[-1]) < math.dist(e0, nxt.pts[0]):
+                nxt.pts.reverse()
+            a = _node_near(w, *cur.pts[-1])
+            b = _node_near(w, *nxt.pts[0])
+            path = _road_path(w, a[0], b[0]) if a and b and math.dist(cur.pts[-1], nxt.pts[0]) < 1500.0 else None
+            if path is None:
+                out.append(cur)
+                cur = nxt
+                continue
+            pts = cur.pts + path + nxt.pts
+            thin = pts[:1]
+            for q in pts[1:]:
+                if math.dist(q, thin[-1]) >= 4.0:
+                    thin.append(q)
+            cur.pts = thin
+            cur.rel_stops += nxt.rel_stops
+        out.append(cur)
+    res = []
+    for ln in out:
+        ln.cum = [0.0]
+        for a_, b_ in zip(ln.pts, ln.pts[1:]):
+            ln.cum.append(ln.cum[-1] + math.dist(a_, b_))
+        if len(ln.pts) > 10 and ln.length > 1500:
+            ln.cyc = None
+            a_, b_ = _node_near(w, *ln.pts[-1]), _node_near(w, *ln.pts[0])
+            back = _road_path(w, a_[0], b_[0], 3000.0) if a_ and b_ and a_[0] != b_[0] else None
+            if back is not None or (a_ and b_ and a_[0] == b_[0]):
+                one = ln.pts + (back or [])
+                cyc = 3 if ln.length < 6000 else 2
+                pts = [one[0]]                                  # a terminus is not the end of the road: the bus carries on back to the start
+                for _ in range(cyc):                            # and round again (stops are attached to every round)
+                    for q in one:
+                        if math.dist(q, pts[-1]) >= 4.0:
+                            pts.append(q)
+                ln.cyc = sum(math.dist(x_, y_) for x_, y_ in zip(one, one[1:]))
+                ln.pts = pts
+                ln.cum = [0.0]
+                for x_, y_ in zip(pts, pts[1:]):
+                    ln.cum.append(ln.cum[-1] + math.dist(x_, y_))
+            res.append(ln)
+    return res
 
 
 def orient_to_traffic(lines, w):
@@ -164,8 +261,10 @@ def attach_stops(lines, stops):
                         rx, ry = stops[k][0] - ax, stops[k][1] - ay
                         t = rx * ux + ry * uy
                         lat = -rx * uy + ry * ux
-                        if -2.0 < t < sl + 2.0 and -2.0 < lat < R and (k not in best or lat < best[k][0]):
-                            best[k] = (lat, ln.cum[j] + max(0.0, min(sl, t)))
+                        cc = ln.cum[j] + max(0.0, min(sl, t))
+                        kk = (k, int(cc // ln.cyc) if getattr(ln, "cyc", None) else 0)
+                        if -2.0 < t < sl + 2.0 and -2.0 < lat < R and (kk not in best or lat < best[kk][0]):
+                            best[kk] = (lat, cc)
         for x, y in ln.rel_stops:
             near = [k for gx in (int(x // 40) - 1, int(x // 40), int(x // 40) + 1)
                     for gy in (int(y // 40) - 1, int(y // 40), int(y // 40) + 1) for k in grid.get((gx, gy), ())]
@@ -173,13 +272,13 @@ def attach_stops(lines, stops):
             if not near or not segs:
                 continue
             k = min(near, key=lambda k: math.hypot(stops[k][0] - x, stops[k][1] - y))
-            if k in best:
+            if (k, 0) in best:
                 continue
             d, c = min((math.hypot(x - ax - ux * t, y - ay - uy * t), c0 + t) for ax, ay, ux, uy, sl, c0 in segs
                        for t in (max(0.0, min(sl, (x - ax) * ux + (y - ay) * uy)),))
             if d < 30.0:
-                best[k] = (d, c)
-        ln.stops = sorted((c, k) for k, (d, c) in best.items())
+                best[(k, int(c // ln.cyc) if getattr(ln, "cyc", None) else 0)] = (d, c)
+        ln.stops = sorted((c, k) for (k, _cy), (d, c) in best.items())
 
 
 class Bus:
@@ -208,6 +307,7 @@ class Transit:
         self.kinds = [i for i, n in enumerate(vehicles.IDS) if n.startswith("JSP ")] or [vehicles.BUS]
         self.stops = list(getattr(sim.w, "bus_stops", None) or [])
         orient_to_traffic(self.lines, sim.w)
+        self.lines = join_runs(self.lines, sim.w)
         attach_stops(self.lines, self.stops)
         self.queue = {}                   # stop index -> [ped]  (people waiting at the shelter)
         self.refill = {}                  # stop index -> seconds until new people turn up

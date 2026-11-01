@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 43
+VERSION = 44
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1250,14 +1250,16 @@ def main():
                 side = -side
                 s += step * r.uniform(0.8, 1.3)
         if cls in ("primary", "secondary", "tertiary", "trunk", "residential", "unclassified"):
-            step = 36.0 if cls in ("primary", "secondary", "tertiary") else 55.0
+            big = cls in ("trunk", "primary", "secondary") or (cls == "tertiary" and w >= 9.0)      # round 31: boulevards and big streets are lit on both kerbs
+            step = 22.0 if cls in ("trunk", "primary", "secondary") else 28.0 if big else 36.0 if cls == "tertiary" else 55.0
             s, side = r.uniform(5, step), 1
             while s < L - 3:
                 x, y, dx, dy = at(s)
                 off = w / 2 + 1.4
-                px, py = x - dy * off * side, y + dx * off * side
-                if abs(px) < HX - 3 and abs(py) < HY - 3:
-                    lamps.append((px, py))
+                for sd in ((1, -1) if big and not e["ow"] else (side,)):
+                    px, py = x - dy * off * sd, y + dx * off * sd
+                    if abs(px) < HX - 3 and abs(py) < HY - 3:
+                        lamps.append((px, py))
                 side = -side
                 s += step
         if cls in ("residential", "unclassified", "tertiary") and L > 40 and w >= 6.0:

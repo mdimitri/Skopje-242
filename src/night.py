@@ -57,6 +57,13 @@ class Night:
             for b in sim.bodies:
                 if rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3] and b.alive and not b.empty and not b.exploded:
                     self._lights(cam, b.x, b.y, b.h, b.kind, ppm, dark, b.braking)
+        lights = getattr(sim, "lights", None)
+        if lights is not None:                                       # traffic lights glow like tail lights: faint by day, bright at night
+            col = ((60, 255, 110), (255, 205, 40), (255, 40, 30))
+            for lx, lz, ly, st in lights.lit(rect):
+                self._glow(cam, lx, lz, ly, (1.3 + 2.0 * dark) * ppm, col[st], 70 + 150 * dark)
+                if dark > 0.3:
+                    self._glow(cam, lx, lz, ly, 0.8 * ppm, (255, 255, 255), 90 * dark)
         for b in sim.bodies:
             if b.health <= 0 and not b.out and rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3]:
                 fl = 0.75 + 0.25 * math.sin(t * 17 + b.x)
