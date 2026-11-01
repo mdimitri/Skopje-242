@@ -200,6 +200,7 @@ Write-Host "[log] self-check (exit $LASTEXITCODE): $chk"
 if ($LASTEXITCODE -ne 0) { Fail "Final check failed: the game cannot import its modules with this Python (see above). Delete the .runtime folder and run run.bat again." }
 try { Stop-Transcript | Out-Null } catch {}
 
+try { Copy-Item "$root\requirements.txt" "$root\.runtime\stamp_req.txt" -Force; Copy-Item "$root\tools\setup.ps1" "$root\.runtime\stamp_setup.ps1" -Force } catch {}   # run.bat skips setup while these match
 Write-Progress -Activity "Skopje 242 setup" -Completed
 Say "Ready - starting the game (the map is downloaded and built inside the game window, with a progress screen)."
 exit 0

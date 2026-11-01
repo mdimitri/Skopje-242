@@ -33,6 +33,33 @@ except Exception:  # noqa: BLE001
 import pyray as rl   # noqa: E402
 import font   # noqa: E402
 
+
+def _early_splash():
+    """Open the window and paint one frame before the ~heavy module imports below, so the player sees the game at once."""
+    if any(x.split("=")[0] in ("--test", "--sound-dry", "--size") for x in sys.argv[1:]):
+        return                                                  # scripted / debug runs keep the normal path
+    try:
+        import settings as st
+        cfg = st.Settings()
+        W, H = st.RESOLUTIONS[cfg["res"]]
+        rl.set_trace_log_level(rl.LOG_WARNING)
+        rl.set_config_flags(rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0))
+        rl.init_window(W, H, TXT("main.0002"))
+        if not rl.is_window_ready():
+            return
+        font.load()
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(18, 20, 26, 255))
+        font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
+        font.draw_text("Се вчитува ...", W // 2 - 80, H // 2 + 30, 24, rl.Color(170, 174, 184, 255))
+        rl.end_drawing()
+        rl.poll_input_events()
+    except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed
+        pass
+
+
+_early_splash()
+
 import strings as T   # noqa: E402
 import audio as audio_mod   # noqa: E402
 import radio as radio_mod   # noqa: E402
@@ -369,7 +396,8 @@ def main():
     rl.set_trace_log_level(rl.LOG_WARNING)
     flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0)
     rl.set_config_flags(flags)
-    rl.init_window(W, H, TXT("main.0002"))
+    if not rl.is_window_ready():                       # (the early splash may have opened it already)
+        rl.init_window(W, H, TXT("main.0002"))
     if not rl.is_window_ready():                       # fallback: no MSAA / vsync
         rl.set_config_flags(rl.FLAG_WINDOW_RESIZABLE)
         rl.init_window(W, H, TXT("main.0003"))
