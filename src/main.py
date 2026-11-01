@@ -312,6 +312,22 @@ def keep_window_alive(on):
     sys.setprofile(hook)
 
 
+def fit_window(w, h):
+    """A windowed size that fits the monitor (the game scales its picture to the window, so it need not equal the resolution)."""
+    mon = rl.get_current_monitor()
+    mw, mh = rl.get_monitor_width(mon), rl.get_monitor_height(mon)
+    if mw <= 0 or mh <= 0:
+        return w, h
+    k = min(1.0, (mw - 40) / w, (mh - 120) / h)
+    return int(w * k), int(h * k)
+
+
+def center_window(w, h):
+    mon = rl.get_current_monitor()
+    p = rl.get_monitor_position(mon)
+    rl.set_window_position(int(p.x + max(0, (rl.get_monitor_width(mon) - w) // 2)), int(p.y + max(30, (rl.get_monitor_height(mon) - h) // 2 - 20)))
+
+
 def is_borderless():
     return bool(rl.is_window_state(rl.FLAG_BORDERLESS_WINDOWED_MODE))
 
@@ -357,6 +373,11 @@ def main():
     if not rl.is_window_ready():                       # fallback: no MSAA / vsync
         rl.set_config_flags(rl.FLAG_WINDOW_RESIZABLE)
         rl.init_window(W, H, TXT("main.0003"))
+    if not a.size:                                     # a resolution bigger than the monitor: smaller window, the picture is scaled to it
+        fw_, fh_ = fit_window(W, H)
+        if (fw_, fh_) != (W, H):
+            rl.set_window_size(fw_, fh_)
+            center_window(fw_, fh_)
     rl.rl_disable_backface_culling()
     font.load()
     if font.ERR or not font._fonts:
@@ -499,9 +520,10 @@ def main():
             if is_borderless() != bool(c["fullscreen"]):
                 set_borderless(bool(c["fullscreen"]))
             elif not c["fullscreen"] and not a.size:
-                w_, h_ = settings_mod.RESOLUTIONS[c["res"]]
+                w_, h_ = fit_window(*settings_mod.RESOLUTIONS[c["res"]])
                 if (rl.get_screen_width(), rl.get_screen_height()) != (w_, h_):
                     rl.set_window_size(w_, h_)
+                    center_window(w_, h_)
     if a.start:
         q = world.nearest_drive_point(*(float(v) for v in a.start.split(",")))
         if q:
