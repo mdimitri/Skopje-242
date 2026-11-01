@@ -1049,7 +1049,7 @@ def main():
     except Exception as e_:  # noqa: BLE001
         print("[sound] no biome map:", e_)
         bio = None
-    sx = {"env": {}, "chk": 0.0, "next": 6.0, "pass": {}, "stride": 0.0, "wnext": 3.0, "swim": 0.0, "hour": -1, "place": "", "h0": None, "cpr": 0.0}
+    sx = {"env": {}, "chk": 0.0, "next": 6.0, "pass": {}, "wnext": 3.0, "swim": 0.0, "hour": -1, "place": "", "h0": None, "cpr": 0.0}
     # (weight, key, where it comes from): `where` picks a spot of that biome near the listener
     def wildlife(fx_, fy_, dn, dk):
         e, h = sx["env"], sim.clock.hour
@@ -1103,10 +1103,11 @@ def main():
         wk = sim.walker
         if sim.mode != "car":
             v = math.hypot(wk.vx, wk.vy)
-            sx["stride"] += v / 60.0
-            run_ = v > 3.6
-            if v > 0.6 and sx["stride"] >= (2.5 if run_ else 1.5):
-                sx["stride"] = 0.0
+            run_ = wk.speed > 6.0                                   # the same switch render.py uses for the run cycle
+            n_ = int(wk.anim * 2.0 / (2.6 if run_ else 1.5))        # a foot lands every 4 of the 8 gait phases (render._gait)
+            fresh = n_ != sx.get("stepn", n_)
+            sx["stepn"] = n_
+            if v > 0.6 and wk.moving and fresh:
                 sf = world.surface(wk.x, wk.y)
                 if world.wet(wk.x, wk.y, wk.az):
                     k_ = "puddle_step"
