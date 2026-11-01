@@ -178,24 +178,126 @@ def join_runs(lines, w):
         for a_, b_ in zip(ln.pts, ln.pts[1:]):
             ln.cum.append(ln.cum[-1] + math.dist(a_, b_))
         if len(ln.pts) > 10 and ln.length > 1500:
-            ln.cyc = None
-            a_, b_ = _node_near(w, *ln.pts[-1]), _node_near(w, *ln.pts[0])
-            back = _road_path(w, a_[0], b_[0], 3000.0) if a_ and b_ and a_[0] != b_[0] else None
-            if back is not None or (a_ and b_ and a_[0] == b_[0]):
-                one = ln.pts + (back or [])
-                cyc = 3 if ln.length < 6000 else 2
-                pts = [one[0]]                                  # a terminus is not the end of the road: the bus carries on back to the start
-                for _ in range(cyc):                            # and round again (stops are attached to every round)
-                    for q in one:
-                        if math.dist(q, pts[-1]) >= 4.0:
-                            pts.append(q)
-                ln.cyc = sum(math.dist(x_, y_) for x_, y_ in zip(one, one[1:]))
-                ln.pts = pts
-                ln.cum = [0.0]
-                for x_, y_ in zip(pts, pts[1:]):
-                    ln.cum.append(ln.cum[-1] + math.dist(x_, y_))
+            _finish(ln, w)
             res.append(ln)
     return res
+
+
+def _finish(ln, w, closed=False):
+    """Give the line its laps: a terminus is not the end of the road, so the bus carries on back to the start and round again
+    (stops are attached to every lap).  closed: the points already make one full lap there and back."""
+    ln.cyc = None
+    a_, b_ = _node_near(w, *ln.pts[-1]), _node_near(w, *ln.pts[0])
+    back = None if closed else (_road_path(w, a_[0], b_[0], 3000.0) if a_ and b_ and a_[0] != b_[0] else None)
+    if closed or back is not None or (a_ and b_ and a_[0] == b_[0]):
+        one = ln.pts + (back or [])
+        cyc = 3 if ln.length < 6000 else 2
+        pts = [one[0]]
+        for _ in range(cyc):
+            for q in one:
+                if math.dist(q, pts[-1]) >= 4.0:
+                    pts.append(q)
+        ln.cyc = sum(math.dist(x_, y_) for x_, y_ in zip(one, one[1:]))
+        ln.pts = pts
+        ln.cum = [0.0]
+        for x_, y_ in zip(pts, pts[1:]):
+            ln.cum.append(ln.cum[-1] + math.dist(x_, y_))
+
+
+def match_route(runs, w):
+    """The route of one relation, rebuilt from the road graph.  A relation's members are an unordered, patchy heap of ways (both
+    directions, platforms, holes), so chaining them gives spaghetti.  Instead: find the graph edges the ways lie on, take the two ends of
+    that stretch as the termini, and drive the shortest legal path there (cheap on the mapped edges, dear elsewhere) and back.
+    Returns the closed lap (there and back) as a polyline, or None."""
+    import heapq
+    sg = 4.0
+    grid = {}
+    for ln in runs:
+        for a, b in zip(ln.pts, ln.pts[1:]):
+            n = max(1, int(math.dist(a, b) // sg))
+            for k in range(n + 1):
+                x, y = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+                grid.setdefault((int(x // 8), int(y // 8)), []).append((x, y))
+
+    def near(x, y, r):
+        r2 = r * r
+        cx, cy = int(x // 8), int(y // 8)
+        for i in (-1, 0, 1):
+            for j in (-1, 0, 1):
+                for q in grid.get((cx + i, cy + j), ()):
+                    if (q[0] - x) ** 2 + (q[1] - y) ** 2 < r2:
+                        return True
+        return False
+    cand = set()
+    for (cx, cy) in list(grid):
+        for i in (-1, 0, 1):
+            for j in (-1, 0, 1):
+                cand.update(w.drive_cells.get((cx * 8 // w.sg + i, cy * 8 // w.sg + j), ()))
+    mapped = set()
+    for ei in cand:
+        e = w.edges[ei]
+        pts = e["pts"]
+        n = max(2, int(e["len"] // 6))
+        ok = tot = 0
+        for k in range(n + 1):
+            s_ = e["len"] * k / n
+            for t in range(len(pts) - 1):
+                if e["cum"][t + 1] >= s_ or t == len(pts) - 2:
+                    seg = e["cum"][t + 1] - e["cum"][t] or 1.0
+                    f = min(1.0, max(0.0, (s_ - e["cum"][t]) / seg))
+                    x, y = pts[t][0] + (pts[t + 1][0] - pts[t][0]) * f, pts[t][1] + (pts[t + 1][1] - pts[t][1]) * f
+                    break
+            tot += 1
+            ok += near(x, y, 7.0)
+        if ok >= 0.8 * tot:
+            mapped.add(ei)
+    if len(mapped) < 5:
+        return None
+    pos = {}
+    for ei in mapped:                                           # the ways leave holes, so the stretch's two ends are the two mapped nodes farthest apart
+        e = w.edges[ei]
+        pos[e["a"]], pos[e["b"]] = e["pts"][0], e["pts"][-1]
+
+    def far(src):
+        p0 = pos[src]
+        return max(pos, key=lambda n: (pos[n][0] - p0[0]) ** 2 + (pos[n][1] - p0[1]) ** 2)
+    S = far(next(iter(pos)))
+    T = far(S)
+    if math.dist(pos[S], pos[T]) < 1200.0:
+        return None
+
+    def path(a, b):
+        dist, prev, h = {a: 0.0}, {}, [(0.0, a)]
+        while h:
+            d, n = heapq.heappop(h)
+            if n == b:
+                break
+            if d > dist[n]:
+                continue
+            for ei, dr in w.out.get(n, ()):
+                e = w.edges[ei]
+                m = e["b"] if dr == 1 else e["a"]
+                nd = d + e["len"] * (1.0 if ei in mapped else 6.0)
+                if nd < dist.get(m, 1e18):
+                    dist[m], prev[m] = nd, (n, ei, dr)
+                    heapq.heappush(h, (nd, m))
+        if b not in prev:
+            return None
+        pts, n = [], b
+        while n != a:
+            n, ei, dr = prev[n]
+            seg = w.edges[ei]["pts"]
+            pts = (list(seg) if dr == 1 else list(seg[::-1])) + pts
+        return pts
+    go, back = path(S, T), path(T, S)
+    if go is None or back is None:
+        return None
+    lap = go + back
+    out = [lap[0]]
+    for q in lap[1:]:
+        if math.dist(q, out[-1]) >= 4.0:
+            out.append(q)
+    return out
 
 
 def orient_to_traffic(lines, w):
@@ -306,8 +408,25 @@ class Transit:
         self.t = 0.0
         self.kinds = [i for i, n in enumerate(vehicles.IDS) if n.startswith("JSP ")] or [vehicles.BUS]
         self.stops = list(getattr(sim.w, "bus_stops", None) or [])
-        orient_to_traffic(self.lines, sim.w)
-        self.lines = join_runs(self.lines, sim.w)
+        groups = {}
+        for ln in self.lines:
+            groups.setdefault(ln.rid, []).append(ln)
+        rebuilt, rest = [], []
+        for runs in groups.values():
+            runs.sort(key=lambda l: l.part)
+            lap = match_route(runs, sim.w)
+            if lap is None:
+                rest += runs                                    # no usable route from the graph: chain the ways as before
+                continue
+            ln = runs[0]
+            ln.pts = lap
+            ln.cum = [0.0]
+            for a_, b_ in zip(lap, lap[1:]):
+                ln.cum.append(ln.cum[-1] + math.dist(a_, b_))
+            _finish(ln, sim.w, closed=True)
+            rebuilt.append(ln)
+        orient_to_traffic(rest, sim.w)
+        self.lines = rebuilt + join_runs(rest, sim.w)
         attach_stops(self.lines, self.stops)
         self.queue = {}                   # stop index -> [ped]  (people waiting at the shelter)
         self.refill = {}                  # stop index -> seconds until new people turn up
