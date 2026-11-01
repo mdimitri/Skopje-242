@@ -400,7 +400,9 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         for (ei, end), rk in zip(lst, ranks):
             e = edges[ei]
             want_light = lit_node and not (e["ow"] and end == 0)      # a one-way road leaving the junction has no approach to light
-            if e["len"] < 16:
+            far_ = e["b"] if end == 0 else e["a"]
+            cont = len(inc.get(far_, ())) <= 2 or e["len"] < 20.0                    # the road simply carries on past this short link: the pole may stand beyond it
+            if e["len"] < 16 and not cont:
                 if want_light:
                     head_only(ei, end)
                 continue
@@ -408,6 +410,9 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             sgn = 1 if end == 0 else -1
             d = maxw / 2 + 3.2
             px, py, dx, dy = at(e, s0 + sgn * d)
+            if cont and d > e["len"] - 1.0:                       # short link (a divided junction's halves): walk straight on from the junction
+                _qx, _qy, dx, dy = at(e, s0 + sgn * min(2.0, e["len"] * 0.5))
+                px, py = nx_ + dx * sgn * d, ny_ + dy * sgn * d
             ax, ay = dx * sgn, dy * sgn                   # unit vector pointing away from the junction
             rx, ry = ay, -ax                              # right-hand side for traffic approaching the junction
             w = e["w"]
@@ -431,7 +436,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 offs = [1.0 + own * (k + 0.5) / nh for k in range(nh)] if mast else [0.75]    # one head over each group of lanes
                 for back, side in ((3.8, 1), (9.0, 1), (3.8, -1), (9.0, -1)):
                     qx, qy = px + ax * back + rx * (w / 2 + 1.0) * side, py + ay * back + ry * (w / 2 + 1.0) * side
-                    if back < e["len"] - d and not_building(qx, qy) and ok(qx, qy) and put(
+                    if (back < e["len"] - d or (cont and back < 12.0)) and not_building(qx, qy) and ok(qx, qy) and put(
                             signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1, offs[0], mast, offs[1:]), qx, qy):
                         posts.append((qx, qy, 0.22))
                         counts["lights"] += 1
