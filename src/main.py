@@ -1133,6 +1133,7 @@ def main():
 
     seeds = {"n": 0}
     eng_state = {}
+    eng_gear = {}
 
     def car_seed(b):
         """A number that stays with this one car (the same object, so also after you leave it and get back in): picks its engine recording and pitch."""
@@ -1151,12 +1152,18 @@ def main():
         else:
             g = min(4, int(fr * 5.0))
             rpm = 0.3 + 0.7 * min(1.0, fr * 5.0 - g) if g > 0 else 0.25 + 0.75 * min(1.0, fr * 5.0)
-            tgt = 0.55 + 1.15 * rpm + 0.1 * thr
+            tgt = 0.55 + 1.15 * rpm + 0.25 * thr - (0.1 if thr < 0.05 and fr > 0.1 else 0.0)        # throttle lift drops the revs (engine braking)
+            if fr < 0.03:
+                tgt = 0.55 + 0.02 * math.sin(time.time() * 54) + 0.015 * math.sin(time.time() * 138)           # uneven idle
+            if g != eng_gear.get(id(b), g):
+                tgt -= 0.15                                                                           # revs fall at each gear change
+            eng_gear[id(b)] = g
         st = eng_state.get(id(b), tgt)
-        st += (tgt - st) * 0.12
+        st += (tgt - st) * (0.25 if tgt > st else 0.08)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
         if len(eng_state) > 200:
             eng_state.clear()
+            eng_gear.clear()
         return st * base
 
     def doppler(b, lx, ly):
@@ -1184,10 +1191,12 @@ def main():
             for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
                 if nm == prof:                                       # this very car always uses the same recording, however often you leave and re-enter it
                     thr_ = abs(inp_last.get("throttle", 0))
-                    aud.loop(nm, 0.2 + 0.3 * thr_ + 0.1 * fr, engine_pitch(c, nm, fr, thr_), "engine", 0.5, car_seed(c))
+                    aud.loop(nm, 0.15 + 0.35 * thr_ + 0.1 * fr, engine_pitch(c, nm, fr, thr_), "engine", 0.5, car_seed(c))
                 else:
                     aud.loop(nm, 0.0, 1.0, "engine")
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
+            hard_brake = inp_last.get("throttle", 0) < -0.5 and c.speed > 6
+            aud.loop("screech", 0.12 if hard_brake else 0.0, 1.3, "sfx") if not (c.slip > 3.0 and c.speed > 4) else None   # brake squeal
             on_road = world.surface(c.x, c.y) in (2, 3)
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
