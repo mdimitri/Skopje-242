@@ -60,6 +60,17 @@ def _early_splash():
 
 _early_splash()
 
+if rl.is_window_ready() and not any(x.split("=")[0] in ("--test", "--sound-dry", "--size", "--nomenu") for x in sys.argv[1:]):
+    try:
+        import updater
+        if updater.check():          # new version installed -> start it and quit this process
+            updater.restart()
+            sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception:  # noqa: BLE001 - the update check must never stop the game from starting
+        pass
+
 import strings as T   # noqa: E402
 import audio as audio_mod   # noqa: E402
 import radio as radio_mod   # noqa: E402
