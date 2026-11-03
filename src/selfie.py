@@ -39,6 +39,7 @@ class Selfie:
         self.stars = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.05, 0.9), self.rng.uniform(0.4, 1.0)) for _ in range(190)]
         self.phrase = ""
         self.yaw = 0.0
+        self.cam = None
         self.flash = 0.0
         self.saved_dir = ""
 
@@ -70,6 +71,25 @@ class Selfie:
         cam = rl.Camera3D(V3(px, eye, pz), V3(wk.x, az + 1.52, wk.y), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         rect = (wk.x - VIEW, wk.y - VIEW, wk.x + VIEW, wk.y + VIEW)
         return cam, rect
+
+    def chase(self, sim, world, dt, mx=0, sw=1):
+        """Debug street-level chase camera: slightly behind and above the avatar (or car), looking where it faces."""
+        o = sim.car if sim.mode == "car" else sim.walker
+        tgt = o.h
+        if sim.mode != "car":                              # on foot the cursor's offset from the screen centre swings the view
+            off = (mx - sw / 2) / (sw / 2)
+            self.cy_ = getattr(self, "cy_", tgt) + math.copysign(max(0.0, abs(off) - 0.2), off) * 2.6 * dt
+            tgt = self.cy_
+        d = (tgt - getattr(self, "cy_", tgt) + math.pi) % math.tau - math.pi
+        self.cy_ = getattr(self, "cy_", tgt) + d * min(1.0, 5.0 * dt)
+        h = self.cy_
+        az = o.az if o.az is not None else world.ground_y(o.x, o.y)
+        back, up, ahead = (8.0, 5.5, 3.0) if sim.mode == "car" else (4.5, 3.6, 2.0)   # pitched ~25 deg down: horizon near the top edge
+        px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
+        self.yaw = h
+        cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
+        self.cam = cam
+        return cam, (o.x - VIEW, o.y - VIEW, o.x + VIEW, o.y + VIEW)
 
     def sky(self, cam, dark, hour, t, sw, sh):
         """Gradient + clouds / stars, drawn before the 3D pass; returns the horizon screen y."""

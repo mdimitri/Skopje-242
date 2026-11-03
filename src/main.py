@@ -1539,6 +1539,15 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
+        if cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and selfie.cam is not None and not selfie.active:
+            wk_ = sim.walker                                  # debug chase view: the cursor aims, the avatar faces it, W walks towards it
+            r_ = rl.get_screen_to_world_ray(rl.get_mouse_position(), selfie.cam)
+            az_ = wk_.az if wk_.az is not None else world.ground_y(wk_.x, wk_.y)
+            if r_.direction.y < -0.01:
+                t_ = (az_ + 0.9 - r_.position.y) / r_.direction.y
+                wk_.h = math.atan2(r_.position.z + r_.direction.z * t_ - wk_.y, r_.position.x + r_.direction.x * t_ - wk_.x)
+            inp["move"] = (0, inp.get("move", (0, 0))[1])
+            inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
         busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                           lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active
         if busy_:                                            # inside a shop / posing: the controls are off
@@ -1624,9 +1633,14 @@ def main():
         jx, jy = random.uniform(-shake, shake) * cfg["shake"], random.uniform(-shake, shake) * cfg["shake"]
         cam, Hc, rect = renderer.camera(cam_x + jx, cam_y + jy, ppm, sw, sh, cam_h)
         sf_on = selfie.active and sim.walker is not None
+        ch_on = cfg["debug_chase"] and not sf_on and (sim.walker if sim.mode != "car" else sim.car) is not None
         if sf_on:
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0
+        elif ch_on:
+            cam, rect = selfie.chase(sim, world, dt, rl.get_mouse_x(), sw)
+            Hc = 0.0
+        sf_on = sf_on or ch_on
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
@@ -1670,12 +1684,19 @@ def main():
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
-            if sf_on:
+            if sf_on and selfie.active:
                 selfie.overlay(sw, sh)
                 if sf_due_:
                     selfie.take()
             else:
                 pois.draw(sim, sw, sh)
+            if ch_on and sim.mode == "foot":
+                mx_, my_ = rl.get_mouse_x(), rl.get_mouse_y()
+                for c_ in (rl.BLACK, rl.WHITE):
+                    o_ = 0 if c_ == rl.WHITE else 1
+                    rl.draw_circle_lines(mx_, my_, 11 + o_, c_)
+                    rl.draw_line(mx_ - 17, my_, mx_ - 5, my_, c_)
+                    rl.draw_line(mx_ + 5, my_, mx_ + 17, my_, c_)
             if not sf_on:
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()
