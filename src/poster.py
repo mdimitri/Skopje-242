@@ -10,6 +10,39 @@ import pyray as rl
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(ROOT, "assets", "posters")
 TITLE = "title.png"
+SPLASH = ("Skopje 242_ Rooftop Noir.png", "splash.png")     # loading screen / title menu background, in assets/
+_splash = []
+
+
+def splash():
+    """The loading-screen art (assets/Skopje 242_ Rooftop Noir.png), loaded once; None if it is missing."""
+    if not _splash:
+        _splash.append(None)
+        for fn in SPLASH:
+            p = os.path.join(ROOT, "assets", fn)
+            if os.path.exists(p):
+                try:
+                    with open(p, "rb") as f:                # from memory: raylib's fopen mangles Cyrillic paths on Windows
+                        raw = f.read()
+                    img = rl.load_image_from_memory(os.path.splitext(fn)[1].lower(), raw, len(raw))
+                    t = rl.load_texture_from_image(img)
+                    rl.unload_image(img)
+                    rl.gen_texture_mipmaps(t)
+                    rl.set_texture_filter(t, rl.TEXTURE_FILTER_TRILINEAR)
+                    _splash[0] = t
+                    break
+                except Exception:  # noqa: BLE001
+                    pass
+    return _splash[0]
+
+
+def draw_splash(W, H):
+    """Full-window splash art (cover-fit), or a dark background with the title when the image is missing."""
+    t = splash()
+    if t is not None:
+        draw_fit(t, 0, 0, W, H, 255, cover=True)
+    else:
+        rl.clear_background(rl.Color(24, 16, 30, 255))
 
 
 class Posters:

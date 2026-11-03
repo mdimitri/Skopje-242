@@ -49,9 +49,12 @@ def _early_splash():
             return
         font.load()
         rl.begin_drawing()
-        rl.clear_background(rl.Color(18, 20, 26, 255))
-        font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
-        font.draw_text("Се вчитува ...", W // 2 - 80, H // 2 + 30, 24, rl.Color(170, 174, 184, 255))
+        import poster
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        poster.draw_splash(W, H)
+        if poster.splash() is None:
+            font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
+        font.draw_text("Се вчитува ...", W // 2 - 80, H - 60, 24, rl.Color(230, 226, 232, 255), bold="cond")
         rl.end_drawing()
         rl.poll_input_events()
     except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed
@@ -431,6 +434,9 @@ def main():
     keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
+    if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
+        import loadmusic
+        loader.music = loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
     world = ensure_world(a.world, loader, a.demo, a.refresh, need)
@@ -629,11 +635,13 @@ def main():
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
-    if not a.test and not a.nomenu:
-        loader.hold()                              # let the showcase (cars / characters) play until a key press
     log("[game] ready")
+    if a.nomenu and loader.music is not None:
+        loader.music.close()
     if not a.test and not a.nomenu:
-        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud)
+        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud, music=loader.music)
+        if loader.music is not None:
+            loader.music.close()
         if res_ == "quit":
             rl.close_window()
             return

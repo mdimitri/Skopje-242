@@ -35,7 +35,7 @@ def _static(sr=audio_mod.SR, dur=0.3):
     return x / max(np.abs(x).max(), 1e-6) * 0.5
 
 
-def cut_fragment(path, out_wav, frag, muffle=False):
+def cut_fragment(path, out_wav, frag, muffle=False, fx=None):
     """Decode path completely (raylib's decoder, verified bit-exact against ffmpeg), cut `frag` s from a random point,
     fade the ends and write a 16-bit wav.  Runs in a worker thread.  Returns True on success."""
     rl = audio_mod.rl
@@ -64,6 +64,8 @@ def cut_fragment(path, out_wav, frag, muffle=False):
             for c_ in range(ch):
                 seg[:, c_] = np.fft.irfft(np.fft.rfft(seg[:, c_]) * gain, n)
             seg *= 0.7
+        if fx is not None:                             # extra shaping, e.g. the loading screen's distant-radio sound
+            seg = fx(seg, sr)
         pcm = (np.clip(seg, -1, 1) * 32000).astype("<i2")
         with wave.open(out_wav, "wb") as f:
             f.setnchannels(ch)

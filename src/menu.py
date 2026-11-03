@@ -10,8 +10,14 @@ import characters as C
 import poster
 import present
 import settings as S
+from updater import GAME_VERSION
 
 GOLD = rl.Color(240, 200, 60, 255)
+PINK = rl.Color(226, 32, 104, 255)
+# title menu (v3); new labels live here until they can be added to text/ (human-edited)
+TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
+NO_SAVE = "Нема зачувана игра"
+BACK = "Назад"
 _T = {}
 
 
@@ -32,7 +38,7 @@ class Row:
 TABS = [TXT("menu.0006"), TXT("menu.0004"), "Приказ", "Воздух", TXT("menu.0003"), TXT("menu.0005")]   # Игра · Свет · Приказ · Воздух · Звук · Мапа
 
 
-def _rows(in_game, slots=()):
+def _rows(in_game, slots=(), settings_only=False):
     """-> list of (tab, Row)."""
     pct = lambda v: f"{int(v * 100)}%"
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
@@ -82,6 +88,8 @@ def _rows(in_game, slots=()):
         (4, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
         (5, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
     ]
+    if settings_only:                    # opened from the title menu: only the options, and a way back
+        return R + [(0, Row("action", BACK, "play"))]
     g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
     if in_game:
         g += [Row("head", TXT("menu.0044")), *[Row("action", (TXT("menu.0045") + f'{n}:  {slots[n - 1]}'), f"save{n}") for n in range(1, len(slots) + 1)]]
@@ -259,24 +267,123 @@ def _first(rows):
     return next((i for i, r in enumerate(rows) if r.kind != "head"), 0)
 
 
-def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
+def _latest_save():
+    """Slot number of the newest save, or 0."""
+    import savegame
+    best = (0.0, 0)
+    for n in range(1, savegame.SLOTS + 1):
+        d = savegame.read(n)
+        if d and d.get("t", 0) > best[0]:
+            best = (d["t"], n)
+    return best[1]
+
+
+def title_menu(aud=None, music=None):
+    """Нова игра / Продолжи / Поставки / Излез over the splash art.  -> 'new' | 'cont<N>' | 'settings' | 'quit'"""
+    present.off()
+    latest = _latest_save()
+    sel = 0
+    flash_t = 0.0
+    t_open = time.time()
+    last_m = None
+    while True:
+        if rl.window_should_close():
+            return "quit"
+        if music is not None:
+            music.update()
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        sz = max(20, H // 28)
+        rh = int(sz * 1.45)
+        bw = max(font.measure_text(t, sz, "cond") for _k, t in TITLE_ITEMS) + 4 * sz
+        x0, y0 = (W - bw) // 2, int(H * 0.755)
+        armed = time.time() - t_open > 0.3
+        m = rl.get_mouse_position()
+        moved = last_m is not None and (m.x, m.y) != last_m
+        last_m = (m.x, m.y)
+        hover = None
+        for i in range(len(TITLE_ITEMS)):
+            if x0 <= m.x < x0 + bw and y0 + i * rh <= m.y < y0 + (i + 1) * rh:
+                hover = i
+        old = sel
+        if hover is not None and moved:
+            sel = hover
+        if rl.is_key_pressed(rl.KEY_DOWN) or rl.is_key_pressed(rl.KEY_S):
+            sel = (sel + 1) % len(TITLE_ITEMS)
+        if rl.is_key_pressed(rl.KEY_UP) or rl.is_key_pressed(rl.KEY_W):
+            sel = (sel - 1) % len(TITLE_ITEMS)
+        if sel != old and aud is not None:
+            aud.play("ui_click", 0.5)
+        go = armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE) or
+                        (hover is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)))
+        if armed and rl.is_key_pressed(rl.KEY_ESCAPE):
+            sel, go = len(TITLE_ITEMS) - 1, True
+        if go:
+            k = TITLE_ITEMS[sel][0]
+            if aud is not None:
+                aud.play("ui_confirm", 0.6)
+            if k == "cont":
+                if latest:
+                    return f"cont{latest}"
+                flash_t = time.time()
+            elif k == "quit":
+                if font.confirm_quit():
+                    return "quit"
+            else:
+                return k
+        rl.begin_drawing()
+        poster.draw_splash(W, H)
+        for i, (k, label) in enumerate(TITLE_ITEMS):
+            y = y0 + i * rh
+            tw = font.measure_text(label, sz, "cond")
+            tx = x0 + (bw - tw) // 2
+            ty = y + (rh - sz) // 2 - sz // 10
+            off = k == "cont" and not latest
+            if i == sel:
+                rl.draw_rectangle(x0, y + 2, bw, rh - 4, PINK)
+                font.draw_text(label, tx, ty, sz, rl.WHITE, bold="cond")
+            else:
+                font.draw_text(label, tx + 2, ty + 2, sz, rl.Color(0, 0, 0, 170), bold="cond")    # drop shadow over the art
+                font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
+        vt = "v" + GAME_VERSION
+        font.draw_text(vt, W - font.measure_text(vt, 18, "cond") - 14, H - 30, 18, rl.Color(232, 226, 232, 200), bold="cond")
+        if time.time() - flash_t < 2.0:
+            fw = font.measure_text(NO_SAVE, sz * 3 // 4, "cond")
+            font.draw_text(NO_SAVE, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
+        rl.end_drawing()
+
+
+def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=None, settings_only=False):
     present.off()                         # menus draw straight to the window
 
     """Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game.
     -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'"""
     import savegame
     tab, flash, flash_t = 0, "", 0.0
-    # (the poster title card is gone: the 3D loading showcase is the only splash)
-    if not in_game:                      # start: title card + character choice, then straight into the game
-        pick_character.load = False
-        if pick_character(cfg, aud):
-            return "quit"
-        cfg.save()
-        if not pick_character.load:
-            return "play"
-        tab = 0
+    if not in_game and not settings_only:     # start: the title menu over the splash art
+        while True:
+            ch = title_menu(aud, music)
+            if ch == "quit":
+                return "quit"
+            if ch.startswith("cont"):
+                cfg.save()
+                return "load" + ch[4:]
+            if ch == "settings":
+                def bg():
+                    if music is not None:
+                        music.update()
+                    poster.draw_splash(rl.get_screen_width(), rl.get_screen_height())
+                if run(cfg, apply, False, bg, aud, music=music, settings_only=True) == "quit":
+                    return "quit"
+                continue
+            pick_character.load = False         # new game: choose who you are
+            if pick_character(cfg, aud):
+                return "quit"
+            cfg.save()
+            if not pick_character.load:
+                return "play"
+            break                               # L on the character screen: the load slots below
     slots = [savegame.summary(n) for n in range(1, savegame.SLOTS + 1)]
-    allrows = _rows(in_game, slots)
+    allrows = _rows(in_game, slots, settings_only)
     rows = [r for t, r in allrows if t == tab]
     sel = _first(rows)
     drag = None
@@ -384,21 +491,21 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
                 ok = save_fn(n)
                 flash, flash_t = (TXT("menu.0056") % n) if ok else TXT("menu.0057"), time.time()
                 slots = [savegame.summary(i) for i in range(1, savegame.SLOTS + 1)]
-                allrows = _rows(in_game, slots)
+                allrows = _rows(in_game, slots, settings_only)
                 rows = [x for t, x in allrows if t == tab]
-        if rl.is_key_pressed(rl.KEY_ESCAPE) and in_game and frames > 1:   # the Esc that opened the menu must not close it
+        if rl.is_key_pressed(rl.KEY_ESCAPE) and (in_game or settings_only) and frames > 1:   # the Esc that opened the menu must not close it
             cfg.save()
             return "play"
         if changed:
             apply(cfg)
         # ---- draw
         rl.begin_drawing()
-        if not in_game and _title() is not None:
-            poster.draw_fit(_title(), 0, 0, W, H, 255, cover=True)
-            rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 228))
-        elif draw_bg:
+        if draw_bg:
             draw_bg()
             rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
+        elif not in_game and _title() is not None:
+            poster.draw_fit(_title(), 0, 0, W, H, 255, cover=True)
+            rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 228))
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
         rl.draw_rectangle_rounded(rl.Rectangle(x0 - 24, 6, pw + 48, H - 12), 0.02, 6, rl.Color(14, 16, 24, 235))
@@ -453,7 +560,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None):
             font.draw_text(flash, x0 + pw - font.measure_text(flash, 20, True), 24, 20, rl.Color(120, 220, 120, 255), bold=True)
         font.draw_text(TXT("menu.0062"),
                      x0, H - 30, 15, rl.Color(150, 150, 160, 255))
-        label = "Зачувај и затвори" if in_game else "Играј"
+        label = "Зачувај и затвори" if in_game else (BACK if settings_only else "Играј")
         bwid, bx, by = font.measure_text(label, 20, True) + 40, x0 + pw - font.measure_text(label, 20, True) - 40, H - 62
         over = bx <= m.x < bx + bwid and by <= m.y < by + 30
         rl.draw_rectangle(bx, by, bwid, 30, GOLD if over else rl.Color(170, 140, 40, 255))

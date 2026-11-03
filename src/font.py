@@ -2,6 +2,7 @@
 
 raylib's built-in font only has Latin glyphs, so every text call of the game goes through here:
     font.draw_text(text, x, y, size, color)      font.measure_text(text, size)
+Pass bold="cond" for the condensed caps face of the title menu and loading bars (Oswald SemiBold, OFL: LICENSE_OSWALD.txt).
 Call font.load() once after the window exists; before that (or if the file is missing) it falls back to the default font.
 """
 from texts import TXT
@@ -32,7 +33,7 @@ def load():
     cps = _codepoints()
     arr = rl.ffi.new("int[]", cps)
     rl.set_trace_log_level(rl.LOG_ERROR)                       # silence "glyph taller than the font size" notes
-    for key, fn in (("r", "DejaVuSans.ttf"), ("b", "DejaVuSans-Bold.ttf")):
+    for key, fn in (("r", "DejaVuSans.ttf"), ("b", "DejaVuSans-Bold.ttf"), ("c", "Oswald-SemiBold.ttf")):
         path = os.path.join(DIR, fn)
         if not os.path.exists(path):
             continue
@@ -49,6 +50,8 @@ def load():
 
 
 def _f(bold):
+    if bold == "cond":
+        return _fonts.get("c") or _fonts.get("b") or _fonts.get("r")
     return _fonts.get("b" if bold else "r") or _fonts.get("r")
 
 

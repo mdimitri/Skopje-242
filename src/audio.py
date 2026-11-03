@@ -338,7 +338,8 @@ class Audio:
             self.muted = True
             return
         try:
-            rl.init_audio_device()
+            if not rl.is_audio_device_ready():          # the loading-screen music may have opened it already
+                rl.init_audio_device()
             if not rl.is_audio_device_ready():
                 return
             self._tmp = tempfile.mkdtemp(prefix="skopje_snd_")

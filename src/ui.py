@@ -1,7 +1,7 @@
-"""Loading screen: the showcase on the left; on the right one monotone overall bar, a live map of the city that fills with
-a pixel for everything downloaded, generated or loaded (and where it sits), the real transfer speed, warnings, and under
-the map a verbose progress log in Macedonian."""
-from texts import TXT
+"""Loading screen (v3): the splash art full screen; bottom right a live map of the city that fills with a pixel for
+everything downloaded, generated or loaded (and where it sits); bottom left the verbose progress log in Macedonian, transfer
+speed and warnings; along the very bottom the overall bar (full width) and just above it the bar of the step running now,
+each with its text inside."""
 import collections
 import json
 import os
@@ -15,11 +15,9 @@ import font   # noqa: E402
 
 import geo
 import poster as poster_mod
-import splash3d as showcase_mod
 import slang
 import strings as T
 
-GOLD = rl.Color(240, 200, 60, 255)
 WHITE = rl.Color(235, 235, 235, 255)
 GREY = rl.Color(150, 154, 165, 255)
 DIM = rl.Color(100, 104, 114, 255)
@@ -29,6 +27,8 @@ GREEN = rl.Color(95, 200, 125, 255)
 BLUE = rl.Color(120, 190, 250, 255)
 C_FAIL = rl.Color(220, 70, 60, 255)
 C_SPLIT = rl.Color(185, 120, 235, 255)
+PINK = rl.Color(226, 32, 104, 255)                # the title menu's highlight colour
+CUR_BAR = rl.Color(150, 40, 110, 255)
 
 # rough seconds of a full-city build per phase; used only until the first real build has recorded its own timings
 BUILD_DEFAULT = {
@@ -127,16 +127,9 @@ class Loader:
         self.b_t0 = 0.0
         self.b_done = set()
         self.b_frac = 0.0
-        self.posters = poster_mod.Posters()
-        self.show = showcase_mod.Splash3D()
-        self.title_until = 0.0                      # the showcase starts at once (a cached world loads in 2-3 s)
-        self.hint = ""
+        self.music = None                   # loadmusic.LoadMusic, set by main; kept going on every frame
         self.quip = random.choice(slang.LOADING_QUIPS)
-        self.quip_t = self.title_until or time.time()
-        if self.posters.title():
-            self.quip = T.TAGLINE                      # the title poster comes first, then the jokes
-        elif self.posters.items:
-            self.quip = self.posters.next()[1]
+        self.quip_t = time.time()
 
     # ---------------------------------------------------------------- stage control
     def say(self, text):
@@ -342,91 +335,69 @@ class Loader:
     # ---------------------------------------------------------------- drawing
     def draw(self, force=False):
         now = time.time()
+        if self.music is not None:
+            self.music.update()
         if not force and now - self.last_draw < 0.04:
             return
         self.last_draw = now
         if rl.window_should_close():
             raise SystemExit(0)
-        if now - self.quip_t > 7.0 and now > self.title_until:
+        if now - self.quip_t > 9.0:
             self.quip_t = now
             self.quip = random.choice(slang.LOADING_QUIPS)
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        m = max(16, W // 60)
-        lw = int(W * 0.55)
-        rx = m + lw + (m if lw else 0)
-        rw = W - rx - m
+        m = max(12, W // 80)
+        th = max(22, H // 34)                                         # overall bar: the very bottom, full width
+        ch = max(18, th - 4)                                          # the running step, slightly above it
+        ty, cy = H - th, H - th - 6 - ch
         asp = (self.box[3] - self.box[1]) / (self.box[2] - self.box[0])
-        self.map_w = max(100, min(rw, int(H * 0.52 / asp)))
+        self.map_w = max(120, min(int(W * 0.30), int(H * 0.42 / asp)))
         self.GEO_W = 2 * self.map_w                                   # painted at twice the size, shown at half with bilinear filtering
         self._paint()
         rl.begin_drawing()
-        rl.clear_background(rl.Color(18, 20, 25, 255))
-        if lw:
-            if now < self.title_until and self.posters.title():
-                ph = min(int(lw * 0.625), H - 2 * m)
-                py = (H - ph) // 2
-                poster_mod.draw_fit(self.posters.title(), m, py, lw, ph)
-                rl.draw_rectangle_lines(m, py, lw, ph, rl.Color(90, 92, 98, 255))
-            else:
-                try:
-                    self.show.draw(m, m, lw, H - 2 * m)
-                except Exception:  # noqa: BLE001 - decoration only; loading must never fail because of it
-                    try:
-                        rl.end_scissor_mode()
-                    except Exception:  # noqa: BLE001
-                        pass
-        y = m
-        font.draw_text(T.TITLE, rx, y, 28, GOLD, bold=True)
-        y += 42
+        poster_mod.draw_splash(W, H)
+        panel_h = int(self.map_w * asp) + 50
+        top = cy - m - panel_h
+        rl.draw_rectangle_gradient_v(0, top - 60, W, H - top + 60, rl.Color(8, 6, 14, 0), rl.Color(8, 6, 14, 225))
+        # ---- bottom right: the live map
+        mx = W - m - self.map_w
+        rl.draw_rectangle(mx - 8, top - 8, self.map_w + 16, panel_h + 8, rl.Color(10, 8, 16, 170))
+        self._map(mx, top, self.map_w, 0)
+        # ---- bottom left: what is happening, in detail
+        lw = mx - 3 * m
+        y = top
+        for ln in font.wrap(self.quip, 18, lw)[:1]:
+            font.draw_text(ln, m, y, 18, rl.Color(255, 205, 225, 255), bold="cond")
+            y += 26
+        y = self._net_lines(m, y, lw, now)
+        lines = max(0, (cy - m - y) // 17)
+        if lines > 0 and self.log:
+            for ln in self.log[-lines:]:
+                c = GREEN if "✓" in ln else (RED if "✗" in ln else (rl.Color(255, 220, 90, 255) if "↓" in ln or "▶" in ln else rl.Color(205, 205, 212, 255)))
+                font.draw_text(font.fit(ln, 13, lw), m, y, 13, c)
+                y += 17
+        # ---- the two bars
+        if self.cur:
+            fr = self.f[self.cur]
+            what = T.STAGE.get(self.cur, self.cur) + (f"  ·  {self.note}" if self.note else "")
+            self._tbar(m, cy, W - 2 * m, ch, fr, CUR_BAR, what, f"{fr * 100:3.0f}%")
         ov = self.overall()
         el = now - self.t0
         eta = (el / ov - el) if ov > 0.05 else 0
-        font.draw_text(f"{T.L_TOTAL}  {ov * 100:3.0f}%", rx, y, 20, WHITE, bold=True)
         right = f"{T.L_ELAPSED} {_fmt(el)}" + (f"   {T.L_LEFT} {_fmt(eta)}" if eta else "")
-        font.draw_text(right, rx + rw - font.measure_text(right, 16), y + 3, 16, GREY)
-        self._bar(rx, y + 26, rw, 14, ov, GOLD)
-        y += 48
-        # ---- the live map sits at a fixed place; everything that changes length goes below it
-        y = self._map(rx, y, rw, 0)
-        for ln in font.wrap(self.quip, 16, rw)[:2]:
-            font.draw_text(ln, rx, y, 16, rl.Color(215, 200, 150, 255))
-            y += 21
-        y += 4
-        if self.cur:                                                   # the running stage; the log below tells the details
-            fr = self.f[self.cur]
-            font.draw_text("▶ " + T.STAGE[self.cur], rx, y, 15, WHITE, bold=True)
-            pc = f"{fr * 100:3.0f}%"
-            font.draw_text(pc, rx + rw - font.measure_text(pc, 15), y, 15, WHITE)
-            self._bar(rx, y + 19, rw, 6, fr, BLUE)
-            y += 30
-        if self.note:
-            font.draw_text(font.fit(self.note, 14, rw), rx, y, 14, GREY)
-            y += 20
-        # ---- speed / alerts
-        y = self._net_lines(rx, y + 6, rw, now)
-        # ---- under the map: the verbose progress log
-        font.draw_text(MK_LOG, rx, y + 4, 15, GREY, bold=True)
-        y += 26
-        lines = (H - m - y) // 17
-        if lines > 0 and self.log:
-            for ln in self.log[-lines:]:
-                c = GREEN if "✓" in ln else (RED if "✗" in ln else (rl.Color(255, 220, 90, 255) if "↓" in ln or "▶" in ln else GREY))
-                font.draw_text(font.fit(ln, 13, rw), rx, y, 13, c)
-                y += 17
-        if self.hint and int(now * 1.6) % 2 == 0:
-            font.draw_text(self.hint, m + 14, H - m - 30, 20, rl.Color(255, 245, 210, 255), bold=True)
+        self._tbar(0, ty, W, th, ov, PINK, f"{T.L_TOTAL.upper()}  {ov * 100:3.0f}%", right)
         font.exit_button()
         rl.end_drawing()
 
-    def hold(self, min_s=1.5, max_s=None):
-        """Loading is done: keep the showcase on screen until a key / click (after `min_s`) or `max_s`."""
-        t0 = time.time()
-        self.hint = TXT("ui.0001")
-        while max_s is None or time.time() - t0 < max_s:
-            self.draw(force=True)
-            if time.time() - t0 > min_s and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):
-                break
-        self.hint = ""
+    @staticmethod
+    def _tbar(x, y, w, h, f, col, left, right):
+        """A progress bar with its text inside (left: what, right: numbers)."""
+        rl.draw_rectangle(x, y, w, h, rl.Color(20, 16, 26, 230))
+        rl.draw_rectangle(x, y, int(w * max(0.0, min(1.0, f))), h, col)
+        sz = h - 6
+        rt = font.measure_text(right, sz, "cond")
+        font.draw_text(font.fit(left, sz, w - rt - 40, "cond"), x + 12, y + 2, sz, rl.WHITE, bold="cond")
+        font.draw_text(right, x + w - rt - 12, y + 2, sz, rl.WHITE, bold="cond")
 
     def _map(self, x, y, w, h_avail):
         bx = self.box
@@ -640,12 +611,6 @@ class Loader:
             font.draw_text(font.fit(self.radio_line, 14, w), x, y, 14, GREY)
             y += 20
         return y
-
-    @staticmethod
-    def _bar(x, y, w, h, f, col):
-        rl.draw_rectangle(x, y, w, h, rl.Color(50, 52, 58, 255))
-        rl.draw_rectangle(x, y, int(w * max(0.0, min(1.0, f))), h, col)
-        rl.draw_rectangle_lines(x, y, w, h, rl.Color(90, 92, 98, 255))
 
 
 def fatal_screen(title, lines, seconds=0):
