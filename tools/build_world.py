@@ -52,6 +52,73 @@ AREA_STYLE = {   # kind: (z-order, rgb)
 }
 
 
+TUNNEL_ROADS = ("motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential")
+
+
+def lift_over_tunnels(roads, margin=8.0):
+    """A road tunnel lies on the ground here, so whatever crosses over it (a plaza, a street, a footpath on a higher layer) is cut
+    at the crossing and the cut piece becomes a bridge: the existing deck code then lifts it clear of the road below."""
+    tun = [r for r in roads if r.get("tunnel")]
+    if not tun:
+        return roads
+
+    def cross(a, b, c, d):                       # parameter t on a-b where it meets c-d, else None
+        rx, ry, sx, sy = b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]
+        den = rx * sy - ry * sx
+        if abs(den) < 1e-9:
+            return None
+        t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den
+        u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den
+        return t if 0 < t < 1 and 0 < u < 1 else None
+
+    fresh = [-1]
+    out = []
+    for rd in roads:
+        if rd.get("tunnel") or rd["bridge"] or not (rd["drive"] or rd["walk"]) or len(rd["nodes"]) != len(rd["pts"]) or rd["layer"] < 0:
+            out.append(rd)
+            continue
+        pts, nodes = rd["pts"], rd["nodes"]
+        cuts = []                                # (arc length of the crossing, half width of the tunnel road)
+        cum = [0.0]
+        for k in range(len(pts) - 1):
+            cum.append(cum[-1] + math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1]))
+        for tr in tun:
+            if set(tr["nodes"]) & set(nodes):
+                continue                         # meets the tunnel at a shared node: a junction, not a crossing
+            for k in range(len(pts) - 1):
+                for j in range(len(tr["pts"]) - 1):
+                    t = cross(pts[k], pts[k + 1], tr["pts"][j], tr["pts"][j + 1])
+                    if t is not None:
+                        cuts.append((cum[k] + t * (cum[k + 1] - cum[k]), tr["w"] / 2))
+        if not cuts:
+            out.append(rd)
+            continue
+        s0 = max(0.0, min(c - h for c, h in cuts) - margin)
+        s1 = min(cum[-1], max(c + h for c, h in cuts) + margin)
+
+        def at(s):                               # point on the polyline at arc length s -> (k, point)
+            for k in range(len(pts) - 1):
+                if s <= cum[k + 1] or k == len(pts) - 2:
+                    f = (s - cum[k]) / max(cum[k + 1] - cum[k], 1e-9)
+                    return k, (pts[k][0] + (pts[k + 1][0] - pts[k][0]) * f, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * f)
+
+        k0, p0 = at(s0)
+        k1, p1 = at(s1)
+        n0, n1 = fresh[0], fresh[0] - 1
+        fresh[0] -= 2
+        mid = [p0] + pts[k0 + 1:k1 + 1] + [p1]
+        mid_n = [n0] + nodes[k0 + 1:k1 + 1] + [n1]
+        pieces = [(pts[:k0 + 1] + [p0], nodes[:k0 + 1] + [n0], False), (mid, mid_n, True), ([p1] + pts[k1 + 1:], [n1] + nodes[k1 + 1:], False)]
+        for pp, nn, br in pieces:
+            if len(pp) >= 2 and sum(math.hypot(pp[i + 1][0] - pp[i][0], pp[i + 1][1] - pp[i][1]) for i in range(len(pp) - 1)) > 1.0:
+                piece = dict(rd, pts=pp, nodes=nn)
+                if br:
+                    piece.update(bridge=True, layer=max(rd["layer"], 1))
+                out.append(piece)
+    print(f"[build] tunnels: {len(tun)} road tunnels, {sum(1 for r in out if r['bridge']) - sum(1 for r in roads if r['bridge'])} crossings lifted into bridges")
+    return out
+
+
 def connect_roads(roads, radius=7.0, drive_radius=12.0):
     """Join dead ends that stop just short of another road (a gap in the data): the end moves onto the nearest vertex or onto a new
     junction node inserted into that road.  Same level only (never bridges, never motorways), the end must point at the road.
@@ -1098,7 +1165,8 @@ def main():
         t = el["tags"]
         hw = t["highway"]
         try:
-            if t.get("area") == "yes" or t.get("tunnel") in ("yes", "building_passage", "culvert"):
+            tunnel = t.get("tunnel") == "yes" and hw in TUNNEL_ROADS
+            if t.get("area") == "yes" or (t.get("tunnel") in ("yes", "building_passage", "culvert") and not tunnel):
                 continue
             pts = geom_pts(el)
             if len(pts) < 2:
@@ -1133,9 +1201,11 @@ def main():
             except ValueError:
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
-                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes})
+                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes,
+                          "tunnel": tunnel})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
+    roads = lift_over_tunnels(roads)
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
     if real_terrain or True:
         T = terrain_mod.carve_water(T, water_a, CELL)
