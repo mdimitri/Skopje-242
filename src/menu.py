@@ -310,7 +310,7 @@ def _slot_picker(aud=None, music=None, latest=0):
         if rl.is_key_pressed(rl.KEY_UP) or rl.is_key_pressed(rl.KEY_W):
             sel = (sel - 1) % len(rows)
         if sel != old and aud is not None:
-            aud.play("ui_click", 0.5)
+            aud.play("tick", 0.6, 0.9 + 0.05 * (sel % 5))      # the same tone clicks as the character screen
         if armed and rl.is_key_pressed(rl.KEY_ESCAPE):
             return 0
         go = armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE) or
@@ -372,7 +372,7 @@ def title_menu(aud=None, music=None):
         if rl.is_key_pressed(rl.KEY_UP) or rl.is_key_pressed(rl.KEY_W):
             sel = (sel - 1) % len(TITLE_ITEMS)
         if sel != old and aud is not None:
-            aud.play("ui_click", 0.5)
+            aud.play("tick", 0.6, 0.9 + 0.05 * (sel % 5))      # the same tone clicks as the character screen
         go = armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE) or
                         (hover is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)))
         if armed and rl.is_key_pressed(rl.KEY_ESCAPE):

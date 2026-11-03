@@ -370,7 +370,7 @@ class Loader:
         ty, cy = H - th, H - th - 6 - ch
         asp = (self.box[3] - self.box[1]) / (self.box[2] - self.box[0])
         self.map_w = max(120, min(int(W * 0.30), int(H * 0.42 / asp)))
-        self.GEO_W = max(60, self.map_w // 2)                         # half resolution, shown twice as big with nearest filtering (big pixels)
+        self.GEO_W = 2 * self.map_w                                   # painted at twice the size, shown at half with bilinear filtering
         self._paint()
         rl.begin_drawing()
         poster_mod.draw_splash(W, H)
@@ -522,7 +522,7 @@ class Loader:
             self.cv = np.zeros((h, self.GEO_W, 4), np.uint8)
             img = rl.gen_image_color(self.GEO_W, h, rl.Color(0, 0, 0, 0))
             self.cv_tex = rl.load_texture_from_image(img)
-            rl.set_texture_filter(self.cv_tex, rl.TEXTURE_FILTER_POINT)
+            rl.set_texture_filter(self.cv_tex, rl.TEXTURE_FILTER_BILINEAR)
             rl.unload_image(img)
             self.cv_dirty = True
             self.fresh = []
