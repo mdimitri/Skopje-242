@@ -7,7 +7,7 @@ import os
 import random
 import zlib
 
-VERSION = 4
+VERSION = 5
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # vendor: (title, [5 purchasable items], [2 free / money items])
@@ -457,14 +457,12 @@ _merge()
 POOL = {
     "cafe": ("kafe", "kafe", "kafeana", "slatkarnica"),
     "food": ("kebab", "pizza", "burek", "pekara", "mehana"),
-    "shop": ("market", "kiosk", "clothes", "tech", "market", "knigi", "nakit"),
-    "market": ("pazar", "market", "pazar"),
+        "market": ("pazar", "market", "pazar"),
     "night": ("kafeana", "kafeana", "kafe"),
     "money": ("menuvacnica",),
     "fuel": ("bencin",),
     "sport": ("gym",),
     "health": ("apteka",),
-    "hotel": ("kafe", "mehana"),
 }
 
 
@@ -483,14 +481,35 @@ def _sub(x, y):
     return _SUBS.get(f"{x},{y}", "") if x is not None else ""
 
 
+# vendors that make sense per OSM category; a name keyword or sub-tag that points elsewhere is ignored
+# (Тутунска Банка is a bank, not a tobacco shop; Автокоманда is a district, not a garage).  No entry = plain MENU of poi.py.
+_FOOD = {"kebab", "pizza", "burek", "pekara", "mehana", "kafana", "slatkarnica", "kafeana", "kafe"}
+_SHOP = set(V) - _FOOD - {"atm", "menuvacnica", "bencin", "hospital", "dentist", "kindergarten", "university", "kafeana", "kafe", "mehana", "kafana", "gym"} | {"pekara", "slatkarnica", "burek"}
+ALLOW = {
+    "shop": _SHOP, "food": _FOOD | {"liquor"}, "cafe": {"kafe", "kafeana", "slatkarnica", "pekara", "liquor"}, "night": {"kafeana", "kafe"},
+    "money": {"menuvacnica", "atm", "exchange"}, "health": {"apteka", "hospital", "dentist"}, "fuel": {"bencin"}, "sport": {"gym"},
+    "market": {"pazar", "market", "minimarket"}, "school": {"kindergarten", "university"}, "public": set(), "transport": set(),
+}
+# chains, matched on the Latin name (the Cyrillic spellings are covered by the keyword lists above)
+_BRANDS = (("stokomak", "market"), ("alkoteka", "liquor"), ("motocentar", "auto"), ("mozzart", "betting"), ("sportsbet", "betting"),
+           ("eurofarm", "apteka"), ("zegin", "apteka"), ("makpetrol", "bencin"), ("okta", "bencin"), ("anhoch", "tech"), ("neptun", "tech"))
+
+
 def vendor_for(cat, name, sub=""):
     low = (" " + (name or "").lower() + " ")
-    for v, keys in KEYS:
-        if any(k in low for k in keys):
-            return v
+    ok = ALLOW.get(cat)
+    if cat not in ALLOW and cat not in ("hotel", "sight", "worship", "police", "culture", "play"):
+        ok = None                                       # unknown category: no restriction
+    elif cat not in ALLOW:
+        return None                                     # hotels, churches, sights ...: plain category menu
+    cands = [v for b, v in _BRANDS if b in low]
+    cands += [v for v, keys in KEYS if any(k in low for k in keys)]
     k = _OSM_KINDS.get(sub) or _OSM_KINDS.get(sub.split("/")[0]) if sub else None
     if k:
-        return _ALIAS.get(k, k)
+        cands.insert(0, _ALIAS.get(k, k))               # an explicit OSM sub-tag beats a name guess
+    for v in cands:
+        if ok is None or v in ok:
+            return v
     pool = POOL.get(cat)
     if pool:
         return pool[zlib.crc32(low.encode("utf-8")) % len(pool)]
