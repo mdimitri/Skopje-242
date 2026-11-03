@@ -1738,7 +1738,7 @@ class Traffic:
             if isinstance(lead, Car) and lead.blk is c and lead.v < 0.3 and c.v < 0.3 and c.stuck > 1.0:
                 hx_, hy_ = math.cos(c.h), math.sin(c.h)          # two cars each standing in the other's way: the one already
                 fa = (lead.x - c.x) * hx_ + (lead.y - c.y) * hy_  # further ahead goes (the other is more beside/behind it than in front)
-                fb =(c.x - lead.x) * math.cos(lead.h) + (c.y - lead.y) * math.sin(lead.h)
+                fb = (c.x - lead.x) * math.cos(lead.h) + (c.y - lead.y) * math.sin(lead.h)
                 if fa < fb or (fa == fb and id(c) < id(lead)):
                     gap, lead = None, None
             if bgap is not None and (gap is None or bgap < gap):
