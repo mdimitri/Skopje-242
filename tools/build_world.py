@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 51
+VERSION = 52
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -452,6 +452,104 @@ def walls(ring, h, tint, y0=None):
     return p.reshape(-1, 3), uv.reshape(-1, 2), col.reshape(-1, 4)
 
 
+def facade_extras(ring, h, rg, wallc):
+    """Per-building structure on the street walls, one style per building: balcony columns/rows, a lift shaft, a fire-escape stair -> list of (pos, uv, col)."""
+    r = np.asarray(ring, dtype=np.float64)
+    d = np.roll(r, -1, axis=0) - r
+    ln = np.hypot(d[:, 0], d[:, 1])
+    walls_ = [i for i in np.argsort(-ln)[:4] if ln[i] >= 7.0]
+    if not walls_ or h < 8:
+        return []
+    out = []
+    floors = max(2, int(h // 3.2))
+    slab = tuple(c * 0.86 for c in wallc)
+    rail = (74, 74, 80)
+    dark = (70, 70, 76)
+    style = rg.choice(("rows", "columns", "alternate", "bare", "bare", "loggia"))
+    period = rg.choice((2, 3, 4))
+    phase = rg.randrange(period)
+    two_sides = rg.random() < 0.6
+    budget = 140
+
+    def at(i, t, off):
+        x0, z0 = r[i]
+        dx, dz = d[i] / ln[i]
+        return x0 + dx * t + dz * off, z0 + dz * t - dx * off, math.atan2(dz, dx)
+    closed = set(rg.sample(range(5), rg.choice((0, 0, 1, 2))))
+    closed_col = ((226, 222, 206), (186, 150, 112), (150, 168, 176), (206, 190, 150))
+    if rg.random() < 0.2:                                        # pillars under a wall (open ground floor / added columns)
+        i = walls_[0]
+        for q in range(max(2, int(ln[i] // 3.4))):
+            cx, cz, yaw = at(i, (q + 0.5) * ln[i] / max(2, int(ln[i] // 3.4)), 0.9)
+            out.append(box(cx, cz, 0.55, 0.55, 3.4, 0.0, (150, 148, 142), yaw))
+
+    for k, i in enumerate(walls_[: 2 if two_sides else 1]):
+        nb = int(ln[i] // 3.4)
+        if style == "bare" or nb < 2:
+            break
+        for b in range(nb):
+            if style == "columns" and b % period != phase:
+                continue
+            for f in range(1, floors):
+                if style == "alternate" and (b + f) % 2:
+                    continue
+                if style == "rows" and f % 2:
+                    continue
+                if style == "loggia" and (b + f) % period:
+                    continue
+                if budget <= 0:
+                    break
+                t = (b + 0.5) * ln[i] / nb
+                cx, cz, yaw = at(i, t, 0.62)
+                y0 = f * 3.2 - 0.1
+                if (b * 7 + k) % 5 in closed:                          # terrace column closed in by the owners: a room that sticks out
+                    out.append(box(cx, cz, 2.3, 1.2, 2.7, y0, closed_col[(b + k) % len(closed_col)], yaw))
+                    budget -= 1
+                    continue
+                badd_ = box(cx, cz, 2.3, 1.2, 0.16, y0, slab, yaw)
+                out.append(badd_)
+                cx, cz, yaw = at(i, t, 1.17)
+                out.append(box(cx, cz, 2.3, 0.07, 0.95, y0 + 0.16, rail, yaw))
+                budget -= 2
+    if h > 13 and rg.random() < 0.45:                       # lift shaft: a tall box on the wall, poking above the roof
+        i = walls_[-1] if len(walls_) > 1 else walls_[0]
+        cx, cz, yaw = at(i, ln[i] * rg.uniform(0.25, 0.75), 0.7)
+        out.append(box(cx, cz, 2.6, 1.4, h + 2.6, 0.0, tuple(c * 0.92 for c in wallc), yaw))
+    if h > 8 and rg.random() < 0.35:                         # fire escape: landings alternating left/right and stair steps
+        i = walls_[-1]
+        t0 = ln[i] * rg.uniform(0.3, 0.7)
+        for f in range(1, floors):
+            side = 1 if f % 2 else -1
+            cx, cz, yaw = at(i, t0 + side * 0.7, 0.55)
+            out.append(box(cx, cz, 1.8, 1.0, 0.1, f * 3.2, dark, yaw))
+            for s_ in range(4):
+                cx, cz, yaw = at(i, t0 + side * (0.7 - side * 0.5 * 0) - side * (0.6 + s_ * 0.5) * 0 + (-side) * (0.2 + s_ * 0.4), 0.55)
+                out.append(box(cx, cz, 0.4, 0.8, 0.08, f * 3.2 + 0.2 + s_ * 0.5, dark, yaw))
+    if h > 8 and rg.random() < 0.3:                          # janky "added floor": a smaller, differently coloured box on the roof, off-centre
+        xs, zs = r[:, 0], r[:, 1]
+        cx, cz = (xs.min() + xs.max()) / 2, (zs.min() + zs.max()) / 2
+        w_, l_ = (xs.max() - xs.min()), (zs.max() - zs.min())
+        for _try in range(6):
+            px, pz = cx + rg.uniform(-0.2, 0.2) * w_, cz + rg.uniform(-0.2, 0.2) * l_
+            sx, sz = w_ * rg.uniform(0.3, 0.55), l_ * rg.uniform(0.3, 0.55)
+            if all(_inside_ring(px + a_ * sx / 2, pz + b_ * sz / 2, ring, 0.8) for a_, b_ in ((1, 1), (-1, -1), (1, -1), (-1, 1))):
+                col = rg.choice(((196, 188, 170), (170, 120, 96), (150, 150, 146), (214, 200, 150)))
+                for k_ in range(rg.choice((1, 1, 2))):
+                    out.append(box(px, pz, sx, sz, 2.9, h + k_ * 2.9, col))
+                out.append(box(px, pz, sx + 0.6, sz + 0.6, 0.2, h, (120, 118, 114)))
+                break
+    if h > 10 and rg.random() < 0.2:                         # brutalist cantilever: a raw concrete block hung on a wall
+        i = walls_[0]
+        t = ln[i] * rg.uniform(0.3, 0.7)
+        cx, cz, yaw = at(i, t, 1.6)
+        fl = rg.randrange(2, max(3, floors))
+        out.append(box(cx, cz, rg.uniform(4, 7), 3.2, 3.0, fl * 3.2, (150, 148, 142), yaw))
+        for dt in (-1.5, 1.5):
+            cx2, cz2, yaw2 = at(i, t + dt, 1.0)
+            out.append(box(cx2, cz2, 0.5, 0.5, fl * 3.2, 0.0, (132, 130, 126), yaw2))
+    return out
+
+
 def graffiti_geo(ring, h, rng, n_max=2, big=False):
     """Alpha-keyed graffiti quads flat on the street-facing walls of one building -> (pos, uv, col) or None (y relative to the wall foot)."""
     r = np.asarray(ring, dtype=np.float32)
@@ -871,6 +969,8 @@ def main():
                         mat = MAT_PANEL                  # Аеродром / Карпош / Ѓорче Петров blocks
                     elif h < 10 and (small or b_type in ("house", "detached", "semidetached_house", "terrace")):
                         mat = MAT_HOUSE
+                if mat == MAT_PANEL and r.random() < 0.4:
+                    wallc = vary((206, 128, 104), r, 8)            # red-brick prefab tower (Kapishtec): one tone for the whole building
                 rooftop = []
                 if not small and ar > 300 and r.random() < 0.8:        # rooftop boxes: stairwell / AC units
                     for _ in range(r.randint(1, 3)):
@@ -998,8 +1098,10 @@ def main():
         if w:
             badd(mat, *w)
         rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
-        if rg.random() < {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65):          # graffiti on the street wall(s)
-            gg = graffiti_geo(outer, h, rg, 3, big=(mat == MAT_PANEL and rg.random() < 0.25))
+        extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60) else []
+        n_el = min(1.0, len(extras) / 40.0)                                       # the more added elements, the more graffiti
+        if rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
+            gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
             if gg:
                 badd(MAT_GRAF, *gg)
         if small:
@@ -1023,6 +1125,8 @@ def main():
                 rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
                 if rgf:
                     badd(MAT_GRAF, *rgf)
+            for ex_ in extras:
+                badd(MAT_SOLID, *ex_)
             for (px, py, sx, sz, hh) in rooftop:
                 badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
             rj = random.Random(hash(key) ^ len(outer) * 977 ^ int(cxm * 13))

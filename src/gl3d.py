@@ -1700,12 +1700,8 @@ void main(){
   float k = 1.0 + fade * (emb + grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
   vec3 c = base.rgb * k;
   if (wall > 0.5) {
-    vec2 bc = floor(wp.xz / 17.0);                                            // every block gets its own tone: no uniform city
-    float a = hh(bc), b = hh(bc + 7.3), d = hh(bc + 3.1);
     float lum = dot(c, vec3(0.333));
-    c = mix(vec3(lum), c, 0.78 + 0.3 * a);                                    // some blocks faded, some saturated
-    c *= vec3(1.0 + (a - 0.5) * 0.14, 1.0 + (b - 0.5) * 0.12, 1.0 + (d - 0.5) * 0.18) * (0.84 + 0.12 * b);
-    c = mix(c, vec3(0.66, 0.36, 0.27) * (0.62 + lum * 0.55), step(0.74, hh(bc + 11.0)) * 0.6);   // red-brick prefab blocks (Kapishtec, Aerodrom)
+    float a = hh(floor(wp.xz / 17.0)), b = hh(floor(wp.xz / 17.0) + 7.3);   // only wear varies in the shader; tone is per building (vertex colour)
     float u = wp.x + wp.z;
     float rain = smoothstep(0.52, 0.85, texture(texture1, vec2(u / 1.1, wp.y / 26.0)).r) * smoothstep(0.35, 0.7, stain);
     float blot = smoothstep(0.55, 0.9, texture(texture1, vec2(u / 9.0, wp.y / 7.0) + a).b);
