@@ -162,21 +162,23 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
                 continue
             hx, hy = math.cos(v[4]), math.sin(v[4])
             for n, jx, jz, idx in nodes:
-                if abs(jx - v[2]) > 20 or abs(jz - v[3]) > 20:
+                if abs(jx - v[2]) > 45 or abs(jz - v[3]) > 45:
                     continue
                 fwd = (jx - v[2]) * hx + (jz - v[3]) * hy
                 key = (v[0], n)
-                if rr_state.get(key) is not None and rr_state[key] > 9.0 >= fwd:     # crossed the stop line (9 m before the junction centre) this tick
-                    for i in idx:
-                        ax, ay = lights._axis(i)
-                        c_ = v[7]
-                        ie = lights.items[i][1]
-                        mine = v[6] != "car" or ie == c_.e or (c_.nxt is not None and ie == c_.nxt[0])      # a car only owes the signal of the approach it is on
-                        if mine and ax * hx + ay * hy > 0.8 and lights.state(i) == 2:
-                            out["redrun"].append(dict(node=n, item=i, ie=ie, t=round(t, 1), x=round(v[2]), y=round(v[3]), who=v[6], v=round(v[5], 1),
-                                                      stuck=round(getattr(v[7], "stuck", 0), 1), e=getattr(v[7], "e", None), d=getattr(v[7], "d", None), s=round(getattr(v[7], "s", 0)),
-                                                      nxt=str(getattr(v[7], "nxt", None)), trail=list(trail[v[0]])[-16::3]))
-                            break
+                for i in idx:
+                    sl = lights.stopd.get((lights.items[i][1], lights.items[i][2]), 9.0)     # the approach's own stop line (at its pole)
+                    if not (rr_state.get(key) is not None and rr_state[key] > sl >= fwd):     # crossed it this tick
+                        continue
+                    ax, ay = lights._axis(i)
+                    c_ = v[7]
+                    ie = lights.items[i][1]
+                    mine = v[6] != "car" or ie == c_.e or (c_.nxt is not None and ie == c_.nxt[0])      # a car only owes the signal of the approach it is on
+                    if mine and ax * hx + ay * hy > 0.8 and lights.state(i) == 2:
+                        out["redrun"].append(dict(node=n, item=i, ie=ie, t=round(t, 1), x=round(v[2]), y=round(v[3]), who=v[6], v=round(v[5], 1),
+                                                  stuck=round(getattr(v[7], "stuck", 0), 1), e=getattr(v[7], "e", None), d=getattr(v[7], "d", None), s=round(getattr(v[7], "s", 0)),
+                                                  nxt=str(getattr(v[7], "nxt", None)), trail=list(trail[v[0]])[-16::3]))
+                        break
                 rr_state[key] = fwd
         # pedestrians
         for p in sim.peds.list:

@@ -241,9 +241,21 @@ def plan_lights(edges, inc):
                 e = edges[ei]
                 if (e["b"] if end == 0 else e["a"]) in ms and e["len"] < 45.0:
                     continue                                           # internal link
-                arms.append((RANK[e["cls"]], lanes_n(e), e["w"], e["cls"].endswith("_link"), e["len"]))
+                p0, p1 = (e["pts"][0], e["pts"][1]) if end == 0 else (e["pts"][-1], e["pts"][-2])
+                dl = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) or 1.0
+                arms.append((RANK[e["cls"]], lanes_n(e), e["w"], e["cls"].endswith("_link"), e["len"],
+                             e["ow"], (not e["ow"]) or end == 1, (not e["ow"]) or end == 0, (p1[0] - p0[0]) / dl, (p1[1] - p0[1]) / dl))
+        arms = [a for a in arms if a[0] >= 1]                          # service roads and yards (car parks, petrol stations) never get lights
         if len(arms) < 3:
             continue
+        top = max(a[0] for a in arms)
+        big = [a for a in arms if a[0] == top]
+        if len(big) == 2 and all(a[5] for a in big) and sum(a[6] for a in big) == 1 and sum(a[7] for a in big) == 1:
+            ain, aout = (big[0], big[1]) if big[0][6] else (big[1], big[0])
+            tx, ty = aout[8] - ain[8], aout[9] - ain[9]                # one carriageway of a boulevard flows straight through:
+            sides = {1 if tx * a[9] - ty * a[8] > 0 else -1 for a in arms if a not in big}
+            if len(sides) <= 1:
+                continue                                               # side streets only on one side, nobody crosses it: right in, right out
         n2 = sum(1 for a in arms if a[0] >= 2)
         n3 = sum(1 for a in arms if a[0] >= 3)
         maxw = max(a[2] for a in arms)

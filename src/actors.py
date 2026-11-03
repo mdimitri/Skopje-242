@@ -1735,6 +1735,12 @@ class Traffic:
             self.lead = None
             gap = self.scan(c, 10.0 + c.v * 3.0) if c.ghost <= 0 else None
             lead = self.lead[4] if gap is not None and self.lead is not None else None
+            if isinstance(lead, Car) and lead.blk is c and lead.v < 0.3 and c.v < 0.3 and c.stuck > 1.0:
+                hx_, hy_ = math.cos(c.h), math.sin(c.h)          # two cars each standing in the other's way: the one already
+                fa = (lead.x - c.x) * hx_ + (lead.y - c.y) * hy_  # further ahead goes (the other is more beside/behind it than in front)
+                fb =(c.x - lead.x) * math.cos(lead.h) + (c.y - lead.y) * math.sin(lead.h)
+                if fa < fb or (fa == fb and id(c) < id(lead)):
+                    gap, lead = None, None
             if bgap is not None and (gap is None or bgap < gap):
                 gap, lead = bgap, None                           # a standing car it can't get round counts as a blocker
             c.blk = lead if gap is not None and gap < 3.0 else None
