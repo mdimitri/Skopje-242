@@ -153,7 +153,7 @@ def _layout(n, W, H, aspect):
     return cols, rows, cw, ch, gx, gy, top
 
 
-def pick_character(cfg, aud=None):
+def pick_character(cfg, aud=None, music=None):
     present.off()                         # menus draw straight to the window
 
     """Избор на лик (стрелки / глушец, Enter). -> True ако е затворен прозорецот."""
@@ -259,6 +259,9 @@ def pick_character(cfg, aud=None):
         rl.draw_rectangle_rounded(rl.Rectangle(W - 230, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
         font.draw_text(TXT("menu.0053"), W - 214, 64, 22, GOLD, bold=True)
         font.draw_text(TXT("menu.0054"), 24, H - 26, 16, rl.Color(150, 150, 160, 255))
+        if music is not None:
+            music.update()
+            music.widget(x=W // 2 - 200, y=20, keys=False)
         font.exit_button()
         rl.end_drawing()
 
@@ -442,7 +445,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                     return "quit"
                 continue
             pick_character.load = False         # new game: choose who you are
-            if pick_character(cfg, aud):
+            if pick_character(cfg, aud, music):
                 return "quit"
             cfg.save()
             if not pick_character.load:
@@ -634,5 +637,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             cfg.save()
             return "play"
+        if settings_only and music is not None and x0 - 24 - 110 > 60:      # beside the panel, if there is room
+            music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 110))
         font.exit_button()
         rl.end_drawing()

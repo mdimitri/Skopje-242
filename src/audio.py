@@ -20,6 +20,9 @@ import soundproc
 SR = 22050
 
 
+CABIN = 0.55                      # loudness of the outside world heard from inside a car
+
+
 def _save(path, x, sr=SR):
     x = np.clip(x, -1, 1)
     with wave.open(path, "wb") as w:
@@ -309,6 +312,8 @@ class Audio:
         self.dyn = []                                   # (sound, path) for speech clips, unloaded when finished
         self.master = 0.8
         self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
+        self.cabin = False                              # you sit in a car: the world outside is muffled (low-passed, quieter)
+        self._cur_far = {}
         self.muted = False
         self._tmp = None
         self.info, self.secs_of = {}, {}
@@ -466,7 +471,9 @@ class Audio:
             return
         k = (ref / max(d, ref)) * (1.0 - (d / maxd) ** 2)
         pan = 0.5 + 0.45 * max(-1.0, min(1.0, (x - self.lx) / max(d, 12.0)))
-        far = d > 45.0 or self.zoom < 0.3                           # distant or zoomed far out: the muffled copy
+        far = d > 45.0 or self.zoom < 0.3 or self.cabin             # distant, zoomed far out or heard from inside a car: the muffled copy
+        if self.cabin:
+            k *= CABIN
         t = d / 343.0
         if delayed and t > 0.07 and len(self.pend) < 64:
             self.pend.append((time.perf_counter() + t, name, vol * k, pitch, bus, pan, far))
@@ -527,6 +534,12 @@ class Audio:
                     self._pick(name, False, variant)
                 return
             s = self._cur.get(name)
+            muff = self.cabin and not name.startswith("engine_")     # inside a car: everything but your own engine through the body
+            if muff:
+                vol *= CABIN
+            if s is not None and self._cur_far.get(name, False) != muff:
+                rl.stop_sound(s)                                    # got in / out: swap to the muffled / clear recording
+                s = self._cur[name] = None
             if self.muted:
                 vol = self._vol[name] = 0.0
             elif bus == "ambient":                                  # ambience eases in and out instead of jumping with the place
@@ -540,10 +553,10 @@ class Audio:
                 rl.stop_sound(s)                                    # another car: its own recording
                 s = None
             if s is None or not rl.is_sound_playing(s):
-                s = self._pick(name, False, variant)[0]
+                s = self._pick(name, muff, variant)[0]
                 if s is None:
                     return
-                self._cur[name], self._cur_var[name] = s, variant
+                self._cur[name], self._cur_var[name], self._cur_far[name] = s, variant, muff
                 self._set(s, vol, pitch, bus, pan, name)
                 rl.play_sound(s)
                 return
@@ -551,12 +564,18 @@ class Audio:
         except Exception:  # noqa: BLE001
             pass
 
-    def speak(self, pcm, vol, sr=SR):
+    def speak(self, pcm, vol, sr=SR, muffle=False):
+        """muffle: someone outside while you sit in a car - low-passed through the car body, quieter."""
         if not self.ok or self.muted:
             return
         try:
             p = os.path.join(self._tmp, f"sp{len(self.dyn) % 8}_{id(pcm) & 0xffff}.wav")
-            _save(p, pcm.astype(np.float32) / 32768.0, sr)
+            x = pcm.astype(np.float32) / 32768.0
+            if muffle and len(x) > 16:
+                fq = np.fft.rfftfreq(len(x), 1.0 / sr)
+                x = np.fft.irfft(np.fft.rfft(x) / np.sqrt(1.0 + (fq / 650.0) ** 6), len(x)).astype(np.float32)
+                vol *= CABIN
+            _save(p, x, sr)
             for o, _p in self.dyn:                     # never two voices at once
                 rl.stop_sound(o)
             s = rl.load_sound(p)

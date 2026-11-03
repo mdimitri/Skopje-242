@@ -1580,13 +1580,14 @@ def main():
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
             hud.set_banner(TXT("main.0043") + song, 2.0)
-        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted, cfg["vol_radio"])
+        aud.cabin = sim.mode == "car"                            # inside a car: the world is muffled, your radio plays clearly
+        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted and sim.mode != "car", cfg["vol_radio"])
         res = spk.poll()
         if res is not None:
             key, pcm, sr_ = res
             vol_, prio_, _t = pend_say.pop(key, (0.0, False, 0.0))
             if vol_ > 0 and (prio_ or not aud.speaking()):      # stale or overlapping lines are dropped
-                aud.speak(pcm, vol_, sr_)
+                aud.speak(pcm, vol_, sr_, muffle=aud.cabin and not prio_)
         aud.reap()
         ph_ = sim.clock.phase()
         if ph_ != last_phase:

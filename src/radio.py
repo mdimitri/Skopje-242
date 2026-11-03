@@ -315,16 +315,16 @@ class Radio:
 
 
 class CabinMusic:
-    """Some traffic cars (about 1 in 10, at most one near you) play the radio inside: heard from outside only as a quiet,
-    muffled (low-passed) thump.  A fragment is cut ahead of time by a worker thread from the same music/ folder."""
+    """Some traffic cars (about 1 in 4, up to three near you at once) play the radio inside: heard from outside only as a
+    quiet, muffled (low-passed) thump that swells as they pass.  Fragments are cut ahead by a worker thread from music/."""
 
-    RANGE = 34.0
+    RANGE = 38.0
+    MAX = 3
 
     def __init__(self, aud, radio):
         self.aud, self.radio = aud, radio
-        self.car = None
-        self.snd = None
-        self.ready = None                  # path of a finished muffled fragment
+        self.play = []                     # [(sound, car)]
+        self.ready = []                    # paths of finished muffled fragments, not loaded yet
         self.job = None
         self.n = 0
         self.t = 0.0
@@ -333,13 +333,13 @@ class CabinMusic:
         return audio_mod.rl
 
     def _prepare(self):
-        if self.ready is not None or self.job is not None or not self.radio._dir:
+        if len(self.ready) >= 2 or self.job is not None or not self.radio._dir:
             return
         files = [p for _n, ps in self.radio.stations for p in ps]
         if not files:
             return
         self.n += 1
-        job = {"out": os.path.join(self.radio._dir, f"cab{self.n % 2}.wav"), "ok": False, "done": False}
+        job = {"out": os.path.join(self.radio._dir, f"cab{self.n % 5}.wav"), "ok": False, "done": False}
         pick = random.sample(files, min(4, len(files)))
 
         def work():
@@ -355,64 +355,69 @@ class CabinMusic:
         self.job = job
         threading.Thread(target=work, daemon=True).start()
 
+    def _stop_one(self, snd):
+        try:
+            self._rl().stop_sound(snd)
+            self._rl().unload_sound(snd)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _stop(self):
-        if self.snd is not None:
-            try:
-                self._rl().stop_sound(self.snd)
-                self._rl().unload_sound(self.snd)
-            except Exception:  # noqa: BLE001
-                pass
-            self.snd = None
-        self.car = None
+        for snd, _c in self.play:
+            self._stop_one(snd)
+        self.play = []
 
     def update(self, dt, cars, fx, fy, active, volume):
-        """cars: traffic cars; active: False while e.g. the player's own radio plays or the game is muted."""
+        """cars: traffic cars; active: False while you sit in a car yourself or the game is muted."""
         if not self.aud.ok or not active or volume <= 0.01 or not self.radio.stations:
-            if self.snd is not None:
+            if self.play:
                 self._stop()
             return
         rl = self._rl()
         if self.job is not None and self.job["done"]:
-            self.ready = self.job["out"] if self.job["ok"] else None
-            self.job = None
-            if self.ready is None:
+            if self.job["ok"]:
+                self.ready.append(self.job["out"])
+            else:
                 self.t = -30.0             # decoding failed: do not hammer the disk
-        if self.snd is None:
-            self.t += dt
-            if self.t >= 0:
-                self._prepare()
-            if self.ready is None:
-                return
-            best, bd = None, self.RANGE * 0.8
-            for c in cars:
-                if c.cab and abs(c.x - fx) < bd and abs(c.y - fy) < bd:
-                    d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5
-                    if d < bd:
-                        best, bd = c, d
-            if best is None:
-                return
+            self.job = None
+        self.t += dt
+        if self.t >= 0:
+            self._prepare()
+        keep = []
+        for snd, c in self.play:           # the playing ones: louder as the car comes close, gone when it is far
+            d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5
             try:
-                snd = rl.load_sound(self.ready)
-                self.ready = None
-                if not rl.is_sound_valid(snd):
-                    return
-                self.snd, self.car = snd, best
-                best.cab = False           # one song per car
-                rl.play_sound(snd)
+                if c not in cars or d > self.RANGE or not rl.is_sound_playing(snd):
+                    self._stop_one(snd)
+                    continue
+                k = 1.0 - d / self.RANGE
+                rl.set_sound_volume(snd, 0.5 * k * k * volume * self.aud.master)
+                rl.set_sound_pan(snd, 0.5 + 0.4 * max(-1.0, min(1.0, (c.x - fx) / max(d, 8.0))))
+                keep.append((snd, c))
             except Exception:  # noqa: BLE001
-                self.snd = None
+                self._stop_one(snd)
+        self.play = keep
+        if not self.ready or len(self.play) >= self.MAX:
             return
-        c = self.car
-        d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5 if c is not None else 1e9
+        busy = {id(c) for _s, c in self.play}
+        best, bd = None, self.RANGE * 0.8
+        for c in cars:
+            if c.cab and id(c) not in busy and abs(c.x - fx) < bd and abs(c.y - fy) < bd:
+                d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5
+                if d < bd:
+                    best, bd = c, d
+        if best is None:
+            return
         try:
-            if c not in cars or d > self.RANGE or not rl.is_sound_playing(self.snd):
-                self._stop()
-                self.t = -8.0              # a pause before the next one
+            snd = rl.load_sound(self.ready.pop(0))
+            if not rl.is_sound_valid(snd):
                 return
-            k = 1.0 - d / self.RANGE
-            rl.set_sound_volume(self.snd, 0.5 * k * k * volume * self.aud.master)
+            best.cab = False               # one song per car
+            rl.set_sound_volume(snd, 0.0)
+            rl.play_sound(snd)
+            self.play.append((snd, best))
         except Exception:  # noqa: BLE001
-            self._stop()
+            pass
 
     def close(self):
         self._stop()

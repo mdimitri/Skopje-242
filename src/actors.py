@@ -1089,7 +1089,7 @@ class Car:
     __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq")
 
     def __init__(self):
-        self.cab = random.random() < 0.1        # one in ten has its radio on (heard muffled from outside)
+        self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
         self.stuck = 0.0
         self.ghost = 0.0
         self.braking = False

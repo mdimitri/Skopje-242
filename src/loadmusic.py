@@ -18,21 +18,37 @@ LEVEL = 0.38                  # relative to the radio volume setting
 PINK = rl.Color(226, 32, 104, 255)
 
 
+def _crackle(n, sr, rng):
+    """Vinyl surface: sparse little ticks, now and then a louder pop, and a very faint dusty hiss under them."""
+    out = np.zeros(n, np.float32)
+    dur = n / sr
+    for rate, lo, hi in ((9.0, 0.02, 0.09), (0.35, 0.12, 0.25)):         # ticks, pops
+        k = rng.poisson(rate * dur)
+        pos = rng.integers(0, max(1, n - 200), k)
+        amp = rng.uniform(lo, hi, k) * rng.choice((-1.0, 1.0), k)
+        np.add.at(out, pos, amp.astype(np.float32))
+    tail = np.exp(-np.arange(int(sr * 0.0015)) / (sr * 0.0004)).astype(np.float32)
+    out = np.convolve(out, tail, mode="same")                             # each tick rings for ~1 ms
+    dust = rng.standard_normal(n).astype(np.float32)
+    dust -= np.convolve(dust, np.ones(3) / 3, mode="same")
+    return out + 0.0035 * dust
+
+
 def radio_fx(seg, sr):
-    """(n, ch) float -> mono AM-radio colour: 300-3400 Hz band, soft clipping, hiss, slow reception fades."""
+    """(n, ch) float -> an old radio playing a record: mono, 450-4500 Hz band (thin, no bass), a touch of speaker
+    saturation, slow reception drift and vinyl crackle on top.  Almost no hiss."""
     n = len(seg)
     x = seg.mean(axis=1)
     fq = np.fft.rfftfreq(n, 1.0 / sr)
-    band = 1.0 / np.sqrt(1.0 + (300.0 / np.maximum(fq, 1.0)) ** 4) / np.sqrt(1.0 + (fq / 3400.0) ** 6)
+    band = 1.0 / np.sqrt(1.0 + (450.0 / np.maximum(fq, 1.0)) ** 6) / np.sqrt(1.0 + (fq / 4500.0) ** 6)
     x = np.fft.irfft(np.fft.rfft(x) * band, n)
-    x = np.tanh(x * 2.2) / np.tanh(2.2)                                  # gentle crunch of a small speaker
+    x = x / max(1e-6, np.abs(x).max())
+    x = np.tanh(x * 1.3) / np.tanh(1.3)                                  # small speaker, gently pushed
     t = np.arange(n) / sr
     rng = np.random.default_rng()
-    x *= 0.82 + 0.18 * np.sin(2 * np.pi * (0.07 * t + rng.random()))     # reception drifting in and out
-    hiss = rng.standard_normal(n)
-    hiss -= np.convolve(hiss, np.ones(4) / 4, mode="same")               # high, thin hiss
-    x = 0.85 * x + 0.035 * hiss * (1.0 + 0.6 * np.sin(2 * np.pi * 0.13 * t))
-    x = x / max(1e-6, np.abs(x).max()) * 0.8
+    x *= 0.88 + 0.12 * np.sin(2 * np.pi * (0.06 * t + rng.random()))     # reception drifting a little
+    x = 0.75 * x + _crackle(n, sr, rng)
+    x = np.clip(x, -0.98, 0.98)
     return np.repeat(x[:, None], seg.shape[1], axis=1).astype(np.float32)
 
 
@@ -143,13 +159,13 @@ class LoadMusic:
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
-    def widget(self, x=12, y=10):
+    def widget(self, x=12, y=10, keys=True, room=360):
         """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
         if not self.ok:
             return
         sz = 18
         b = 30
-        name = font.fit(self.title or "…", sz, 360, "cond")
+        name = font.fit(self.title or "…", sz, max(40, room), "cond")
         tw = font.measure_text(name, sz, "cond")
         w = b * 2 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
@@ -167,6 +183,8 @@ class LoadMusic:
             if over and click:
                 self.skip(back=k == 0)
         font.draw_text(name, x + b + 15, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
+        if not keys:                                             # (screens where the arrows already move the selection)
+            return
         if rl.is_key_pressed(rl.KEY_LEFT):
             self.skip(back=True)
         elif rl.is_key_pressed(rl.KEY_RIGHT):
