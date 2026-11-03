@@ -458,7 +458,7 @@ def main():
     tex = {}
     loader.tick(0.01, "textures")
     try:
-        tex = gl3d.build_textures()
+        tex = gl3d.build_textures(lambda f: loader.tick(0.01 + 0.13 * f, "textures"))
     except Exception:  # noqa: BLE001
         log("[game] textures failed:\n" + traceback.format_exc())
         img = rl.gen_image_color(4, 4, rl.WHITE)

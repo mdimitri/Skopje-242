@@ -50,6 +50,8 @@ REM 64-bit Windows PowerShell by its full path (PATH may be broken, or a 32-bit 
 set "PSH=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%PSH%" set "PSH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
 if not exist "%PSH%" set "PSH=powershell"
+REM One-time: "Skopje 242" shortcut with the game icon here and on the desktop (delete it to have it made again)
+if not exist "Skopje 242.lnk" "%PSH%" -NoProfile -ExecutionPolicy Bypass -File "tools\shortcut.ps1" >nul 2>&1
 if defined FASTOK goto :skipsetup
 "%PSH%" -NoProfile -ExecutionPolicy Bypass -File "tools\setup.ps1" %SETUP_ARGS%
 if errorlevel 1 (

@@ -50,7 +50,7 @@ MK_NOTE = {"textures": "Текстури", "overview mesh": "Мрежа за п�
            "your character": "Твојот лик", "pickups & weapons": "Предмети и оружје", "simulation": "Симулација",
            "pavement grid": "Мрежа на тротоарите", "traffic lights": "Семафори", "sound": "Звук", "collision ready": "Судирите се подготвени",
            "routing graph": "Сообраќајна мрежа", "cached": "од кешот", "land use & parks": "Паркови и површини", "rivers": "Реки",
-           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја"}
+           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја", "saving the map": "Ја зачувувам мапата"}
 MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам {MK_PART.get(m[1], m[1])}: {m[2]}/{m[3]} {T.MB}"),
          (re.compile(r"^(\w+): unpacking$"), lambda m: f"Распакувам {MK_PART.get(m[1], m[1])}"),
          (re.compile(r"^(\w+): ok$"), lambda m: ""),
@@ -58,6 +58,21 @@ MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам
          (re.compile(r"^car models (\d+)/(\d+)$"), lambda m: f"Модели на возила {m[1]}/{m[2]}"),
          (re.compile(r"^pedestrian models (\d+)/(\d+)$"), lambda m: f"Модели на пешаци {m[1]}/{m[2]}"),
          (re.compile(r"^chunk (\d+)/(\d+)\s+\((-?\d+),(-?\d+)\)$"), lambda m: f"Дел од градот {m[1]}/{m[2]} ({m[3]}, {m[4]})")]
+# what the running build step is making now (progress.span / Bar notes of the build tools)
+MK_SUB = {"roads joined": "спојувам улици", "junctions": "крстосници", "edges": "сообраќајни врски", "rounded corners": "заоблени агли",
+          "ways under bridges": "патишта под мостовите", "decks": "палуби на мостовите", "neighbourhoods": "населби",
+          "trees and lamps from the map": "дрвја и светилки од мапата", "lane grid": "мрежа на лентите", "lamps": "светилки",
+          "trees": "дрвја", "posts": "столбчиња", "pavements": "тротоари", "asphalt": "асфалт", "collision posts": "судири со столбчиња",
+          "areas": "површини", "rivers and rails": "реки и пруги", "road grid": "мрежа на улиците",
+          "traffic lights plan": "план на семафорите", "traffic lights, signs, crossings": "семафори, знаци, пешачки премини",
+          "benches, bins, signs along streets": "клупи, корпи и знаци по улиците", "bridge parapets": "огради на мостовите",
+          "junk and garbage": "отпадоци и ѓубре", "kept off the roadway": "тргам опрема од коловозот", "bus stops": "автобуски постојки",
+          "empty lots": "празни плацеви", "building sites": "градилишта", "playgrounds, pitches, bushes": "игралишта, терени, грмушки",
+          "school yards": "школски дворови", "hedges along streets": "живи огради", "cover grid": "мрежа на покриеност",
+          "joints": "споеви", "junction plates": "плочи на крстосниците", "streets": "улици", "corners": "агли",
+          "crossings": "пешачки премини", "mesh": "мрежа", "parks and squares": "паркови и плоштади", "trees on the lots": "дрвја на плацевите",
+          "replacing the old world": "го заменувам стариот свет", "meta": "основни податоци", "props": "дрвја, лампи и коли",
+          "buildings": "згради", "chunks": "делови на градот", "surf": "површини на земјата", "terrain": "рељеф", "roads": "патишта"}
 # map pixel colours per kind of thing
 MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
            "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255),
@@ -311,7 +326,10 @@ class Loader:
         num = sum(bt[k] for k in self.b_done if k in bt) + bt.get(lab, 3.0) * min(1.0, part)
         self.b_frac = max(self.b_frac, min(0.99, num / den))
         self.f["build"] = max(self.f["build"], self.b_frac)
-        self.note = T.BUILD.get(lab, lab) + (f"  {n}/{total}  ({n * 100 // total}%)" if total else "")
+        sub = ev.get("sub", "")
+        sub = MK_SUB.get(sub, sub)
+        cnt = (f"{n * 100 // total}%" if total == 1000 else f"{n}/{total}  ({n * 100 // total}%)") if total else ""
+        self.note = T.BUILD.get(lab, lab) + (f"  ·  {sub}" if sub else "") + (f"   {cnt}" if cnt else "")
 
     def build_finished(self, record=True):
         """Tool exited fine: remember how long each phase really took (next run's weights; not for the small demo city)."""
@@ -386,6 +404,8 @@ class Loader:
         eta = (el / ov - el) if ov > 0.05 else 0
         right = f"{T.L_ELAPSED} {_fmt(el)}" + (f"   {T.L_LEFT} {_fmt(eta)}" if eta else "")
         self._tbar(0, ty, W, th, ov, PINK, f"{T.L_TOTAL.upper()}  {ov * 100:3.0f}%", right)
+        if self.music is not None:
+            self.music.widget()
         font.exit_button()
         rl.end_drawing()
 

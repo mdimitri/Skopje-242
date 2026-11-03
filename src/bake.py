@@ -534,12 +534,13 @@ def bake_overview(world, size, path, progress=None):
             for t in chunk:
                 disc(t[0], t[1], 2.4, (84, 132, 70, 140), 6)
 
-        pass_(f_areas, world.areas, 150, "land use & parks", 0.0, 0.2)
+        pass_(f_areas, world.areas, 60, "land use & parks", 0.0, 0.2)
         pass_(f_water, world.wlines, 200, "rivers", 0.2, 0.25)
         pass_(f_roads, [r for r in world.roads if not r["bridge"]], 600, "roads", 0.25, 0.55)
         pass_(f_roads, [r for r in world.roads if r["bridge"]], 600, "bridges", 0.55, 0.6)
-        pass_(f_bld, world.buildings, 1500, "buildings", 0.6, 0.9)
-        pass_(f_trees, world.trees[::3], 4000, "trees", 0.9, 1.0)
+        pass_(f_bld, world.buildings, 400, "buildings", 0.6, 0.85)
+        pass_(f_trees, world.trees[::3], 1000, "trees", 0.85, 0.92)
+        P(0.93, "saving the map")
         img = rl.load_image_from_texture(rt.texture)
         rl.image_flip_vertical(img)
         try:

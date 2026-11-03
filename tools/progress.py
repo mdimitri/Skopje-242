@@ -36,11 +36,37 @@ def flat(pts, keep=40):
     return [c for q in pts[::step] for c in (q[0], q[1])]
 
 
+_cur = {"label": "", "f": 0.0, "t": 0.0}
+
+
 def phase(label):
-    """A step without a counter (graph, decks, ...): tells the game which phase is running."""
-    _ev(label=label, n=0, total=0)
+    """A step without its own Bar (graph, decks, furniture, ...): tells the game which phase is running.  Its work then
+    reports through span() / frac(), so the bar of the running step keeps moving."""
+    _cur.update(label=label, f=0.0, t=time.time())
+    _ev(label=label, n=0, total=1000)
     sys.stdout.write(f"{label} ...\n")
     sys.stdout.flush()
+
+
+def frac(f, sub=""):
+    """The running phase is `f` (0..1) done; `sub` names the part being made now.  Sent at most every 0.05 s, but always
+    when another 5 % is passed, so every phase moves at least 20 times."""
+    now = time.time()
+    f = max(_cur["f"], min(1.0, f))
+    if now - _cur["t"] > 0.05 or int(f * 20) > int(_cur["f"] * 20):
+        _cur["t"] = now
+        _ev(label=_cur["label"], n=int(f * 1000), total=1000, sub=sub)
+    _cur["f"] = f
+
+
+def span(seq, lo, hi, sub=""):
+    """for x in span(items, 0.2, 0.6, "benches"): ...   the loop covers lo..hi of the running phase."""
+    seq = seq if hasattr(seq, "__len__") else list(seq)
+    n = max(1, len(seq))
+    frac(lo, sub)
+    for i, x in enumerate(seq):
+        yield x
+        frac(lo + (hi - lo) * (i + 1) / n, sub)
 
 
 def _fmt(sec):
@@ -82,10 +108,10 @@ class Bar:
 
     def _draw(self, force=False):
         now = time.time()
-        if not force and now - self.last < 0.15:
+        if not force and now - self.last < 0.05:
             return
         self.last = now
-        _ev(label=self.label, n=self.n, total=self.total)
+        _ev(label=self.label, n=self.n, total=self.total, sub=self.note)
         el = now - self.t0
         if self.total:
             f = min(1.0, self.n / self.total)

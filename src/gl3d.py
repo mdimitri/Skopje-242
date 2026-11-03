@@ -64,7 +64,7 @@ def _speckle(rng, n, size, base_alpha=18):
                           rl.Color(v, v, v, rng.randrange(6, base_alpha)))
 
 
-def build_textures():
+def build_textures(tick=None):
     """facade A (residential windows), facade B (office glass ribbon), roof, one white pixel. Greyscale-ish: tinted by vertex colour."""
     rng = random.Random(7)
     S = 128
@@ -82,6 +82,8 @@ def build_textures():
     rl.draw_rectangle(38, 38, 16, 22, rl.Color(255, 255, 255, 50))            # glass glint
     rl.end_texture_mode()
     tex["A"] = _to_texture(rt)
+    if tick:
+        tick(1 / 10)
     # --- facade B (office ribbon)
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -94,6 +96,8 @@ def build_textures():
     rl.draw_rectangle(10, 30, 26, 16, rl.Color(255, 255, 255, 40))
     rl.end_texture_mode()
     tex["B"] = _to_texture(rt)
+    if tick:
+        tick(2 / 10)
     # --- roof (tar paper / tiles)
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -106,6 +110,8 @@ def build_textures():
     _speckle(rng, 420, S, 30)
     rl.end_texture_mode()
     tex["roof"] = _to_texture(rt)
+    if tick:
+        tick(3 / 10)
     # --- Skopje socialist prefab block (Аеродром, Карпош): panel joints, loggia, odd closed-in balconies, AC unit
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -127,6 +133,8 @@ def build_textures():
     rl.draw_rectangle(27, 109, 14, 6, rl.Color(170, 170, 170, 255))
     rl.end_texture_mode()
     tex["panel"] = _to_texture(rt)
+    if tick:
+        tick(4 / 10)
     # --- family house (Влае, Ѓорче, Butel): warm stucco, roller-shutter windows, a bit of bare brick
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -146,6 +154,8 @@ def build_textures():
     rl.draw_rectangle(24, 30, 6, 40, rl.Color(110, 70, 50, 255))
     rl.end_texture_mode()
     tex["house"] = _to_texture(rt)
+    if tick:
+        tick(5 / 10)
     # --- residential mid-rise "A" gets balconies with railings and laundry, the Skopje classic
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -166,6 +176,8 @@ def build_textures():
     rl.draw_rectangle(18, 98, 22, 12, rl.Color(234, 234, 234, 255))          # AC unit
     rl.end_texture_mode()
     tex["A"] = _to_texture(rt)
+    if tick:
+        tick(6 / 10)
     # --- roof: weathered tar / tiles with patches, cracks and stains
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
@@ -186,14 +198,20 @@ def build_textures():
     _speckle(rng, 520, S, 34)
     rl.end_texture_mode()
     tex["roof"] = _to_texture(rt)
+    if tick:
+        tick(7 / 10)
     try:
         import graffiti
         tex["graf"] = graffiti.build_atlas()
+        if tick:
+            tick(8 / 10)
     except Exception:  # noqa: BLE001 - no graffiti rather than no game
         import traceback
         print("[graffiti] atlas failed:\n" + traceback.format_exc())
     img = rl.gen_image_color(4, 4, rl.WHITE)
     tex["white"] = rl.load_texture_from_image(img)
+    if tick:
+        tick(9 / 10)
     rl.unload_image(img)
     return tex
 

@@ -6,6 +6,7 @@ import math
 import random
 
 from furniture import G
+from progress import span
 from junk import _prism
 
 BUSH_G = ((62, 112, 50), (76, 126, 56), (54, 98, 46), (96, 130, 60), (70, 110, 70), (120, 120, 60))
@@ -127,7 +128,7 @@ def build(areas, pois, edges, add, chunk_of, ok, free, not_building, inside, log
         if len(pos):
             add(chunk_of(x, z), 3, pos, uv, col)
 
-    for ar in areas:
+    for ar in span(areas, 0.0, 0.6, "playgrounds, pitches, bushes"):
         kind, ring = ar["kind"], ar["outer"]
         if len(ring) < 3:
             continue
@@ -187,7 +188,7 @@ def build(areas, pois, edges, add, chunk_of, ok, free, not_building, inside, log
                         n_bush += 1
                     gx += sp
                 gy += sp
-    for x, y, cat, _nm in pois:                                          # school yards: flag, hoop, kids
+    for x, y, cat, _nm in span(pois, 0.6, 0.7, "school yards"):                                          # school yards: flag, hoop, kids
         if cat != "school" or not ok(x, y):
             continue
         r = random.Random(int(x * 13 + y * 7))
@@ -203,7 +204,7 @@ def build(areas, pois, edges, add, chunk_of, ok, free, not_building, inside, log
                 sites.append(("school", round(px, 1), round(py, 1), 12.0))
                 n_school += 1
                 break
-    for e in edges:                                                      # hedges / shrubs along residential streets
+    for e in span(edges, 0.7, 1.0, "hedges along streets"):            # hedges / shrubs along residential streets
         if not e["drive"] or e["bridge"] or e["cls"] not in ("residential", "living_street", "tertiary", "unclassified"):
             continue
         r = random.Random(e["a"] * 31 + e["b"])

@@ -105,12 +105,15 @@ class World:
                 for cx in range(int(x0 // cg), int(x1 // cg) + 1):
                     for cy in range(int(y0 // cg), int(y1 // cg) + 1):
                         g.setdefault((cx, cy), []).append((ax, ay, bx, by))
-            if bi % 2000 == 0:
+            if bi % 300 == 0:
                 P(0.8 * bi / max(nb, 1), f"building collision {bi}/{nb}")
         self.cgrid = g
         pg = {}
         th = self.th
-        for x, y, r, _s in self.trees:
+        nt = len(self.trees)
+        for k_, (x, y, r, _s) in enumerate(self.trees):
+            if k_ % 20000 == 0:
+                P(0.8 + 0.15 * k_ / max(nt, 1), "trees")
             t = th(x, y)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.5 if r < 3.5 else 0.65, t - 1.0, t + 9.0))
         for x, y in self.lamps:

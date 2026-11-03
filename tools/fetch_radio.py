@@ -108,7 +108,10 @@ def search_files(q, found):
 
 def artists():
     """Names from popular_singers.txt in the game folder ("1. Taylor Swift" per line)."""
-    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "popular_singers.txt")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    p = os.path.join(root, "popular_singers.txt")
+    if not os.path.exists(p):                      # (the game folder clean-up moved it here)
+        p = os.path.join(root, "drafts", "sources", "popular_singers.txt")
     try:
         lines = open(p, encoding="utf-8").read().splitlines()
     except OSError:

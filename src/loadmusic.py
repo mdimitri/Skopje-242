@@ -10,10 +10,12 @@ import threading
 import numpy as np
 import pyray as rl
 
+import font
 import radio
 
 FRAG = (50.0, 110.0)          # seconds of one song before the "dial" moves to another
 LEVEL = 0.38                  # relative to the radio volume setting
+PINK = rl.Color(226, 32, 104, 255)
 
 
 def radio_fx(seg, sr):
@@ -42,6 +44,9 @@ class LoadMusic:
         self.static = None
         self.job = None
         self.files = []
+        self.hist = []                # songs played, newest last (◀ goes back through them)
+        self.title = ""
+        self.cur = None
         if mute or volume < 0.01:
             return
         try:
@@ -64,16 +69,18 @@ class LoadMusic:
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
-    def _next(self):
+    def _next(self, path=None):
         self.seq += 1
-        job = {"out": os.path.join(self.dir, f"m{self.seq % 2}.wav"), "ok": False, "done": False}
-        pool = random.sample(self.files, min(6, len(self.files)))
+        job = {"out": os.path.join(self.dir, f"m{self.seq}.wav"), "ok": False, "done": False, "path": None}
+        pool = [path] if path else random.sample(self.files, min(6, len(self.files)))
+        if not path and self.cur in pool and len(pool) > 1:
+            pool.remove(self.cur)
 
         def work():
             for p in pool:
                 try:
                     if radio.cut_fragment(p, job["out"], random.uniform(*FRAG), fx=radio_fx):
-                        job["ok"] = True
+                        job["ok"], job["path"] = True, p
                         break
                 except Exception as e:  # noqa: BLE001
                     print(f"[loadmusic] cannot play {p}: {e}", flush=True)
@@ -99,12 +106,71 @@ class LoadMusic:
                 rl.set_sound_volume(self.static, 0.2 * self.volume)
                 rl.play_sound(self.static)                       # turning the dial
                 self.snd = rl.load_sound(job["out"])
+                try:
+                    os.remove(job["out"])
+                except OSError:
+                    pass
                 rl.set_sound_volume(self.snd, LEVEL * self.volume)
                 rl.play_sound(self.snd)
+                self.cur = job["path"]
+                self.title = os.path.splitext(os.path.basename(self.cur))[0].replace("_", " ")
+                if job.get("back"):
+                    self.hist.pop()
+                else:
+                    self.hist.append(self.cur)
+                    del self.hist[:-30]
                 self._next()                                     # decode the next song while this one plays
         except Exception as e:  # noqa: BLE001
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
+
+    def skip(self, back=False):
+        """◀ / ▶: back to the previous song or on to the next one."""
+        if not self.ok:
+            return
+        try:
+            if back:
+                if len(self.hist) < 2:
+                    return
+                self.job = None                                  # (a decode still running just finishes into its own file)
+                self._next(self.hist[-2])
+                self.job["back"] = True
+            self._drop()
+            self.title = "…"
+            rl.set_sound_volume(self.static, 0.2 * self.volume)
+            rl.play_sound(self.static)                           # the dial turns while the song decodes
+        except Exception as e:  # noqa: BLE001
+            print(f"[loadmusic] off: {e}", flush=True)
+            self.ok = False
+
+    def widget(self, x=12, y=10):
+        """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
+        if not self.ok:
+            return
+        sz = 18
+        b = 30
+        name = font.fit(self.title or "…", sz, 360, "cond")
+        tw = font.measure_text(name, sz, "cond")
+        w = b * 2 + tw + 30
+        rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
+        m = rl.get_mouse_position()
+        click = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)
+        for k, bx in ((0, x + 4), (1, x + w - b - 4)):
+            by = y + 4
+            over = bx <= m.x < bx + b and by <= m.y < by + b
+            rl.draw_rectangle(bx, by, b, b, PINK if over else rl.Color(60, 40, 70, 230))
+            cx, cy, r = bx + b / 2, by + b / 2, b * 0.28
+            if k == 0:
+                rl.draw_triangle(rl.Vector2(cx + r, cy - r), rl.Vector2(cx - r, cy), rl.Vector2(cx + r, cy + r), rl.WHITE)
+            else:
+                rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
+            if over and click:
+                self.skip(back=k == 0)
+        font.draw_text(name, x + b + 15, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
+        if rl.is_key_pressed(rl.KEY_LEFT):
+            self.skip(back=True)
+        elif rl.is_key_pressed(rl.KEY_RIGHT):
+            self.skip()
 
     def _drop(self):
         if self.snd is not None:

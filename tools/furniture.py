@@ -9,6 +9,8 @@ import random
 
 import numpy as np
 
+from progress import frac, span
+
 SUN = np.array([-0.45, 0.80, -0.40])
 SUN = SUN / np.linalg.norm(SUN)
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1,
@@ -306,7 +308,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
 
     # every ground-level drive road as segments in a 20 m grid: props never stand on a carriageway
     seg_grid = {}
-    for e in edges:
+    for e in span(edges, 0.0, 0.04, "road grid"):
         if e["drive"] and not e["bridge"]:
             hw = e["w"] / 2
             for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
@@ -361,11 +363,12 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
 
     # ---------------------------------------------------------------- junctions
     inc = {}
-    for ei, e in enumerate(edges):
+    for ei, e in enumerate(span(edges, 0.04, 0.06, "junctions")):
         if e["drive"] and not e["bridge"] and e["cls"] in RANK:
             inc.setdefault(e["a"], []).append((ei, 0))
             inc.setdefault(e["b"], []).append((ei, 1))
-    lit_nodes, cluster_of = plan_lights(edges, inc)           # signals come from the road network itself (lane flow), not from OSM
+    lit_nodes, cluster_of = plan_lights(edges, inc)
+    frac(0.1, "traffic lights plan")           # signals come from the road network itself (lane flow), not from OSM
     lit_pts = [edges[inc[n_][0][0]]["pts"][0] if inc[n_][0][1] == 0 else edges[inc[n_][0][0]]["pts"][-1] for n_ in lit_nodes]
 
     def inner(ei, end):
@@ -385,7 +388,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
         g_ = cluster_of.get(node, node)
         if g_ not in cl_ref or sc > cl_ref[g_][0]:
             cl_ref[g_] = (sc, ux_, uy_)
-    for node, lst in inc.items():
+    for node, lst in span(list(inc.items()), 0.1, 0.35, "traffic lights, signs, crossings"):
         if len(lst) < 3:
             continue
         e0, end0 = lst[0]
@@ -483,7 +486,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     counts["signs"] += 1
 
     # ---------------------------------------------------------------- along roads
-    for ei, e in enumerate(edges):
+    for ei, e in enumerate(span(edges, 0.35, 0.75, "benches, bins, signs along streets")):
         cls, L, w = e["cls"], e["len"], e["w"]
         r = random.Random(e["a"] * 7919 + e["b"] * 31)
         if e["drive"] and not e["bridge"] and cls in ("primary", "secondary", "tertiary", "trunk") and L > 70:
@@ -567,7 +570,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 s += r.uniform(9, 18)                       # round 8: 4x benches and bins
 
     # ---------------------------------------------------------------- bridges: parapets along the deck
-    for ri, rd in enumerate(roads):
+    for ri, rd in enumerate(span(roads, 0.75, 0.8, "bridge parapets")):
         if not rd["bridge"] or not (rd["drive"] or rd["walk"]):
             continue
         deck = (decks or {}).get(ri)
@@ -613,7 +616,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     # ---------------------------------------------------------------- junk and garbage (round 10)
     import junk
     nj = 0
-    for e in edges:
+    for e in span(edges, 0.8, 0.95, "junk and garbage"):
         cls, L, w = e["cls"], e["len"], e["w"]
         if e["bridge"] or L < 20 or cls in ("motorway", "trunk"):
             continue
@@ -638,7 +641,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     counts["junk"] = nj
 
     n0 = len(posts)
-    posts = [p for p in posts if len(p) > 3 or p[2] >= 0.5 or not on_road(p[0], p[1])]
+    posts = [p for p in span(posts, 0.95, 0.97, "kept off the roadway") if len(p) > 3 or p[2] >= 0.5 or not on_road(p[0], p[1])]
     log(f"[build] junk and garbage: {nj} pieces; furniture kept off the roadway: {skipped[0]} props, {n0 - len(posts)} posts")
     if bus_stops:                                          # real bus stops from the map, on the kerb of the nearest road
         grid = {}
@@ -648,7 +651,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     for gx in range(int(min(ax, bx) // 40) - 1, int(max(ax, bx) // 40) + 2):
                         for gy in range(int(min(ay, by) // 40) - 1, int(max(ay, by) // 40) + 2):
                             grid.setdefault((gx, gy), []).append((e, ax, ay, bx, by))
-        for sx_, sy_, nm in bus_stops:
+        for sx_, sy_, nm in span(bus_stops, 0.97, 1.0, "bus stops"):
             best = None
             for e, ax, ay, bx, by in grid.get((int(sx_ // 40), int(sy_ // 40)), ()):
                 dx, dy = bx - ax, by - ay

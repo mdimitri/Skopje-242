@@ -182,7 +182,9 @@ class Out:
         self.n += 6
 
     def flush(self, add, mat):
-        for (key, _did), (p, c, deck) in self.d.items():
+        for k_, ((key, _did), (p, c, deck)) in enumerate(self.d.items()):
+            if _TICK[0] and k_ % 8 == 0:
+                _TICK[0](k_ / max(1, len(self.d)))
             pos = np.array(p, np.float32)
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
@@ -527,10 +529,15 @@ def _in_hulls(hulls, x, y):
     return False
 
 
+_TICK = [None]                                             # progress of the slow junction passes: fn(fraction)
+
+
 def _corners(out, edges, plates, ribs, trims, cov, hulls):
     """Curb corners at every junction: the pavements of neighbouring roads join in a smooth arc (shared vertices at both
     ends), with asphalt filling the space between the arc and the junction plate."""
-    for node, (lst, maxhw) in plates.items():
+    for k_, (node, (lst, maxhw)) in enumerate(plates.items()):
+        if _TICK[0] and k_ % 16 == 0:
+            _TICK[0](k_ / max(1, len(plates)))
         ent = []
         for i, end in lst:
             e = edges[i]
@@ -607,7 +614,9 @@ def _junctions(out, edges, plates, hulls):
     """One seamless asphalt plate over every junction where roads of different classes (or 3+ roads) meet: no steps
     between their heights, no gutter lines or end caps showing, one colour (that of the most important road)."""
     n = 0
-    for node, (lst, maxhw) in plates.items():
+    for k_, (node, (lst, maxhw)) in enumerate(plates.items()):
+        if _TICK[0] and k_ % 16 == 0:
+            _TICK[0](k_ / max(1, len(plates)))
         top = max(lst, key=lambda q: (rank_of(edges[q[0]]["cls"]), edges[q[0]]["w"]))
         y = max(y_of(edges[i]) for i, _ in lst) + 0.012
         col = FILL.get(_base(edges[top[0]]["cls"]), (100, 102, 108))
@@ -659,7 +668,12 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     """Adds all road geometry to the mesh accumulator.  -> (number of vertices, pier collision posts)."""
     global _T
     _T = T
+    bar = Bar("3D roads", 1000, unit="")
+
+    def prog(f, note=None):
+        bar.update(int(1000 * f), note)
     cov = Cover(edges)
+    prog(0.02, "cover grid")
     _MICRO.clear()
     for i_, e_ in enumerate(edges):
         _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
@@ -677,16 +691,17 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         if e_["drive"] or e_["walk"]:
             deg[e_["a"]] = deg.get(e_["a"], 0) + 1
             deg[e_["b"]] = deg.get(e_["b"], 0) + 1
+    prog(0.04, "joints")
     plates = _plate_nodes(edges, joints)
+    prog(0.06, "junction plates")
     ribs = {}
     out = Out(chunk_of, T)
     pout = Out(chunk_of)                                   # piers: absolute heights
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
-    bar = Bar("3D roads", len(order) + 3, unit=" steps")
     for n_, i in enumerate(order):
-        bar.update(n_)
+        prog(0.06 + 0.64 * n_ / max(1, len(order)), "streets")
         e = edges[i]
         if not (e["drive"] or e["walk"]):
             continue
@@ -815,17 +830,21 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
                 pier_done.add(e["road"])
                 _piers(pout, piers, deck, T)
         out.deck = None
-    bar.update(len(order), "junctions")
     hulls = []
+    _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
     _junctions(out, edges, plates, hulls)
-    bar.update(len(order) + 1, "corners")
+    _TICK[0] = lambda f: prog(0.82 + 0.12 * f, "corners")
     _corners(out, edges, plates, ribs, trims, cov, hulls)
-    bar.update(len(order) + 2, "crossings")
-    for x, yy, ax, ay, w, *_r in xwalks:                      # zebra crossings + stop lines
+    _TICK[0] = None
+    for k_, (x, yy, ax, ay, w, *_r) in enumerate(xwalks):    # zebra crossings + stop lines
+        if k_ % 32 == 0:
+            prog(0.94 + 0.03 * k_ / max(1, len(xwalks)), "crossings")
         _zebra(out, x, yy, ax, ay, w)
+    _TICK[0] = lambda f: prog(0.97 + 0.025 * f, "mesh")
     if os.environ.get("ROADS_DEBUG"):
         _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
     out.flush(add, mat)
+    _TICK[0] = None
     pout.flush(add, mat)
     bar.done()
     return out.n + pout.n, piers

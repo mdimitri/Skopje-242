@@ -349,6 +349,8 @@ def title_menu(aud=None, music=None):
         if time.time() - flash_t < 2.0:
             fw = font.measure_text(NO_SAVE, sz * 3 // 4, "cond")
             font.draw_text(NO_SAVE, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
+        if music is not None:
+            music.widget()
         rl.end_drawing()
 
 

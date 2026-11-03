@@ -13,6 +13,7 @@ import random
 import numpy as np
 
 from furniture import G
+from progress import span
 from junk import _prism
 
 DIRT, DIRT_D, DIRT_L = (128, 104, 76), (78, 62, 46), (150, 124, 92)
@@ -236,14 +237,14 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
 
     rr = random.Random(2420)
     tg = {}
-    for t in trees:
+    for t in span(trees, 0.3, 0.35, "trees on the lots"):
         tg.setdefault((int(t[0] // 40), int(t[1] // 40)), []).append(t)
     cands = []
     step = 16.0
     ys = np.arange(-hy + 60, hy - 60, step)
     xs = np.arange(-hx + 60, hx - 60, step)
     # coarse prefilter on the free grid: only look at cells that are free
-    for y in ys:
+    for y in span(ys, 0.35, 0.45, "empty lots"):
         row = int((y + hy) // cell)
         for x in xs:
             if free_mask[row, int((x + hx) // cell)]:
@@ -252,7 +253,7 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
     placed, posts, works, parked = [], [], [], []
     per_km_n = {}                                                       # sites per 1 km square: every built-up square gets a few
     pg = {}                                                          # placed sites on a 100 m grid (spacing test)
-    for x, y in cands:
+    for x, y in span(cands, 0.45, 1.0, "building sites"):
         if len(works) >= max_sites:
             break
         km = (int((x + hx) // 1000), int((y + hy) // 1000))

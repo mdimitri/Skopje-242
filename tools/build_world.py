@@ -19,7 +19,7 @@ import mapbox_earcut as earcut
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from geo import HX, HY, project
-from progress import Bar, each, phase, spread, flat
+from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1052,9 +1052,10 @@ def main():
     phase("graph")
 
     connect_roads(roads)
+    frac(0.2, "roads joined")
     # ---- routing graph ----------------------------------------------------------------------------
     use = {}
-    for rd in roads:
+    for rd in span(roads, 0.2, 0.3, "junctions"):
         if rd["drive"] or rd["walk"]:
             for n in rd["nodes"]:
                 use[n] = use.get(n, 0) + 1
@@ -1065,7 +1066,7 @@ def main():
             node_ids[osm] = len(node_ids)
         return node_ids[osm]
 
-    for ri, rd in enumerate(roads):
+    for ri, rd in enumerate(span(roads, 0.3, 0.6, "edges")):
         if not (rd["drive"] or rd["walk"]) or len(rd["nodes"]) != len(rd["pts"]):
             continue
         ns, ps = rd["nodes"], rd["pts"]
@@ -1083,13 +1084,14 @@ def main():
                 start = i
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
+    frac(0.95, "rounded corners")
     print(f"[build] graph: {len(node_ids)} nodes, {len(edges)} edges ({sum(1 for e in edges if e['drive'])} drivable)")
     spread("graph", edges, lambda e: flat(e["pts"], 60))
     phase("bridge decks")
 
     # ---- bridge decks: ends meet the terrain, the middle clears whatever runs underneath ---------------
     under = {}                                      # 12 m grid of ways a bridge may pass over
-    for ri, rd in enumerate(roads):
+    for ri, rd in enumerate(span(roads, 0.0, 0.4, "ways under bridges")):
         if rd["bridge"] or not (rd["drive"] or rd["walk"]):
             continue
         hwr = rd["w"] / 2 + (2.0 if rd["drive"] else 0.5)
@@ -1111,7 +1113,7 @@ def main():
         return best
 
     decks = {}
-    for ri, rd in enumerate(roads):
+    for ri, rd in enumerate(span(roads, 0.4, 1.0, "decks")):
         if rd["bridge"] and (rd["drive"] or rd["walk"]) and len(rd["pts"]) >= 2:
             try:
                 decks[ri] = terrain_mod.make_deck(T, {"pts": rd["pts"]}, lower, rd["w"] / 2 + 0.6)
@@ -1135,7 +1137,7 @@ def main():
 
     places = []          # (name_en or None, name, x, y, kind, polygon or None, osm ref)
     PLACE_KINDS = ("suburb", "neighbourhood", "quarter", "city_district", "district", "borough", "village", "town", "hamlet", "locality", "square")
-    for el in elements:
+    for el in span(elements, 0.0, 1.0, "neighbourhoods"):
         t = el.get("tags", {})
         if not t.get("name"):
             continue
@@ -1169,7 +1171,7 @@ def main():
     phase("street furniture")
     trees, lamps, parked = [], [], []
     rr = random.Random(1234)
-    for el in elements:
+    for el in span(elements, 0.0, 1.0, "trees and lamps from the map"):
         t = el.get("tags", {})
         if el.get("type") == "node" and "lat" in el:
             x, y = project(el["lat"], el["lon"])
@@ -1392,10 +1394,11 @@ def main():
         import construction
         kill = Image.new("L", (NCX, NCY), 0)
         kd = ImageDraw.Draw(kill)
-        for ar in areas:
+        for ar in span(areas, 0.0, 0.25, "parks and squares"):
             if ar["kind"] in ("park", "playground", "pitch", "cemetery", "wood", "water", "plaza", "parking", "sand", "rock"):
                 kd.polygon([to_cell(px, py) for px, py in ar["outer"]], fill=1)
         free_mask = (occ_a == 0) & (surf_a == 0) & (np.asarray(kill) == 0)
+        frac(0.3, "empty lots")
         bi = np.pad(bld_a.astype(np.int32), ((1, 0), (1, 0))).cumsum(0).cumsum(1)
         def density(x, y, rad=int(160 / CELL)):
             c, r_ = to_cell(x, y)
@@ -1442,7 +1445,7 @@ def main():
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
     phase("carriageway cleanup")
     cgrid_ = {}
-    for e_ in edges:
+    for e_ in span(edges, 0.0, 0.3, "lane grid"):
         if e_["drive"] and not e_["bridge"]:
             for (ax_, ay_), (bx_, by_) in zip(e_["pts"], e_["pts"][1:]):
                 for gx_ in range(int(min(ax_, bx_) // 20) - 1, int(max(ax_, bx_) // 20) + 2):
@@ -1458,9 +1461,9 @@ def main():
         return False
 
     n_l, n_t, n_p = len(lamps), len(trees), len(posts)
-    lamps = [q for q in lamps if not in_lane(q[0], q[1], 0.22)]
-    trees = [q for q in trees if not in_lane(q[0], q[1], 0.5)]
-    posts = [q for q in posts if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
+    lamps = [q for q in span(lamps, 0.3, 0.4, "lamps") if not in_lane(q[0], q[1], 0.22)]
+    trees = [q for q in span(trees, 0.4, 0.7, "trees") if not in_lane(q[0], q[1], 0.5)]
+    posts = [q for q in span(posts, 0.7, 1.0, "posts") if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
     phase("railway")
@@ -1492,16 +1495,16 @@ def main():
     phase("ground rasters")
     hg = Image.new("L", (NCX, NCY), 0)       # ground height class: 0 ground, 1 asphalt, 2 pavement
     hd = ImageDraw.Draw(hg)
-    for e_ in edges:
+    for e_ in span(edges, 0.0, 0.3, "pavements"):
         if roads3d._base(e_["cls"]) in roads3d.SIDEWALK and not e_["bridge"]:
             hd.line(cells(e_["pts"]), fill=2, width=max(1, int(round((e_["w"] + 2 * roads3d.SW_W) / CELL))))
-    for e_ in sorted(edges, key=lambda q: roads3d.rank_of(q["cls"])):
+    for e_ in span(sorted(edges, key=lambda q: roads3d.rank_of(q["cls"])), 0.3, 0.6, "asphalt"):
         if e_["drive"] or e_["walk"]:
             hd.line(cells(e_["pts"]), fill=1, width=max(1, int(round(e_["w"] / CELL))))
 
     hg_arr = np.asarray(hg, dtype=np.uint8).copy()
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
-    posts = [p if len(p) == 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in posts]
+    posts = [p if len(p) == 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 1.0, "collision posts")]
 
     for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]]))):
         add_c(chunk_of(x, y), MAT_SOLID, *tree_geo(x, y, r_, sh, i))
@@ -1518,14 +1521,14 @@ def main():
         return d
 
     SKEW = 0.22
-    for i, b in enumerate(buildings):
+    for i, b in enumerate(buildings):          # (fast)
         x0, y0, x1, y1 = b["bb"]
         h = b["h"]
         for c in chunk_range(x0, y0, x1 + h * 0.3, y1 + h * 0.2):
             slot(c)["b"].append(i)
-    for i, ar in enumerate(each(areas, "chunk index: areas", feed=("areas", None, lambda a: flat(a["v"])))):
-        pass
-    for i, ar in enumerate(areas):
+    phase("chunk index: areas")
+    spread("areas", areas, lambda a: flat(a["v"]))
+    for i, ar in enumerate(span(areas, 0.0, 0.5, "areas")):
         x0, y0, x1, y1 = ar["bb"]
         tri, v = ar["tri"], ar["v"]
         ntri = len(tri) // 3
@@ -1551,12 +1554,14 @@ def main():
                     slot(c)[key].append((i, k))
 
     index_lines(roads, "r", lambda rd: rd["w"] / 2 + 3)
+    frac(0.7, "roads")
     index_lines(wlines, "wl", lambda w_: w_["w"] / 2 + 2)
     index_lines(rails, "rail", lambda r_: 3)
+    frac(0.75, "rivers and rails")
     for i, xw_ in enumerate(xwalks):
         for c in chunk_range(xw_[0] - xw_[4], xw_[1] - xw_[4], xw_[0] + xw_[4], xw_[1] + xw_[4]):
             slot(c)["x"].append(i)
-    for i, p in enumerate(trees):
+    for i, p in enumerate(span(trees, 0.75, 1.0, "trees")):
         for c in chunk_range(p[0] - 5, p[1] - 5, p[0] + 5, p[1] + 5):
             slot(c)["t"].append(i)
 
@@ -1621,12 +1626,35 @@ def main():
                     "decks": [d.pack() for d in decks.values()]},
     }
     sizes = {"meshes.bin": os.path.getsize(os.path.join(tmp, "meshes.bin"))}
-    for name, obj in each(parts.items(), "write world parts"):
+    phase("write world parts")
+    try:                                        # the last build's sizes tell how far each write has got
+        est = json.load(open(os.path.join(a.out, "manifest.json")))["sizes"]
+    except Exception:  # noqa: BLE001
+        est = {}
+    tot = sum(est.get(n + ".pkl", 0) for n in parts) or 0
+    wrote = [0]
+
+    class _Count:
+        def __init__(self, f, name, k):
+            self.f, self.name, self.k = f, name, k
+
+        def write(self, b):
+            mv = memoryview(b)
+            for o in range(0, max(1, len(mv)), 1 << 22):          # big blobs (terrain, rasters) in 4 MB steps
+                piece = mv[o:o + (1 << 22)]
+                wrote[0] += len(piece)
+                frac(min(0.99, wrote[0] / tot) if tot else self.k / len(parts), self.name)
+                self.f.write(piece)
+            return len(mv)
+    for k, (name, obj) in enumerate(parts.items()):
         fn = name + ".pkl"
         with open(os.path.join(tmp, fn), "wb") as f:
-            pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(obj, _Count(f, name, k), protocol=pickle.HIGHEST_PROTOCOL)
         sizes[fn] = os.path.getsize(os.path.join(tmp, fn))
+        if not tot:
+            frac((k + 1) / len(parts), name)
     json.dump({"version": VERSION, "sizes": sizes}, open(os.path.join(tmp, "manifest.json"), "w"))
+    frac(0.99, "replacing the old world")
     if os.path.isdir(a.out):
         import shutil
         shutil.rmtree(a.out)
