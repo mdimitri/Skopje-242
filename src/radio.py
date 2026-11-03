@@ -53,6 +53,8 @@ def cut_fragment(path, out_wav, frag, muffle=False, fx=None):
         else:
             a = np.frombuffer(rl.ffi.buffer(rl.ffi.cast("short *", w.data), n_all * ch * 2), dtype=np.int16).astype(np.float32) / 32768.0
         n = min(n_all, int(frag * sr))
+        if n_all > 20 * sr:                            # at most 60 % of the song, so the cut can start anywhere in it
+            n = min(n, int(n_all * 0.6))
         st = random.randint(0, max(0, n_all - n - sr)) if n_all > n + sr else 0
         seg = np.array(a[st * ch:(st + n) * ch], dtype=np.float32).reshape(n, ch)
         fi, fo = min(n // 2, int(0.25 * sr)), min(n // 2, int(0.9 * sr))

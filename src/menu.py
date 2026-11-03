@@ -278,6 +278,66 @@ def _latest_save():
     return best[1]
 
 
+def _slot_picker(aud=None, music=None, latest=0):
+    """Продолжи: which saved game?  The slots over the splash art in the title-menu style.  -> slot number, or 0 (back)."""
+    import savegame
+    slots = [(n, savegame.read(n)) for n in range(1, savegame.SLOTS + 1)]
+    rows = [(n, savegame.summary(n), d is not None) for n, d in slots] + [(0, BACK.upper(), True)]
+    sel = next((i for i, r in enumerate(rows) if r[0] == latest), len(rows) - 1)
+    t_open = time.time()
+    last_m = None
+    while True:
+        if rl.window_should_close():
+            return 0
+        if music is not None:
+            music.update()
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        sz = max(16, H // 38)
+        rh = int(sz * 1.45)
+        bw = min(W - 40, max(font.measure_text(r[1], sz, "cond") for r in rows) + 5 * sz)
+        x0 = (W - bw) // 2
+        y0 = H - len(rows) * rh - 40                     # below the logo of the splash art
+        armed = time.time() - t_open > 0.3
+        m = rl.get_mouse_position()
+        moved = last_m is not None and (m.x, m.y) != last_m
+        last_m = (m.x, m.y)
+        hover = next((i for i in range(len(rows)) if x0 <= m.x < x0 + bw and y0 + i * rh <= m.y < y0 + (i + 1) * rh), None)
+        old = sel
+        if hover is not None and moved:
+            sel = hover
+        if rl.is_key_pressed(rl.KEY_DOWN) or rl.is_key_pressed(rl.KEY_S):
+            sel = (sel + 1) % len(rows)
+        if rl.is_key_pressed(rl.KEY_UP) or rl.is_key_pressed(rl.KEY_W):
+            sel = (sel - 1) % len(rows)
+        if sel != old and aud is not None:
+            aud.play("ui_click", 0.5)
+        if armed and rl.is_key_pressed(rl.KEY_ESCAPE):
+            return 0
+        go = armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE) or
+                        (hover is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)))
+        if go and rows[sel][2]:
+            if aud is not None:
+                aud.play("ui_confirm", 0.6)
+            return rows[sel][0]
+        rl.begin_drawing()
+        poster.draw_splash(W, H)
+        rl.draw_rectangle(x0 - 20, y0 - rh - 14, bw + 40, (len(rows) + 1) * rh + 28, rl.Color(10, 8, 16, 190))
+        t = "КОЈА ИГРА?"
+        font.draw_text(t, (W - font.measure_text(t, sz, "cond")) // 2, y0 - rh, sz, rl.Color(255, 150, 190, 255), bold="cond")
+        for i, (n, label, ok) in enumerate(rows):
+            y = y0 + i * rh
+            txt = (f"{n}.  " if n else "") + label
+            tw = font.measure_text(txt, sz, "cond")
+            tx, ty = x0 + (bw - tw) // 2, y + (rh - sz) // 2 - sz // 10
+            if i == sel:
+                rl.draw_rectangle(x0, y + 2, bw, rh - 4, PINK if ok else rl.Color(90, 60, 80, 255))
+            col = rl.WHITE if i == sel else (rl.Color(232, 226, 232, 255) if ok else rl.Color(140, 130, 140, 255))
+            font.draw_text(txt, tx, ty, sz, col, bold="cond")
+        if music is not None:
+            music.widget()
+        rl.end_drawing()
+
+
 def title_menu(aud=None, music=None):
     """Нова игра / Продолжи / Поставки / Излез over the splash art.  -> 'new' | 'cont<N>' | 'settings' | 'quit'"""
     present.off()
@@ -323,8 +383,12 @@ def title_menu(aud=None, music=None):
                 aud.play("ui_confirm", 0.6)
             if k == "cont":
                 if latest:
-                    return f"cont{latest}"
-                flash_t = time.time()
+                    n = _slot_picker(aud, music, latest)
+                    if n:
+                        return f"cont{n}"
+                    t_open = time.time()                 # the Enter / click that closed the picker must not act here
+                else:
+                    flash_t = time.time()
             elif k == "quit":
                 if font.confirm_quit():
                     return "quit"

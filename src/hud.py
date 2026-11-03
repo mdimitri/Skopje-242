@@ -282,6 +282,7 @@ class Hud:
             rl.draw_triangle(tip, l_, r_, rl.Color(230, 40, 40, 255))
         else:
             mx, my, mw, mh = self.map_rect(sw, sh)
+            rl.draw_rectangle(0, 0, sw, sh, rl.Color(6, 6, 10, 175))           # dim the game behind the map: the map is the focus
             rl.draw_rectangle(mx - 4, my - 4, mw + 8, mh + 8, rl.Color(20, 20, 24, 255))
             rl.draw_texture_pro(self.ov, rl.Rectangle(0, 0, N, NH), rl.Rectangle(mx, my, mw, mh), rl.Vector2(0, 0), 0.0, rl.WHITE)
             to_big = lambda x, y: (mx + (x + HX) / (2 * HX) * mw, my + (y + HY) / (2 * HY) * mh)

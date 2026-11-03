@@ -21,7 +21,7 @@ def geo(layer, flat_lines):
         sys.stdout.flush()
 
 
-def spread(layer, items, fn, slices=10):
+def spread(layer, items, fn, slices=25):
     """A phase that cannot report while it runs: when it is over, send what it made in `slices` parts, so the map fills in steps."""
     if not EVENTS:
         return
@@ -80,7 +80,7 @@ class Bar:
         # feed = (layer, list, fn) or a tuple of those: every 5 % what has been added to `list` goes to the map via fn(item) -> flat coords
         self.feed = [feed] if feed and not isinstance(feed[0], tuple) else list(feed or [])
         self.sent = [0] * len(self.feed)
-        self.next_feed = 0.05
+        self.next_feed = 0.02
         self.t0 = time.time()
         self.n = 0
         self.last = 0.0
@@ -93,7 +93,7 @@ class Bar:
         if note is not None:
             self.note = note
         if self.feed and self.total and self.n >= self.next_feed * self.total:
-            self.next_feed = self.n / self.total + 0.05
+            self.next_feed = self.n / self.total + 0.02
             self._send()
         self._draw()
 
