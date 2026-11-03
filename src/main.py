@@ -1126,7 +1126,10 @@ def main():
             n_ = int(wk.anim * 2.0 / (5.2 if run_ else 3.0))        # a foot lands every 4 of the 8 gait phases (render._gait)
             fresh = n_ != sx.get("stepn", n_)
             sx["stepn"] = n_
-            if v > 0.6 and wk.moving and fresh:
+            air = wk.z > 0.05 or wk.duck_t > 0.0                    # no feet on the ground: jumping, or crawling under a vehicle
+            landed = sx.get("air", False) and not air and wk.z < 0.3
+            sx["air"] = air
+            if not air and (landed or (v > 0.6 and wk.moving and fresh)):    # a jump ends with one step
                 sf = world.surface(wk.x, wk.y)
                 if world.wet(wk.x, wk.y, wk.az):
                     k_ = "puddle_step"
