@@ -64,6 +64,28 @@ def _speckle(rng, n, size, base_alpha=18):
                           rl.Color(v, v, v, rng.randrange(6, base_alpha)))
 
 
+def _grime(rng, S, amount=1.0, peel=True):
+    """Skopje wear drawn over a facade tile: rain streaks, damp blotches, soot above sills, peeled plaster, cracks."""
+    for _ in range(int(7 * amount)):                                           # damp / water blotches
+        rl.draw_circle(rng.randrange(S), rng.randrange(S), rng.uniform(6, 20), rl.Color(70, 60, 48, rng.randrange(8, 22)))
+    for _ in range(int(16 * amount)):                                          # long rain streaks running down
+        x, y0 = rng.randrange(S), rng.randrange(S // 2)
+        w = rng.choice((1, 1, 2, 3))
+        rl.draw_rectangle(x, y0, w, rng.randrange(20, S - y0), rl.Color(54, 48, 42, rng.randrange(10, 34)))
+    rl.draw_rectangle_gradient_v(0, S - 26, S, 26, rl.Color(60, 54, 46, 0), rl.Color(60, 54, 46, int(60 * amount)))   # grimy base
+    for _ in range(int(2 * amount) + 1 if peel else 0):                          # plaster fallen off: bare concrete / brick
+        x, y = rng.randrange(S - 20), rng.randrange(S - 20)
+        w, h = rng.randrange(8, 24), rng.randrange(6, 18)
+        rl.draw_rectangle(x, y, w, h, rl.Color(150, 138, 124, 235) if rng.random() < .6 else rl.Color(168, 100, 78, 235))
+        rl.draw_rectangle_lines(x - 1, y - 1, w + 2, h + 2, rl.Color(90, 80, 70, 140))
+    for _ in range(int(3 * amount)):                                           # cracks
+        x, y = rng.randrange(S), rng.randrange(S)
+        for _k in range(7):
+            nx_, ny_ = x + rng.randrange(-5, 6), y + rng.randrange(2, 9)
+            rl.draw_line(x, y, nx_, ny_, rl.Color(36, 32, 28, 120))
+            x, y = nx_, ny_
+
+
 def build_textures(tick=None):
     """facade A (residential windows), facade B (office glass ribbon), roof, one white pixel. Greyscale-ish: tinted by vertex colour."""
     rng = random.Random(7)
@@ -87,13 +109,14 @@ def build_textures(tick=None):
     # --- facade B (office ribbon)
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
-    rl.clear_background(rl.Color(236, 238, 240, 255))
+    rl.clear_background(rl.Color(220, 224, 227, 255))
     rl.draw_rectangle_gradient_v(0, 22, S, 84, rl.Color(40, 78, 96, 255), rl.Color(110, 160, 182, 255))
     for x in (0, 42, 84):
         rl.draw_rectangle(x, 22, 4, 84, rl.Color(214, 218, 222, 255))
     rl.draw_rectangle(0, 18, S, 5, rl.Color(200, 204, 208, 255))
     rl.draw_rectangle(0, 106, S, 4, rl.Color(190, 194, 198, 255))
     rl.draw_rectangle(10, 30, 26, 16, rl.Color(255, 255, 255, 40))
+    _grime(rng, S, 1.1)
     rl.end_texture_mode()
     tex["B"] = _to_texture(rt)
     if tick:
@@ -115,7 +138,7 @@ def build_textures(tick=None):
     # --- Skopje socialist prefab block (Аеродром, Карпош): panel joints, loggia, odd closed-in balconies, AC unit
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
-    rl.clear_background(rl.Color(214, 210, 202, 255))
+    rl.clear_background(rl.Color(198, 193, 184, 255))
     _speckle(rng, 320, S, 24)
     for k in range(0, S, 4):                                                 # rain streaks under the sills
         rl.draw_line(k, 100, k + rng.randrange(-1, 2), 100 + rng.randrange(6, 26), rl.Color(80, 76, 70, rng.randrange(6, 22)))
@@ -131,6 +154,7 @@ def build_textures(tick=None):
         rl.draw_rectangle(x, 82, 2, 18, rl.Color(120, 118, 114, 255))
     rl.draw_rectangle(24, 106, 20, 12, rl.Color(236, 236, 236, 255))         # AC unit
     rl.draw_rectangle(27, 109, 14, 6, rl.Color(170, 170, 170, 255))
+    _grime(rng, S, 1.5)
     rl.end_texture_mode()
     tex["panel"] = _to_texture(rt)
     if tick:
@@ -138,7 +162,7 @@ def build_textures(tick=None):
     # --- family house (Влае, Ѓорче, Butel): warm stucco, roller-shutter windows, a bit of bare brick
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
-    rl.clear_background(rl.Color(246, 236, 220, 255))
+    rl.clear_background(rl.Color(230, 218, 198, 255))
     _speckle(rng, 380, S, 26)
     if True:                                                                # unfinished corner: bare red brick
         for y in range(0, 40, 8):
@@ -152,6 +176,7 @@ def build_textures(tick=None):
     rl.draw_rectangle(32, 86, 64, 5, rl.Color(200, 190, 176, 255))           # sill
     rl.draw_rectangle(98, 30, 6, 40, rl.Color(110, 70, 50, 255))             # wooden shutter
     rl.draw_rectangle(24, 30, 6, 40, rl.Color(110, 70, 50, 255))
+    _grime(rng, S, 1.4)
     rl.end_texture_mode()
     tex["house"] = _to_texture(rt)
     if tick:
@@ -159,7 +184,7 @@ def build_textures(tick=None):
     # --- residential mid-rise "A" gets balconies with railings and laundry, the Skopje classic
     rt = rl.load_render_texture(S, S)
     rl.begin_texture_mode(rt)
-    rl.clear_background(rl.Color(240, 234, 222, 255))
+    rl.clear_background(rl.Color(224, 216, 202, 255))
     _speckle(rng, 300, S, 22)
     rl.draw_rectangle(0, 20, S, 5, rl.Color(204, 198, 188, 255))
     rl.draw_rectangle(22, 28, 50, 58, rl.Color(250, 250, 250, 255))
@@ -174,6 +199,7 @@ def build_textures(tick=None):
     for x, c in ((82, (200, 60, 60)), (92, (240, 240, 240)), (104, (70, 110, 190))):
         rl.draw_rectangle(x, 62, 7, 10, rl.Color(*c, 255))
     rl.draw_rectangle(18, 98, 22, 12, rl.Color(234, 234, 234, 255))          # AC unit
+    _grime(rng, S, 1.3)
     rl.end_texture_mode()
     tex["A"] = _to_texture(rt)
     if tick:
@@ -1659,6 +1685,7 @@ BUILD_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
 uniform sampler2D texture0; uniform sampler2D texture1; uniform vec4 colDiffuse;
 out vec4 finalColor;
+float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -1671,7 +1698,22 @@ void main(){
   float stain = texture(texture1, wall > 0.5 ? vec2((wp.x + wp.z) / 11.0, wp.y / 38.0) : wpos / 17.0).b;
   float fade = 1.0 - smoothstep(60.0, 160.0, gl_FragCoord.z / gl_FragCoord.w);   // detail only up close (far away it would shimmer)
   float k = 1.0 + fade * (emb + grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
-  finalColor = vec4(base.rgb * k, base.a);
+  vec3 c = base.rgb * k;
+  if (wall > 0.5) {
+    vec2 bc = floor(wp.xz / 17.0);                                            // every block gets its own tone: no uniform city
+    float a = hh(bc), b = hh(bc + 7.3), d = hh(bc + 3.1);
+    float lum = dot(c, vec3(0.333));
+    c = mix(vec3(lum), c, 0.78 + 0.3 * a);                                    // some blocks faded, some saturated
+    c *= vec3(1.0 + (a - 0.5) * 0.14, 1.0 + (b - 0.5) * 0.12, 1.0 + (d - 0.5) * 0.18) * (0.84 + 0.12 * b);
+    float u = wp.x + wp.z;
+    float rain = smoothstep(0.52, 0.85, texture(texture1, vec2(u / 1.1, wp.y / 26.0)).r) * smoothstep(0.35, 0.7, stain);
+    float blot = smoothstep(0.55, 0.9, texture(texture1, vec2(u / 9.0, wp.y / 7.0) + a).b);
+    float peel = smoothstep(0.80, 0.86, texture(texture1, vec2(u / 6.0, wp.y / 5.0) + b * 9.0).b) * step(0.45, a);
+    float g = 1.0 - smoothstep(90.0, 230.0, gl_FragCoord.z / gl_FragCoord.w);
+    c *= 1.0 - g * (rain * 0.2 + blot * 0.16);
+    c = mix(c, vec3(0.50, 0.44, 0.38) * (0.8 + lum * 0.3), peel * g * 0.55);
+  }
+  finalColor = vec4(c, base.a);
 }"""
 _bld = None
 
