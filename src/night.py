@@ -9,6 +9,7 @@ import vehicles
 
 V3 = rl.Vector3
 CELL = 60.0
+OG = 16.0
 
 
 def _col(r, g, b, a):
@@ -22,13 +23,64 @@ class Night:
         self.detail = 2
         for x, y in getattr(world, "lamps", ()):
             self.cells.setdefault((int(x // CELL), int(y // CELL)), []).append((x, y))
+        self.og = {}                                   # building walls with their roof height, for hiding glows behind buildings
+        for b in getattr(world, "buildings", ()):
+            ring = b["ring"]
+            cx_, cy_ = ring[0]
+            top = world.th(cx_, cy_) + b.get("h", 8.0)
+            for i in range(len(ring)):
+                (ax, ay), (bx, by) = ring[i], ring[(i + 1) % len(ring)]
+                for gx in range(int(min(ax, bx) // OG), int(max(ax, bx) // OG) + 1):
+                    for gy in range(int(min(ay, by) // OG), int(max(ay, by) // OG) + 1):
+                        self.og.setdefault((gx, gy), []).append((ax, ay, bx, by, top))
+        self.vis, self.vis_cam = {}, None
+        self.street = 0.0
+
+    def _seen(self, cam, x, z, y):
+        """False when a building wall stands between the camera and the point (x, height y, z)."""
+        p = cam.position
+        key = (round(p.x, 1), round(p.y, 1), round(p.z, 1))
+        if key != self.vis_cam:
+            self.vis, self.vis_cam = {}, key
+        k = (round(x, 1), round(z, 1), round(y, 1))
+        r = self.vis.get(k)
+        if r is not None:
+            return r
+        dx, dz, dy = x - p.x, z - p.z, y - p.y
+        n = max(1, int(math.hypot(dx, dz) / (OG * 0.5)))
+        cells = {(int((p.x + dx * i / n) // OG), int((p.z + dz * i / n) // OG)) for i in range(n + 1)}
+        r = True
+        for c in cells:
+            for ax, ay, bx, by, top in self.og.get(c, ()):
+                ex, ey = bx - ax, by - ay
+                den = dx * ey - dz * ex
+                if abs(den) < 1e-9:
+                    continue
+                t = ((ax - p.x) * ey - (ay - p.z) * ex) / den      # along camera -> light
+                u = ((ax - p.x) * dz - (ay - p.z) * dx) / den      # along the wall
+                if 0.0 < t < 0.97 and 0.0 <= u <= 1.0 and p.y + dy * t < top:
+                    r = False
+                    break
+            if not r:
+                break
+        self.vis[k] = r
+        return r
 
     def _glow(self, cam, x, z, y, rad_px, col, a):
-        sp = rl.get_world_to_screen(V3(x, y + self.w.ground_y(x, z), z), cam)
+        gy = y + self.w.ground_y(x, z)
+        if not self._seen(cam, x, z, gy):
+            return
+        sp = rl.get_world_to_screen(V3(x, gy, z), cam)
+        if self.street:
+            p, q = cam.position, cam.target
+            if (x - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (z - p.z) * (q.z - p.z) <= 0:
+                return                                         # behind the camera
+            rad_px *= self.street / max(2.0, math.sqrt((x - p.x) ** 2 + (gy - p.y) ** 2 + (z - p.z) ** 2))
         if -rad_px < sp.x < rl.get_screen_width() + rad_px and -rad_px < sp.y < rl.get_screen_height() + rad_px:
             rl.draw_circle_gradient(rl.Vector2(sp.x, sp.y), rad_px, _col(col[0], col[1], col[2], a), _col(0, 0, 0, 0))
 
-    def draw(self, cam, rect, ppm, sim, dark, t, sw, sh):
+    def draw(self, cam, rect, ppm, sim, dark, t, sw, sh, street=False):
+        self.street = (sh / 2) / math.tan(math.radians(cam.fovy) / 2) / ppm if street else 0.0   # street view: glows shrink with distance
         emerg = []
         for c in sim.traffic.cars:
             if c.kind in clock.EMERGENCY and rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:

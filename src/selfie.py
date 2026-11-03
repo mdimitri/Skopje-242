@@ -76,10 +76,6 @@ class Selfie:
         """Debug street-level chase camera: slightly behind and above the avatar (or car), looking where it faces."""
         o = sim.car if sim.mode == "car" else sim.walker
         tgt = o.h
-        if sim.mode != "car":                              # on foot the cursor's offset from the screen centre swings the view
-            off = (mx - sw / 2) / (sw / 2)
-            self.cy_ = getattr(self, "cy_", tgt) + math.copysign(max(0.0, abs(off) - 0.2), off) * 2.6 * dt
-            tgt = self.cy_
         d = (tgt - getattr(self, "cy_", tgt) + math.pi) % math.tau - math.pi
         self.cy_ = getattr(self, "cy_", tgt) + d * min(1.0, 5.0 * dt)
         h = self.cy_

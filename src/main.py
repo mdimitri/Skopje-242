@@ -1539,14 +1539,14 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
-        if cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and selfie.cam is not None and not selfie.active:
+        if cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and selfie.cam is not None and not selfie.active and not show_map:
             wk_ = sim.walker                                  # debug chase view: the cursor aims, the avatar faces it, W walks towards it
             r_ = rl.get_screen_to_world_ray(rl.get_mouse_position(), selfie.cam)
             az_ = wk_.az if wk_.az is not None else world.ground_y(wk_.x, wk_.y)
-            if r_.direction.y < -0.01:
+            if r_.direction.y < -0.01 and not inp.get("move", (0, 0))[0] \
+                    and (rl.get_mouse_delta().x or rl.get_mouse_delta().y or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)):   # keys turn; the cursor aims only when moved / firing
                 t_ = (az_ + 0.9 - r_.position.y) / r_.direction.y
                 wk_.h = math.atan2(r_.position.z + r_.direction.z * t_ - wk_.y, r_.position.x + r_.direction.x * t_ - wk_.x)
-            inp["move"] = (0, inp.get("move", (0, 0))[1])
             inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
         busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                           lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active
@@ -1658,7 +1658,7 @@ def main():
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
             if lod:
-                guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh)
+                guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, ch_on)
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
@@ -1697,7 +1697,7 @@ def main():
                     rl.draw_circle_lines(mx_, my_, 11 + o_, c_)
                     rl.draw_line(mx_ - 17, my_, mx_ - 5, my_, c_)
                     rl.draw_line(mx_ + 5, my_, mx_ + 17, my_, c_)
-            if not sf_on:
+            if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()
             if vs_:
