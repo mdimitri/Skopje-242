@@ -35,7 +35,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), TXT("menu.0004"), "Приказ", "Воздух", TXT("menu.0003"), TXT("menu.0005")]   # Игра · Свет · Приказ · Воздух · Звук · Мапа
+TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003")]   # Игра · Градот · Луѓето · Графика · Звук
 
 
 def _rows(in_game, slots=(), settings_only=False):
@@ -46,32 +46,33 @@ def _rows(in_game, slots=(), settings_only=False):
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     H = lambda t: Row("head", t)
     R = [
-        # tabs: 0 Игра · 1 Свет · 2 Приказ · 3 Воздух · 4 Звук · 5 Мапа  (new labels live here until they can be added to text/)
+        # tabs: 0 Игра · 1 Градот · 2 Луѓето · 3 Графика · 4 Звук  (new labels live here until they can be added to text/)
         (1, H("Време")),
         (1, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
         (1, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
         (1, H("Улица")),
         (1, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
-        (1, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
-        (1, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
-        (1, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
-        (1, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
+        (2, H("Луѓе")),
+        (2, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
+        (2, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
+        (2, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
+        (2, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
         (1, H("Служби")),
         (1, Row("toggle", TXT("menu.0038"), "ambulance")),
         (1, Row("toggle", TXT("menu.0039"), "fire")),
-        (2, H("Екран")),
-        (2, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
-        (2, Row("toggle", TXT("menu.0009"), "fullscreen")),
+        (3, H("Екран")),
+        (3, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
+        (3, Row("toggle", TXT("menu.0009"), "fullscreen")),
         # new labels live here until they can be added to text/ (human-edited)
-        (2, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
-        (2, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
-        (2, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
-        (2, H("Камера")),
-        (2, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
-        (2, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
-        (2, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (2, H("Ознаки")),
-        (2, Row("toggle", TXT("menu.0014"), "labels")),
+        (3, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
+        (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
+        (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
+        (3, H("Камера")),
+        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
+        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
+        (3, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
+        (3, H("Ознаки")),
+        (3, Row("toggle", TXT("menu.0014"), "labels")),
         (3, H("Смог")),
         (3, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
         (3, Row("slider", "Јачина на смог", "smog_level", lo=0.0, hi=3.0, fmt=pct, note="100% е нормално, над тоа е густ, тежок смог")),
@@ -86,10 +87,10 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, H("Говор")),
         (4, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
         (4, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
-        (5, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
     ]
+    MAPROW = (0, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041")))   # was the Мапа tab
     if settings_only:                    # opened from the title menu: only the options, and a way back
-        return R + [(0, Row("action", BACK, "play"))]
+        return R + [MAPROW, (0, Row("action", BACK, "play"))]
     g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
     if in_game:
         g += [Row("head", TXT("menu.0044")), *[Row("action", (TXT("menu.0045") + f'{n}:  {slots[n - 1]}'), f"save{n}") for n in range(1, len(slots) + 1)]]
@@ -97,7 +98,7 @@ def _rows(in_game, slots=(), settings_only=False):
     if in_game:
         g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars")]
     g += [Row("action", TXT("menu.0049"), "quit")]
-    return R + [(0, r) for r in g]
+    return R + [(0, r) for r in g] + [MAPROW]
 
 
 def _title_card(seconds=6.0):
