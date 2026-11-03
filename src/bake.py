@@ -318,11 +318,11 @@ class Streamer:
                     continue                                     # atlas failed: no decals rather than facade-textured ones
                 m = gl3d.make_model(pos, uv, col)
                 if m is not None:
-                    names = ("A", "B", "roof", "white", "panel", "house", "graf")
+                    names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
                     if mat == 3 and getattr(self.world, "roads3d", False):
                         gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
-                    elif mat in (0, 1, 2, 4, 5):
+                    elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10):
                         gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
                     out[mat] = m
         self.meshes[key] = [out, self.frame]

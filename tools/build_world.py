@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 52
+VERSION = 54
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -387,6 +387,7 @@ def building_height(t, area, r):
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
 GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
+MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM = 7, 8, 9, 10     # photo-based Skopje facades
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
@@ -452,6 +453,41 @@ def walls(ring, h, tint, y0=None):
     return p.reshape(-1, 3), uv.reshape(-1, 2), col.reshape(-1, 4)
 
 
+def _cable(p0, p1, sag, n=8, col=(34, 34, 38)):
+    """A thin sagging cable (TV / phone line) between two points as crossed ribbons -> pos, uv, col."""
+    pts = []
+    for k in range(n + 1):
+        t = k / n
+        pts.append((p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t - sag * 4 * t * (1 - t), p0[2] + (p1[2] - p0[2]) * t))
+    pos = []
+    for a, b in zip(pts[:-1], pts[1:]):
+        dx, dz = b[0] - a[0], b[2] - a[2]
+        l = math.hypot(dx, dz) or 1
+        nx, nz = -dz / l * 0.03, dx / l * 0.03
+        for q in ((a[0] - nx, a[1], a[2] - nz), (a[0] + nx, a[1], a[2] + nz), (b[0] + nx, b[1], b[2] + nz),
+                  (a[0] - nx, a[1], a[2] - nz), (b[0] + nx, b[1], b[2] + nz), (b[0] - nx, b[1], b[2] - nz)):
+            pos.append(q)
+        for q in ((a[0], a[1] - 0.03, a[2]), (a[0], a[1] + 0.03, a[2]), (b[0], b[1] + 0.03, b[2]),
+                  (a[0], a[1] - 0.03, a[2]), (b[0], b[1] + 0.03, b[2]), (b[0], b[1] - 0.03, b[2])):
+            pos.append(q)
+    pos = np.array(pos, np.float32)
+    return pos, np.zeros((len(pos), 2), np.float32), np.tile(np.array([*col, 255], np.uint8), (len(pos), 1))
+
+
+def _junk_piece(kind, x, y, z, yaw, seed):
+    import junk
+    ids = [i for i, c in enumerate(junk.CATALOG) if c[1] == kind]
+    if not ids:
+        return None
+    g = junk.make(ids[seed % len(ids)], x, z, yaw, seed)
+    pos, uv, col = g.out()
+    if not len(pos):
+        return None
+    pos = pos.copy()
+    pos[:, 1] += y
+    return pos, uv, col
+
+
 def facade_extras(ring, h, rg, wallc):
     """Per-building structure on the street walls, one style per building: balcony columns/rows, a lift shaft, a fire-escape stair -> list of (pos, uv, col)."""
     r = np.asarray(ring, dtype=np.float64)
@@ -510,6 +546,12 @@ def facade_extras(ring, h, rg, wallc):
                 out.append(badd_)
                 cx, cz, yaw = at(i, t, 1.17)
                 out.append(box(cx, cz, 2.3, 0.07, 0.95, y0 + 0.16, rail, yaw))
+                for kind, pr in (("dish", 0.12), ("rack", 0.14), ("antenna", 0.05), ("bike", 0.04)):   # stray dishes, laundry, Y antennas, a bike
+                    if rg.random() < pr:
+                        cx3, cz3, _y = at(i, t + rg.uniform(-0.6, 0.6), 0.75 if kind != "dish" else 1.05)
+                        jp = _junk_piece(kind, cx3, y0 + 0.16, cz3, yaw + rg.uniform(-0.4, 0.4), rg.randrange(1 << 20))
+                        if jp:
+                            out.append(jp)
                 budget -= 2
     if h > 13 and rg.random() < 0.45:                       # lift shaft: a tall box on the wall, poking above the roof
         i = walls_[-1] if len(walls_) > 1 else walls_[0]
@@ -525,6 +567,16 @@ def facade_extras(ring, h, rg, wallc):
             for s_ in range(4):
                 cx, cz, yaw = at(i, t0 + side * (0.7 - side * 0.5 * 0) - side * (0.6 + s_ * 0.5) * 0 + (-side) * (0.2 + s_ * 0.4), 0.55)
                 out.append(box(cx, cz, 0.4, 0.8, 0.08, f * 3.2 + 0.2 + s_ * 0.5, dark, yaw))
+    if h > 12:                                                # rooftop leftovers: dishes, Y antennas, laundry, the odd bike
+        xs, zs = r[:, 0], r[:, 1]
+        for _k in range(rg.randint(2, 5)):
+            for _try in range(6):
+                px, pz = rg.uniform(xs.min(), xs.max()), rg.uniform(zs.min(), zs.max())
+                if _inside_ring(px, pz, ring, 1.2):
+                    jp = _junk_piece(rg.choice(("dish", "dish", "antenna", "antenna", "bike", "rack")), px, h, pz, rg.uniform(0, 6.283), rg.randrange(1 << 20))
+                    if jp:
+                        out.append(jp)
+                    break
     if h > 8 and rg.random() < 0.3:                          # janky "added floor": a smaller, differently coloured box on the roof, off-centre
         xs, zs = r[:, 0], r[:, 1]
         cx, cz = (xs.min() + xs.max()) / 2, (zs.min() + zs.max()) / 2
@@ -969,8 +1021,16 @@ def main():
                         mat = MAT_PANEL                  # Аеродром / Карпош / Ѓорче Петров blocks
                     elif h < 10 and (small or b_type in ("house", "detached", "semidetached_house", "terrace")):
                         mat = MAT_HOUSE
-                if mat == MAT_PANEL and r.random() < 0.4:
-                    wallc = vary((206, 128, 104), r, 8)            # red-brick prefab tower (Kapishtec): one tone for the whole building
+                if not small and h >= 7 and mat in (MAT_FACADE_A, MAT_PANEL):
+                    q_ = r.random()
+                    if mat == MAT_PANEL:
+                        mat = MAT_BRICK if q_ < 0.35 else MAT_CONC if q_ < 0.5 else MAT_CONCG if q_ < 0.65 else MAT_CREAM if q_ < 0.8 else MAT_PANEL
+                    else:
+                        mat = MAT_BRICK if q_ < 0.3 else MAT_CREAM if q_ < 0.55 else MAT_FACADE_A
+                    if mat == MAT_BRICK:
+                        wallc = vary((250, 244, 238), r, 5)
+                    elif mat in (MAT_CONC, MAT_CONCG):
+                        wallc = vary((236, 234, 228), r, 5)
                 rooftop = []
                 if not small and ar > 300 and r.random() < 0.8:        # rooftop boxes: stairwell / AC units
                     for _ in range(r.randint(1, 3)):
@@ -1081,6 +1141,7 @@ def main():
         T = terrain_mod.carve_water(T, water_a, CELL)
 
     # ---- building meshes, now that the ground under them is known ------------------------------
+    binfo = []
     for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
         ring = np.asarray(outer, np.float64)
         tz = T.h(ring[:, 0], ring[:, 1])
@@ -1094,6 +1155,7 @@ def main():
             pos[:, 1] += base
             mesh.add(key, m, pos, uv, col)
 
+        binfo.append((key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min())))
         w = walls(outer, h, wallc, skirt_a)
         if w:
             badd(mat, *w)
@@ -1145,6 +1207,28 @@ def main():
                                 pos_[:, 1] += h
                                 badd(MAT_SOLID, pos_, uv_, col_)
                             break
+    if binfo:                                                  # TV / phone cables from block to block
+        tall = [b for b in binfo if b[4] > 10]
+        gx = {}
+        for b in tall:
+            gx.setdefault((int(b[1] // 40), int(b[2] // 40)), []).append(b)
+        rc = random.Random(5)
+        for b in tall:
+            if rc.random() > 0.45:
+                continue
+            cands = [o for dx in (-1, 0, 1) for dz in (-1, 0, 1) for o in gx.get((int(b[1] // 40) + dx, int(b[2] // 40) + dz), ())
+                     if o is not b and 12.0 < math.hypot(o[1] - b[1], o[2] - b[2]) < 48.0]
+            if not cands:
+                continue
+            o = rc.choice(cands)
+            dist = math.hypot(o[1] - b[1], o[2] - b[2])
+            ux, uz = (o[1] - b[1]) / dist, (o[2] - b[2]) / dist
+            for _c in range(rc.randint(1, 3)):
+                hb, ho = rc.uniform(0.55, 0.95) * min(b[4], 40.0), rc.uniform(0.55, 0.95) * min(o[4], 40.0)
+                off = rc.uniform(-2.5, 2.5)
+                p0 = (b[1] + ux * (b[5] + 0.4) - uz * off, b[3] + hb, b[2] + uz * (b[5] + 0.4) + ux * off)
+                p1 = (o[1] - ux * (o[5] + 0.4) - uz * off, o[3] + ho, o[2] - uz * (o[5] + 0.4) + ux * off)
+                mesh.add(b[0], MAT_SOLID, *_cable(p0, p1, 0.02 * dist + 0.4))
     del pending
     for rd in sorted(roads, key=lambda q: (q["bridge"], q["layer"])):
         val = 2 if rd["bridge"] else 3

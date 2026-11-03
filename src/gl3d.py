@@ -226,6 +226,73 @@ def build_textures(tick=None):
     tex["roof"] = _to_texture(rt)
     if tick:
         tick(7 / 10)
+    # --- Skopje reference photos (Kapishtec, Aerodrom, Karposh, Chair): red brick with white bands, concrete towers with coloured infill, cream loggia blocks
+    def _win(x, y, w, h, frame=(244, 244, 240), glass=((52, 70, 92), (120, 146, 172))):
+        rl.draw_rectangle(x - 2, y - 2, w + 4, h + 4, rl.Color(*frame, 255))
+        rl.draw_rectangle_gradient_v(x, y, w, h, rl.Color(*glass[0], 255), rl.Color(*glass[1], 255))
+        rl.draw_rectangle(x + w // 2 - 1, y, 2, h, rl.Color(*frame, 255))
+        rl.draw_rectangle(x - 3, y + h + 2, w + 6, 3, rl.Color(200, 196, 188, 255))
+
+    rt = rl.load_render_texture(S, S)                                          # red brick block, white cornice band
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(188, 92, 64, 255))
+    for y in range(0, S, 6):
+        rl.draw_line(0, y, S, y, rl.Color(228, 196, 176, 90))
+        for x in range((y // 6) % 2 * 8, S, 16):
+            rl.draw_line(x, y, x, y + 6, rl.Color(228, 196, 176, 70))
+            if rng.random() < .3:
+                rl.draw_rectangle(x + 1, y + 1, 14, 5, rl.Color(150, 66, 44, 70))
+    _win(44, 30, 40, 52)
+    rl.draw_rectangle(0, S - 5, S, 5, rl.Color(236, 230, 220, 255))             # white cornice
+    _grime(rng, S, 1.0, peel=False)
+    rl.end_texture_mode()
+    tex["brick"] = _to_texture(rt)
+    rt = rl.load_render_texture(S, S)                                          # grey concrete tower, brown infill panel, pilaster, round balcony edge
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(176, 172, 162, 255))
+    _speckle(rng, 420, S, 26)
+    rl.draw_rectangle(0, 0, 18, S, rl.Color(196, 192, 182, 255))                # pilaster
+    rl.draw_rectangle(18, 0, 3, S, rl.Color(120, 116, 108, 255))
+    rl.draw_rectangle(30, 8, 80, 104, rl.Color(150, 98, 64, 255))               # coloured infill
+    _win(46, 34, 48, 40, glass=((70, 84, 100), (130, 150, 166)))
+    rl.draw_rectangle(0, 116, S, 12, rl.Color(160, 156, 146, 255))              # slab edge
+    _grime(rng, S, 1.3)
+    rl.end_texture_mode()
+    tex["conc"] = _to_texture(rt)
+    rt = rl.load_render_texture(S, S)                                          # same tower, faded green panels
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(164, 158, 146, 255))
+    _speckle(rng, 420, S, 26)
+    rl.draw_rectangle(0, 0, 18, S, rl.Color(184, 178, 166, 255))
+    rl.draw_rectangle(18, 0, 3, S, rl.Color(112, 108, 98, 255))
+    rl.draw_rectangle(30, 8, 80, 52, rl.Color(114, 142, 116, 255))
+    rl.draw_rectangle(30, 62, 80, 50, rl.Color(142, 168, 138, 255))
+    _win(46, 34, 48, 40, glass=((70, 84, 100), (130, 150, 166)))
+    rl.draw_rectangle(0, 116, S, 12, rl.Color(150, 146, 136, 255))
+    _grime(rng, S, 1.3)
+    rl.end_texture_mode()
+    tex["concg"] = _to_texture(rt)
+    rt = rl.load_render_texture(S, S)                                          # cream block: two glazed-in loggias, blinds, laundry
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(232, 226, 208, 255))
+    _speckle(rng, 300, S, 22)
+    rl.draw_rectangle(0, 0, S, 4, rl.Color(204, 198, 184, 255))
+    for x0 in (10, 68):
+        rl.draw_rectangle(x0, 18, 50, 72, rl.Color(236, 236, 232, 255))
+        for k in range(3):
+            rl.draw_rectangle_gradient_v(x0 + 3 + k * 16, 21, 14, 66, rl.Color(80, 100, 120, 255), rl.Color(150, 172, 188, 255))
+        rl.draw_rectangle(x0, 52, 50, 3, rl.Color(236, 236, 232, 255))
+        if rng.random() < .6:
+            rl.draw_rectangle(x0 + 3 + rng.randrange(3) * 16, 21, 14, rng.randrange(14, 40), rl.Color(206, 190, 150, 255))   # blind
+    rl.draw_rectangle(8, 94, 112, 4, rl.Color(196, 190, 176, 255))
+    rl.draw_line(14, 104, 54, 104, rl.Color(90, 90, 90, 255))
+    for x, c in ((18, (200, 60, 60)), (30, (240, 240, 240)), (42, (70, 110, 190))):
+        rl.draw_rectangle(x, 104, 8, 11, rl.Color(*c, 255))
+    _grime(rng, S, 1.1)
+    rl.end_texture_mode()
+    tex["cream"] = _to_texture(rt)
+    if tick:
+        tick(7.5 / 10)
     try:
         import graffiti
         tex["graf"] = graffiti.build_atlas()
