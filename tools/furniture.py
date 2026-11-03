@@ -267,7 +267,21 @@ def plan_lights(edges, inc):
             continue                                                   # a ramp joining a road: a merge, not a crossing
         if min(a[4] for a in arms) < 6.0:
             pass
-        lit = n2 >= 2 or (len(arms) >= 4 and (n2 >= 1 or maxw >= 7.0)) or (multi >= 2 and len(arms) >= 3)     # round 31: any two real roads meeting, and busy four-way crossings
+        bigs = [a for a in arms if a[0] >= 2]
+        smalls = [a for a in arms if a[0] < 2]
+        if smalls and bigs:                                            # which side(s) of the big road the small streets join from
+            ux, uy = bigs[0][8], bigs[0][9]
+            sides = {1 if ux * a[9] - uy * a[8] > 0 else -1 for a in smalls}
+        else:
+            sides = set()
+        if len(bigs) == 4 and all(a[5] for a in bigs) and smalls and len(sides) <= 1:
+            lit = False                                                # small streets joining one divided boulevard from one side: signs
+        elif len(bigs) >= 3:
+            lit = True                                                 # two real roads meet
+        elif len(bigs) == 2:
+            lit = top >= 3 and len(sides) == 2                         # a small street crossing a big road right through it
+        else:
+            lit = False                                                # small roads merging: signed priority, no lights
         if not lit:
             continue
         score = sum(a[0] + a[1] for a in arms)
@@ -438,6 +452,11 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     head_only(ei, end)
                 continue
             has_x = (lit_node and w >= 5.0 and e["len"] >= 10.0) or (w >= 6.0 and e["len"] >= 30 and rr.random() < (0.9 if (want_light and rk >= 2) else 0.5 if rk >= 2 else 0.3))     # every signalled street has its zebra
+            if has_x and e["len"] < 45.0 and len(inc.get(far_, ())) >= 3 and cluster_of.get(far_) is not None and cluster_of.get(far_) == cluster_of.get(node):
+                has_x = False                              # a link inside one junction (between a boulevard's carriageways, island to island): nobody walks it
+            if has_x and all(any(on_road(px + rx * sd * (w / 2 + k), py + ry * sd * (w / 2 + k), 0.0) for k in (1.5, 3.0, 4.5, 6.0, 7.5))
+                             for sd in (1, -1)):
+                has_x = False                              # both ends land on traffic islands (another carriageway or slip road right behind): no zebra joins islands
             if has_x and any((px - qx) ** 2 + (py - qy) ** 2 < 42.0 for gx_ in (-1, 0, 1) for gy_ in (-1, 0, 1)
                              for qx, qy in xgrid.get((int(px // 5) + gx_, int(py // 5) + gy_), ())):
                 has_x = False                              # another crossing within 6.5 m (a roundabout's arms, a divided junction's halves)
