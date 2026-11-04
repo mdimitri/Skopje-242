@@ -482,6 +482,12 @@ class Transit:
         x, y = x - math.sin(h) * right, y + math.cos(h) * right
         if any(math.hypot(o.x - x, o.y - y) < 14 for o in sim.bodies):       # never on top of another vehicle
             return
+        w = sim.w
+        if getattr(w, "dgrid", None) and any(w.deck_h(x + math.cos(h) * d, y + math.sin(h) * d) is not None for d in (-7.0, 0.0, 7.0)):
+            return                                                           # nor on / beside a bridge (it would start under the deck, in its parapets)
+        if any(math.hypot(px - x, py - y) < 7.0 + r_ for px, py, r_, *_ in w.points_near(x, y, 8.0)
+               if abs(-(px - x) * math.sin(h) + (py - y) * math.cos(h)) < vehicles.DIMS[self.kinds[0]][1] / 2 + r_ + 0.3):
+            return                                                           # nor on a post, a tree or a shelter
         b = actors.Body(x, y, h, self.rng.choice(self.kinds), 0)
         b.empty = False
         b.ctl = (0.0, 0.0, True)
@@ -543,6 +549,8 @@ class Transit:
         want = self._squeeze(bus)                                   # round a parked car: just as far out as it takes,
         if want < 0 and self._blocked(bus, want, moving=True):      # starting early, and only into a free lane
             want = 0.0
+        post, crawl = self._posts(bus, off + want)                  # and clear of lamp posts, signs and shelters at the kerb
+        want += post
         bus.dodge += max(-1.5 * dt, min(1.5 * dt, want - bus.dodge))
         off += bus.dodge
         err = _wrap(h_road - b.h) + math.atan2(1.2 * (off - lat), abs(vf) + 3.0)
@@ -565,6 +573,7 @@ class Transit:
         to_stop = bus.next_stop - s_bus
         v = 13.5 * (1.0 - min(0.8, abs(err) / 1.0))                # 45-50 km/h on the open road
         v = min(v, max(2.0, to_stop * 0.25))
+        v = min(v, self._corner_v(ln, seg, s_bus))
         g = self._gap(bus)                                          # cautious: brakes gently for anything in its path
         if g is not None:
             v = min(v, math.sqrt(2.0 * 1.8 * max(0.0, g - 2.0)))
@@ -574,6 +583,8 @@ class Transit:
             if rem is not None:
                 rem -= vehicles.DIMS[b.kind][0] / 2
                 v = min(v, math.sqrt(2.0 * 2.5 * max(rem, 0.0)) if rem > -2.5 else v)
+        if crawl:
+            v = min(v, 1.5)                                         # a post on each side: inch through
         ahead = self._blocked(bus)
         if ahead:
             v = 0.0
@@ -583,12 +594,29 @@ class Transit:
             return
         thr = max(-1.0, min(1.0, (v - vf) * 0.5))
         b.ctl = (thr, max(-1.0, min(1.0, err * 1.6)), v < 0.5 and abs(vf) < 1.0)
-        if abs(vf) < 0.5 and v > 2.0 and not ahead:
+        if abs(vf) < 0.5 and v > 1.0 and not ahead:
             bus.stuck += dt
             if bus.stuck > 4.0:
                 bus.stuck, bus.rev = 0.0, 1.5
         else:
             bus.stuck = 0.0
+
+    @staticmethod
+    def _corner_v(ln, seg, s_bus, reach=45.0, brake=1.8):
+        """Speed from which the bus can still slow down, braking gently, for the bends of its line ahead: a bend of
+        th rad (summed from the segment it is on) is taken at 9 / 6.5 / 4.5 m/s, like the cars' turns at junctions."""
+        pts, cum = ln.pts, ln.cum
+        h0 = math.atan2(pts[seg + 1][1] - pts[seg][1], pts[seg + 1][0] - pts[seg][0])
+        v = 99.0
+        k = seg + 1
+        while k < len(pts) - 1 and cum[k] - s_bus < reach:
+            (ax, ay), (bx, by) = pts[k], pts[k + 1]
+            if (bx - ax) ** 2 + (by - ay) ** 2 > 0.25:
+                th = abs(_wrap(math.atan2(by - ay, bx - ax) - h0))
+                vc = 99.0 if th < 0.2 else 9.0 if th < 0.35 else 6.5 if th < 0.9 else 4.5
+                v = min(v, math.sqrt(vc * vc + 2.0 * brake * max(0.0, cum[k] - s_bus - 2.0)))
+            k += 1
+        return v
 
     # ------------------------------------------------------------------ people at the stops
     def door(self, b):
@@ -758,13 +786,14 @@ class Transit:
             ln.lane[j] = r
         return r
 
-    def _near(self, bus, standing=False, moving=False, reach=40.0):
+    def _near(self, bus, standing=False, moving=False, reach=40.0, buses=True):
         """Things on the road ahead of the bus, measured along its line: [(distance of their rear past the bus front,
         across the line, half width across the line)] -- along the line, so a bend does not hide or invent anything."""
         sim, b, ln = self.sim, bus.body, bus.line
         L = vehicles.DIMS[b.kind][0] / 2
+        skip = {id(o.body) for o in self.buses} if not buses else ()
         objs = [(o.x, o.y, o.h, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind]) for o in sim.bodies
-                if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3)]
+                if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3) and id(o) not in skip]
         if not standing:
             objs += [(c.x, c.y, c.h, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]) for c in sim.traffic.cars]
             if sim.mode == "foot" and sim.walker is not None:
@@ -819,13 +848,48 @@ class Transit:
                 best = gap
         return best
 
+    def _posts(self, bus, at, reach=14.0):
+        """Sideways step that keeps the bus (driving `at` across its line) clear of posts, lamps, trees and shelter
+        poles beside its path, from its tail to `reach` m ahead of its nose (+ to the kerb side, - away from it), and
+        whether there is no such step (posts on both sides): then it only inches on."""
+        b, ln, w = bus.body, bus.line, self.sim.w
+        L, hw_b = vehicles.DIMS[b.kind][0] / 2, vehicles.HALF_W[b.kind]
+        az = b.az
+        lo_need, hi_need = 0.0, 0.0
+        for p in w.points_near(b.x, b.y, L + reach + 2.0):
+            px, py, r = p[0], p[1], p[2]
+            if az is not None and len(p) >= 5 and (p[4] < az + 0.05 or p[3] > az + 3.0):
+                continue                                            # under / over the bus (on a deck, a sign arm)
+            k = max(0, bus.i - 2)
+            while k < len(ln.pts) - 1 and ln.cum[k] < bus.s + L + reach:
+                (ax, ay), (bx_, by_) = ln.pts[k], ln.pts[k + 1]
+                sl = ln.cum[k + 1] - ln.cum[k]
+                if sl > 0:
+                    ux, uy = (bx_ - ax) / sl, (by_ - ay) / sl
+                    t = (px - ax) * ux + (py - ay) * uy
+                    if 0.0 <= t <= sl:
+                        sp = ln.cum[k] + t - bus.s                  # along the line from the bus middle
+                        lt = -(px - ax) * uy + (py - ay) * ux
+                        a_ = bus.lat if sp < L + 3.0 else at              # beside the bus: where it is; further on: where it heads
+                        if -L - 1.0 < sp < L + reach and abs(lt - a_) < hw_b + r + 0.35:
+                            if lt > a_:
+                                lo_need = min(lo_need, lt - r - hw_b - 0.35 - at)
+                            else:
+                                hi_need = max(hi_need, lt + r + hw_b + 0.35 - at)
+                        break
+                k += 1
+        if lo_need < 0 and hi_need > 0:
+            return 0.0, True
+        return lo_need + hi_need, False
+
     def _squeeze(self, bus):
         """How far (< 0, to the left) the bus must step out of its lane to pass a car standing in it (a parked or
-        abandoned one), with a hand's width spare; 0 when there is none ahead."""
+        abandoned one), with a hand's width spare; 0 when there is none ahead.  Buses in service are not passed: they
+        stop for a moment, and the next one takes its turn at the stop behind them."""
         b = bus.body
         hw_b, off = vehicles.HALF_W[b.kind], getattr(bus, "lane_off", 0.0)
         need = 0.0
-        for gap, lat, hw in self._near(bus, standing=True, reach=30.0):
+        for gap, lat, hw in self._near(bus, standing=True, reach=30.0, buses=False):     # another bus at a stop: wait behind it, never round it
             spare = (hw_b + hw) * 0.15                                 # a little more than the 10 % the brakes look for
             if gap > -vehicles.DIMS[b.kind][0] and abs(lat - off) < hw_b + hw + spare:    # in the way, or still beside it
                 need = min(need, lat - hw - hw_b - spare - off)
