@@ -1127,6 +1127,7 @@ class Traffic:
         self.cars = []
         self.target = target
         self.hash = {}
+        self.hblk = {}
         self.signals = None          # signals.Signals, set by main: AI stops on red
         self.sim = None              # set by Sim (game clock for the junction jam timer)
         self.jam = {}                # junction node -> game minutes it has had >= 3 cars stuck waiting for it
@@ -1276,27 +1277,31 @@ class Traffic:
         cx, cy = c.x + ox, c.y + oy
         ex, ey = cx + hx * (rng_ahead + 7.5), cy + hy * (rng_ahead + 7.5)       # only the cells the look-ahead strip can touch (a car is < 7.5 m half-length / half-width)
         bx_, by_ = cx + hx * min(back, 0.0), cy + hy * min(back, 0.0)
+        ch_ = c.h
+        hwc, hlc = vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]
+        cos, sin = math.cos, math.sin
         hash_get = self.hash.get
         for ix in range(int((min(bx_, ex) - 8.0) // 16), int((max(bx_, ex) + 8.0) // 16) + 1):
             for iy in range(int((min(by_, ey) - 8.0) // 16), int((max(by_, ey) + 8.0) // 16) + 1):
                 for o in hash_get((ix, iy), ()):
-                    if o[4] is c:
-                        continue
                     dx, dy = o[0] - cx, o[1] - cy
                     fwd = dx * hx + dy * hy
-                    if fwd > rng_ahead + o[3]:
+                    if fwd > rng_ahead + o[3] or o[4] is c:
                         continue
                     lat = abs(dx * rx + dy * ry)
-                    if o[5] is None:                                  # a person: a thin upright post
-                        hw, hl = o[2], o[3]
+                    oh = o[5]
+                    if oh is None:                                    # a person: a thin upright post
+                        if lat > o[2] or fwd < 0.3:
+                            continue
+                        hl = o[3]
                     else:                                             # the other car's box, seen from this car's heading:
-                        ca, sa = abs(math.cos(o[5] - c.h)), abs(math.sin(o[5] - c.h))
-                        hw, hl = ca * o[2] + sa * o[3], ca * o[3] + sa * o[2]     # (a car crossing sideways is wide)
-                    if lat > (hw if o[5] is None else (hw + vehicles.HALF_W[c.kind]) * 1.1):     # both widths + 10 % spare: no grazing
-                        continue
-                    gap = fwd - vehicles.HALF_L[c.kind] - hl
-                    if fwd < (0.3 if o[5] is None else back):                          # beside or behind: not in the way
-                        continue
+                        if fwd < back or lat > (o[2] + o[3] + hwc) * 1.1:     # (cheap rejects before the trig: the box is never wider)
+                            continue
+                        ca, sa = abs(cos(oh - ch_)), abs(sin(oh - ch_))
+                        if lat > (ca * o[2] + sa * o[3] + hwc) * 1.1:     # both widths + 10 % spare: no grazing (a car crossing sideways is wide)
+                            continue
+                        hl = ca * o[3] + sa * o[2]
+                    gap = fwd - hlc - hl
                     if best is None or gap < best:
                         best, self.lead = gap, o
         return best
@@ -1328,26 +1333,26 @@ class Traffic:
         hwc, hlc = vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]
         R = 8.0 + v * horizon
         best = None
-        hash_get = self.hash.get
-        for ix in range(int((c.x - R) // 16), int((c.x + R) // 16) + 1):
-            for iy in range(int((c.y - R) // 16), int((c.y + R) // 16) + 1):
-                for o in hash_get((ix, iy), ()):
+        x0, x1 = int((c.x - R) // 16), int((c.x + R) // 16)       # the same 16 m cells as ever (vehicles only), found
+        y0, y1 = int((c.y - R) // 16), int((c.y + R) // 16)       # through their 4 x 4 blocks
+        blk_get = self.hblk.get
+        for b in [blk_get((bx, by), ()) for bx in range(x0 >> 2, (x1 >> 2) + 1) for by in range(y0 >> 2, (y1 >> 2) + 1)]:
+            for lst in [l_ for ix, iy, l_ in b if x0 <= ix <= x1 and y0 <= iy <= y1]:
+                for o in lst:
                     ob = o[4]
-                    if ob is c or o[5] is None:
+                    if ob is c:
+                        continue
+                    dx, dy = o[0] - c.x, o[1] - c.y
+                    boss = not isinstance(ob, Car)                # driven by the player or a script: it won't yield
+                    if not boss and -dx * hy + dy * hx > 0:      # it comes from our left: it gives way to us
                         continue
                     ch = math.cos(o[5] - c.h)
                     if abs(ch) > 0.8:                             # same way or head-on: the lane scan handles those
                         continue
-                    if isinstance(ob, Car):
-                        ovx, ovy = ob.v * math.cos(ob.h), ob.v * math.sin(ob.h)
-                        boss = False
-                    else:
+                    if boss:
                         ovx, ovy = ob.vx, ob.vy
-                        boss = True                               # driven by the player or a script: it won't yield
-                    dx, dy = o[0] - c.x, o[1] - c.y
-                    lat0 = -dx * hy + dy * hx
-                    if not boss and lat0 > 0:                     # it comes from our left: it gives way to us
-                        continue
+                    else:
+                        ovx, ovy = ob.v * math.cos(ob.h), ob.v * math.sin(ob.h)
                     rvx, rvy = ovx - v * hx, ovy - v * hy
                     vv = rvx * rvx + rvy * rvy
                     if vv < 0.04:
@@ -1647,6 +1652,12 @@ class Traffic:
         if walker is not None and walker.health > 0:          # traffic brakes for the player on foot too
             h.setdefault((int(walker.x // 16), int(walker.y // 16)), []).append((walker.x, walker.y, 1.7, 0.4, walker, None))
         self.hash, self.ph = h, ph
+        blk = {}                                                  # the vehicles again, by 4 x 4 cells: the crossing check looks
+        for (ix, iy), lst in h.items():                           # 50 m round, and most of its 16 m cells are empty
+            v_ = [o for o in lst if o[5] is not None]
+            if v_:
+                blk.setdefault((ix >> 2, iy >> 2), []).append((ix, iy, v_))
+        self.hblk = blk
         self.t += dt
         sg = self.signals
         if sg is not None:
@@ -1680,6 +1691,8 @@ class Traffic:
         dt0 = dt
         self._tick += 1
         tick = self._tick
+        gy = w.ground_y
+        gy3 = lambda x_, y_, _wy: gy(x_, y_)          # level() for a car off a bridge (wy = -1e9 never reaches a deck)
         for ci, c in enumerate(self.cars):
             if (c.x - fx) ** 2 + (c.y - fy) ** 2 > LOD_FAR2:         # far from the player: one step in three, three times as long (nobody sees it)
                 if (ci + tick) % 3:
@@ -1834,13 +1847,14 @@ class Traffic:
                 rx_, ry_, _rh = self._ref(e, c.d, c.s, c.lane + c.shift + c.avoid + c.yld)
                 if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0 and (c.ghost > 0 or (self.scan(c, 0.5, rx_ - c.x, ry_ - c.y, back=-vehicles.HALF_L[c.kind]) or 1.0) >= 0.0):
                     c.x, c.y, c.h = rx_, ry_, _rh                   # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back, unless another car is there
-            c.gz = w.level(c.x, c.y, 1e9 if e["bridge"] else -1e9)
+            lv = w.level if e["bridge"] else gy3                 # off a bridge level() is just ground_y()
+            c.gz = lv(c.x, c.y, 1e9)
             if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt follows the ground: every other frame is plenty
                 fx_, fy_ = math.cos(c.h), math.sin(c.h)
                 wy_ = 1e9 if e["bridge"] else -1e9
                 hb = vehicles.DIMS[c.kind][0] * 0.31
-                pt = math.atan2(w.level(c.x + fx_ * hb, c.y + fy_ * hb, wy_) - w.level(c.x - fx_ * hb, c.y - fy_ * hb, wy_), 2 * hb)
-                rl_ = math.atan2(w.level(c.x + fy_ * 0.85, c.y - fx_ * 0.85, wy_) - w.level(c.x - fy_ * 0.85, c.y + fx_ * 0.85, wy_), 1.7)
+                pt = math.atan2(lv(c.x + fx_ * hb, c.y + fy_ * hb, wy_) - lv(c.x - fx_ * hb, c.y - fy_ * hb, wy_), 2 * hb)
+                rl_ = math.atan2(lv(c.x + fy_ * 0.85, c.y - fx_ * 0.85, wy_) - lv(c.x - fy_ * 0.85, c.y + fx_ * 0.85, wy_), 1.7)
                 kk = min(1.0, dt * 8) if dt != dt0 else min(1.0, dt * 16)
                 c.pitch += (pt - c.pitch) * kk
                 c.roll += (rl_ - c.roll) * kk
