@@ -856,7 +856,12 @@ def main():
             elif kind == "ped_hit":
                 aud.at("body_hit_car", d["ped"].x, d["ped"].y, 0.6, 0.6)
             if kind == "shout":
-                say(d["text"], d["x"], d["y"], d.get("who"))
+                rb_ = getattr(sim, "riding", None)
+                if rb_ is not None and d.get("who") == TXT("transit.0008") and math.hypot(d["x"] - fxs, d["y"] - fys) < 25:
+                    car_radio.duck(3.5)                  # your bus calls out the stop: the radio drops to 25 % first
+                    say(d["text"], fxs, fys, d.get("who"), True)
+                else:
+                    say(d["text"], d["x"], d["y"], d.get("who"))
             elif kind == "shout_self":
                 ln_ = hero_line() or rng.choice((TXT("main.0021"), TXT("main.0022"), TXT("main.0023")))
                 d["text"] = ln_

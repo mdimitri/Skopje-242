@@ -18,6 +18,7 @@ MUSIC = os.path.join(ROOT, "music")
 LEGACY = os.path.join(ROOT, "assets", "radio")     # fallback: the old downloader's folder
 EXTS = (".mp3", ".ogg", ".oga", ".wav", ".flac")
 UNSUPPORTED = (".m4a", ".aac", ".opus", ".wma")
+DUCK = 0.25                                        # radio level while the bus announces a stop
 FRAG = (28.0, 80.0)                                # random fragment length (s) before the next chop
 SPLIT = 4                                          # loose files in music/ become up to this many stations
 NAMES = [TXT("radio.0001"), TXT("radio.0002"), TXT("radio.0003"), TXT("radio.0004"), TXT("radio.0005"), TXT("radio.0006"), TXT("radio.0007")]
@@ -60,12 +61,12 @@ def cut_fragment(path, out_wav, frag, muffle=False, fx=None):
         fi, fo = min(n // 2, int(0.25 * sr)), min(n // 2, int(0.9 * sr))
         seg[:fi] *= np.linspace(0, 1, fi, dtype=np.float32)[:, None]
         seg[n - fo:] *= np.linspace(1, 0, fo, dtype=np.float32)[:, None]
-        if muffle:                                     # heard through a closed car body: low-pass ~500 Hz, quieter
+        if muffle:                                     # a car blasting music, heard through its body: bass kept (boosted), highs gone
             fq = np.fft.rfftfreq(n, 1.0 / sr)
-            gain = 1.0 / np.sqrt(1.0 + (fq / 500.0) ** 6)
+            gain = (1.0 + 0.8 / (1.0 + (fq / 140.0) ** 4)) / np.sqrt(1.0 + (fq / 900.0) ** 4)
             for c_ in range(ch):
                 seg[:, c_] = np.fft.irfft(np.fft.rfft(seg[:, c_]) * gain, n)
-            seg *= 0.7
+            seg /= max(1e-6, float(np.abs(seg).max())) / 0.95
         if fx is not None:                             # extra shaping, e.g. the loading screen's distant-radio sound
             seg = fx(seg, sr)
         pcm = (np.clip(seg, -1, 1) * 32000).astype("<i2")
@@ -126,6 +127,8 @@ class Radio:
         self._ready = None             # finished job for the current station
         self._seq = 0
         self._burst_len = 0.3
+        self.duck_t = 0.0              # > 0: an announcement is coming / playing - the music drops to DUCK
+        self.gain = 1.0
         if not aud.ok:
             return
         try:
@@ -270,12 +273,19 @@ class Radio:
             pass
         self.state, self.now = "off", ""
 
+    def duck(self, sec=3.0):
+        """The bus is about to call out a stop: drop to 25 % for `sec` s (and for as long as the voice speaks)."""
+        self.duck_t = max(self.duck_t, sec)
+
     def update(self, dt, in_vehicle, volume=0.7):
         """Call every frame.  Returns the new track title on the frame a track starts, else None."""
         if not self.aud.ok:
             return None
         rl = self._rl()
-        self.volume = volume
+        self.duck_t = max(0.0, self.duck_t - dt)
+        want = DUCK if (self.duck_t > 0 or (self.gain < 0.99 and self.aud.speaking())) else 1.0
+        self.gain += (want - self.gain) * min(1.0, dt * (6.0 if want < self.gain else 1.5))   # quick down, gentle back up
+        volume *= self.gain
         on = in_vehicle and not self.aud.muted and volume > 0.01 and not self.off
         if not on:
             if self.state != "off":
@@ -318,7 +328,7 @@ class CabinMusic:
     """Some traffic cars (about 1 in 4, up to three near you at once) play the radio inside: heard from outside only as a
     quiet, muffled (low-passed) thump that swells as they pass.  Fragments are cut ahead by a worker thread from music/."""
 
-    RANGE = 38.0
+    RANGE = 48.0
     MAX = 3
 
     def __init__(self, aud, radio):
@@ -391,7 +401,7 @@ class CabinMusic:
                     self._stop_one(snd)
                     continue
                 k = 1.0 - d / self.RANGE
-                rl.set_sound_volume(snd, 0.5 * k * k * volume * self.aud.master)
+                rl.set_sound_volume(snd, min(1.0, 1.1 * k ** 1.5 * volume * self.aud.master))
                 rl.set_sound_pan(snd, 0.5 + 0.4 * max(-1.0, min(1.0, (c.x - fx) / max(d, 8.0))))
                 keep.append((snd, c))
             except Exception:  # noqa: BLE001
@@ -400,7 +410,7 @@ class CabinMusic:
         if not self.ready or len(self.play) >= self.MAX:
             return
         busy = {id(c) for _s, c in self.play}
-        best, bd = None, self.RANGE * 0.8
+        best, bd = None, self.RANGE * 0.9
         for c in cars:
             if c.cab and id(c) not in busy and abs(c.x - fx) < bd and abs(c.y - fy) < bd:
                 d = ((c.x - fx) ** 2 + (c.y - fy) ** 2) ** 0.5
