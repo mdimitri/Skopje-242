@@ -1764,7 +1764,7 @@ void main(){
     vec3 n0 = geoN(wp);
     float hb = mix(d.r, wh, wet);
     float strg = mix(mix(0.10, 0.05, grass), 0.012, wet);
-    vec3 nb = bumpN(wp, n0, hb, strg * 2.5);
+    vec3 nb = bumpN(wp, n0, hb, strg * 1.25);
     float rough = mix(mix(0.92, 0.97, grass), 0.86, paved);                                // grass / dirt chalky, asphalt a little tighter
     rough = mix(rough, 0.12, wet);                                                         // water: glossy
     c = relight(c, n0, nb, rough, fadeb * mix(0.7, 1.4, wet));
@@ -1799,10 +1799,10 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
     float flat_ = step(0.92, abs(nrm.y));
     float hb = texture(texture1, (flat_ > 0.5 ? wpos : vec2(wp.x + wp.z, wp.y)) / 1.3).r + 0.6 * texture(texture2, wpos / 7.0).r * road;   // grain, cracks sunk in
-    vec3 nb = bumpN(wp, nrm, hb, road > 0.5 ? 0.3 : 0.25);
+    vec3 nb = bumpN(wp, nrm, hb, road > 0.5 ? 0.15 : (sw > 0.5 ? 0.1 : 0.0));
     float rough = mix(0.62, 0.9, flat_);                                                     // poles, signs, car bodies of the mesh: semi-gloss; ground-level slabs: matt
     rough = mix(rough, 0.95, road + sw);                                                     // asphalt, pavement: matt
-    rough = mix(rough, 0.5, smoothstep(0.12, 0.3, sat) * (1.0 - flat_));                     // painted/coloured props: satin
+    rough = mix(rough, 0.3, (1.0 - road) * (1.0 - sw) * (1.0 - flat_));                  // upright props (signs, billboards, lamp poles): smooth painted metal, no relief
     c = relight(c, nrm, nb, rough, fadeb);
   }
   finalColor = vec4(c, base.a);
@@ -1831,7 +1831,7 @@ void main(){
     float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
     float glass = (1.0 - smoothstep(0.16, 0.30, l0)) * wall;                              // dark glazing
     float hb = l0 + 0.5 * grit * 0.16;
-    vec3 nb = bumpN(wp, nrm, hb, 0.9 * (1.0 - glass));
+    vec3 nb = bumpN(wp, nrm, hb, 0.45 * (1.0 - glass));
     float rough = mix(0.88, 0.22, glass);
     rough = mix(rough, 0.75, (1.0 - wall) * 0.6);                                          // roofs: tile / metal sheet, a little sheen
     c = relight(c, nrm, nb, rough, fade * (0.9 + 1.4 * glass));
