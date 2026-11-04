@@ -9,6 +9,9 @@ import os
 import pickle
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lanefix
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 
@@ -83,6 +86,44 @@ def lanes_blockers(edges, props, th):
             "posts at ground level": sum(inside(p[0], p[1], 0.0) for p in props["posts"] if len(p) < 5 or p[3] <= th(p[0], p[1]) + 2.2)}
 
 
+def faults(edges, props):
+    """Road-logic faults: {name: [descriptions]}.  Any entry is a build bug (main() exits 1 under --strict)."""
+    out = collections.defaultdict(list)
+    drive = [e for e in edges if e["drive"]]
+    ch = lanefix.chains(edges, lanefix.through_pairs(edges))
+    for ids, lvl in lanefix.dips(edges, ch):
+        e = edges[ids[0]]
+        out["lane dip (n, then fewer, then n again)"].append(f"{e['cls']} {e.get('name', '')} at ({e['pts'][0][0]:.0f},{e['pts'][0][1]:.0f}) {len(ids)} edge(s) < {lvl} lanes")
+    for a, b, la, lb in lanefix.steps(edges, ch):
+        p = edges[a]["pts"][0]
+        out["lane step between through edges"].append(f"{edges[a]['cls']} {la}->{lb} lanes at ({p[0]:.0f},{p[1]:.0f})")
+    for a, b, la, lb in lanefix.steps(edges, ch):
+        wa, wb = edges[a]["w"], edges[b]["w"]
+        if abs(wa - wb) > 3.6 and la == lb:
+            out["width step > 3.6 m with equal lanes"].append(f"{wa:.1f}->{wb:.1f} m at ({edges[a]['pts'][0][0]:.0f},{edges[a]['pts'][0][1]:.0f})")
+    for e in drive:
+        if lanefix.per_way(e) * 2.6 > e["w"] + 0.01 * (1 if e["ow"] else 2):
+            out["lanes narrower than 2.6 m"].append(f"{e['cls']} w={e['w']:.1f} lanes/way={lanefix.per_way(e)}")
+    ind, outd = collections.Counter(), collections.Counter()
+    for e in drive:
+        if e["ow"]:
+            outd[e["a"]] += 1
+            ind[e["b"]] += 1
+        else:
+            for n in (e["a"], e["b"]):
+                outd[n] += 1
+                ind[n] += 1
+    for n in set(ind) | set(outd):
+        if ind[n] and not outd[n]:
+            out["one-way sink (cars enter, none leave)"].append(f"node {n}")
+        if outd[n] and not ind[n]:
+            out["one-way source (cars leave, none enter)"].append(f"node {n}")
+    for e in drive:
+        if e["len"] < 1.0:
+            out["drivable edge < 1 m"].append(f"{e['cls']} at ({e['pts'][0][0]:.0f},{e['pts'][0][1]:.0f})")
+    return out
+
+
 def main():
     d = sys.argv[1]
     edges = load(d, "edges")["edges"]
@@ -102,7 +143,12 @@ def main():
     from world import World
     w = World(d, lambda f, note="": None)
     print("objects standing in a drivable lane:", lanes_blockers(edges, props, w.th))
-    if len(sys.argv) > 2:
+    fl = faults(edges, props)
+    for k, v in sorted(fl.items()):
+        print(f"FAULT {k}: {len(v)}  e.g. {'; '.join(v[:4])}")
+    if "--strict" in sys.argv and any(k.startswith(("lane dip", "lanes narrower")) for k in fl):
+        sys.exit(1)
+    if len(sys.argv) > 2 and not sys.argv[2].startswith("--"):
         rl = json.load(open(sys.argv[2], encoding="utf-8"))
         ways = [r for r in rl if r[0] == "way" and r[1] == "rail"]
         print(f"rail ways {len(ways)}, on viaduct {sum(1 for r in ways if r[2])}, tunnel {sum(1 for r in ways if r[3])}; stations "

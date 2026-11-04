@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 58
+VERSION = 59
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1454,6 +1454,8 @@ def main():
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
                                   "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0)})
                 start = i
+    import lanefix
+    print(f"[build] lane dips repaired: {lanefix.repair(edges)} edges")
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
     frac(0.95, "rounded corners")
