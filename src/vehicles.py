@@ -105,6 +105,11 @@ _V = [
     ("Moped Tomos", "bike", 1.80, 0.65, 1.10, 0, (210, 90, 30), "moped"),
     ("Glovo Skuter", "bike", 1.85, 0.70, 1.10, 0, (255, 208, 0), "scooter"),
     ("E-Trotinet", "bike", 1.20, 0.50, 1.05, 0, (30, 30, 34), "kick"),
+    # ---- round 30: the police van and the heavy lorries (traffic weight 0: see HEAVY / Traffic.spawn, they only drive the big roads)
+    ("Maritsa", "van", 6.60, 2.10, 2.75, 1, (20, 38, 104), "marica"),
+    ("Kamion Tovarnik", "truck", 8.60, 2.45, 3.60, 0, None, "cargo"),
+    ("Tir Rinfuz", "truck", 15.80, 2.55, 4.05, 0, None, "semi"),
+    ("Cisterna Gorivo", "truck", 11.50, 2.50, 3.30, 0, SILVER, "tanker"),
 ]
 N = len(_V)
 IDS = [v[0] for v in _V]
@@ -113,6 +118,9 @@ DIMS = [(v[2], v[3] * 0.93, _STYLE[v[1]][0], _STYLE[v[1]][1], v[4] or _STYLE[v[1
 FIXED = [v[6] for v in _V]
 EXTRA = [v[7] for v in _V]
 BUS = 6
+MARITSA = IDS.index("Maritsa")
+HEAVY = [IDS.index(n) for n in ("Kamion Tovarnik", "Tir Rinfuz", "Cisterna Gorivo")]      # lorries: big roads only, no tight turns
+HEAVY_W = [5, 3, 2]                                                                       # share of the heavy traffic
 LARGE = [d[0] >= 6.4 for d in DIMS]                           # need a wide road
 _SPEED = {"truck": 0.75, "tractor": 0.45, "bus": 0.8, "limo": 0.7}
 SPEED = [_SPEED.get(s, 1.0) for s in STYLE]
@@ -166,6 +174,8 @@ MK_CAR = {
     "Ford Focus Karavan": TXT("vehicles.0084"), "Ford Transit Shverc": TXT("vehicles.0085"),
     "Volvo V70 Dedov": TXT("vehicles.0086"), "Golf Chetvorka Bez Registracija": TXT("vehicles.0087"),
     "JSP Dvokatnik": TXT("vehicles.0088"), "JSP Zglobni": TXT("vehicles.0089"),
+    # round 30: not in text/ yet (the text folder is hand-edited): move these into text/02 when the editor is ready
+    "Maritsa": "Марица", "Kamion Tovarnik": "Товарен камион", "Tir Rinfuz": "Шлепер", "Cisterna Gorivo": "Цистерна за гориво",
 }
 MK_PED = {
     "Chichko": TXT("vehicles.0090"), "Baba": TXT("vehicles.0091"), "Biznismen": TXT("vehicles.0092"), "Student": TXT("vehicles.0093"), "Navivach": TXT("vehicles.0094"), "Dete": TXT("vehicles.0095"), "Rabotnik": TXT("vehicles.0096"),
@@ -297,6 +307,7 @@ _PERF_NAME = {
     "Range Rover Ortak": (46, 12), "Policiska Skoda": (48, 16, 0.66, 10.5), "Brza Pomosh": (40, 11), "Smart Sitnichka": (27, 7, 0.9),
     "Moped Tomos": (17, 7.5, 0.90, 8.5, 0.3), "Glovo Skuter": (21, 9, 0.90, 9.0, 0.35), "E-Trotinet": (11, 6, 0.95, 8.0, 0.2),
     "Lada Niva": (32, 9, 0.6, 10), "Land Cruiser Lovec": (40, 10), "Pajak Vlechna Sluzhba": (34, 9),
+    "Maritsa": (38, 8.5, 0.54, 9.0, 2.0), "Tir Rinfuz": (24, 4.0, 0.52, 8.0, 7.0), "Cisterna Gorivo": (24, 4.5, 0.55, 8.0, 6.0),
 }
 PERF = []
 for _i, _v in enumerate(_V):
@@ -323,9 +334,9 @@ KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (T
 
 # ---------------------------------------------------------------- sound profiles (see audio.py)
 _ENGINE = {}
-for _i in (6, 8, 30, 33, 34, 37, 48, 52, 53, 54, 57, 58):
+for _i in (6, 8, 30, 33, 34, 37, 48, 52, 53, 54, 57, 58, MARITSA):
     _ENGINE[_i] = "engine_diesel"
-for _i in (49, 50, 51, 55):
+for _i in (49, 50, 51, 55, *HEAVY):
     _ENGINE[_i] = "engine_truck"
 for _i in (25, 26, 28, 29, 43, 45, 46):
     _ENGINE[_i] = "engine_v8"
@@ -334,9 +345,9 @@ for _i in (0, 7, 9, 10, 14, 15, 17, 18, 19, 41, 44):
 _ENGINE[42] = "engine_ev"
 ENGINE_SOUND = [_ENGINE.get(i, "engine_i4") for i in range(N)]
 _HORN = {56: "horn_jingle", 58: "horn_jingle"}
-for _i in (6, 49, 50, 51, 55, 57, 30, 34):
+for _i in (6, 49, 50, 51, 55, 57, 30, 34, *HEAVY):
     _HORN[_i] = "horn_truck"
 for _i in (7, 14, 19, 41, 44, 0, 17):
     _HORN[_i] = "horn_small"
 HORN_SOUND = [_HORN.get(i, "horn") for i in range(N)]
-SIREN_SOUND = {47: "siren_police", 48: "siren_amb", 49: "siren_fire"}
+SIREN_SOUND = {47: "siren_police", 48: "siren_amb", 49: "siren_fire", MARITSA: "siren_police"}

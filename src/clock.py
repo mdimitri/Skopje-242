@@ -6,7 +6,8 @@ _TRAFFIC = [(0, 0.22), (4, 0.15), (5.5, 0.4), (7, 1.0), (8, 1.65), (9.3, 1.2), (
 _PEDS = [(0, 0.18), (5, 0.1), (6.5, 0.4), (8, 1.1), (10, 0.85), (12, 1.2), (13.5, 1.3), (15, 0.9), (17, 1.3),
          (18.5, 1.75), (20.5, 1.6), (22, 0.8), (23.5, 0.3), (24, 0.18)]
 _DARK = [(0, 1.0), (5, 1.0), (6.5, 0.45), (7.5, 0.0), (17.5, 0.0), (18.5, 0.3), (20, 0.85), (21, 1.0), (24, 1.0)]
-EMERGENCY = (47, 48, 49)                         # police, ambulance, fire engine (vehicles.NAMES)
+import vehicles
+EMERGENCY = (47, 48, 49, vehicles.MARITSA)                         # police, ambulance, fire engine (vehicles.NAMES)
 
 
 def _lerp(table, h):

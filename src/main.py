@@ -812,6 +812,9 @@ def main():
             elif kind == "fuel":
                 aud.play("fuel_pour", 0.6, 0.9)
                 hud.set_banner((TXT("main.0015") + f"{int(d['f'] * 100)}%."), 2.0)
+            elif kind == "station":                                  # petrol station / car wash service (stations.py)
+                aud.play(d.get("snd", "cash"), 0.6, 0.9)
+                hud.set_banner(d["text"], 3.0)
             elif kind == "fuel_low":
                 aud.play("fuel_warning", 0.6, 0.9)
                 hud.set_banner(TXT("main.0016"), 3.0)
@@ -1708,6 +1711,8 @@ def main():
                             break
             elif sim.mode == "car" and sim.car.speed < 2.0:
                 prompt = TXT("main.0047")
+            if sim.stations.prompt and sim.mode == "car":
+                prompt = sim.stations.prompt
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)

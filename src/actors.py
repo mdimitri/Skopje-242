@@ -1140,7 +1140,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
@@ -1165,6 +1165,9 @@ class Car:
         self.blk = None            # what stood right in front of it last frame
         self.rside = 0.0           # while reversing: the lane offset it swings its nose towards, to go round next
         self.man = 0.0             # seconds left of making way for an oncoming car (it and that car turn tightest)
+        self.stn = None            # petrol station / car wash (stations.py site index) it is heading for or standing at
+        self.dwell = None          # seconds left standing at it (None: not there yet)
+        self.stn_t = 0.0           # give up on the visit after this long
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -1194,6 +1197,7 @@ class Traffic:
         self.lead = None
         self.despawned = 0
         self._tick = 0
+        self.stn = None              # stations.Stations, set by Sim: cars pull into petrol stations and car washes
 
     @staticmethod
     def lanes_of(e):
@@ -1256,8 +1260,19 @@ class Traffic:
         keep = [i for i in range(len(good)) if abs(turns[i]) <= self.UTURN]      # never choose a U-turn when there is any other way on
         if keep:
             good, turns, wts = [good[i] for i in keep], [turns[i] for i in keep], [wts[i] for i in keep]
+        if c.kind in vehicles.HEAVY:                                  # lorries: big roads only, and no tight turns (they'd block the junction)
+            for rk, tmax in ((3, 0.9), (2, 0.9), (2, 1.75)):
+                ok = [i for i in range(len(good)) if _rank(w.edges[good[i][0]]["cls"]) >= rk and abs(turns[i]) < tmax]
+                if ok:
+                    good, turns, wts = [good[i] for i in ok], [turns[i] for i in ok], [wts[i] for i in ok]
+                    break
+            else:
+                c.nxt = None                                          # nothing fit for it: _next_edge turns it round
+                return
         k = self.rng.choices(range(len(good)), wts)[0]
         c.nxt, c.turn = good[k], turns[k]
+        if self.stn is not None:
+            self.stn.steer(c, good, turns)
 
     def _target(self, c, e, la):
         """Pure-pursuit aim point `la` metres ahead on the car's lane, continuing onto the next edge round a corner."""
@@ -1287,7 +1302,9 @@ class Traffic:
         c.lidx = rng.randrange(len(self.lanes_of(e)))
         self._set_lane(c, e)
         c.kind = rng.choices(range(vehicles.N), vehicles.TRAFFIC_W)[0]
-        if vehicles.LARGE[c.kind] and e["w"] < 8:
+        if _rank(e["cls"]) >= 2 and e["w"] >= 7 and rng.random() < 0.12:
+            c.kind = rng.choices(vehicles.HEAVY, vehicles.HEAVY_W)[0]       # lorries drive only the big roads (tertiary and up)
+        if vehicles.LARGE[c.kind] and e["w"] < (7 if c.kind in vehicles.HEAVY else 8):
             c.kind = 1
         c.color = rng.randrange(vehicles.N_COLORS)
         c.pace = rng.uniform(0.85, 1.1) * vehicles.SPEED[c.kind]
@@ -1312,6 +1329,8 @@ class Traffic:
             return False
         if c.nxt not in good:
             self._pick(c)                                         # the same choice as ever, so a stray pick can't be a U-turn either
+            if c.nxt is None and c.kind in vehicles.HEAVY:
+                return False                                          # a lorry with only side streets ahead turns back
         c.e, c.d = c.nxt if c.nxt in good else self.rng.choice(good)
         if abs(c.turn) > 2.6:
             c.man = 5.0                                           # a U-turn: full lock, as a driver would in a narrow street
@@ -1811,6 +1830,10 @@ class Traffic:
             if bgap is not None and (gap is None or bgap < gap):
                 gap, lead = bgap, None                           # a standing car it can't get round counts as a blocker
             c.blk = lead if gap is not None and gap < 3.0 else None
+            if c.stn is not None and self.stn is not None:
+                vlim, waiting = self.stn.drive(c, e, vlim, dt)
+                if waiting:
+                    at_red, c.stuck = True, 0.0                       # standing at the pumps is not a jam
             if c.rev > 0:
                 vlim = 0.0
             elif gap is not None:
@@ -1960,6 +1983,8 @@ class Sim:
         import chaos
         self.chaos = chaos.Chaos(self)       # breakable props, blast waves, chain fires
         self.traffic.sim = self
+        import stations
+        self.stations = self.traffic.stn = stations.Stations(self)
         self.clock = clock.GameClock(17.0)
         self.base_cars, self.base_peds = n_cars, n_peds
         self._cull_t = 0.0
@@ -2546,6 +2571,7 @@ class Sim:
         HX, HY = w.hx, w.hy
         ev = self.ev
         self.clock.update(dt)
+        inp = self.stations.update(dt, inp) or inp                # fill-up / car wash for the player's car
         self.traffic.target = max(6, int(self.base_cars * self.clock.traffic * self.dens_traffic))
         self.peds.target = max(6, int(self.base_peds * self.clock.peds * self.dens_peds))
         if getattr(self, "jack", None) is not None:              # the carjack plays out; the controls wait

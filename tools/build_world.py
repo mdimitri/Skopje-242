@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 61
+VERSION = 62
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1899,6 +1899,24 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
+    phase("petrol stations and car washes")
+    fsites = []
+    def clear_of_bld(x, y):                                     # no building and no water (paved forecourts are fine)
+        if abs(x) >= HX - 5 or abs(y) >= HY - 5:
+            return False
+        cx, cy = to_cell(x, y)
+        return not bld_a[cy, cx] and surf_a[cy, cx] != 1
+
+    try:                                                        # round 30: OSM petrol stations and car washes tied to the road graph
+        import stations
+        sp_, fsites, sparked = stations.build(a.src, edges, add_c, chunk_of, lambda x, y: float(T.hs(x, y)), clear_of_bld, HX, HY)
+        posts = list(posts) + sp_
+        parked = list(parked) + sparked
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] stations skipped: {e}")
+
     phase("fill: gardens, scrub, boulders")
     try:                                                        # round 29: open ground gets gardens, scrub, boulders, vines
         import fill
@@ -2112,7 +2130,7 @@ def main():
         "buildings": {"buildings": buildings},
         "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "places": places,
                   "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
-                  "sites": sites, "works": works, "stations": stations, "track": track},
+                  "sites": sites, "works": works, "fuelsites": fsites, "stations": stations, "track": track},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},

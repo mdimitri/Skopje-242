@@ -445,6 +445,12 @@ def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=8):
     return np.array(vs, np.float32), np.array(cs, np.float32)
 
 
+_GLYPH = {"П": ("1111", "1001", "1001", "1001", "1001"), "О": ("0110", "1001", "1001", "1001", "0110"),
+          "Л": ("0111", "0101", "0101", "0101", "1001"), "И": ("1001", "1001", "1011", "1101", "1001"),
+          "Ц": ("1001", "1001", "1001", "1111", "0001"), "Ј": ("0011", "0001", "0001", "1001", "0110"),
+          "А": ("0110", "1001", "1111", "1001", "1001")}
+
+
 def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None):
     """Body-specific add-ons: cargo boxes, sirens, ladders, luggage, logos. `box`/`quad` are car_arrays' helpers."""
     xb, xf = -L / 2, L / 2
@@ -456,6 +462,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
         col = tuple(body_c)
         if ex == "garbage":
             col = (40, 130, 70)
+        if ex == "tanker":
+            col = (196, 200, 208)
         if ex == "mixer":                                                  # rotating drum, built from stepped boxes
             for i, (dx, sh, wd) in enumerate(((0.0, 1.5, 1.1), (0.6, 1.8, 1.7), (1.4, 2.0, 2.0), (2.2, 1.8, 1.7), (2.8, 1.4, 1.2))):
                 xx = xb + 0.5 + dx * 0.95
@@ -465,6 +473,9 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
             from_h = top_h - belt if ex != "fire" else 1.5
             for name, (v, n) in box_faces(cgx, belt, 0, cgl, from_h, W * 0.96, 6, 3, 3).items():
                 parts.append((v, np.tile(np.array(col, np.float32) * _shade(np.array(n, np.float32)), (len(v), 1)), True))
+            if ex in ("tanker", "semi"):                                  # livery stripe along the tank / trailer
+                for sd in (-1, 1):
+                    quad((xb + 0.5, belt + from_h * 0.4, sd * (W * 0.48 + 0.012)), (cgl - 1.0, 0, 0), (0, 0.4, 0), (0, 0, sd), (200, 40, 40) if ex == "tanker" else (40, 90, 170))
             if ex == "garbage":
                 box(xb - 0.1, belt + 0.1, 0, 0.5, 1.6, W * 0.8, (30, 90, 50))
                 for s in (-1, 1):
@@ -491,6 +502,18 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
         box(cx - 0.2, roof + 0.42, 0.0, cl * 0.7, 0.2, cw * 0.6, (206, 214, 232))
         for k in (-0.5, 0.0, 0.5):
             quad((cx + k * cl * 0.4, roof + 0.62, -cw * 0.3), (0.05, 0, 0), (0, 0, cw * 0.6), (0, 1, 0), (40, 40, 44))
+    elif ex == "marica":                                                   # dark blue police van, ПОЛИЦИЈА in big white letters on both sides
+        bar(cx, 0.0, (220, 30, 30), (40, 80, 230))
+        cell, gap = 0.09, 0.09
+        word = [_GLYPH[ch] for ch in "ПОЛИЦИЈА"]
+        x0 = -0.5 * len(word) * (4 * cell + gap) - 0.3
+        for sd in (-1, 1):
+            for gi, g in enumerate(word):
+                for r, row in enumerate(g):
+                    for cI, bit in enumerate(row):
+                        if bit == "1":
+                            cc = cI if sd == 1 else 3 - cI                  # the left side is read the other way round
+                            quad((x0 + gi * (4 * cell + gap) + cc * cell, belt - 0.08 - (r + 1) * cell, sd * (W / 2 + 0.014)), (cell, 0, 0), (0, cell, 0), (0, 0, sd), (246, 246, 250))
     elif ex == "police":
         bar(cx, 0.0, (220, 30, 30), (40, 80, 230))
         for s in (-1, 1):
