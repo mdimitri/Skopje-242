@@ -107,6 +107,33 @@ _BUS_GLYPHS = {"B": ("110", "101", "110", "101", "110"), "U": ("101", "101", "10
                "S": ("111", "100", "111", "001", "111")}
 
 
+_AD_PALETTES = (((200, 30, 40), (245, 245, 240), (250, 200, 30)), ((30, 90, 190), (245, 245, 240), (240, 130, 30)),
+                ((20, 150, 80), (245, 245, 240), (30, 30, 34)), ((240, 190, 30), (30, 30, 34), (200, 30, 40)),
+                ((120, 40, 150), (245, 245, 240), (250, 200, 30)), ((30, 30, 34), (240, 240, 235), (230, 60, 60)))
+
+
+def billboard(x, z, fx, fz, style):
+    """Roadside advertising board on one thick pole: 4 x 2 m panel, frame, two lamps on top; (fx, fz) faces the traffic. The art is flat
+    colour blocks (a band, a big word-like bar, a product circle) painted on both faces."""
+    g = G()
+    col = (62, 64, 70)
+    bg, fg, ac = _AD_PALETTES[style % len(_AD_PALETTES)]
+    yaw = math.atan2(fx, -fz)
+    g.box(x, 0, z, 0.35, 4.6, 0.35, col)
+    g.box(x, 4.6, z, 4.3, 2.3, 0.22, col, yaw)                      # frame
+    for sd in (1, -1):
+        ffx, ffz = fx * sd, fz * sd
+        g.vpoly(x, 4.75, z, ffx, ffz, [(-2.0, 0.0), (2.0, 0.0), (2.0, 2.0), (-2.0, 2.0)], bg, 0.12)
+        g.vpoly(x, 4.75, z, ffx, ffz, [(-2.0, 0.0), (2.0, 0.0), (2.0, 0.45), (-2.0, 0.45)], ac, 0.125)
+        g.vpoly(x, 4.75, z, ffx, ffz, [(-1.8, 1.0), (0.4, 1.0), (0.4, 1.55), (-1.8, 1.55)], fg, 0.125)
+        g.vpoly(x, 4.75, z, ffx, ffz, [(-1.8, 0.65), (-0.5, 0.65), (-0.5, 0.85), (-1.8, 0.85)], fg, 0.125)
+        g.vpoly(x, 4.75, z, ffx, ffz, [(1.25 + u, 1.35 + v) for u, v in _ngon(0.55, 14)], fg, 0.125)
+        g.vpoly(x, 4.75, z, ffx, ffz, [(1.25 + u, 1.35 + v) for u, v in _ngon(0.33, 14)], ac, 0.13)
+    for k in (-1.4, 0.0, 1.4):                                       # lamp hoods on top
+        g.box(x - fz * k, 6.9, z + fx * k, 0.3, 0.12, 0.3, (40, 40, 44), yaw)
+    return g
+
+
 def bus_text(x, z, tx, tz, hs=None):
     """White BUS painted on the road at (x, z) for traffic driving along (tx, tz): the first letter nearest the driver, tops pointing ahead; hs(x, z) = terrain height, so the letters follow a sloping road."""
     g = G()
@@ -318,7 +345,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     STOPS.clear()
     MAT = 3
     xw, posts, lamps = [], [], []
-    counts = {"masts": 0, "lights": 0, "signs": 0, "cross": 0, "bridges": 0, "stops": 0, "benches": 0, "bins": 0, "junk": 0}
+    counts = {"masts": 0, "lights": 0, "signs": 0, "cross": 0, "bridges": 0, "stops": 0, "benches": 0, "bins": 0, "junk": 0, "boards": 0}
 
     # every ground-level drive road as segments in a 20 m grid: props never stand on a carriageway
     seg_grid = {}
@@ -352,6 +379,12 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
 
     def tz(x, z):
         return float(terrain_h(x, z)) if terrain_h else 0.0
+
+    def sp(x, z, r, top, hide=None):
+        """Collision post for a sign / signal / billboard with its real height; `hide` = (radius, from, to) metres above ground of the
+        part that must vanish with it (a signal arm, a billboard panel)."""
+        t = tz(x, z)
+        return (x, z, r, t - 1.0, t + top) + ((hide,) if hide else ())
 
     def put_abs(g, x, z, y):
         """Prop at an absolute height (bridge parapets follow the deck)."""
@@ -478,7 +511,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     qx, qy = px + ax * back + rx * (w / 2 + 1.0) * side, py + ay * back + ry * (w / 2 + 1.0) * side
                     if (back < e["len"] - d or (cont and back < 12.0)) and not_building(qx, qy) and ok(qx, qy) and put(
                             signal_pole(qx, qy, fx, fy, rx * side, ry * side, -1, offs[0], mast, offs[1:]), qx, qy):
-                        posts.append((qx, qy, 0.22))
+                        posts.append(sp(qx, qy, 0.22, 6.3 if mast else 4.4, (0.9, 4.0, 6.6, -rx * side * max(offs), -ry * side * max(offs)) if mast else (1.5, 2.5, 4.4)))
                         counts["lights"] += 1
                         counts["masts"] += mast
                         grp = 0 if abs(ax * ux0 + ay * uy0) > 0.7 else 1
@@ -491,17 +524,17 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             if not_building(lx, ly) and ok(lx, ly) and not want_light:
                 if rk < top:
                     put(sign(lx, ly, fx, fy, "stop" if rr.random() < 0.55 else "yield"), lx, ly)
-                    posts.append((lx, ly, 0.16))
+                    posts.append(sp(lx, ly, 0.16, 3.4))
                     counts["signs"] += 1
                 elif rk == top and len(lst) >= 4 and rr.random() < 0.5:
                     put(sign(lx, ly, fx, fy, "priority"), lx, ly)
-                    posts.append((lx, ly, 0.16))
+                    posts.append(sp(lx, ly, 0.16, 3.4))
                     counts["signs"] += 1
             if has_x:
                 cx2, cy2 = px + ax * 1.6 + rx * (w / 2 + 1.0), py + ay * 1.6 + ry * (w / 2 + 1.0)
                 if not_building(cx2, cy2) and ok(cx2, cy2) and rr.random() < 0.7:
                     put(sign(cx2, cy2, fx, fy, "cross"), cx2, cy2)
-                    posts.append((cx2, cy2, 0.16))
+                    posts.append(sp(cx2, cy2, 0.16, 3.4))
                     counts["signs"] += 1
 
     # ---------------------------------------------------------------- along roads
@@ -516,9 +549,20 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 px, py = x + rx * (w / 2 + 1.1), y + ry * (w / 2 + 1.1)
                 if ok(px, py) and not_building(px, py) and r.random() < 0.5:
                     put(sign(px, py, -dx, -dy, "speed"), px, py)
-                    posts.append((px, py, 0.16))
+                    posts.append(sp(px, py, 0.16, 3.4))
                     counts["signs"] += 1
                 s += r.uniform(140, 260)
+            s = r.uniform(40, 150)                          # advertising billboards on a single pole, facing the traffic
+            while s < L - 40:
+                x, y, dx, dy = at(e, s)
+                side = r.choice((1, -1))
+                rx, ry = dy * side, -dx * side
+                px, py = x + rx * (w / 2 + 4.0), y + ry * (w / 2 + 4.0)
+                if (ok(px, py) and all(not_building(px + a * 2.2, py + b * 2.2) for a, b in ((dx, dy), (-dx, -dy), (rx, ry), (-rx, -ry)))
+                        and put(billboard(px, py, -rx, -ry, r.randrange(6)), px, py)):
+                    posts.append(sp(px, py, 0.35, 6.5, (2.6, 3.4, 6.7)))
+                    counts["boards"] += 1
+                s += r.uniform(220, 420)
             s = r.uniform(60, 140) if not bus_stops else 1e18  # bus stops (random only when the map has none)
             while s < L - 40:
                 if r.random() < 0.7:
@@ -542,7 +586,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     px, py = x + dy * sd * (w / 2 + 1.1), y - dx * sd * (w / 2 + 1.1)
                     if ok(px, py) and not_building(px, py):
                         put(sign(px, py, -dx * sd, -dy * sd, kind_), px, py)
-                        posts.append((px, py, 0.16))
+                        posts.append(sp(px, py, 0.16, 3.4))
                         counts["signs"] += 1
         if e["drive"] and not e["bridge"] and L > 120 and lanes_n(e) >= 3 and cls in RANK:      # bus lane along the right kerb lane
             s_ = r.uniform(30, 60)
@@ -551,7 +595,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 px, py = x + dy * (w / 2 + 1.1), y - dx * (w / 2 + 1.1)
                 if ok(px, py) and not_building(px, py):
                     put(sign(px, py, -dx, -dy, "bus"), px, py)
-                    posts.append((px, py, 0.16))
+                    posts.append(sp(px, py, 0.16, 3.4))
                     counts["signs"] += 1
                 s_ += r.uniform(180, 300)
         if e["drive"] and cls in ("primary", "secondary", "tertiary", "residential", "living_street") and L > 40:

@@ -17,6 +17,7 @@ class Signals:
     def __init__(self, world):
         self.edges = getattr(world, "edges", [])
         self.items = list(getattr(world, "signals", []) or [])
+        self.w = world
         self.by_edge = {}
         self.nodes = {}                                  # junction -> [(x, y), [signal indices]]
         rank = {}
@@ -136,6 +137,22 @@ class Signals:
         i = self.by_edge.get((ei, end))
         return i is not None and self.state(i) != 0
 
+    def _smashed(self, lx, lz, hb):
+        """True when the pole carrying this head was knocked over (its arm is hidden, so the lamp must go dark)."""
+        be = getattr(self.w, "broken_extra", None)
+        if not be:
+            return False
+        g = self.w.ground_y(lx, lz)
+        for bx, by, r, lo, hi, *arm in be:
+            if not lo - 0.5 < g + hb < hi:
+                continue
+            ex, ey = arm if arm else (bx, by)
+            sx, sy = ex - bx, ey - by
+            u = max(0.0, min(1.0, ((lx - bx) * sx + (lz - by) * sy) / (sx * sx + sy * sy or 1.0)))
+            if (lx - bx - sx * u) ** 2 + (lz - by - sy * u) ** 2 < (r + 0.3) ** 2:
+                return True
+        return False
+
     def lit(self, rect):
         """(x, z, lamp height, state 0/1/2) of the signal heads inside rect: the night pass lets them glow like tail lights."""
         import bisect
@@ -143,7 +160,7 @@ class Signals:
         out = []
         for i in self._order[bisect.bisect_right(self._xs, x0 - 5):bisect.bisect_left(self._xs, x1 + 5)]:
             it = self.items[i]
-            if y0 - 5 < it[5] < y1 + 5:
+            if y0 - 5 < it[5] < y1 + 5 and not self._smashed(it[4], it[5], it[8] if len(it) > 8 else 2.95):
                 st = self.state(i)
                 out.append((it[4], it[5], (it[8] if len(it) > 8 else 2.95) + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), st))
         return out
@@ -156,7 +173,7 @@ class Signals:
             it = self.items[i]
             lx, lz = it[4], it[5]
             hb = it[8] if len(it) > 8 else 2.95
-            if y0 - 5 < lz < y1 + 5:
+            if y0 - 5 < lz < y1 + 5 and not self._smashed(lx, lz, hb):
                 st = self.state(i)
                 y = ground_y(lx, lz)
                 ax, ay = self._axis(i)                      # the head faces the approaching traffic, so its lamps sit on that side
