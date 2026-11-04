@@ -183,26 +183,43 @@ class Popups:
     """Floating comic text at world positions (speech bubbles, +1 burek, KABOOM ...)."""
 
     def __init__(self):
-        self.items = []     # [text, x, y(height), z, ttl, color, size]
+        self.items = []     # [text, x, y(height), z, ttl, ttl0, color, size, followed object, height above ground]
+        self.street = False # street-level camera: fewer bubbles
+        self.t = 0.0
+        self.last = -9.0
 
-    def add(self, text, x, z, y=3.0, ttl=2.4, color=(255, 255, 255), size=22):
+    def add(self, text, x, z, y=3.0, ttl=2.4, color=(255, 255, 255), size=22, obj=None, prio=False):
         ttl = read_time(text, ttl)
         # avoid piling identical text on one spot
         for it in self.items:
             if it[0] == text and abs(it[1] - x) < 3 and abs(it[3] - z) < 3:
                 return
-        self.items.append([text, x, y + _gy(x, z), z, ttl, ttl, color, size])
+        if self.street and not prio:              # seen from the street they fill the screen: one every 2.5 s, three at most
+            if self.t - self.last < 2.5 or len(self.items) >= 3:
+                return
+            self.last = self.t
+        self.items.append([text, x, y + _gy(x, z), z, ttl, ttl, color, size, obj, y])
         if len(self.items) > 24:
             self.items.pop(0)
 
     def update(self, dt):
+        self.t += dt
         for it in self.items:
             it[4] -= dt
-            it[2] += dt * 0.6
+            it[9] += dt * 0.6
+            if it[8] is not None:                 # stays over the head of whoever said it
+                it[1], it[3] = it[8].x, it[8].y
+            it[2] = it[9] + _gy(it[1], it[3])
         self.items = [i for i in self.items if i[4] > 0]
 
-    def draw(self, cam):
-        for text, x, y, z, ttl, ttl0, col, size in self.items:
+    def draw(self, cam, hide=None):
+        """hide: (x, z) of the player's car in the street view: no bubbles on or right round it."""
+        p, q = cam.position, cam.target
+        for text, x, y, z, ttl, ttl0, col, size, _o, _h in self.items:
+            if (x - p.x) * (q.x - p.x) + (y - p.y) * (q.y - p.y) + (z - p.z) * (q.z - p.z) <= 0:
+                continue                          # behind the camera
+            if hide is not None and (x - hide[0]) ** 2 + (z - hide[1]) ** 2 < 36.0:
+                continue
             sp = rl.get_world_to_screen(rl.Vector3(x, y, z), cam)
             a = int(255 * min(1.0, ttl / 0.5, (ttl0 - ttl) / 0.12 + 0.2))
             w = font.measure_text(text, size)

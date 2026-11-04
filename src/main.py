@@ -663,6 +663,7 @@ def main():
     user_zoom = a.zoom
     show_map = False
     mouse_grab = False
+    mouse_steer = 0.0
     show_dbg = a.test > 0
     shake = 0.0
     frame = 0
@@ -894,13 +895,14 @@ def main():
                 if b.player_car:
                     shake = max(shake, 0.5)
             elif kind == "shout":
-                popups.add((d["who"] + ": " if d.get("who") else "") + d["text"], d["x"], d["y"], 2.6, 2.4, (255, 255, 255), 18)
+                spk_ = next((p_ for p_ in sim.peds.list if abs(p_.x - d["x"]) < 0.01 and abs(p_.y - d["y"]) < 0.01), None)   # the bubble follows the speaker
+                popups.add((d["who"] + ": " if d.get("who") else "") + d["text"], d["x"], d["y"], 2.6, 2.4, (255, 255, 255), 18, spk_)
             elif kind == "shout_self":
                 if sim.walker and d.get("text"):
-                    popups.add(d["text"], sim.walker.x, sim.walker.y, 2.6, 3.0, (160, 255, 200), 20)
+                    popups.add(d["text"], sim.walker.x, sim.walker.y, 2.6, 3.0, (160, 255, 200), 20, sim.walker, True)
             elif kind == "horn":
                 b = d["body"]
-                popups.add(rng.choice(slang.HORN), b.x, b.y, 3.2, 1.4, (255, 240, 120), 24)
+                popups.add(rng.choice(slang.HORN), b.x, b.y, 3.2, 1.4, (255, 240, 120), 24, b)
             elif kind == "burek":
                 popups.add(rng.choice(slang.BUREK), d["x"], d["y"], 2.5, 2.2, (255, 220, 110), 22)
                 particles.emit("c", d["x"], d["y"], 0.8, 0, 0, 3, 10, 0.25, 0.9, (255, 210, 90), 3.0, 0.9, -6)
@@ -1542,11 +1544,15 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
-        grab_ = cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and not selfie.active and not show_map and not a.test
+        grab_ = cfg["debug_chase"] and (sim.walker is not None if sim.mode == "foot" else sim.mode == "car") and not selfie.active and not show_map and not a.test
         if grab_ != mouse_grab:                               # street view on foot: the mouse is captured and turns the avatar
             (rl.disable_cursor if grab_ else rl.enable_cursor)()
             mouse_grab = grab_
-        if grab_:
+        if grab_ and sim.mode == "car":                      # the mouse steers like a wheel that slowly centres itself
+            mouse_steer = max(-1.0, min(1.0, mouse_steer * max(0.0, 1.0 - 2.5 * dt) + rl.get_mouse_delta().x * 0.012 * cfg["mouse_sens"]))
+            if not inp.get("steer"):
+                inp["steer"] = mouse_steer
+        elif grab_:
             if not inp.get("move", (0, 0))[0]:
                 sim.walker.h += rl.get_mouse_delta().x * 0.003 * cfg["mouse_sens"]
             inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
@@ -1643,12 +1649,13 @@ def main():
             cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
         sf_on = sf_on or ch_on
+        popups.street = ch_on
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         lite_ = ()
-        if ch_on:                                  # street view: chunks out to 1.5x the full-detail radius, the far ring at low quality
+        if ch_on:                                  # street view: chunks out to 2.25x the full-detail radius, the far ring at low quality
             o_ = sim.car if sim.mode == "car" else sim.walker
-            far_, near_ = selfie_mod.VIEW * 1.5, selfie_mod.VIEW
+            far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
             wanted = [k_ for k_ in want_list(o_.x, o_.y, 1.0, 2 * far_, 2 * far_, 0)]
             def gap_(k_):                          # distance from the avatar to the nearest point of the chunk
                 return math.hypot(max(k_[0] * S - o_.x, 0, o_.x - (k_[0] + 1) * S), max(k_[1] * S - o_.y, 0, o_.y - (k_[1] + 1) * S))
@@ -1677,7 +1684,7 @@ def main():
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
-            guard.run("popups", popups.draw, cam)
+            guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
@@ -1703,15 +1710,6 @@ def main():
                     selfie.take()
             else:
                 pois.draw(sim, sw, sh)
-            if ch_on and sim.mode == "foot":
-                wk_ = sim.walker                       # crosshair where the avatar aims: 12 m ahead at chest height
-                p_ = rl.get_world_to_screen(rl.Vector3(wk_.x + math.cos(wk_.h) * 12, (wk_.az or 0.0) + 1.2, wk_.y + math.sin(wk_.h) * 12), cam)
-                mx_, my_ = int(p_.x), int(p_.y)
-                for c_ in (rl.BLACK, rl.WHITE):
-                    o_ = 0 if c_ == rl.WHITE else 1
-                    rl.draw_circle_lines(mx_, my_, 11 + o_, c_)
-                    rl.draw_line(mx_ - 17, my_, mx_ - 5, my_, c_)
-                    rl.draw_line(mx_ + 5, my_, mx_ + 17, my_, c_)
             if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()

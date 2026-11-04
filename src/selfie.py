@@ -85,7 +85,7 @@ class Selfie:
         self.yaw = h
         cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
-        f = VIEW * 1.5                                     # drawn out to the low-quality ring
+        f = VIEW * 2.25                                    # drawn out to the low-quality ring
         return cam, (o.x - f, o.y - f, o.x + f, o.y + f)
 
     def sky(self, cam, dark, hour, t, sw, sh):
