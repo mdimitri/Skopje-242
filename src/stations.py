@@ -32,12 +32,12 @@ class Stations:
         self.sim = sim
         w = sim.w
         self.sites = []
-        for x, y, kind, ei, s, visit, name in (getattr(w, "fuelsites", None) or []):
+        for x, y, kind, ei, s, visit, name, ox, oy in (getattr(w, "fuelsites", None) or []):
             ok = visit and 0 <= ei < len(w.edges)
             if ok:
                 px, py, _dx, _dy = w.edge_point(w.edges[ei], s)
                 ok = (px - x) ** 2 + (py - y) ** 2 < 9.0                 # the graph still matches the world the sites were built with
-            self.sites.append({"x": x, "y": y, "kind": kind, "edge": ei if ok else -1, "s": s, "name": name})
+            self.sites.append({"x": x, "y": y, "kind": kind, "edge": ei if ok else -1, "s": s, "name": name, "ox": ox, "oy": oy})
         self.entry = {}                 # (edge, dir) -> [(site, hops)]: driving into it leads to the site's edge
         self.arrive = {}                # node -> [(edge, dir)] that arrive at it
         for ei, e in enumerate(w.edges):
@@ -52,6 +52,7 @@ class Stations:
         self.fill_t = 0.0
         self.busy = 0.0                 # seconds left of the player's car wash
         self.n_visits = 0
+        self.shoppers = []              # drivers walking to the shop: dict(ped, car, st, phase, t, tx, ty, dx, dy)
         self.wanted_cleared = 0         # how many times the re-spray was bought (the police system will read the hook)
 
     def _index(self, k, st):
@@ -70,6 +71,8 @@ class Stations:
         """Called when car c has picked its next edge: sometimes the entrance of a station instead."""
         tr = self.sim.traffic
         if c.stn is not None:                                         # already heading for one: keep to the way in
+            if c.e == self.sites[c.stn]["edge"]:
+                return                                                # on its road already: only the stop is left
             for i, o in enumerate(good):
                 if any(k == c.stn for k, _ in self.entry.get(o, ())):
                     c.nxt, c.turn = o, turns[i]
@@ -104,6 +107,8 @@ class Stations:
                 a, b = DWELL[st["kind"]]
                 c.dwell = self.sim.rng.uniform(a, b)
                 self.n_visits += 1
+                if st["kind"] == 0 and self.sim.rng.random() < 0.55:
+                    self._shop(c, st)
                 return 0.0, True
             return min(vlim, math.sqrt(2 * 2.2 * max(rem - 0.4, 0.0)) + 0.3), False
         c.dwell -= dt
@@ -111,6 +116,73 @@ class Stations:
             c.stn = None
             return vlim, False
         return 0.0, True
+
+    def _shop(self, c, st):
+        """The driver gets out, walks to the shop (the OSM point), buys something and comes back."""
+        import actors
+        sim = self.sim
+        fx, fy = sim.focus()[:2]
+        d0 = math.hypot(st["ox"] - st["x"], st["oy"] - st["y"])
+        if (c.x - fx) ** 2 + (c.y - fy) ** 2 > 90.0 ** 2 or d0 < 5.0 or d0 > 40.0:
+            return                                                    # nobody watching, or no shop to walk to
+        nx, ny = -math.sin(c.h), math.cos(c.h)
+        side = 1.0 if (st["ox"] - c.x) * nx + (st["oy"] - c.y) * ny > 0 else -1.0
+        r = vehicles.HALF_W[c.kind] + 0.5
+        p = actors.Ped()
+        p.arch = sim.rng.choice(vehicles.WALKERS)
+        p.shirt, p.skin = sim.rng.randrange(3), sim.rng.randrange(4)
+        p.x, p.y, p.h = c.x + nx * side * r, c.y + ny * side * r, c.h
+        p.mode, p.v, p.t = "play", 1.4, 0.0
+        p.gz = c.gz
+        u = max(d0 - 3.0, 0.0) / d0                                   # stop at the door, 3 m short of the shop's centre
+        tx, ty = p.x + (st["ox"] - p.x) * u, p.y + (st["oy"] - p.y) * u
+        walk = 2.0 * math.hypot(tx - p.x, ty - p.y) / 1.4
+        c.dwell = walk + 8.0 + 14.0                                   # the car waits for the whole trip (a bit longer than it)
+        sim.peds.list.append(p)
+        self.shoppers.append({"ped": p, "car": c, "phase": 0, "t": 0.0, "tx": tx, "ty": ty, "dx": p.x, "dy": p.y})
+
+    def _walk_shoppers(self, dt):
+        sim = self.sim
+        peds = sim.peds.list
+        fx, fy = sim.focus()[:2]
+        keep = []
+        for j in self.shoppers:
+            p, c = j["ped"], j["car"]
+            gone = c not in sim.traffic.cars or (c.x - fx) ** 2 + (c.y - fy) ** 2 > 130.0 ** 2
+            if gone or (j["phase"] != 2 and (p not in peds or p.mode != "play")):
+                if p in peds:
+                    peds.remove(p)                                    # out of sight / hurt: the car just drives on after its dwell
+                continue
+            ph = j["phase"]
+            if ph == 2:                                               # inside the shop
+                j["t"] -= dt
+                if j["t"] <= 0:
+                    p.x, p.y = j["tx"], j["ty"]
+                    peds.append(p)
+                    j["phase"] = 3
+            else:
+                tx, ty = (j["tx"], j["ty"]) if ph == 0 else (j["dx"], j["dy"])
+                dd = math.hypot(tx - p.x, ty - p.y)
+                if dd < 0.5:
+                    if ph == 0:
+                        peds.remove(p)
+                        j["phase"], j["t"] = 2, self.sim.rng.uniform(5.0, 12.0)
+                    else:
+                        peds.remove(p)
+                        c.dwell = min(c.dwell, 1.0) if c.dwell is not None else None
+                        continue
+                else:
+                    a = math.atan2(ty - p.y, tx - p.x)
+                    p.h, p.v = a, 1.4
+                    p.vx, p.vy = math.cos(a) * 1.4, math.sin(a) * 1.4
+                    p.x += p.vx * dt
+                    p.y += p.vy * dt
+                    p.anim += dt * 3.0
+                    p.gz = sim.w.level(p.x, p.y, p.gz if p.gz is not None else -1e9)
+            if j["phase"] == 3:
+                j["phase"] = 1
+            keep.append(j)
+        self.shoppers = keep
 
     # ----------------------------------------------------------------------------------- player
     def _near(self, x, y):
@@ -126,6 +198,8 @@ class Stations:
         """Once a frame, before the physics.  -> an inp with the controls locked while the car is being washed, else None."""
         sim = self.sim
         self.prompt = ""
+        if self.shoppers:
+            self._walk_shoppers(dt)
         car = sim.car
         if self.busy > 0:
             self.busy -= dt

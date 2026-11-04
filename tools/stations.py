@@ -7,7 +7,7 @@ through the forecourt), so the traffic can enter it from the street grid.  A fue
 that road (a canopy over them when the ground is free), a price pylon and breakable pumps; a car wash gets a pylon.
 Some fuel stations also get a parked lorry.
 
--> (posts, sites, parked).  site = [x, y, kind, edge, s, visit, name]   kind 0 = fuel, 1 = car wash; (x, y) = where the car
+-> (posts, sites, parked).  site = [x, y, kind, edge, s, visit, name, ox, oy]   (ox, oy: the OSM point, i.e. the shop)   kind 0 = fuel, 1 = car wash; (x, y) = where the car
 stops (on the road next to the pumps / in front of the wash bay); edge, s = that point on the road graph; visit = 1 when
 the road is a low-class one (service, residential ...) where a visitor can stand without blocking a main road."""
 import json
@@ -167,7 +167,7 @@ def build(src, edges, add, chunk_of, th, free, hx, hy, log=print):
         if len(pos):
             add(chunk_of(px, py), 3, pos, uv, col)
         visit = 1 if (e["cls"] in VISIT_CLS and e["len"] >= 14) else 0
-        sites.append([round(px, 1), round(py, 1), kind, ei, round(s, 1), visit, name])
+        sites.append([round(px, 1), round(py, 1), kind, ei, round(s, 1), visit, name, round(x, 1), round(y, 1)])
         if kind == 0 and visit and e["len"] >= 30 and r.random() < 0.3:        # a lorry parked at the kerb of the forecourt road
             k = r.choices(heavy, heavy_w)[0]
             L = vehicles.DIMS[k][0]
