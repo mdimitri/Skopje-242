@@ -221,8 +221,10 @@ class Hud:
                 bw = 220
                 self._bar(sw // 2 - bw // 2, sh - 24, bw, 8, n / tot, rl.Color(120, 190, 250, 255))
                 font.draw_text((TXT("hud.0018") + f'{n}/{tot}'), sw // 2 - bw // 2, sh - 44, 14, rl.Color(200, 200, 200, 220))
+        self._street_label(sim.focus()[0], sim.focus()[1], sw, sh)
         # ---- minimap / map
         fx, fy, _a, _b = sim.focus()
+        ang = sim.car.h if sim.mode == "car" else sim.walker.h
         N, NH = self.ov.width, self.ov.height
         k = N / (2 * HX)
         if not show_map:
@@ -232,9 +234,23 @@ class Hud:
             half = span * k / 2
             cx = min(max((fx + HX) * k, half), N - half)
             cy = min(max((fy + HY) * k, half), NH - half)
-            rl.draw_rectangle(mx - 3, my - 3, ms + 6, ms + 6, rl.Color(20, 20, 24, 255))
-            rl.draw_texture_pro(self.ov, rl.Rectangle(cx - half, cy - half, half * 2, half * 2), rl.Rectangle(mx, my, ms, ms),
-                                rl.Vector2(0, 0), 0.0, rl.WHITE)
+            mr, mcx, mcy = ms / 2, mx + ms / 2, my + ms / 2
+            rl.draw_circle(int(mcx), int(mcy), mr + 3, rl.Color(20, 20, 24, 255))
+            rl.rl_set_texture(self.ov.id)                              # the map texture on a round triangle fan
+            rl.rl_begin(rl.RL_TRIANGLES)
+            rl.rl_color4ub(255, 255, 255, 255)
+            for i in range(64):
+                a0, a1 = i * math.tau / 64, (i + 1) * math.tau / 64
+                for a_ in (None, a0, a1):
+                    ux, uy = (0.0, 0.0) if a_ is None else (math.cos(a_), math.sin(a_))
+                    rl.rl_tex_coord2f((cx + ux * half) / N, (cy + uy * half) / NH)
+                    rl.rl_vertex2f(mcx + ux * mr, mcy + uy * mr)
+            rl.rl_end()
+            rl.rl_set_texture(0)
+            rl.draw_ring(rl.Vector2(mcx, mcy), mr - 1, mr + 2, 0, 360, 64, rl.Color(20, 20, 24, 255))
+
+            def inside(qx, qy):
+                return (qx - mcx) ** 2 + (qy - mcy) ** 2 < (mr - 2) ** 2
 
             def to_mm(x, y):
                 return mx + ((x + HX) * k - (cx - half)) / (half * 2) * ms, my + ((y + HY) * k - (cy - half)) / (half * 2) * ms
@@ -242,44 +258,39 @@ class Hud:
             for pk in sim.pickups:
                 if pk[3]:
                     qx, qy = to_mm(pk[0], pk[1])
-                    if mx < qx < mx + ms and my < qy < my + ms:
+                    if inside(qx, qy):
                         rl.draw_circle(int(qx), int(qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
             for x, y, cat, _nm in self._pois_near(fx, fy):
                 qx, qy = to_mm(x, y)
-                if mx < qx < mx + ms and my < qy < my + ms:
+                if inside(qx, qy):
                     rl.draw_circle(int(qx), int(qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
             for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations, named
                 qx, qy = to_mm(x, y)
-                if mx < qx < mx + ms and my < qy < my + ms:
+                if inside(qx, qy):
                     rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(150, 40, 40, 255))
                     if name:
                         font.draw_text(name, int(qx) + 5, int(qy) - 7, 12, rl.Color(150, 40, 40, 255))
             for bd in sim.bodies:                                            # parked and standing vehicles (the player's own is the arrow)
                 if bd is not c and bd.alive:
                     qx, qy = to_mm(bd.x, bd.y)
-                    if mx < qx < mx + ms and my < qy < my + ms:
+                    if inside(qx, qy):
                         rl.draw_rectangle(int(qx) - 1, int(qy) - 1, 3, 3, rl.Color(170, 175, 185, 230))
             for bus in sim.transit.buses:
                 if bus.body is not None:
                     qx, qy = to_mm(bus.body.x, bus.body.y)
-                    if mx < qx < mx + ms and my < qy < my + ms:
+                    if inside(qx, qy):
                         rl.draw_rectangle(int(qx) - 2, int(qy) - 2, 5, 5, rl.Color(250, 190, 40, 255))
             for cc in sim.traffic.cars:
                 qx, qy = to_mm(cc.x, cc.y)
-                if mx < qx < mx + ms and my < qy < my + ms:
+                if inside(qx, qy):
                     rl.draw_rectangle(int(qx) - 1, int(qy) - 1, 3, 3, rl.Color(250, 250, 250, 230))
             for j in sim.services.jobs:
                 if j.body is not None:
                     qx, qy = to_mm(j.body.x, j.body.y)
-                    if mx < qx < mx + ms and my < qy < my + ms:
+                    if inside(qx, qy):
                         rl.draw_circle(int(qx), int(qy), 4, rl.Color(60, 120, 255, 255) if int(rl.get_time() * 4) & 1 else rl.Color(255, 50, 50, 255))
             qx, qy = to_mm(fx, fy)
-            ang = c.h if sim.mode == "car" else sim.walker.h
-            tip = rl.Vector2(qx + math.cos(ang) * 8, qy + math.sin(ang) * 8)
-            l_ = rl.Vector2(qx + math.cos(ang + 2.5) * 6, qy + math.sin(ang + 2.5) * 6)
-            r_ = rl.Vector2(qx + math.cos(ang - 2.5) * 6, qy + math.sin(ang - 2.5) * 6)
-            rl.draw_triangle(tip, r_, l_, rl.Color(230, 40, 40, 255))
-            rl.draw_triangle(tip, l_, r_, rl.Color(230, 40, 40, 255))
+            self._arrow(qx, qy, ang, 15)
         else:
             mx, my, mw, mh = self.map_rect(sw, sh)
             rl.draw_rectangle(0, 0, sw, sh, rl.Color(6, 6, 10, 175))           # dim the game behind the map: the map is the focus
@@ -313,8 +324,68 @@ class Hud:
                 rl.draw_circle(int(qx), int(qy), 4, rl.Color(120, 30, 30, 255))
                 font.draw_text(name, int(qx) + 7, int(qy) - 8, 16, rl.Color(120, 30, 30, 255))
             qx, qy = to_big(fx, fy)
-            rl.draw_circle(int(qx), int(qy), 7, rl.Color(230, 40, 40, 255))
+            self._arrow(qx, qy, ang, 20)
             font.draw_text(TXT("hud.0019"), mx, my - 30, 22, rl.Color(255, 255, 255, 255))
+
+    @staticmethod
+    def _arrow(qx, qy, ang, s):
+        """The player's arrowhead (points where they face), red with a white rim so it reads on any map colour."""
+        for k, col in ((1.35, rl.Color(255, 255, 255, 255)), (1.0, rl.Color(230, 40, 40, 255))):
+            tip = rl.Vector2(qx + math.cos(ang) * s * k, qy + math.sin(ang) * s * k)
+            l_ = rl.Vector2(qx + math.cos(ang + 2.45) * s * 0.85 * k, qy + math.sin(ang + 2.45) * s * 0.85 * k)
+            r_ = rl.Vector2(qx + math.cos(ang - 2.45) * s * 0.85 * k, qy + math.sin(ang - 2.45) * s * 0.85 * k)
+            n_ = rl.Vector2(qx - math.cos(ang) * s * 0.3 * k, qy - math.sin(ang) * s * 0.3 * k)
+            for tri in ((tip, r_, n_), (tip, n_, l_)):
+                rl.draw_triangle(tri[0], tri[1], tri[2], col)
+                rl.draw_triangle(tri[0], tri[2], tri[1], col)
+
+    def _street_at(self, x, y):
+        """Name of the nearest named street within a few metres of (x, y), else ''."""
+        W = self.w
+        sg, best, name = W.sg, 1e18, ""
+        for cx in range(int((x - 12) // sg), int((x + 12) // sg) + 1):
+            for cy in range(int((y - 12) // sg), int((y + 12) // sg) + 1):
+                for ei in W.drive_cells.get((cx, cy), ()) or ():
+                    e = W.edges[ei]
+                    nm = W.roads[e["road"]].get("name") if "road" in e else ""
+                    if not nm:
+                        continue
+                    p = e["pts"]
+                    for k in range(len(p) - 1):
+                        ax, ay = p[k]
+                        dx, dy = p[k + 1][0] - ax, p[k + 1][1] - ay
+                        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+                        d = math.hypot(x - ax - dx * t, y - ay - dy * t) - e["w"] / 2
+                        if d < best:
+                            best, name = d, nm
+        return name if best < 6 else ""
+
+    def _street_label(self, fx, fy, sw, sh):
+        """Quiet street-name caption; a new name must hold 0.8 s to replace the shown one, a gap holds it 3 s (no flicker)."""
+        dt = min(rl.get_frame_time(), 0.1)
+        st = self.__dict__.setdefault("_st", {"shown": "", "cand": "", "ct": 0.0, "gap": 0.0, "a": 0.0, "q": 0.0})
+        st["q"] -= dt
+        if st["q"] <= 0:
+            st["q"] = 0.25
+            nm = self._street_at(fx, fy)
+            if nm == st["cand"]:
+                st["ct"] += 0.25
+            else:
+                st["cand"], st["ct"] = nm, 0.0
+            if nm and nm == st["shown"]:
+                st["gap"] = 0.0
+            elif nm and (st["ct"] >= 0.8 or not st["shown"]):
+                st["shown"], st["gap"] = nm, 0.0
+            elif not nm:
+                st["gap"] += 0.25
+        want = 1.0 if st["shown"] and st["gap"] < 3.0 else 0.0
+        st["a"] += max(-dt, min(dt, want - st["a"]))
+        if st["a"] > 0.01 and st["shown"]:
+            wpx = font.measure_text(st["shown"], 20)
+            a = int(200 * st["a"])
+            x, y = sw // 2 - wpx // 2, sh - 72
+            font.draw_text(st["shown"], x + 1, y + 1, 20, rl.Color(0, 0, 0, int(a * 0.7)))
+            font.draw_text(st["shown"], x, y, 20, rl.Color(240, 240, 235, a))
 
     def _pois_near(self, fx, fy):
         """The POIs within 400 m of (fx, fy), in list order (numpy prefilter: the list has thousands of entries)."""

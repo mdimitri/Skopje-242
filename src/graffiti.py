@@ -124,24 +124,14 @@ def _line(style, s, cx, cy, size, rot, col, rng):
             _text(s, cx + k * 0.9, cy + k * 0.9, size, rot, rl.Color(*dk, 255))
         _outlined(s, cx, cy, size, rot, col, r=1)
     elif style == "neon":
-        for r_, a in ((6, 60), (4, 110)):
-            for dx in range(-r_, r_ + 1, 2):
-                for dy in range(-r_, r_ + 1, 2):
-                    if dx * dx + dy * dy <= r_ * r_:
-                        _text(s, cx + dx, cy + dy, size, rot, rl.Color(*col, a))
-        _text(s, cx, cy, size, rot, rl.Color(255, 255, 255, 255))
+        _text(s, cx, cy, size, rot, rl.Color(*col, 255))
+        _text(s, cx, cy, size * 0.8, rot, rl.Color(255, 255, 255, 255))
     elif style == "stencil":
         _outlined(s, cx, cy, size, rot, (22, 22, 26), out=(245, 245, 240), r=2)
     elif style == "spray":
-        for _ in range(14):
-            _text(s, cx + rng.uniform(-3, 3), cy + rng.uniform(-3, 3), size, rot, rl.Color(*col, 55))
         _text(s, cx, cy, size, rot, rl.Color(*col, 255))
-        for _ in range(26):
-            rl.draw_circle(int(cx + rng.uniform(-90, 90)), int(cy + rng.uniform(-size * 0.6, size * 0.7)), rng.uniform(0.8, 1.8), rl.Color(*col, 160))
     elif style == "chalk":
         _outlined(s, cx, cy, size, rot, (245, 245, 238), r=1, out=(40, 40, 44))
-        for _ in range(30):
-            rl.draw_circle(int(cx + rng.uniform(-100, 100)), int(cy + rng.uniform(-size * 0.5, size * 0.6)), 1, rl.Color(40, 40, 44, 130))
     else:                                                      # outline2
         _outlined(s, cx, cy, size, rot, col, out=(18, 18, 22), r=5)
         _outlined(s, cx, cy, size, rot, col, out=(250, 250, 250), r=3)
@@ -188,6 +178,36 @@ def _paint(i, lines, rng):
         _star(cx, 24, 14, (255, 220, 60))
 
 
+def _clean(img):
+    """Text only: drop faint alpha haze and bleed the paint colour into transparent texels (no dark mip halos). -> image."""
+    try:
+        import io
+        import numpy as np
+        from PIL import Image, ImageFilter
+        n = img.width * img.height * 4
+        a = np.frombuffer(rl.ffi.buffer(img.data, n), np.uint8).reshape(img.height, img.width, 4).copy()
+        al = a[..., 3].astype(np.float32)
+        al[al < 40] = 0
+        f = al / 255.0
+        pm = Image.fromarray((a[..., :3] * f[..., None]).astype(np.uint8))
+        pa = Image.fromarray((f * 255).astype(np.uint8))
+        bp = np.asarray(pm.filter(ImageFilter.GaussianBlur(3)), np.float32)
+        ba = np.asarray(pa.filter(ImageFilter.GaussianBlur(3)), np.float32)[..., None]
+        bleed = np.clip(bp / np.maximum(ba, 0.5) * 255.0, 0, 255)
+        rgb = np.where((al >= 250)[..., None], a[..., :3], bleed).astype(np.uint8)
+        out = np.dstack([rgb, al.astype(np.uint8)])
+        buf = io.BytesIO()
+        Image.fromarray(out, "RGBA").save(buf, "PNG")
+        data = buf.getvalue()
+        new = rl.load_image_from_memory(".png", data, len(data))
+        if new.width == img.width and new.height == img.height:
+            rl.unload_image(img)
+            return new
+    except Exception:  # noqa: BLE001 - keep the raw atlas
+        pass
+    return img
+
+
 def build_atlas():
     """-> the atlas Texture2D (transparent background, trilinear, clamped)."""
     rng = random.Random(242)
@@ -208,6 +228,7 @@ def build_atlas():
     rl.end_texture_mode()
     img = rl.load_image_from_texture(rt.texture)
     rl.image_flip_vertical(img)
+    img = _clean(img)
     tex = rl.load_texture_from_image(img)
     rl.unload_image(img)
     rl.unload_render_texture(rt)
