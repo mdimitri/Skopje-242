@@ -638,6 +638,16 @@ class Walker:
         self.lx, self.ly = self.x, self.y
 
 
+def _PED_R(p):
+    """Body radius of a pedestrian or road user (m)."""
+    nm = vehicles.PED_IDS[p.arch] if 0 <= p.arch < len(vehicles.PED_IDS) else ""
+    if nm == "Kocija":
+        return 1.1
+    if nm in vehicles.RIDERS:
+        return 0.55
+    return 0.32
+
+
 class Peds:
     def __init__(self, world, rng, target=110):
         self.w = world
@@ -735,6 +745,48 @@ class Peds:
             x.mode, x.t, x.foe, x.atk_cd = "brawl", rng.uniform(7, 14), y, rng.uniform(0.2, 0.9)
         ev("shout", text=talk.react("fight", a.arch, self.sim, lines("fight", a.arch), rng), x=a.x, y=a.y,
            who=vehicles.PED_NAMES[a.arch])
+
+    _SOLID = ("walk", "flee", "rage", "brawl", "fight", "play")
+
+    def _separate(self, dt, fx, fy):
+        """People are solid to each other (cyclists, mopeds, scooters and the horse cart included): overlapping pairs are
+        pushed apart.  A bigger road user (wider radius) shoves a pedestrian further than the pedestrian moves it."""
+        grid = {}
+        for p in self.list:
+            if p.mode in self._SOLID and (p.x - fx) ** 2 + (p.y - fy) ** 2 < 140 ** 2:
+                grid.setdefault((int(p.x // 2.0), int(p.y // 2.0)), []).append(p)
+        k = min(1.0, dt * 9.0)
+        for (cx, cy), lst in grid.items():
+            for i, a in enumerate(lst):
+                ra = _PED_R(a)
+                for dx_ in (0, 1):
+                    for dy_ in (-1, 0, 1):
+                        if dx_ == 0 and dy_ < 0:
+                            continue
+                        o = grid.get((cx + dx_, cy + dy_))
+                        if not o:
+                            continue
+                        for b in (lst[i + 1:] if (dx_, dy_) == (0, 0) else o):
+                            if a.mode == "brawl" and b.mode == "brawl" and (a.foe is b or b.foe is a):
+                                continue                                  # the two fighters stand toe to toe on purpose
+                            if (a.gz is not None and b.gz is not None and abs(a.gz - b.gz) > 2.0):
+                                continue                                  # different levels (bridge over street)
+                            rb = _PED_R(b)
+                            ex, ey = b.x - a.x, b.y - a.y
+                            d2 = ex * ex + ey * ey
+                            r = ra + rb
+                            if d2 >= r * r:
+                                continue
+                            d = math.sqrt(d2)
+                            if d < 1e-4:
+                                ex, ey, d = math.cos(id(a) % 6.283), math.sin(id(a) % 6.283), 1.0
+                            push = (r - d) * k
+                            wa = rb / r                                   # the bigger one moves less
+                            nx, ny = ex / d, ey / d
+                            a.x -= nx * push * wa
+                            a.y -= ny * push * wa
+                            b.x += nx * push * (1.0 - wa)
+                            b.y += ny * push * (1.0 - wa)
 
     def _bumped(self, p, wk, ev):
         """The player shoved past p: first a grumble, then insults and threats; after a few bumps p goes for them."""
@@ -1079,6 +1131,7 @@ class Peds:
                 out.append(p)
         self.list = out
         dt = dt0
+        self._separate(dt, fx, fy)
         for _ in range(2):
             if len([q for q in self.list if q.mode == "walk"]) < self.target:
                 self.spawn(fx, fy)
