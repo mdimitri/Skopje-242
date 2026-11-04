@@ -673,8 +673,9 @@ class Transit:
                         q.append(p)
                 self.refill[k] = rng.uniform(30.0, 80.0)
             self.refill[k] = self.refill.get(k, 0) - dt
-            for p in q:                                          # fidget while waiting
-                p.anim = 0.0
+            for p in q:                                          # fidget while waiting (those still walking up to the stop keep their stride)
+                if p.mode == "queue":
+                    p.anim = 0.0
                 p.gz = sim.w.level(p.x, p.y, p.gz if p.gz is not None else -1e9)
         alive = set(map(id, sim.peds.list))                     # again: includes the people just added
         keep = []
@@ -691,7 +692,7 @@ class Transit:
                 p.h = math.atan2(dy, dx)
                 p.x += dx / dd * p.v * dt
                 p.y += dy / dd * p.v * dt
-                p.anim += dt * 2.5
+                p.anim += p.v * dt                                # stride follows the ground covered (render._gait)
                 keep.append(p)
                 continue
             if p.mode == "board":
@@ -713,13 +714,13 @@ class Transit:
                 p.h = math.atan2(dy, dx)
                 p.x += dx / dd * p.v * 1.2 * dt
                 p.y += dy / dd * p.v * 1.2 * dt
-                p.anim += dt * 2.5
+                p.anim += p.v * 1.2 * dt
                 keep.append(p)
             else:
                 p.t -= dt
                 p.x += p.vx * dt
                 p.y += p.vy * dt
-                p.anim += dt * 2.5
+                p.anim += math.hypot(p.vx, p.vy) * dt
                 if p.t <= 0 or math.hypot(p.x - fx, p.y - fy) > 170:
                     if p.t <= 0 and math.hypot(p.x - fx, p.y - fy) < 60:
                         p.t = 4.0                                    # still in view: keep strolling
