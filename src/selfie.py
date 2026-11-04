@@ -72,7 +72,7 @@ class Selfie:
         rect = (wk.x - VIEW, wk.y - VIEW, wk.x + VIEW, wk.y + VIEW)
         return cam, rect
 
-    def chase(self, sim, world, dt, mx=0, sw=1):
+    def chase(self, sim, world, dt):
         """Debug street-level chase camera: slightly behind and above the avatar (or car), looking where it faces."""
         o = sim.car if sim.mode == "car" else sim.walker
         tgt = o.h
@@ -85,7 +85,8 @@ class Selfie:
         self.yaw = h
         cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
-        return cam, (o.x - VIEW, o.y - VIEW, o.x + VIEW, o.y + VIEW)
+        f = VIEW * 1.5                                     # drawn out to the low-quality ring
+        return cam, (o.x - f, o.y - f, o.x + f, o.y + f)
 
     def sky(self, cam, dark, hour, t, sw, sh):
         """Gradient + clouds / stars, drawn before the 3D pass; returns the horizon screen y."""

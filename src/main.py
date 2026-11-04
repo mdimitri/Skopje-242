@@ -662,6 +662,7 @@ def main():
     cam_h = world.ground_y(sx, sy)
     user_zoom = a.zoom
     show_map = False
+    mouse_grab = False
     show_dbg = a.test > 0
     shake = 0.0
     frame = 0
@@ -1491,6 +1492,8 @@ def main():
                 if show_map:
                     show_map = False
                 else:
+                    rl.enable_cursor()
+                    mouse_grab = False
                     res_ = menu_mod.run(cfg, apply_cfg, True, save_fn=lambda n_: savegame.save(sim, cfg, n_))
                     if res_ == "quit":
                         break
@@ -1539,14 +1542,13 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
-        if cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and selfie.cam is not None and not selfie.active and not show_map:
-            wk_ = sim.walker                                  # debug chase view: the cursor aims, the avatar faces it, W walks towards it
-            r_ = rl.get_screen_to_world_ray(rl.get_mouse_position(), selfie.cam)
-            az_ = wk_.az if wk_.az is not None else world.ground_y(wk_.x, wk_.y)
-            if r_.direction.y < -0.01 and not inp.get("move", (0, 0))[0] \
-                    and (rl.get_mouse_delta().x or rl.get_mouse_delta().y or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)):   # keys turn; the cursor aims only when moved / firing
-                t_ = (az_ + 0.9 - r_.position.y) / r_.direction.y
-                wk_.h = math.atan2(r_.position.z + r_.direction.z * t_ - wk_.y, r_.position.x + r_.direction.x * t_ - wk_.x)
+        grab_ = cfg["debug_chase"] and sim.mode == "foot" and sim.walker is not None and not selfie.active and not show_map and not a.test
+        if grab_ != mouse_grab:                               # street view on foot: the mouse is captured and turns the avatar
+            (rl.disable_cursor if grab_ else rl.enable_cursor)()
+            mouse_grab = grab_
+        if grab_:
+            if not inp.get("move", (0, 0))[0]:
+                sim.walker.h += rl.get_mouse_delta().x * 0.003 * cfg["mouse_sens"]
             inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
         busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                           lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active
@@ -1638,13 +1640,24 @@ def main():
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0
         elif ch_on:
-            cam, rect = selfie.chase(sim, world, dt, rl.get_mouse_x(), sw)
+            cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
         sf_on = sf_on or ch_on
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
-        wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
-        guard.run("stream", streamer.update, wanted, lod)
+        lite_ = ()
+        if ch_on:                                  # street view: chunks out to 1.5x the full-detail radius, the far ring at low quality
+            o_ = sim.car if sim.mode == "car" else sim.walker
+            far_, near_ = selfie_mod.VIEW * 1.5, selfie_mod.VIEW
+            wanted = [k_ for k_ in want_list(o_.x, o_.y, 1.0, 2 * far_, 2 * far_, 0)]
+            def gap_(k_):                          # distance from the avatar to the nearest point of the chunk
+                return math.hypot(max(k_[0] * S - o_.x, 0, o_.x - (k_[0] + 1) * S), max(k_[1] * S - o_.y, 0, o_.y - (k_[1] + 1) * S))
+            wanted = [k_ for k_ in wanted if gap_(k_) < far_]
+            lite_ = {k_ for k_ in wanted if gap_(k_) >= near_}
+            lod = True
+        else:
+            wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
+        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()
@@ -1691,7 +1704,9 @@ def main():
             else:
                 pois.draw(sim, sw, sh)
             if ch_on and sim.mode == "foot":
-                mx_, my_ = rl.get_mouse_x(), rl.get_mouse_y()
+                wk_ = sim.walker                       # crosshair where the avatar aims: 12 m ahead at chest height
+                p_ = rl.get_world_to_screen(rl.Vector3(wk_.x + math.cos(wk_.h) * 12, (wk_.az or 0.0) + 1.2, wk_.y + math.sin(wk_.h) * 12), cam)
+                mx_, my_ = int(p_.x), int(p_.y)
                 for c_ in (rl.BLACK, rl.WHITE):
                     o_ = 0 if c_ == rl.WHITE else 1
                     rl.draw_circle_lines(mx_, my_, 11 + o_, c_)

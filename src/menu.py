@@ -72,6 +72,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
         (3, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
         (3, Row("toggle", "Дебаг: гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
+        (3, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
         (3, H("Ознаки")),
         (3, Row("toggle", TXT("menu.0014"), "labels")),
         (3, H("Смог")),

@@ -218,6 +218,7 @@ class Streamer:
         self.world = world
         self.tex = tex
         self.max_ground, self.max_mesh = max_ground, max_mesh
+        self.lite_keys = set()
         self.ground = {}      # key -> [rt, last_used]
         self.meshes = {}      # key -> [{mat: model}, last_used]
         self.bad = set()
@@ -306,21 +307,24 @@ class Streamer:
             gl3d.set_texture(model, rt.texture)
         self.shadow[key] = (rt, model)
 
-    def _load_meshes(self, key):
+    def _load_meshes(self, key, lite=False):
         ch = self.world.chunks.get(key)
+        (self.lite_keys.add if lite else self.lite_keys.discard)(key)
         out = {}
         if ch:
             for mat, (off, n) in ch["m"].items():
                 pos, uv, col = self.world.mesh_arrays(off, n)
                 if self.world.broken:
                     pos = self.world.hide_broken(pos, ch.get("bb"))
-                if mat == 6 and "graf" not in self.tex:
+                if mat == 6 and ("graf" not in self.tex or lite):
                     continue                                     # atlas failed: no decals rather than facade-textured ones
                 m = gl3d.make_model(pos, uv, col)
                 if m is not None:
                     names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
-                    if mat == 3 and getattr(self.world, "roads3d", False):
+                    if lite:
+                        pass
+                    elif mat == 3 and getattr(self.world, "roads3d", False):
                         gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
                     elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10):
                         gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
@@ -359,13 +363,15 @@ class Streamer:
             return e[0]
         return None
 
-    def update(self, wanted, want_meshes, budget_ms=8.0):
+    def update(self, wanted, want_meshes, budget_ms=8.0, lite=()):
+        """lite: keys loaded at low quality (no facade/road detail, no graffiti) until they leave the set, then reloaded in full."""
         self.frame += 1
         t0 = time.perf_counter()
         n = 0
         for key in wanted:
             need_g = key not in self.ground and key not in self.bad
-            need_m = want_meshes and key not in self.meshes and key not in self.bad and key in self.world.chunks
+            up = key in self.meshes and key in self.lite_keys and key not in lite           # came close: swap the low-quality meshes for full ones
+            need_m = want_meshes and (key not in self.meshes or up) and key not in self.bad and key in self.world.chunks
             if key in self.ground:
                 self.ground[key][1] = self.frame
             if key in self.meshes:
@@ -380,7 +386,10 @@ class Streamer:
                 if need_m:
                     if need_g and (time.perf_counter() - t0) * 1000 > budget_ms:       # the bake alone used the frame's budget: meshes next frame
                         break
-                    self._load_meshes(key)
+                    if up:
+                        for m in self.meshes.pop(key)[0].values():
+                            gl3d.free_model(m)
+                    self._load_meshes(key, key in lite)
             except Exception as e:  # noqa: BLE001 - never let one chunk kill the game
                 self.errors += 1
                 self.bad.add(key)
