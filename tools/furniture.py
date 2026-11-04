@@ -615,7 +615,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                         posts.append((px, py, 0.25))
                         counts["bins"] += 1
                 s += r.uniform(30, 60)
-        if not e["drive"] and e["walk"] and cls in ("footway", "pedestrian", "path", "cycleway") and L > 30:
+        if not e["drive"] and e["walk"] and cls in ("footway", "pedestrian", "path", "cycleway") and L > 30 and not e.get("worn"):
             s = r.uniform(12, 30)
             while s < L - 10:
                 x, y, dx, dy = at(e, s)

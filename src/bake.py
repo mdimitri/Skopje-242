@@ -545,7 +545,7 @@ def bake_overview(world, size, path, progress=None):
 
         pass_(f_areas, world.areas, 60, "land use & parks", 0.0, 0.2)
         pass_(f_water, world.wlines, 200, "rivers", 0.2, 0.25)
-        pass_(f_roads, [r for r in world.roads if not r["bridge"]], 600, "roads", 0.25, 0.55)
+        pass_(f_roads, [r for r in world.roads if not r["bridge"] and not r.get("worn")], 600, "roads", 0.25, 0.55)
         pass_(f_roads, [r for r in world.roads if r["bridge"]], 600, "bridges", 0.55, 0.6)
         pass_(f_bld, world.buildings, 400, "buildings", 0.6, 0.85)
         pass_(f_trees, world.trees[::3], 1000, "trees", 0.85, 0.92)

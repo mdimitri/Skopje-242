@@ -1517,6 +1517,17 @@ def main():
     phase("graph")
 
     connect_roads(roads)
+    try:                                                        # round 29: trampled desire-line paths over open ground
+        import footpaths
+        worn = footpaths.generate(roads, buildings, bld, surf, rails, [q for q in _read_list(os.path.join(a.src, "map_pois.json")) if len(q) == 4],
+                                  _read_list(os.path.join(a.src, "bus_stops.json")), T, HX, HY, CELL)
+        for rd in worn:
+            sd.line(cells(rd["pts"]), fill=3, width=max(1, int(round((rd["w"] + 3) / CELL))))
+            od.line(cells(rd["pts"]), fill=255, width=max(1, int(round((rd["w"] + 3) / CELL))))
+        roads.extend(worn)
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
     frac(0.2, "roads joined")
     # ---- routing graph ----------------------------------------------------------------------------
     use = {}
@@ -1545,7 +1556,8 @@ def main():
                 if cum[-1] > 0.5:
                     edges.append({"a": nid(ns[start]), "b": nid(ns[i]), "pts": seg, "cum": cum, "len": cum[-1],
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
-                                  "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0)})
+                                  "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0),
+                                  "worn": rd.get("worn", "")})
                 start = i
     import lanefix
     print(f"[build] lane dips repaired: {lanefix.repair(edges)} edges")
