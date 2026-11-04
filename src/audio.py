@@ -98,6 +98,28 @@ def build():
     t = _t(0.22)
     x = np.sin(2 * np.pi * (90 - 200 * t) * t) * np.exp(-t / 0.08) * 1.2 + _lp(rng.standard_normal(len(t)).astype(np.float32), 4) * np.exp(-t / 0.05)
     S["kick"] = x / np.abs(x).max() * 0.85
+    # brass knuckles: sharp metallic ring over a short hard thud
+    t = _t(0.2)
+    x = (np.sin(2 * np.pi * 2300 * t) + 0.6 * np.sin(2 * np.pi * 3470 * t)) * np.exp(-t / 0.03) * 0.5 \
+        + np.sin(2 * np.pi * (140 - 300 * t) * t) * np.exp(-t / 0.04) + _lp(rng.standard_normal(len(t)).astype(np.float32), 5) * np.exp(-t / 0.02) * 0.6
+    S["knuckles_hit"] = x / np.abs(x).max() * 0.8
+    # chain: a burst of clinking links (random metallic pings) on a wet slap
+    t = _t(0.45)
+    x = _lp(rng.standard_normal(len(t)).astype(np.float32), 4) * np.exp(-t / 0.025) * 1.2
+    for _ in range(14):
+        t0, fr = rng.uniform(0, 0.25), rng.uniform(1800, 4200)
+        tt = np.maximum(t - t0, 0)
+        x = x + np.sin(2 * np.pi * fr * tt) * np.exp(-tt / 0.03) * (t >= t0) * rng.uniform(0.2, 0.6)
+    S["chain_hit"] = x / np.abs(x).max() * 0.8
+    # chain swung through the air: rising whoosh with rattling links
+    t = _t(0.4)
+    env = np.sin(np.pi * t / 0.4) ** 2
+    x = _lp(rng.standard_normal(len(t)).astype(np.float32), 6) * env * 0.8
+    for k in range(12):
+        t0, fr = 0.03 + k * 0.03 + rng.uniform(0, 0.015), rng.uniform(2200, 4500)
+        tt = np.maximum(t - t0, 0)
+        x = x + np.sin(2 * np.pi * fr * tt) * np.exp(-tt / 0.015) * (t >= t0) * 0.3 * env
+    S["chain_swing"] = x / np.abs(x).max() * 0.6
     # gun
     t = _t(0.35)
     x = rng.standard_normal(len(t)).astype(np.float32) * np.exp(-t / 0.05) + np.sin(2 * np.pi * 120 * t) * np.exp(-t / 0.1)
