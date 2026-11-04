@@ -245,6 +245,26 @@ class Cover:
                         for dy in (-1, 0, 1):
                             self.zone.add((cx + dx, cy + dy))
 
+    def set_cores(self, edges, plates):
+        """Junction centres (plate nodes): no lane markings inside radius = widest half width + 1.5 m."""
+        self.cores = {}
+        c = self.CELL
+        for e in edges:
+            for nd, p in ((e["a"], e["pts"][0]), (e["b"], e["pts"][-1])):
+                if nd in plates and (nd, p) not in self.cores:
+                    self.cores[(nd, p)] = 1
+                    self.cores.setdefault((int(p[0] // c), int(p[1] // c)), []).append((p[0], p[1], plates[nd][1] + 1.5))
+
+    def in_core(self, x, y):
+        c = self.CELL
+        cx, cy = int(x // c), int(y // c)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for px, py, r in getattr(self, "cores", {}).get((cx + dx, cy + dy), ()):
+                    if (x - px) ** 2 + (y - py) ** 2 < r * r:
+                        return True
+        return False
+
     def near_junction(self, x, y):
         c = self.CELL
         return (int(x // c), int(y // c)) in self.zone
@@ -693,6 +713,7 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
             deg[e_["b"]] = deg.get(e_["b"], 0) + 1
     prog(0.04, "joints")
     plates = _plate_nodes(edges, joints)
+    cov.set_cores(edges, plates)
     prog(0.06, "junction plates")
     ribs = {}
     out = Out(chunk_of, T)
@@ -932,6 +953,9 @@ def _line(out, cov, me, e, pts, fr, off, y, width, col, dashed, rank):
         for k in range(1, n + 1):
             q = _at(P, cum, s0 + (s1 - s0) * k / n)
             mx, my = (prev[0] + q[0]) * 0.5, (prev[1] + q[1]) * 0.5
+            if cov.in_core(mx, my) or cov.in_core(q[0], q[1]):
+                prev = q
+                continue
             if cov.near_junction(mx, my) and (cov.covered(mx, my, me, e["bridge"], rank) or cov.covered(q[0], q[1], me, e["bridge"], rank)):
                 prev = q
                 continue

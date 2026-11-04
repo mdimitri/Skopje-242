@@ -124,6 +124,36 @@ def faults(edges, props):
     return out
 
 
+def geometry_faults(d, edges, props, rail_file=None):
+    """Buildings over asphalt / pavement and trees under overpasses or rails -> {name: [descriptions]}."""
+    from build_world import seg_grid, near_seg
+    out = collections.defaultdict(list)
+    g = seg_grid([(a[0], a[1], b[0], b[1], e["w"] / 2 + 2.0 - 0.2) for e in edges if e["drive"] and not e["bridge"]
+                  and e["cls"] not in ("footway", "path", "steps", "cycleway", "pedestrian") for a, b in zip(e["pts"], e["pts"][1:])])
+    try:
+        for b in load(d, "buildings")["buildings"]:
+            deep = 0.0
+            for x, y in b["ring"]:
+                n = near_seg(g, x, y)
+                if n and n[0] < 0:
+                    deep = min(deep, n[0])
+            if deep < -0.15:
+                out["building outline over road/pavement"].append(f"{deep:.1f} m deep at ({b['ring'][0][0]:.0f},{b['ring'][0][1]:.0f})")
+    except Exception as ex:  # noqa: BLE001
+        out["audit error"].append(f"buildings: {ex}")
+    segs = [(a[0], a[1], b[0], b[1], e["w"] / 2 + 1.5) for e in edges if e["bridge"] and (e["drive"] or e["walk"]) for a, b in zip(e["pts"], e["pts"][1:])]
+    if rail_file:
+        for r in json.load(open(rail_file, encoding="utf-8")):
+            if r[0] == "way" and r[1] == "rail" and not r[3]:
+                segs += [(a[0], a[1], b[0], b[1], 3.0) for a, b in zip(r[4], r[4][1:])]
+    tg = seg_grid(segs)
+    for t in props["trees"]:
+        n = near_seg(tg, t[0], t[1])
+        if n and n[0] < 0:
+            out["tree under overpass / rail"].append(f"({t[0]:.0f},{t[1]:.0f})")
+    return out
+
+
 def main():
     d = sys.argv[1]
     edges = load(d, "edges")["edges"]
@@ -144,9 +174,11 @@ def main():
     w = World(d, lambda f, note="": None)
     print("objects standing in a drivable lane:", lanes_blockers(edges, props, w.th))
     fl = faults(edges, props)
+    rf = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else None
+    fl.update(geometry_faults(d, edges, props, rf))
     for k, v in sorted(fl.items()):
         print(f"FAULT {k}: {len(v)}  e.g. {'; '.join(v[:4])}")
-    if "--strict" in sys.argv and any(k.startswith(("lane dip", "lanes narrower")) for k in fl):
+    if "--strict" in sys.argv and any(k.startswith(("lane dip", "lanes narrower", "building outline", "tree under")) for k in fl):
         sys.exit(1)
     if len(sys.argv) > 2 and not sys.argv[2].startswith("--"):
         rl = json.load(open(sys.argv[2], encoding="utf-8"))

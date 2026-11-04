@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 59
+VERSION = 60
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -967,6 +967,68 @@ def _parapet(ring, h, ph, col):
     return pos, np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
 
 
+def seg_grid(segs, cell=30.0):
+    """segs [(ax, ay, bx, by, r)] -> grid for near_seg."""
+    g = {}
+    for sg in segs:
+        ax, ay, bx, by, r = sg
+        for gx in range(int((min(ax, bx) - r) // cell), int((max(ax, bx) + r) // cell) + 1):
+            for gy in range(int((min(ay, by) - r) // cell), int((max(ay, by) + r) // cell) + 1):
+                g.setdefault((gx, gy), []).append(sg)
+    return g
+
+
+def near_seg(g, x, y, extra=0.0, cell=30.0):
+    """(distance - r) of the closest segment within reach, or None: negative means inside a segment's corridor."""
+    best = None
+    for ax, ay, bx, by, r in g.get((int(x // cell), int(y // cell)), ()):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+        d = math.hypot(x - ax - dx * t, y - ay - dy * t) - r - extra
+        if best is None or d < best[0]:
+            best = (d, ax + dx * t, ay + dy * t, r, dx, dy)
+    return best
+
+
+def clip_ring(ring, g):
+    """Push the parts of a building outline that lie over road asphalt or pavement (corridor segments in g) back to the
+    corridor edge; long edges get extra points first.  -> new ring, or the same list when nothing touched the corridor."""
+    dens, hit = [], False
+    mx_ = sum(p[0] for p in ring) / len(ring)
+    my_ = sum(p[1] for p in ring) / len(ring)
+    for k, p in enumerate(ring):
+        q = ring[(k + 1) % len(ring)]
+        dens.append(p)
+        n = int(math.hypot(q[0] - p[0], q[1] - p[1]) // 2.5)
+        for j in range(1, n + 1):
+            dens.append((p[0] + (q[0] - p[0]) * j / (n + 1), p[1] + (q[1] - p[1]) * j / (n + 1)))
+    out = []
+    for x, y in dens:
+        for _ in range(3):
+            b = near_seg(g, x, y)
+            if b is None or b[0] >= 0:
+                break
+            d, cx, cy, r, sx, sy = b
+            ux, uy = x - cx, y - cy
+            l = math.hypot(ux, uy)
+            if l < 1e-3:                               # exactly on the centreline: step to the side the building lies on
+                sl = math.hypot(sx, sy) or 1.0
+                ux, uy = -sy / sl, sx / sl
+                if ux * (mx_ - x) + uy * (my_ - y) < 0:
+                    ux, uy = -ux, -uy
+                l = 1.0
+            x, y = cx + ux / l * (r + 0.05), cy + uy / l * (r + 0.05)
+            hit = True
+        out.append((x, y))
+    if not hit:
+        return ring
+    res = [out[0]]
+    for p in out[1:]:
+        if math.hypot(p[0] - res[-1][0], p[1] - res[-1][1]) > 0.05:
+            res.append(p)
+    return res
+
+
 def _inside_ring(x, y, ring, margin=0.0):
     """Point in polygon, at least `margin` metres from its edges."""
     ins = False
@@ -1323,8 +1385,37 @@ def main():
         T = terrain_mod.carve_water(T, water_a, CELL)
 
     # ---- building meshes, now that the ground under them is known ------------------------------
+    import roads3d as _r3
+    roads3d_SW = _r3.SW_W
     binfo = []
+    bgrid = seg_grid([(a_[0], a_[1], b_[0], b_[1], rd["w"] / 2 + roads3d_SW + 0.1) for rd in roads
+                      if rd["drive"] and not rd["bridge"] and not rd.get("tunnel") and rd["cls"] not in ("footway", "path", "steps", "cycleway", "pedestrian")
+                      for a_, b_ in zip(rd["pts"], rd["pts"][1:])])
+    bmap = {id(b_["ring"]): b_ for b_ in buildings}
+    n_clip = n_drop = 0
     for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
+        o2 = clip_ring(outer, bgrid)
+        if o2 is not outer:
+            n_clip += 1
+            bi_ = bmap.get(id(outer))
+            tri2 = None
+            if len(o2) >= 3 and abs(shoelace(o2)) >= 8:
+                if shoelace(o2) < 0:
+                    o2 = o2[::-1]
+                try:
+                    v2, tri2 = triangulate(o2, [])
+                except Exception:  # noqa: BLE001
+                    tri2 = None
+            if not tri2:
+                n_drop += 1
+                if bi_:
+                    bi_["tri"], bi_["v"], bi_["area"] = [], [], 0.0
+                continue
+            outer, holes, verts, tri, ar = o2, [], v2, tri2, abs(shoelace(o2))
+            if bi_:
+                xs_ = [p[0] for p in o2]
+                ys_ = [p[1] for p in o2]
+                bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
         ring = np.asarray(outer, np.float64)
         tz = T.h(ring[:, 0], ring[:, 1])
         cxm, cym = ring[:, 0].mean(), ring[:, 1].mean()
@@ -1391,6 +1482,8 @@ def main():
                                 pos_[:, 1] += h
                                 badd(MAT_SOLID, pos_, uv_, col_)
                             break
+    buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
+    print(f"[build] buildings clipped off roads/pavements: {n_clip} trimmed, {n_drop} dropped")
     if binfo:                                                  # TV / phone cables from block to block
         tall = [b for b in binfo if b[4] > 10]
         gx = {}
@@ -1842,6 +1935,7 @@ def main():
 
     phase("railway")
     stations, track = [], {"lines": [], "crossings": []}
+    rl = None
     try:                                                        # round 21: railway viaducts, level crossings, stations
         import rail
         rl = _read_list(os.path.join(a.src, "rail.json"))
@@ -1853,6 +1947,21 @@ def main():
         traceback.print_exc()
         print(f"[build] railway skipped: {e}")
 
+    n_t0 = len(trees)                                           # no trees under train tracks or overpasses (and none on the track bed)
+    tsegs = []
+    for e_ in edges:
+        if e_["bridge"] and (e_["drive"] or e_["walk"]):
+            tsegs += [(a_[0], a_[1], b_[0], b_[1], e_["w"] / 2 + 2.0) for a_, b_ in zip(e_["pts"], e_["pts"][1:])]
+    try:
+        for r_ in (rl or []):
+            if r_[0] == "way" and r_[1] == "rail" and not r_[3]:
+                rr_ = 5.0 if r_[2] else 3.5
+                tsegs += [(a_[0], a_[1], b_[0], b_[1], rr_) for a_, b_ in zip(r_[4], r_[4][1:])]
+    except Exception:  # noqa: BLE001
+        pass
+    tgrid = seg_grid(tsegs)
+    trees = [q for q in trees if (near_seg(tgrid, q[0], q[1]) or (1,))[0] >= 0]
+    print(f"[build] trees removed from under rails / overpasses: {n_t0 - len(trees)}")
     try:
         phase("3D roads")
         roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r)           # no bridge pier in a street passing underneath
