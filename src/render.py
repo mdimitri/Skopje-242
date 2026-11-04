@@ -481,7 +481,7 @@ class Renderer:
             frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 12
             if wk.atk_t > 0:
                 frame = wk.atk_kind
-            if wk.z > 0.05:
+            if wk.z > 0.35 or getattr(wk, "vz", 0.0) > 1.0:   # a real jump / fall, not a step off a kerb or a slope
                 frame = 16                                 # jumping: upright, arms up, knees tucked
             if wk.duck_t > 0.0:
                 frame = 40 + (int(wk.anim * 3.0) & 7)      # crawling under a big vehicle: face down, limbs animated

@@ -1684,7 +1684,8 @@ def main():
             if sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
                 guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
-                selfie.haze(sf_hy, sim.clock.dark, sw)
+                if not ch_on:                          # the street view has the horizon near the top: the band read as a veil
+                    selfie.haze(sf_hy, sim.clock.dark, sw)
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
             if lod:
