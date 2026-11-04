@@ -1633,11 +1633,32 @@ uniform mat4 mvp;
 out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos; out vec3 wp;
 void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wpos = vertexPosition.xz; wp = vertexPosition;
              gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
+BUMP_FN = """
+const vec3 SUNL = vec3(-0.4494, 0.7990, -0.3995);
+const vec3 SUNH = normalize(vec3(-0.4494, 0.7990, -0.3995) + vec3(0.0, 0.894, 0.447));   // half vector, camera looks down at ~63 deg
+vec3 geoN(vec3 p){ return normalize(cross(dFdx(p), dFdy(p))); }                           // faces the viewer for any visible surface
+// bump from a height value that is already in a register: derivatives only, so it costs no texture fetches
+vec3 bumpN(vec3 p, vec3 n, float h, float strength){
+  vec3 dpx = dFdx(p), dpy = dFdy(p);
+  vec3 r1 = cross(dpy, n), r2 = cross(n, dpx);
+  float det = dot(dpx, r1);
+  vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+  return normalize(abs(det) * n - strength * g);
+}
+// rough: 0 = mirror (glass, wet water), 1 = chalk. Relights the baked colour for the bumped normal and adds the sun glint.
+vec3 relight(vec3 c, vec3 n, vec3 nb, float rough, float k){
+  float d = 0.55 * (dot(nb, SUNL) - dot(n, SUNL));
+  c *= 1.0 + k * d / (0.52 + 0.55 * max(dot(n, SUNL), 0.0));
+  float sm = 1.0 - rough;
+  float spec = pow(max(dot(nb, SUNH), 0.0), mix(6.0, 120.0, sm * sm)) * sm * sm * 0.9;
+  return c + vec3(1.0, 0.96, 0.88) * spec * k;
+}
+"""
 DETAIL_FS = """#version 330
-in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos;
+in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
 uniform sampler2D texture0; uniform sampler2D texture1; uniform sampler2D texture2; uniform vec4 colDiffuse; uniform float time;
 out vec4 finalColor;
-const vec3 WATER = vec3(0.337, 0.573, 0.776);
+""" + BUMP_FN + """const vec3 WATER = vec3(0.337, 0.573, 0.776);
 const vec3 GROUND = vec3(0.788, 0.769, 0.714);
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 // road wear: the further from the centre (world origin), the rougher; asphalt only (dark grey), not pavements
@@ -1713,17 +1734,29 @@ void main(){
     c = wear(c, road, crack);
   }
   float wet = 1.0 - smoothstep(0.04, 0.12, distance(base.rgb, WATER));   // rivers / lakes: moving ripples
+  float wh = 0.0;
   if (wet > 0.0) {
     float r1 = texture(texture1, wpos / 9.0 + vec2(time * 0.031, time * 0.012)).r;
     float r2 = texture(texture1, wpos / 6.0 - vec2(time * 0.019, -time * 0.027)).r;
     float wave = r1 + r2 - 1.0;
     vec3 wc = base.rgb * (1.0 + wave * 0.22) + vec3(0.9, 0.95, 1.0) * smoothstep(0.38, 0.5, wave) * 0.25;
     c = mix(c, wc, wet);
+    wh = wave * 0.5 + 0.5;
+  }
+  {
+    float fadeb = 1.0 - smoothstep(40.0, 130.0, gl_FragCoord.z / gl_FragCoord.w);          // relief only up close
+    vec3 n0 = geoN(wp);
+    float hb = mix(d.r, wh, wet);
+    float strg = mix(mix(0.10, 0.05, grass), 0.012, wet);
+    vec3 nb = bumpN(wp, n0, hb, strg * 2.5);
+    float rough = mix(mix(0.92, 0.97, grass), 0.86, paved);                                // grass / dirt chalky, asphalt a little tighter
+    rough = mix(rough, 0.12, wet);                                                         // water: glossy
+    c = relight(c, n0, nb, rough, fadeb * mix(0.7, 1.4, wet));
   }
   finalColor = vec4(c, base.a);
 }"""
 # the road / prop mesh (one material for both): only flat dark-grey surfaces get the road wear, walls and trees stay as baked
-SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")].replace("in vec2 wpos;", "in vec2 wpos; in vec3 wp;", 1) + """void main(){
+SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
   vec3 c = base.rgb;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -1745,6 +1778,17 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")].replace("in vec2 wpos;", 
     float stain = smoothstep(0.55, 0.8, texture(texture1, wpos / 23.0).b);
     c *= 1.0 + sw * ((tone - 0.5) * 0.09 + grit * 0.1 - stain * 0.07 - seam * 0.16);
   }
+  {
+    float fadeb = 1.0 - smoothstep(35.0, 110.0, gl_FragCoord.z / gl_FragCoord.w);
+    float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+    float flat_ = step(0.92, abs(nrm.y));
+    float hb = texture(texture1, (flat_ > 0.5 ? wpos : vec2(wp.x + wp.z, wp.y)) / 1.3).r + 0.6 * texture(texture2, wpos / 7.0).r * road;   // grain, cracks sunk in
+    vec3 nb = bumpN(wp, nrm, hb, road > 0.5 ? 0.3 : 0.25);
+    float rough = mix(0.62, 0.9, flat_);                                                     // poles, signs, car bodies of the mesh: semi-gloss; ground-level slabs: matt
+    rough = mix(rough, 0.95, road + sw);                                                     // asphalt, pavement: matt
+    rough = mix(rough, 0.5, smoothstep(0.12, 0.3, sat) * (1.0 - flat_));                     // painted/coloured props: satin
+    c = relight(c, nrm, nb, rough, fadeb);
+  }
   finalColor = vec4(c, base.a);
 }"""
 # facades and roofs: texture emboss towards the fixed sun (window frames, bricks, tiles get relief), fine grit and weathering streaks
@@ -1752,7 +1796,7 @@ BUILD_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
 uniform sampler2D texture0; uniform sampler2D texture1; uniform vec4 colDiffuse;
 out vec4 finalColor;
-float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+""" + BUMP_FN + """float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -1764,8 +1808,18 @@ void main(){
   float grit = texture(texture1, q / 2.1).r - 0.5;
   float stain = texture(texture1, wall > 0.5 ? vec2((wp.x + wp.z) / 11.0, wp.y / 38.0) : wpos / 17.0).b;
   float fade = 1.0 - smoothstep(60.0, 160.0, gl_FragCoord.z / gl_FragCoord.w);   // detail only up close (far away it would shimmer)
-  float k = 1.0 + fade * (emb + grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
+  float k = 1.0 + fade * (grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
   vec3 c = base.rgb * k;
+  {
+    // normal map from the facade texture: dark mortar / frames / sills sit low, glazing is smooth and glossy, plaster and brick chalky
+    float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
+    float glass = (1.0 - smoothstep(0.16, 0.30, l0)) * wall;                              // dark glazing
+    float hb = l0 + 0.5 * grit * 0.16;
+    vec3 nb = bumpN(wp, nrm, hb, 0.9 * (1.0 - glass));
+    float rough = mix(0.88, 0.22, glass);
+    rough = mix(rough, 0.75, (1.0 - wall) * 0.6);                                          // roofs: tile / metal sheet, a little sheen
+    c = relight(c, nrm, nb, rough, fade * (0.9 + 1.4 * glass));
+  }
   if (wall > 0.5) {
     float lum = dot(c, vec3(0.333));
     float a = hh(floor(wp.xz / 17.0)), b = hh(floor(wp.xz / 17.0) + 7.3);   // only wear varies in the shader; tone is per building (vertex colour)
