@@ -18,10 +18,11 @@ _LINES = {}
 # weapons: key -> (Macedonian name, seconds between shots, damage, pellets, spread rad, range m, ammo per pickup)
 WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT("actors.0002"), 0.09, 22, 1, 0.06, 32, 300),
            "shotgun": (TXT("actors.0003"), 0.85, 30, 6, 0.16, 18, 60), "kalash": (TXT("actors.0004"), 0.12, 40, 1, 0.03, 60, 240),
-           "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14)}
-MELEE = ("bat",)                # swung, not fired: no tracer, no ammo used
+           "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14),
+           "knuckles": ("Боксирач", 0.3, 28, 1, 0.0, 1.2, 9999), "chain": ("Ланец", 0.5, 26, 1, 0.0, 2.6, 9999)}
+MELEE = ("bat", "knuckles", "chain")                # swung, not fired: no tracer, no ammo used
 SWING_T = 0.36                  # seconds of one bat swing (the renderer sweeps the bat across the body)
-WEAPON_ORDER = ["fist", "bat", "pistol", "uzi", "shotgun", "kalash", "zolja"]
+WEAPON_ORDER = ["fist", "knuckles", "chain", "bat", "pistol", "uzi", "shotgun", "kalash", "zolja"]
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
 
 
@@ -1998,7 +1999,7 @@ class Sim:
         walk = [e for e in self.w.edges if e.get("walk") and e["len"] > 25]
         for e in rng.sample(walk, min(self.WEAPON_PICKUPS, len(walk))):
             x, y, dx, dy = self.w.edge_point(e, rng.uniform(5, e["len"] - 5))
-            self.pickups.append([x, y, rng.choice(("pistol", "pistol", "bat", "bat", "uzi", "uzi", "shotgun", "kalash",
+            self.pickups.append([x, y, rng.choice(("pistol", "pistol", "bat", "bat", "knuckles", "chain", "uzi", "uzi", "shotgun", "kalash",
                                                     "kalash", "zolja")), True, 0.0])
 
     def _make_pickups(self):
@@ -2255,7 +2256,7 @@ class Sim:
         if tracer:
             self.ev("shot", x0=ox, y0=oy, x1=ex, y1=ey)
         else:
-            self.ev("swing", x=ex, y=ey, hit=best is not None)
+            self.ev("swing", x=ex, y=ey, hit=best is not None, weapon=self.walker.weapon)
         if best is not None:
             p = best
             p.hp -= dmg

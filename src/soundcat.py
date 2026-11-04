@@ -60,6 +60,9 @@ _s("shot_distant", "weapons", 3.0, 8, "A faraway gunshot in a city, dull and ech
 _s("shot", "weapons", 2.0, 8, "A single gunshot outdoors, sharp crack with an echo.", 0.9)
 _s("rocket_launch", "weapons", 3.0, 6, "A rocket launcher firing with a whooshing launch and hiss.", 1.0, "boom")
 _s("bat_hit", "weapons", 1.0, 8, "A baseball bat hitting something solid with a dull thud.", 0.9, "punch")
+_s("knuckles_hit", "weapons", 1.0, 8, "Brass knuckles punching a body, a sharp metallic crack with a heavy thud.", 0.9, "punch")
+_s("chain_hit", "weapons", 1.0, 8, "A heavy metal chain whipping against a body, a clanking slap with rattling links.", 0.9, "bat_hit")
+_s("chain_swing", "fight", 1.0, 8, "A metal chain swung through the air, rattling links with a whoosh.", 0.5, "swing")
 _s("bullet_ricochet", "weapons", 1.5, 8, "A bullet ricocheting off a concrete wall with a whine.", 0.7)
 _s("bullet_wall", "weapons", 1.0, 6, "A bullet hitting a plaster wall with a dull crack and crumbling.", 0.6)
 _s("punch", "fight", 1.0, 10, "A fist punching a body, a dull fleshy thud.", 0.9)
@@ -279,7 +282,7 @@ _TAIL_LOOP = ", lively ambience with small random sounds"
 _TAIL_STEADY = ", steady constant sound"
 _RING = ("bell", "clock_tower", "horn", "chime", "pick", "revive", "ui_", "teleport", "denied", "fuel_warning", "defib", "cow_bell", "whistle", "train_horn", "siren_", "car_alarm", "truck_reverse")
 _CAP = (("step_", 0.6), ("puddle", 0.5), ("shot_uzi", 1.5), ("shot_kalash", 1.5), ("shot_shotgun", 1.2), ("shot_distant", 1.2), ("shot", 1.0), ("rocket_launch", 1.5), ("bullet_", 0.6),
-        ("bat_hit", 0.5), ("swing", 0.4), ("punch", 0.5), ("kick", 0.5), ("body_fall", 0.7), ("body_hit_car", 0.8), ("hurt_thud", 0.5), ("defib", 1.5), ("cpr", 2.0),
+        ("bat_hit", 0.5), ("knuckles_hit", 0.5), ("chain_hit", 0.6), ("chain_swing", 0.6), ("swing", 0.4), ("punch", 0.5), ("kick", 0.5), ("body_fall", 0.7), ("body_hit_car", 0.8), ("hurt_thud", 0.5), ("defib", 1.5), ("cpr", 2.0),
         ("crash_light", 0.8), ("crash_glass", 1.5), ("crash_metal", 1.2), ("crash_wood", 1.2), ("crash", 1.5), ("tree_break", 1.5), ("prop_thud", 0.6), ("bin_clang", 1.2),
         ("glass_bottle", 1.0), ("boom", 2.5), ("chime", 0.6), ("tick", 0.5), ("pick", 0.6), ("cash", 0.7), ("eat", 1.0), ("revive", 0.8), ("ui_", 0.5), ("teleport", 0.6),
         ("denied", 0.5), ("map_paper", 0.8), ("fuel_warning", 0.6), ("fuel_pour", 2.0), ("weapon_pickup", 0.6), ("car_door", 0.7), ("horn_jingle", 2.5), ("horn_small", 0.5),
@@ -330,6 +333,9 @@ SIMPLE = {
     'shot': 'gunshot',
     'rocket_launch': 'rocket launch',
     'bat_hit': 'bat hit',
+    'knuckles_hit': 'brass knuckles hit',
+    'chain_hit': 'chain hit',
+    'chain_swing': 'chain swing',
     'bullet_ricochet': 'bullet ricochet',
     'bullet_wall': 'bullet hitting wall',
     'punch': 'punch',

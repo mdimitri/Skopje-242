@@ -496,7 +496,7 @@ class Renderer:
                 if wm is not None:
                     sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
                     tilt, yaw = 0.8, 0.0
-                    if wk.weapon in actors.MELEE and wk.atk_t > 0:      # bat swing: wound up behind the right shoulder, sweeps across the front
+                    if wk.weapon in actors.MELEE and wk.weapon != "knuckles" and wk.atk_t > 0:      # bat swing: wound up behind the right shoulder, sweeps across the front
                         u = 1.0 - wk.atk_t / actors.SWING_T
                         e = u * u * (3 - 2 * u)
                         tilt, yaw = 0.3 + 1.1 * math.sin(math.pi * min(1.0, u * 1.3)), 1.4 - 2.9 * e

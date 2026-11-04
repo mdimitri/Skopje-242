@@ -487,7 +487,7 @@ def main():
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
     renderer.pick_model("cash")
-    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "zolja", "fuel"):
+    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "knuckles", "chain", "zolja", "fuel"):
         renderer.pick_model(_k)
     loader.tick(0.9, "pickups & weapons")
 
@@ -929,7 +929,9 @@ def main():
                 streamer.add_decal(("d", d["x"], d["y"], 3.6, (20, 18, 16, 190)))
                 shake = max(shake, 3.0)
             elif kind == "swing":
-                aud.at("bat_hit" if d["hit"] else "swing", d["x"], d["y"], 0.5 if d["hit"] else 0.2)
+                _w = d.get("weapon")
+                _snd = ("knuckles_hit" if d["hit"] else "swing") if _w == "knuckles" else (("chain_hit" if d["hit"] else "chain_swing") if _w == "chain" else ("bat_hit" if d["hit"] else "swing"))
+                aud.at(_snd, d["x"], d["y"], 0.5 if d["hit"] else 0.2)
             elif kind == "prop_break":                              # a punched / blasted prop: hide its mesh, throw bits
                 streamer.reload_near(d["x"], d["y"])
                 big = d["kind"] in ("post", "tree")
