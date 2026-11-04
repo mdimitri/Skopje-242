@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 55
+VERSION = 56
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -454,7 +454,7 @@ def building_height(t, area, r):
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
 GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
-MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM = 7, 8, 9, 10     # photo-based Skopje facades
+MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM, MAT_MIX = 7, 8, 9, 10, 11     # photo-based Skopje facades
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
@@ -555,6 +555,93 @@ def _junk_piece(kind, x, y, z, yaw, seed):
     return pos, uv, col
 
 
+def _prism(cx, cz, sx, sz, y0, rise, yaw, col):
+    """Gabled roof piece: ridge along local x, eaves along the long sides -> pos, uv, col (open bottom)."""
+    ca, sa = math.cos(yaw), math.sin(yaw)
+
+    def w(x, z, y):
+        return (cx + ca * x - sa * z, y, cz + sa * x + ca * z)
+    hx, hz = sx / 2, sz / 2
+    A, B, C, D = w(-hx, -hz, y0), w(hx, -hz, y0), w(hx, hz, y0), w(-hx, hz, y0)
+    R0, R1 = w(-hx, 0, y0 + rise), w(hx, 0, y0 + rise)
+    tris = [(A, B, R1), (A, R1, R0), (D, R0, R1), (D, R1, C), (A, R0, D), (B, C, R1)]
+    pos = np.array([v for t in tris for v in t], np.float32)
+    cols = []
+    for k, t in enumerate(tris):
+        sh = (1.0, 0.82, 0.9, 0.9, 0.78, 0.78)[k] * (1.0 if k < 4 else 0.9)
+        cols += [(*[min(255, c * sh) for c in col], 255)] * 3
+    return pos, np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
+
+
+def _wedge(cx, cz, sx, sz, y0, rise, yaw, col):
+    """Monopitch roof: rises along local x from 0 to `rise` -> pos, uv, col."""
+    ca, sa = math.cos(yaw), math.sin(yaw)
+
+    def w(x, z, y):
+        return (cx + ca * x - sa * z, y, cz + sa * x + ca * z)
+    hx, hz = sx / 2, sz / 2
+    A, B, C, D = w(-hx, -hz, y0), w(hx, -hz, y0 + rise), w(hx, hz, y0 + rise), w(-hx, hz, y0)
+    Bl, Cl = w(hx, -hz, y0), w(hx, hz, y0)
+    tris = [(A, B, C), (A, C, D), (B, Bl, Cl), (B, Cl, C), (A, Bl, B), (D, C, Cl)]
+    pos = np.array([v for t in tris for v in t], np.float32)
+    cols = []
+    for k in range(6):
+        sh = (1.0, 1.0, 0.85, 0.85, 0.8, 0.8)[k]
+        cols += [(*[min(255, c * sh) for c in col], 255)] * 3
+    return pos, np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
+
+
+def roof_structure(ring, h, rg, roofc):
+    """Procedural 70s-80s Yugoslav roof crowns instead of a flat slab: dormer crown, sawtooth, monopitch, castle-notched parapet."""
+    r = np.asarray(ring, dtype=np.float64)
+    xs, zs = r[:, 0], r[:, 1]
+    w_, l_ = xs.max() - xs.min(), zs.max() - zs.min()
+    cx, cz = (xs.min() + xs.max()) / 2, (zs.min() + zs.max()) / 2
+    st = rg.choice(("crown", "saw", "mono", "notch", "flat", "flat"))
+    col = tuple(min(255, c * rg.uniform(0.8, 1.05)) for c in roofc)
+    out = []
+    if st == "crown":                                          # a row of small gables around the rim (Kapishtec towers)
+        d = np.roll(r, -1, axis=0) - r
+        ln = np.hypot(d[:, 0], d[:, 1])
+        for i in np.argsort(-ln)[:3]:
+            if ln[i] < 8:
+                continue
+            ux, uz = d[i] / ln[i]
+            yaw = math.atan2(uz, ux)
+            n = int(ln[i] // 3.4)
+            for b in range(n):
+                t = (b + 0.5) * ln[i] / n
+                px, pz = r[i][0] + ux * t + uz * 1.0, r[i][1] + uz * t - ux * 1.0
+                if _inside_ring(px, pz, ring, 0.6):
+                    out.append(_prism(px, pz, 2.6, 2.2, h, rg.uniform(1.0, 1.7), yaw + math.pi / 2, col))
+    elif st == "saw" and w_ > 10 and l_ > 10:                  # sawtooth teeth
+        k = rg.randint(3, 6)
+        ax = rg.random() < 0.5
+        for q in range(k):
+            f = (q + 0.5) / k - 0.5
+            px, pz = (cx + f * w_ * 0.8, cz) if ax else (cx, cz + f * l_ * 0.8)
+            sx, sz = (w_ * 0.8 / k * 0.9, l_ * 0.6) if ax else (w_ * 0.6, l_ * 0.8 / k * 0.9)
+            if all(_inside_ring(px + a_ * sx / 2, pz + b_ * sz / 2, ring, 0.6) for a_, b_ in ((1, 1), (-1, -1), (1, -1), (-1, 1))):
+                out.append(_wedge(px, pz, sx, sz, h, rg.uniform(1.4, 2.2), 0.0 if ax else math.pi / 2, col))
+    elif st == "mono":                                         # one big slanted roof over most of the slab
+        sx, sz = w_ * 0.7, l_ * 0.7
+        if all(_inside_ring(cx + a_ * sx / 2, cz + b_ * sz / 2, ring, 0.6) for a_, b_ in ((1, 1), (-1, -1), (1, -1), (-1, 1))):
+            out.append(_wedge(cx, cz, sx, sz, h, rg.uniform(1.8, 3.5), rg.choice((0.0, math.pi / 2, math.pi, -math.pi / 2)), col))
+    elif st == "notch":                                        # brutalist crenellated parapet blocks along the rim
+        d = np.roll(r, -1, axis=0) - r
+        ln = np.hypot(d[:, 0], d[:, 1])
+        for i in range(len(r)):
+            if ln[i] < 5:
+                continue
+            ux, uz = d[i] / ln[i]
+            yaw = math.atan2(uz, ux)
+            n = int(ln[i] // 2.4)
+            for b in range(0, n, 2):
+                t = (b + 0.5) * ln[i] / n
+                out.append(box(r[i][0] + ux * t, r[i][1] + uz * t, ln[i] / n * 1.1, 0.5, rg.uniform(0.8, 1.6), h, (156, 154, 148), yaw))
+    return out
+
+
 def facade_extras(ring, h, rg, wallc):
     """Per-building structure on the street walls, one style per building: balcony columns/rows, a lift shaft, a fire-escape stair -> list of (pos, uv, col)."""
     r = np.asarray(ring, dtype=np.float64)
@@ -620,6 +707,31 @@ def facade_extras(ring, h, rg, wallc):
                         if jp:
                             out.append(jp)
                 budget -= 2
+    ac_p = rg.choice((0.12, 0.25, 0.4, 0.55))                  # air-conditioner density differs per building
+    ac_n = 0
+    for i in walls_:
+        nb = max(1, int(ln[i] // 3.4))
+        for b in range(nb):
+            for f in range(floors):
+                if ac_n < 160 and rg.random() < ac_p:
+                    t = (b + rg.choice((0.25, 0.75))) * ln[i] / nb
+                    cx, cz, yaw = at(i, t, 0.22)
+                    out.append(box(cx, cz, 0.85, 0.42, 0.55, f * 3.2 + rg.uniform(0.9, 1.5), (236, 236, 234), yaw))
+                    ac_n += 1
+    sty2 = rg.choice(("fins", "bands", "bays", "none", "none"))
+    i = walls_[0]
+    if sty2 == "fins" and h > 10:                              # vertical concrete fins
+        for q in range(2, int(ln[i] // 3.4), 2):
+            cx, cz, yaw = at(i, q * ln[i] / max(1, int(ln[i] // 3.4)), 0.4)
+            out.append(box(cx, cz, 0.5, 0.8, h + 0.8, 0.0, (170, 166, 158), yaw))
+    elif sty2 == "bands" and h > 8:                            # continuous cantilevered slab bands
+        for f in range(2, floors, 2):
+            cx, cz, yaw = at(i, ln[i] / 2, 0.9)
+            out.append(box(cx, cz, ln[i] - 0.4, 1.8, 0.35, f * 3.2 - 0.2, (160, 158, 150), yaw))
+    elif sty2 == "bays" and h > 8 and ln[i] > 12:              # projecting bay: two window-widths pushed out the full height
+        t = ln[i] * rg.uniform(0.3, 0.7)
+        cx, cz, yaw = at(i, t, 1.0)
+        out.append(box(cx, cz, 6.4, 2.0, h, 0.0, rg.choice(((196, 186, 168), (178, 98, 72), (214, 210, 200))), yaw))
     if h > 13 and rg.random() < 0.45:                       # lift shaft: a tall box on the wall, poking above the roof
         i = walls_[-1] if len(walls_) > 1 else walls_[0]
         cx, cz, yaw = at(i, ln[i] * rg.uniform(0.25, 0.75), 0.7)
@@ -1091,12 +1203,12 @@ def main():
                 if not small and h >= 7 and mat in (MAT_FACADE_A, MAT_PANEL):
                     q_ = r.random()
                     if mat == MAT_PANEL:
-                        mat = MAT_BRICK if q_ < 0.35 else MAT_CONC if q_ < 0.5 else MAT_CONCG if q_ < 0.65 else MAT_CREAM if q_ < 0.8 else MAT_PANEL
+                        mat = MAT_BRICK if q_ < 0.3 else MAT_MIX if q_ < 0.5 else MAT_CONC if q_ < 0.58 else MAT_CONCG if q_ < 0.66 else MAT_CREAM if q_ < 0.8 else MAT_PANEL
                     else:
-                        mat = MAT_BRICK if q_ < 0.3 else MAT_CREAM if q_ < 0.55 else MAT_FACADE_A
+                        mat = MAT_BRICK if q_ < 0.25 else MAT_MIX if q_ < 0.4 else MAT_CREAM if q_ < 0.6 else MAT_FACADE_A
                     if mat == MAT_BRICK:
                         wallc = vary((250, 244, 238), r, 5)
-                    elif mat in (MAT_CONC, MAT_CONCG):
+                    elif mat in (MAT_CONC, MAT_CONCG, MAT_MIX):
                         wallc = vary((236, 234, 228), r, 5)
                 rooftop = []
                 if not small and ar > 300 and r.random() < 0.8:        # rooftop boxes: stairwell / AC units
@@ -1257,6 +1369,8 @@ def main():
                 rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
                 if rgf:
                     badd(MAT_GRAF, *rgf)
+            for ex_ in (roof_structure(outer, h, rg, roofc) if (ar > 80 and h > 8) else ()):
+                badd(MAT_SOLID, *ex_)
             for ex_ in extras:
                 badd(MAT_SOLID, *ex_)
             for (px, py, sx, sz, hh) in rooftop:

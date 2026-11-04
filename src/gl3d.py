@@ -293,6 +293,22 @@ def build_textures(tick=None):
     tex["cream"] = _to_texture(rt)
     if tick:
         tick(7.5 / 10)
+    rt = rl.load_render_texture(S, S)                                          # white concrete body with brick piers and a frame (Karposh / Chair mixed blocks)
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(222, 218, 208, 255))
+    _speckle(rng, 360, S, 24)
+    rl.draw_rectangle(0, 0, 30, S, rl.Color(176, 92, 66, 255))                  # brick pier
+    for y in range(0, S, 6):
+        rl.draw_line(0, y, 30, y, rl.Color(228, 196, 176, 90))
+    rl.draw_rectangle(30, 0, 4, S, rl.Color(150, 146, 138, 255))
+    _win(46, 30, 60, 40)
+    rl.draw_rectangle(34, 96, 94, 8, rl.Color(184, 180, 170, 255))              # concrete spandrel
+    rl.draw_rectangle(0, 112, S, 5, rl.Color(160, 156, 146, 255))
+    _grime(rng, S, 1.2)
+    rl.end_texture_mode()
+    tex["mix"] = _to_texture(rt)
+    if tick:
+        tick(7.8 / 10)
     try:
         import graffiti
         tex["graf"] = graffiti.build_atlas()
