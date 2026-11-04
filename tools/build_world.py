@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 60
+VERSION = 61
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
