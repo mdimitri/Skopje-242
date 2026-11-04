@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 57
+VERSION = 58
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -791,7 +791,7 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
         return None
     P, U, C = [], [], []
     for i in rng.sample(order, min(len(order), n_max)):
-        w = rng.uniform(3.0, 5.6) * (2.0 if big else 1.0)
+        w = rng.uniform(3.0, 5.6) * (2.0 if big else 1.0) * rng.uniform(1.0, 1.5)       # up to 50% larger
         if w > ln[i] - 1.0:
             w = ln[i] - 1.0
         if w < 1.4:
@@ -826,7 +826,7 @@ def roof_graffiti(ring, bb, h, rng, n_max=1):
     P, U, C = [], [], []
     for _ in range(n_max):
         for _try in range(8):
-            w = rng.uniform(6.0, 11.0)
+            w = rng.uniform(6.0, 11.0) * rng.uniform(1.0, 1.5)
             hh = w * 0.5
             if w > bw * 0.95 or hh > bd * 0.95:
                 continue
@@ -869,7 +869,7 @@ def pitched_graffiti(ring, h, apex_h, rng):
     if best < 0:
         return None
     i = best
-    w = min(float(ln[i]) * 0.9, 9.0)
+    w = min(float(ln[i]) * 0.9, 9.0 * rng.uniform(1.0, 1.5))
     s0 = rng.uniform(0.0, float(ln[i]) - w)
     ux, uz = d[i, 0] / ln[i], d[i, 1] / ln[i]
     a = (r[i, 0] + ux * s0, r[i, 1] + uz * s0)

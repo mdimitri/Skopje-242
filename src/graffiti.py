@@ -102,7 +102,7 @@ def _line(style, s, cx, cy, size, rot, col, rng):
     """One text line in the chosen painting style."""
     dk = _darker(col)
     if style == "bubble":
-        _outlined(s, cx, cy, size, rot, col, r=4)
+        _outlined(s, cx, cy, size, rot, col, r=2)
         _text(s, cx - 2, cy - 3, size, rot, rl.Color(255, 255, 255, 90))
     elif style == "tag":
         _text(s, cx + 3, cy + 3, size, rot, rl.Color(10, 10, 12, 200))
@@ -127,14 +127,13 @@ def _line(style, s, cx, cy, size, rot, col, rng):
         _text(s, cx, cy, size, rot, rl.Color(*col, 255))
         _text(s, cx, cy, size * 0.8, rot, rl.Color(255, 255, 255, 255))
     elif style == "stencil":
-        _outlined(s, cx, cy, size, rot, (22, 22, 26), out=(245, 245, 240), r=2)
+        _outlined(s, cx, cy, size, rot, (22, 22, 26), out=(245, 245, 240), r=1)
     elif style == "spray":
         _text(s, cx, cy, size, rot, rl.Color(*col, 255))
     elif style == "chalk":
         _outlined(s, cx, cy, size, rot, (245, 245, 238), r=1, out=(40, 40, 44))
     else:                                                      # outline2
-        _outlined(s, cx, cy, size, rot, col, out=(18, 18, 22), r=5)
-        _outlined(s, cx, cy, size, rot, col, out=(250, 250, 250), r=3)
+        _outlined(s, cx, cy, size, rot, col, out=(18, 18, 22), r=2)
 
 
 def _paint(i, lines, rng):
