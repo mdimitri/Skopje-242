@@ -119,8 +119,11 @@ class World:
         for x, y in self.lamps:
             t = th(x, y)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.22, t - 1.0, t + 6.5))
+        self.hide_extra, self.broken_extra = {}, []
         for p in getattr(self, "posts", ()):
             x, y, r = p[0], p[1], p[2]
+            if len(p) >= 6 and p[5]:
+                self.hide_extra[(p[0], p[1])] = tuple(p[5])         # (radius, from, to): signal arm / billboard panel that falls with its pole
             lo, hi = (p[3], p[4]) if len(p) >= 5 else (th(x, y) - 1.0, th(x, y) + 2.4)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, r, lo, hi))
         self.pgrid = pg
@@ -291,12 +294,17 @@ class World:
         hgt = e[4] - max(e[3], self.ground_y(e[0], e[1]) - 0.3)
         self.broken.append((e[0], e[1], 4.2 if tree else max(0.7, e[2] + 0.5), e[4] + (6 if tree else 0.5),
                             "tree" if tree else ("post" if hgt > 5.0 else "mid"), int(e[0] * 37 + e[1] * 91) & 0xffff))
+        hx = self.hide_extra.get((e[0], e[1]))
+        if hx:
+            g0 = self.ground_y(e[0], e[1])
+            self.broken_extra.append((e[0], e[1], hx[0], g0 + hx[1], g0 + hx[2]) + ((e[0] + hx[3], e[1] + hx[4]) if len(hx) > 3 else ()))
         self.broken_ver += 1
 
     def hide_broken(self, pos, bb):
         """Collapse the triangles of broken props inside one chunk mesh (all 3 vertices near the prop)."""
         near = [b for b in self.broken if bb is None or (bb[0] - 5 < b[0] < bb[2] + 5 and bb[1] - 5 < b[1] < bb[3] + 5)]
-        if not near:
+        extra = [b for b in self.broken_extra if bb is None or (bb[0] - 5 < b[0] < bb[2] + 5 and bb[1] - 5 < b[1] < bb[3] + 5)]
+        if not near and not extra:
             return pos
         pos = pos.copy()
         t = pos[: len(pos) - len(pos) % 3].reshape(-1, 3, 3)
@@ -308,6 +316,17 @@ class World:
             tc = t[cand]
             d2 = (tc[:, :, 0] - bx) ** 2 + (tc[:, :, 2] - by) ** 2
             kill[cand[np.all(d2 < r * r, axis=1) & np.all(tc[:, :, 1] < hi, axis=1)]] = True
+        for bx, by, r, lo, hi, *arm in extra:                             # the part high above the ground: a signal arm (a segment), a billboard panel (a disc)
+            ex, ey = arm if arm else (bx, by)
+            rr = r + math.hypot(ex - bx, ey - by)
+            cand = np.nonzero((np.abs(t[:, 0, 0] - bx) < rr) & (np.abs(t[:, 0, 2] - by) < rr))[0]
+            if len(cand):
+                tc = t[cand]
+                sx, sy = ex - bx, ey - by
+                l2 = sx * sx + sy * sy or 1.0
+                u = np.clip(((tc[:, :, 0] - bx) * sx + (tc[:, :, 2] - by) * sy) / l2, 0.0, 1.0) if arm else 0.0
+                d2 = (tc[:, :, 0] - bx - sx * u) ** 2 + (tc[:, :, 2] - by - sy * u) ** 2
+                kill[cand[np.all((d2 < r * r) & (tc[:, :, 1] > lo) & (tc[:, :, 1] < hi), axis=1)]] = True
         t[kill] = 0.0
         return pos
 

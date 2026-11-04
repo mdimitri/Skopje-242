@@ -23,7 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 55
+VERSION = 56
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1762,7 +1762,7 @@ def main():
 
     hg_arr = np.asarray(hg, dtype=np.uint8).copy()
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
-    posts = [p if len(p) == 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 1.0, "collision posts")]
+    posts = [p if len(p) >= 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 1.0, "collision posts")]
 
     for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]]))):
         add_c(chunk_of(x, y), MAT_SOLID, *tree_geo(x, y, r_, sh, i))
