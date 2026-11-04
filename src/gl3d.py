@@ -451,6 +451,50 @@ _GLYPH = {"П": ("1111", "1001", "1001", "1001", "1001"), "О": ("0110", "1001",
           "А": ("0110", "1001", "1111", "1001", "1001")}
 
 
+def _truck_cab(parts, box, quad, A, gl, body_c, L, W, y0, belt, roof, cl, ex):
+    """Cab-over lorry cab: raked windscreen, side windows, grille and lamps, bumper, mirrors, steps, tanks, exhaust."""
+    def poly(pts, n, col):
+        v = np.array([q for k in range(1, len(pts) - 1) for q in (pts[0], pts[k], pts[k + 1])], np.float32)
+        parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), True))
+
+    xf, cw = L / 2, W * 0.98
+    yb, ys, yt, rk = belt - 0.05, belt + 0.85, roof, 0.45
+    xr = xf - cl
+    prof = [(xf - 0.02, yb), (xf - 0.02, ys), (xf - 0.02 - rk, yt), (xr, yt), (xr, yb)]
+    dark, chrome = (30, 30, 34), (196, 198, 204)
+    for s in (-1, 1):
+        poly([(x, y, s * cw / 2) for x, y in prof], (0, 0, s), body_c)
+        zz = s * (cw / 2 + 0.012)
+        poly([(xf - 0.5, ys + 0.12, zz), (xf - 1.45, ys + 0.12, zz), (xf - 1.45, yt - 0.2, zz), (xf - 0.72, yt - 0.2, zz)], (0, 0, s), gl((0, 0, s)))
+        quad((xf - 1.5, yb + 0.05, zz), (0.03, 0, 0), (0, yt - yb - 0.1, 0), (0, 0, s), dark)                 # door seam
+        quad((xf - 1.38, ys - 0.05, zz + 0.004), (0.18, 0, 0), (0, 0.05, 0), (0, 0, s), chrome)               # handle
+        box(xf - 0.28, ys - 0.2, s * (cw / 2 + 0.2), 0.08, 0.6, 0.16, dark)                                   # mirror
+        box(xf - 0.8, y0 + 0.02, s * (cw / 2 + 0.05), 0.5, 0.07, 0.22, dark)                                  # step
+        box(xr - 0.6, y0 - 0.02, s * (W / 2 - 0.2), 1.1, 0.55, 0.36, (190, 192, 198))                         # fuel tank
+        quad((xf - 0.02 - 0.02, yb + 0.4, s * cw * 0.40 - 0.12 + 0.0), (0, 0, 0.24), (0, 0.2, 0), (1, 0, 0), (255, 244, 180))   # headlamp
+        quad((xf + 0.01, ys - 0.38, s * cw * 0.40 - 0.12), (0, 0, 0.24), (0, 0.22, 0), (1, 0, 0), (255, 244, 180))
+    quad((xf - 0.02, yb, -cw / 2), (0, 0, cw), (0, ys - yb, 0), (1, 0, 0), body_c)                            # lower front
+    quad((xf + 0.012, yb + 0.22, -cw * 0.3), (0, 0, cw * 0.6), (0, ys - yb - 0.4, 0), (1, 0, 0), (28, 28, 32), 2, 1)   # grille
+    for k in range(4):
+        quad((xf + 0.016, yb + 0.3 + k * 0.1, -cw * 0.3), (0, 0, cw * 0.6), (0, 0.025, 0), (1, 0, 0), chrome)
+    poly([(xf - 0.02, ys, -cw / 2), (xf - 0.02, ys, cw / 2), (xf - 0.02 - rk, yt, cw / 2), (xf - 0.02 - rk, yt, -cw / 2)], (0.9, 0.45, 0), body_c)   # screen surround
+    g0 = (xf - 0.005, ys + 0.1, cw / 2 - 0.1)
+    poly([(g0[0], g0[1], -g0[2]), (g0[0], g0[1], g0[2]), (g0[0] - rk + 0.07, yt - 0.12, g0[2]), (g0[0] - rk + 0.07, yt - 0.12, -g0[2])], (0.9, 0.45, 0), gl((1, 0.4, 0)))
+    poly([(xf - 0.02 - rk, yt, -cw / 2), (xf - 0.02 - rk, yt, cw / 2), (xr, yt, cw / 2), (xr, yt, -cw / 2)], (0, 1, 0), body_c * 1.08)
+    quad((xr - 0.004, yb, -cw / 2), (0, 0, cw), (0, yt - yb, 0), (-1, 0, 0), body_c * 0.9)
+    box(xf + 0.03, y0, 0, 0.28, 0.4, cw + 0.06, (74, 76, 82))                                                 # bumper
+    quad((xf + 0.172, y0 + 0.08, -0.25), (0, 0, 0.5), (0, 0.14, 0), (1, 0, 0), (236, 236, 230))
+    box(xf - 0.2, yt, 0, 0.35, 0.1, cw * 0.92, tuple(body_c * 0.85))                                          # sun visor
+    for z in (-0.6, -0.3, 0.0, 0.3, 0.6):
+        box(xf - 0.25, yt + 0.1, z, 0.08, 0.1, 0.16, (255, 170, 30))                                          # roof marker lamps
+    if ex in ("semi", "tanker"):
+        box(xr + 0.25, yt, 0, 0.7, 0.55, cw * 0.78, tuple(body_c * 1.05))                                     # roof deflector
+        for s in (-1, 1):
+            box(xr - 0.14, belt, s * (cw / 2 - 0.15), 0.12, 2.3, 0.12, chrome)                                # exhaust stacks
+    for s in (-1, 1):                                                                                          # mudflaps behind the last axle
+        box(-L * 0.36 - 0.55, y0 - 0.05, s * (W / 2 - 0.3), 0.04, 0.45, 0.5, dark)
+
+
 def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None):
     """Body-specific add-ons: cargo boxes, sirens, ladders, luggage, logos. `box`/`quad` are car_arrays' helpers."""
     xb, xf = -L / 2, L / 2
@@ -681,7 +725,11 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     def body_col(name, v, n):
         sh = _shade(n)
         c = np.tile(body_c * sh, (len(v), 1))
-        return c * np.clip(0.72 + 0.4 * (v[:, 1:2] - y0) / (belt - y0), 0.6, 1.1)
+        c = c * np.clip(0.72 + 0.4 * (v[:, 1:2] - y0) / (belt - y0), 0.6, 1.1)
+        if st == "truck":                                                  # behind the cab the slab is the dark chassis frame
+            k = np.clip((min(2.45, 0.27 * L) - (L / 2 - v[:, 0:1])) / 0.3, 0.0, 1.0)
+            c = c * k + np.array((46, 48, 54), np.float32) * _shade(n) * (1 - k)
+        return c
     add_box_h = belt - y0
     BW = W * 0.55 if st == "tractor" else W
     addf(box_faces(0, y0, 0, L, add_box_h, BW, 8 if L < 7 else 14, 2, 4), body_col)
@@ -693,6 +741,10 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     if era is not None:
         ft, rt, stp = max(0.0, ft + era[3]), max(0.0, rt + era[4]), stp + era[5]
     cl, cx = L * cl_f, L * cx_f
+    if st == "truck":                                                      # forward-control cab, 2.3-2.5 m long, flush with the nose
+        cl = min(2.45, 0.27 * L)
+        cx = L / 2 - cl / 2
+        roof = belt + 1.9
     parts[:] = [(_shape_body(v, kind, st, L, W, y0, belt, cx, cl), c, d) for v, c, d in parts]
     H, cw = roof - belt, W * 0.9
     # ---- cabin (everything in `cab` gets the taper applied)
@@ -729,7 +781,9 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     if st == "suv":
         for zz in (-0.62, 0.62):
             box(cx, roof + 0.0, zz * 0.9 * W / 1.4, cl * 0.9, 0.05, 0.05, (28, 28, 30), True, cab)
-    for v, c, d in cab:
+    if st == "truck":
+        _truck_cab(parts, box, quad, A, gl, body_c, L, W, y0, belt, roof, cl, ex)
+    for v, c, d in ([] if st == "truck" else cab):
         v = v.copy()
         t = np.clip((v[:, 1] - belt) / H, 0, 1.2)
         k = np.where(v[:, 0] > cx, ft, rt)

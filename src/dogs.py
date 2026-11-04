@@ -270,6 +270,34 @@ class Dogs:
                 self.live.remove(d)
                 continue
             self._tick(d, dt)
+        self._apart()
+
+    APART = 0.8                                                       # metres between two dogs' centres: they never stand inside each other
+
+    def _apart(self):
+        """Push dogs that overlap away from each other (half each), only onto ground a dog may stand on."""
+        grid = {}
+        for d in self.live:
+            grid.setdefault((int(d.x // 2), int(d.y // 2)), []).append(d)
+        for (gx, gy), lst in grid.items():
+            for a in lst:
+                for ox in (-1, 0, 1):
+                    for oy in (-1, 0, 1):
+                        for b in grid.get((gx + ox, gy + oy), ()):
+                            if b is a or id(b) < id(a):
+                                continue
+                            dx, dy = b.x - a.x, b.y - a.y
+                            dd = dx * dx + dy * dy
+                            if dd >= self.APART ** 2:
+                                continue
+                            dd = math.sqrt(dd)
+                            if dd < 1e-3:
+                                dx, dy, dd = 1.0, 0.0, 1.0
+                            k = (self.APART - dd) / 2 / dd
+                            for q, sg in ((a, -1), (b, 1)):
+                                nx, ny = q.x + dx * k * sg, q.y + dy * k * sg
+                                if self._free(nx, ny, True):
+                                    q.x, q.y = nx, ny
 
     def _tick(self, d, dt):
         w = self.sim.w
