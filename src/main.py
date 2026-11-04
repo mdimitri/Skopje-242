@@ -198,15 +198,19 @@ def run_tool(args, loader, stage, max_sec=3600):
 
 
 def _stale(path, osm):
-    """World older than its sources (OSM json or the build tools)?"""
-    import glob
-    man = os.path.join(path, "manifest.json")
-    if not os.path.exists(man):
+    """World out of date with its sources (OSM data, build tools)?  Per-stage fingerprints, see tools/stages.py."""
+    if not os.path.exists(os.path.join(path, "manifest.json")):
         return True
-    t = os.path.getmtime(man)
-    srcs = glob.glob(os.path.join(osm, "*.json")) + glob.glob(os.path.join(osm, "*.npy")) + [
-        os.path.join(ROOT, "tools", n) for n in ("build_world.py", "furniture.py", "roads3d.py", "terrain.py")]
-    return any(os.path.exists(p) and os.path.getmtime(p) > t for p in srcs)
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import stages
+        stale = stages.stale_stages(path, osm)
+        if stale:
+            log(f"[build] world is stale; stages to rebuild: {', '.join(stale)}")
+        return stages.is_stale(path, osm)
+    except Exception as e:  # noqa: BLE001 - cannot tell: rebuild
+        log(f"[build] stage check failed ({e}); rebuilding")
+        return True
 
 
 def plan_needs(a):

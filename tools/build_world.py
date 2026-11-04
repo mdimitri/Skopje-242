@@ -1180,6 +1180,17 @@ def load_elements(src):
     return elements
 
 
+def stage(name, **kw):
+    """Marks a stage boundary of main() for tools/stages.py (incremental build); a plain run ignores it."""
+
+
+def rebind(ns):
+    """After a resume: the drawing handles that cannot be cached, drawn onto the restored images."""
+    for im, dr in (("surf", "sd"), ("occ", "od"), ("bld", "bd")):
+        if im in ns:
+            ns[dr] = ImageDraw.Draw(ns[im])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(ROOT, "data", "osm"))
@@ -1209,6 +1220,7 @@ def main():
         T = terrain_mod.flat(HX, HY)
         real_terrain = False
 
+    stage("map", data=("elements", "terrain.npy"))
     surf = Image.new("L", (NCX, NCY), 0)       # 0 ground, 1 water, 2 bridge, 3 road
     occ = Image.new("L", (NCX, NCY), 0)       # buildings + roads
     bld = Image.new("L", (NCX, NCY), 0)       # buildings only
@@ -1514,6 +1526,7 @@ def main():
         od.line(cells(rd["pts"]), fill=255, width=wpx)
     roads.sort(key=lambda q: (q["bridge"], q["layer"], -q["w"]))
     print(f"[build] roads: {len(roads)}")
+    stage("graph", data=("map_pois.json", "bus_stops.json"))
     phase("graph")
 
     connect_roads(roads)
@@ -1601,6 +1614,7 @@ def main():
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
+    stage("props")
     phase("places")
 
     # ---- procedural props -------------------------------------------------------------------------
@@ -1823,6 +1837,7 @@ def main():
     parked = [q for q in parked if random.Random(int(q[0] * 7.0) * 100003 + int(q[1] * 13.0)).random() < 0.5]     # round 27: half as many everywhere, the centre-to-suburb gradient stays
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
+    stage("furniture", data=("bus_stops.json", "signals.json"))
     phase("furniture")
     import furniture
 
@@ -1856,6 +1871,7 @@ def main():
     except Exception as e:  # noqa: BLE001 - furniture is decoration, never fatal
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
+    stage("leisure", data=("map_pois.json",))
     phase("leisure")
     sites = []
     try:                                                        # round 13: bushes, playgrounds, pitches, school yards
@@ -1870,6 +1886,7 @@ def main():
         traceback.print_exc()
         print(f"[build] leisure skipped: {e}")
 
+    stage("construction")
     phase("construction sites")
     works = []
     try:                                                        # round 20: fenced building sites on empty lots in built-up areas
@@ -1902,6 +1919,7 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
+    stage("stations", data=("map_pois.json", "buildings.json"))
     phase("petrol stations and car washes")
     fsites = []
     def clear_of_bld(x, y):                                     # no building and no water (paved forecourts are fine)
@@ -1920,6 +1938,7 @@ def main():
         traceback.print_exc()
         print(f"[build] stations skipped: {e}")
 
+    stage("fill")
     phase("fill: gardens, scrub, boulders")
     try:                                                        # round 29: open ground gets gardens, scrub, boulders, vines
         import fill
@@ -1943,6 +1962,7 @@ def main():
     # ---- leftovers on the carriageway: lamps, trees and collision posts that stand inside a drivable lane (OSM street_lamp
     # nodes on the centre line, links, bridge lamps above a road, fence panels of a site that overlaps a street) block
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
+    stage("cleanup")
     phase("carriageway cleanup")
     cgrid_ = {}
     for e_ in span(edges, 0.0, 0.3, "lane grid"):
@@ -1966,6 +1986,7 @@ def main():
     posts = [q for q in span(posts, 0.7, 1.0, "posts") if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
+    stage("rail", data=("rail.json",))
     phase("railway")
     stations, track = [], {"lines": [], "crossings": []}
     rl = None
@@ -1995,6 +2016,7 @@ def main():
     tgrid = seg_grid(tsegs)
     trees = [q for q in trees if (near_seg(tgrid, q[0], q[1]) or (1,))[0] >= 0]
     print(f"[build] trees removed from under rails / overpasses: {n_t0 - len(trees)}")
+    stage("roads3d")
     try:
         phase("3D roads")
         roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r)           # no bridge pier in a street passing underneath
@@ -2008,6 +2030,7 @@ def main():
         print(f"[build] 3D roads failed ({e}); using flat roads")
         roads3d_ok = False
     spread("road3d", edges, lambda e: flat(e["pts"], 60))
+    stage("rasters")
     phase("ground rasters")
     hg = Image.new("L", (NCX, NCY), 0)       # ground height class: 0 ground, 1 asphalt, 2 pavement
     hd = ImageDraw.Draw(hg)
@@ -2028,6 +2051,7 @@ def main():
         add_c(chunk_of(x, y), MAT_SOLID, *lamp_geo(x, y))
 
     # ---- chunk index (for ground baking) ---------------------------------------------------------
+    stage("index")
     chunks = {}
 
     def slot(c):
@@ -2082,6 +2106,7 @@ def main():
             slot(c)["t"].append(i)
 
     # ---- spawn point -------------------------------------------------------------------------------------
+    stage("write")
     phase("spawn point")
     best, spawn = 1e18, (0.0, 0.0, 0.0)
     for e in edges:
@@ -2169,7 +2194,7 @@ def main():
         sizes[fn] = os.path.getsize(os.path.join(tmp, fn))
         if not tot:
             frac((k + 1) / len(parts), name)
-    json.dump({"version": VERSION, "sizes": sizes}, open(os.path.join(tmp, "manifest.json"), "w"))
+    json.dump({"version": VERSION, "sizes": sizes, "stages": globals().get("STAGE_FPS")}, open(os.path.join(tmp, "manifest.json"), "w"))
     frac(0.99, "replacing the old world")
     if os.path.isdir(a.out):
         import shutil
@@ -2179,4 +2204,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--no-stages" in sys.argv:                       # one plain run of main(), no stage cache
+        sys.argv.remove("--no-stages")
+        main()
+    else:
+        import stages
+        stages.run()

@@ -42,7 +42,10 @@ _cur = {"label": "", "f": 0.0, "t": 0.0}
 def phase(label):
     """A step without its own Bar (graph, decks, furniture, ...): tells the game which phase is running.  Its work then
     reports through span() / frac(), so the bar of the running step keeps moving."""
-    _cur.update(label=label, f=0.0, t=time.time())
+    now = time.time()
+    if _cur["label"] and _cur.get("t0"):
+        sys.stdout.write(f"[time] {_cur['label']}: {now - _cur['t0']:.1f}s\n")
+    _cur.update(label=label, f=0.0, t=now, t0=now)
     _ev(label=label, n=0, total=1000)
     sys.stdout.write(f"{label} ...\n")
     sys.stdout.flush()
