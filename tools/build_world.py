@@ -1665,6 +1665,9 @@ def main():
         spacing = {"wood": 6.0, "park": 5.5, "cemetery": 6.0, "playground": 9.0, "grass": 19.0, "scrub": 9.0}.get(ar["kind"])   # round 8: 4x denser
         if not spacing:
             continue
+        big_wood = ar["kind"] == "wood" and abs(shoelace(ar["outer"])) > 15000.0       # v62: large woods get 2.5x bigger trees, 6x fewer
+        if big_wood:
+            spacing *= 2.5
         x0, y0, x1, y1 = ar["bb"]
         x0, y0 = max(x0, -HX), max(y0, -HY)
         x1, y1 = min(x1, HX), min(y1, HY)
@@ -1685,7 +1688,7 @@ def main():
                 px, py = gx + r.uniform(-spacing * .4, spacing * .4), gy + r.uniform(-spacing * .4, spacing * .4)
                 ix, iy = int(px - x0), int(py - y0)
                 if 0 <= ix < w and 0 <= iy < h and ma[iy, ix] and free(px, py):
-                    trees.append((px, py, r.uniform(2.2, 4.4) if ar["kind"] == "wood" else r.uniform(2.0, 3.8), r.randint(0, 3)))
+                    trees.append((px, py, (r.uniform(2.2, 4.4) * (2.5 if big_wood else 1.0)) if ar["kind"] == "wood" else r.uniform(2.0, 3.8), r.randint(0, 3)))
                 gx += spacing
             gy += spacing
 
