@@ -35,11 +35,12 @@ class Night:
                         self.og.setdefault((gx, gy), []).append((ax, ay, bx, by, top))
         self.vis, self.vis_cam = {}, None
         self.street = 0.0
+        self.occ = []
 
     def _seen(self, cam, x, z, y):
         """False when a building wall stands between the camera and the point (x, height y, z)."""
         p = cam.position
-        key = (round(p.x, 1), round(p.y, 1), round(p.z, 1))
+        key = (round(p.x), round(p.y), round(p.z))      # 1 m steps: a moving camera reuses the answers for a few frames
         if key != self.vis_cam:
             self.vis, self.vis_cam = {}, key
         k = (round(x, 1), round(z, 1), round(y, 1))
@@ -63,6 +64,15 @@ class Night:
                     break
             if not r:
                 break
+        if r:                                      # vehicles near the camera hide lights too (not the one the light belongs to)
+            for ox, oz, orad, top in self.occ:
+                if (x - ox) ** 2 + (z - oz) ** 2 < (orad * 2.6) ** 2:
+                    continue
+                l2 = dx * dx + dz * dz or 1e-9
+                t = ((ox - p.x) * dx + (oz - p.z) * dz) / l2
+                if 0.0 < t < 0.97 and (p.x + dx * t - ox) ** 2 + (p.z + dz * t - oz) ** 2 < orad * orad and p.y + dy * t < top:
+                    r = False
+                    break
         self.vis[k] = r
         return r
 
@@ -80,6 +90,13 @@ class Night:
             rl.draw_circle_gradient(rl.Vector2(sp.x, sp.y), rad_px, _col(col[0], col[1], col[2], a), _col(0, 0, 0, 0))
 
     def draw(self, cam, rect, ppm, sim, dark, t, sw, sh, street=False):
+        cp = cam.position
+        self.occ = [(c.x, c.y, vehicles.DIMS[c.kind][1] / 2, self.w.ground_y(c.x, c.y) + vehicles.DIMS[c.kind][4])
+                    for c in list(sim.traffic.cars) + [b for b in sim.bodies if b.alive and not b.exploded]
+                    if (c.x - cp.x) ** 2 + (c.y - cp.z) ** 2 < 3600.0]
+        self.nf = getattr(self, "nf", 0) + 1
+        if self.nf % 4 == 0:
+            self.vis_cam = None                    # vehicles move: redo the visibility every 4th frame even if the camera stands
         self.street = (sh / 2) / math.tan(math.radians(cam.fovy) / 2) / ppm if street else 0.0   # street view: glows shrink with distance
         emerg = []
         for c in sim.traffic.cars:
@@ -147,6 +164,8 @@ class Night:
             if (px - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (py - p.z) * (q.z - p.z) <= 1.5 * L:
                 return None                                   # behind / right at the camera: it would project mirrored and screen-sized
             return rl.get_world_to_screen(V3(px, gy, py), cam)
+        if not self._seen(cam, x, y, self.w.ground_y(x, y) + 0.7):
+            return                                            # the lamp itself is hidden: no cone either
         p0, p1, p2 = scr(0.2, 0), scr(length, -1), scr(length, 1)
         if p0 is None or p1 is None or p2 is None:
             return
