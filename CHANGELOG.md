@@ -2,6 +2,9 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## v3.1 (2026-11-05)
+- Loading splash is a slideshow: the main art plus every image in assets/splash/, random first image, 20 s each, torn-poster strip transition.
+
 ## v3 – нов почетен екран
 
 - **Почетна слика:** додека се вчитува (и додека се гради градот, ~8 минути) на целиот екран стои сликата „Skopje 242: Rooftop Noir“. 3D-приказот на коли, луѓе и ликови е отстранет.
