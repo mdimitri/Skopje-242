@@ -201,8 +201,10 @@ def _stale(path, osm):
     """World out of date with its sources (OSM data, build tools)?  Per-stage fingerprints, see tools/stages.py."""
     if not os.path.exists(os.path.join(path, "manifest.json")):
         return True
+    tools = os.path.join(ROOT, "tools")
+    before = set(sys.modules)
     try:
-        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        sys.path.insert(0, tools)
         import stages
         stale = stages.stale_stages(path, osm)
         if stale:
@@ -211,6 +213,12 @@ def _stale(path, osm):
     except Exception as e:  # noqa: BLE001 - cannot tell: rebuild
         log(f"[build] stage check failed ({e}); rebuilding")
         return True
+    finally:
+        # tools/ has modules named like src/ ones (stations); do not leave them shadowing the game's own
+        if tools in sys.path:
+            sys.path.remove(tools)
+        for m in set(sys.modules) - before:
+            sys.modules.pop(m, None)
 
 
 def plan_needs(a):
