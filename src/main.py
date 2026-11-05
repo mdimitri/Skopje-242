@@ -1701,7 +1701,7 @@ def main():
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
             if lod:
-                guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, ch_on)
+                guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, sf_on)
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
