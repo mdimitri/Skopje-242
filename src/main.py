@@ -1664,7 +1664,7 @@ def main():
         # ------------------------------------------------ camera
         speed = math.hypot(fvx, fvy)
         if sim.mode == "car":
-            tgt_ppm = 1.18 * (10.5 - 4.6 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
+            tgt_ppm = 1.18 * (10.5 - 2.3 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
         else:
             tgt_ppm = 26.0 * user_zoom * cfg["zoom_walk"]
         tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)
