@@ -126,15 +126,30 @@ def draw_waypoint(hud, sim, cam, sw, sh):
     a = math.atan2(dy, dx)
     k = min((sw / 2 - 60) / (abs(math.cos(a)) + 1e-6), (sh / 2 - 60) / (abs(math.sin(a)) + 1e-6))
     ax, ay = cx + math.cos(a) * k, cy + math.sin(a) * k
-    tip = rl.Vector2(ax + math.cos(a) * 26, ay + math.sin(a) * 26)
-    l_ = rl.Vector2(ax + math.cos(a + 2.5) * 24, ay + math.sin(a + 2.5) * 24)
-    r_ = rl.Vector2(ax + math.cos(a - 2.5) * 24, ay + math.sin(a - 2.5) * 24)
-    rl.draw_triangle(tip, r_, l_, col)
-    rl.draw_triangle_lines(tip, r_, l_, rl.WHITE)
+    pul = 1.0 + 0.08 * math.sin(rl.get_time() * 5.0)
+    ca, sa = math.cos(a), math.sin(a)
+
+    def P(f, sd, ox=0.0, oy=0.0):                       # point f ahead / sd to the right of the arrow centre, in px
+        return rl.Vector2(ax + ox + (ca * f - sa * sd) * pul, ay + oy + (sa * f + ca * sd) * pul)
+
+    for rr, al in ((40, 30), (30, 45)):                 # soft glow
+        rl.draw_circle(int(ax), int(ay), rr * pul, rl.Color(40, 160, 255, al))
+
+    def chevron(ox, oy, c1, c2):
+        tip, wr, nt, wl = P(30, 0, ox, oy), P(-18, 22, ox, oy), P(-6, 0, ox, oy), P(-18, -22, ox, oy)
+        for u, v, w, c in ((tip, wr, nt, c1), (tip, nt, wl, c2)):      # lit half, shaded half (both windings: no culling surprises)
+            rl.draw_triangle(u, v, w, c)
+            rl.draw_triangle(u, w, v, c)
+        return tip, wr, nt, wl
+
+    chevron(3, 4, rl.Color(0, 0, 0, 130), rl.Color(0, 0, 0, 130))
+    tip, wr, nt, wl = chevron(0, 0, rl.Color(90, 200, 255, 255), rl.Color(30, 120, 230, 255))
+    for p0, p1 in ((tip, wr), (wr, nt), (nt, wl), (wl, tip)):
+        rl.draw_line_ex(p0, p1, 2.0, rl.Color(255, 255, 255, 235))
     wpx = font.measure_text(lab, 18, True)
-    lx = max(8, min(sw - wpx - 8, ax - math.cos(a) * (40 + wpx / 2) - wpx / 2))
-    ly = max(8, min(sh - 28, ay - math.sin(a) * 44 - 9))
-    font.draw_text(lab, int(lx) + 1, int(ly) + 1, 18, rl.Color(0, 0, 0, 180), bold=True)
+    lx = max(14, min(sw - wpx - 14, ax - ca * (46 + wpx / 2) - wpx / 2))
+    ly = max(10, min(sh - 34, ay - sa * 50 - 12))
+    rl.draw_rectangle_rounded(rl.Rectangle(lx - 8, ly - 3, wpx + 16, 26), 0.5, 6, rl.Color(10, 24, 50, 200))
     font.draw_text(lab, int(lx), int(ly), 18, rl.WHITE, bold=True)
 
 
