@@ -13,7 +13,8 @@ V3 = rl.Vector3
 SIZE = 512
 GRID = 28                        # the overlay is a GRID x GRID mesh draped over the terrain
 LIFT = 0.28                      # metres above the ground: above the 0.16 m pavements
-WIN_R = 70.0                     # windows glow within this distance of the view centre
+WIN_R = 90.0                     # windows glow within this distance of the view centre (top-down); STREET_WIN_R in street view
+STREET_WIN_R = 190.0             # the street view sees far down the street: all those facades get lit windows too
 SKIP_MATS = (3,)                 # road surface meshes have no windows
 
 WIN_VS = """#version 330
@@ -24,18 +25,24 @@ void main(){ fragTexCoord = vertexTexCoord; wp = vertexPosition;
              gl_Position = mvp * vec4(vertexPosition, 1.0); gl_Position.z -= 0.0003 * gl_Position.w; }"""
 WIN_FS = """#version 330
 in vec2 fragTexCoord; in vec3 wp;
-uniform sampler2D texture0; uniform float wglow;
+uniform sampler2D texture0; uniform float wglow; uniform vec3 wc;
 out vec4 finalColor;
 void main(){
   vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
   if (abs(n.y) > 0.6) discard;                                            // walls only
-  float glass = 1.0 - smoothstep(0.16, 0.30, dot(texture(texture0, fragTexCoord).rgb, vec3(0.333)));   // the dark glazing of the facade texture
+  vec3 tx = texture(texture0, fragTexCoord).rgb;
+  float lum = dot(tx, vec3(0.333));
+  float avg = dot(textureLod(texture0, fragTexCoord, 3.0).rgb, vec3(0.333));         // the facade's local average: glazing is darker than its surroundings
+  float glass = max(1.0 - smoothstep(0.18, 0.36, lum), clamp((avg - lum) * 7.0 - 0.1, 0.0, 1.0));
   if (glass <= 0.01) discard;
   vec2 cell = floor(vec2((wp.x + wp.z) / 3.4, wp.y / 3.0));                // one random flag per ~3 m cell
   float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
-  float on = step(0.62, h) * (0.75 + 0.25 * fract(h * 7.0));
+  float on = step(0.5, h) * (0.75 + 0.25 * fract(h * 7.0));
+  float dist = length(wp.xz - wc.xy);
+  float fade = 1.0 - smoothstep(0.75 * wc.z, wc.z, dist);                 // no hard cutoff ring
+  if (fade <= 0.0) discard;
   vec3 col = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h));     // warm, a few TV-blue
-  finalColor = vec4(col * glass * on * wglow, 1.0);
+  finalColor = vec4(col * glass * on * wglow * fade * 1.1, 1.0);
 }"""
 
 
@@ -69,6 +76,7 @@ class LightMap:
         self.span = 100.0
         self.cx = self.cz = 0.0
         self.win = None
+        self.street = False
 
     # ------------------------------------------------------------ region + queue (before the frame's drawing starts)
     def begin(self, cam, rect, street):
@@ -80,6 +88,7 @@ class LightMap:
             self.span = min(380.0, max(100.0, 1.15 * max(rect[2] - rect[0], rect[3] - rect[1])))
         self.ox, self.oz = self.cx - self.span / 2, self.cz - self.span / 2
         self.sprites, self.bulbs = [], []
+        self.street = street
 
     def inside(self, x, z, pad=0.0):
         h = self.span / 2 + pad
@@ -172,13 +181,15 @@ class LightMap:
                 sh = rl.load_shader_from_memory(WIN_VS, WIN_FS)
                 if not sh.id or sh.id == rl.rl_get_shader_id_default():
                     raise RuntimeError("window shader did not compile")
-                self.win = (sh, rl.get_shader_location(sh, "wglow"))
+                self.win = (sh, rl.get_shader_location(sh, "wglow"), rl.get_shader_location(sh, "wc"))
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] window glow off: {e}")
                 self.win = False
         if not self.win:
             return
-        sh, loc = self.win
+        sh, loc, wcl = self.win
+        R = STREET_WIN_R if self.street else WIN_R
+        rl.set_shader_value(sh, wcl, rl.ffi.new("float[3]", [self.cx, self.cz, R]), rl.SHADER_UNIFORM_VEC3)
         rl.set_shader_value(sh, loc, rl.ffi.new("float *", min(1.0, dark * 1.4) * 0.95), rl.SHADER_UNIFORM_FLOAT)
         S, st = self.w.chunk, self.st
         ident = rl.matrix_identity()
@@ -188,8 +199,8 @@ class LightMap:
             rl.rl_enable_depth_test()
             rl.rl_disable_depth_mask()
             rl.begin_blend_mode(rl.BLEND_ADDITIVE)
-            for cx_ in range(int((self.cx - WIN_R) // S), int((self.cx + WIN_R) // S) + 1):
-                for cy_ in range(int((self.cz - WIN_R) // S), int((self.cz + WIN_R) // S) + 1):
+            for cx_ in range(int((self.cx - R) // S), int((self.cx + R) // S) + 1):
+                for cy_ in range(int((self.cz - R) // S), int((self.cz + R) // S) + 1):
                     me = st.meshes.get((cx_, cy_))
                     if me is None:
                         continue

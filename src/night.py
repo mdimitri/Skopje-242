@@ -188,7 +188,7 @@ class Night:
             for cy in range(int((lm.cz - lm.span / 2) // CELL) - 1, int((lm.cz + lm.span / 2) // CELL) + 2):
                 for x, y in self.cells.get((cx, cy), ()):
                     if lm.inside(x, y, 30.0):
-                        lm.pool(x, y, self._lamp_r(x, y), (255, 205, 120), 0.8)
+                        lm.pool(x, y, self._lamp_r(x, y), (255, 205, 120), 0.55)
                         lm.bulb(x, self.w.ground_y(x, y) + 4.6, y, (255, 215, 140))
         if self.detail >= 1:
             for p in sim.peds.list:
@@ -209,12 +209,38 @@ class Night:
         ca, sa = math.cos(h), math.sin(h)
         L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
         if kind in vehicles.BIKES:
-            lm.spot(x + ca * L * 0.8, y + sa * L * 0.8, h, 14.0, 6.0, (255, 240, 205), 0.8)
-            lm.pool(x - ca * L * 0.9, y - sa * L * 0.9, 2.5, (255, 30, 20), 0.9 if braking else 0.4)
+            lm.pool(x - ca * L * 0.9, y - sa * L * 0.9, 2.5, (255, 30, 20), 0.7 if braking else 0.3)
             return
         for s in (-1, 1):
-            lm.spot(x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7, h, 22.0, 9.0, (255, 240, 205), 0.85)   # one beam per headlight
-            lm.pool(x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7, 3.2, (255, 30, 20), 0.9 if braking else 0.4)
+            lm.pool(x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7, 3.2, (255, 30, 20), 0.7 if braking else 0.3)
+
+    def _beam(self, cam, x, y, ca, sa, a, length=13.0, spread=0.3):
+        """A headlight beam: exactly one soft triangle from the lamp forward."""
+        p, q = cam.position, cam.target
+        L = math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (q.z - p.z) ** 2)
+        def scr(d, side):
+            w_ = d * spread * side
+            px, py = x + ca * d - sa * w_, y + sa * d + ca * w_
+            gy = self.w.ground_y(px, py) + 0.15
+            if (px - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (py - p.z) * (q.z - p.z) <= 1.5 * L:
+                return None                                   # behind / right at the camera: it would project mirrored and screen-sized
+            return rl.get_world_to_screen(V3(px, gy, py), cam)
+        if not self._seen(cam, x, y, self.w.ground_y(x, y) + 0.7):
+            return                                            # the lamp itself is hidden: no cone either
+        p0, p1, p2 = scr(0.2, 0), scr(length, -1), scr(length, 1)
+        if p0 is None or p1 is None or p2 is None:
+            return
+        if (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x) > 0:   # raylib needs counter-clockwise
+            p1, p2 = p2, p1
+        # vertex colours: full at the lamp, fading to nothing at the far edge
+        rl.rl_set_texture(0)
+        rl.rl_begin(rl.RL_TRIANGLES)
+        rl.rl_color4ub(255, 238, 190, int(min(255, a * 0.4)))
+        rl.rl_vertex2f(p0.x, p0.y)
+        rl.rl_color4ub(255, 238, 190, 0)
+        rl.rl_vertex2f(p1.x, p1.y)
+        rl.rl_vertex2f(p2.x, p2.y)
+        rl.rl_end()
 
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)
@@ -224,12 +250,14 @@ class Night:
         if kind in vehicles.BIKES:                                  # two-wheelers: a single lamp and tail light on the centre line
             lamp_y = 0.95 if vehicles.EXTRA[kind] != "kick" else 0.9
             hx, hy = x + ca * L * 0.8, y + sa * L * 0.8
+            self._beam(cam, hx, hy, ca, sa, a, 10.0, 0.25)
             self._glow(cam, hx, hy, lamp_y, 0.8 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L * 0.9, y - sa * L * 0.9
             self._glow(cam, tx, ty, 0.6, (1.8 if braking else 1.0) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
             return
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
+            self._beam(cam, hx, hy, ca, sa, a)
             self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
             self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))

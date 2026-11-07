@@ -55,6 +55,13 @@ def child(a):
         rec.append({"hour": state["hour"], "dark": state["dark"], "sprites": len(self.sprites), "max_aspect": max(asp) if asp else 1.0})
         return lr(self)
     lightmap.LightMap.render = lm_render
+    import night
+    nb = night.Night._beam
+
+    def beam(self, *args, **kw):
+        rec.append({"hour": state["hour"], "dark": state["dark"], "beam": 1})
+        return nb(self, *args, **kw)
+    night.Night._beam = beam
     atexit.register(lambda: json.dump(rec, open(a.out, "w")))
     sys.argv = [os.path.join(SRC, "main.py"), "--world", a.world, "--test", str(a.frames), "--mute", "--hour", str(a.hour),
                 "--shot", a.shot, "--zoom", str(a.zoom)]
@@ -86,6 +93,16 @@ def image_stats(path):
     scene = a[: int(h * 0.75)]                        # leave the HUD strip at the bottom out
     blown = float((scene.min(axis=2) >= 250).mean())
     return float(lum.mean()), blown
+
+
+def lit_windows(path):
+    """Warm, bright, small pixels in the upper half of the frame (facades): the lit windows."""
+    import numpy as np
+    from PIL import Image
+    a = np.asarray(Image.open(path).convert("RGB")).astype(int)
+    up = a[: int(a.shape[0] * 0.4), : int(a.shape[1] * 0.75)]
+    r, g, b = up[..., 0], up[..., 1], up[..., 2]
+    return int(((r > 150) & (g > 110) & (b < r - 25) & (r - g < 90)).sum() + ((b > 170) & (r > 130) & (g > 150)).sum())
 
 
 def main():
@@ -149,9 +166,15 @@ def main():
                         break
             else:
                 check(True, "no sun shadow state while dark")
+            night = h >= 20.5 or h < 5.5
+            beams = sum(1 for x in r["rec"] if x.get("beam"))
+            if night:
+                check(beams > 0, f"{view} {h}: headlight triangles drawn ({beams})")
+                if r["shots"] and view == "chase":
+                    n = lit_windows(r["shots"][-1])
+                    check(n >= 25, f"{view} {h}: lit windows visible up the buildings ({n} px)")
             if r["shots"]:
                 lum, blown = image_stats(r["shots"][-1])
-                night = h >= 20.5 or h < 5.5
                 check(lum >= (22 if night else 50), f"not black (mean {lum:.0f})")
                 check(blown < 0.04, f"not overexposed ({blown * 100:.1f}% blown)")
     for view in ("top", "chase"):
