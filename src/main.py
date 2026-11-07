@@ -553,12 +553,15 @@ def main():
     say_state = {"t": -9.0}
     flags = {"labels": True}
 
+    hour_set = [cfg["hour"]]
+
     def apply_cfg(c, first=False):
         """Push the menu settings into the running game."""
         aud.master = 0.0 if a.mute else c["vol_master"]
         aud.bus.update({"sfx": c["vol_sfx"], "engine": c["vol_engine"], "ambient": c["vol_ambient"], "speech": c["vol_speech"]})
-        if not first:
+        if not first and c["hour"] != hour_set[0]:      # only when the slider moved: any other setting (street view...) used to snap the clock back to the saved hour
             sim.clock.hour = c["hour"]
+        hour_set[0] = c["hour"]
         sim.clock.speed = c.time_mult
         sim.dens_traffic, sim.dens_peds = c.traffic_mult, c.ped_mult
         sim.services.amb_on, sim.services.fire_on = c["ambulance"], c["fire"]
