@@ -4,7 +4,9 @@ and the street (third-person) view and asserts:
   * the sun strength function is sane over the whole day (finite, 0 at night, >0 at noon)
   * every frame is neither black (ambient floor) nor blown out (overexposed pixels)
   * no exceptions / [guard] failures in the log, also while the clock runs fast through dusk and dawn
-  * night frames are not much slower than day frames in the same view (software-GL proxy; the real check is a GPU)
+  * night frames are not much slower than day frames in the same view, third person included (software-GL proxy; the real check is a GPU)
+  * zoom sweep at night: brightness changes smoothly with zoom (no light layers popping in and out), nothing blown out
+  * light map sprites are never long streaks, smoke is never a flat rectangle
 Use a ~10% sample world, not the whole map:   python3 tools/test_night.py --world data/cache/world_sample
 Internal:  python3 tools/test_night.py --child ... (one game run with probes; used by the runner)"""
 import argparse
@@ -45,20 +47,28 @@ def child(a):
         rec.append({"hour": state["hour"], "dark": state["dark"], "sun_k": self.sun_k})
         return sb(self, items)
     render.Renderer._shadow_batch = shadow_batch
+    import lightmap
+    lr = lightmap.LightMap.render
+
+    def lm_render(self):
+        asp = [max(ln, wd) / max(0.01, min(ln, wd)) for _x, _z, ln, wd, _d, _c, _k in self.sprites]
+        rec.append({"hour": state["hour"], "dark": state["dark"], "sprites": len(self.sprites), "max_aspect": max(asp) if asp else 1.0})
+        return lr(self)
+    lightmap.LightMap.render = lm_render
     atexit.register(lambda: json.dump(rec, open(a.out, "w")))
     sys.argv = [os.path.join(SRC, "main.py"), "--world", a.world, "--test", str(a.frames), "--mute", "--hour", str(a.hour),
-                "--shot", a.shot]
+                "--shot", a.shot, "--zoom", str(a.zoom)]
     import runpy
     runpy.run_path(os.path.join(SRC, "main.py"), run_name="__main__")
 
 
-def run(world, view, hour, frames=60, sph=None, tag=""):
+def run(world, view, hour, frames=60, sph=None, tag="", zoom=1.0):
     shot = os.path.join(OUT, f"{view}_{hour}{tag}")
     out = shot + ".json"
     for f in glob.glob(shot + "_*.png"):
         os.remove(f)
     cmd = ["xvfb-run", "-a", sys.executable, os.path.abspath(__file__), "--child", "--world", world, "--view", view, "--hour", str(hour),
-           "--frames", str(frames), "--shot", shot, "--out", out, "--sph", str(sph or 55.0)]
+           "--frames", str(frames), "--shot", shot, "--out", out, "--sph", str(sph or 55.0), "--zoom", str(zoom)]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     log = p.stdout + p.stderr
     m = re.search(r"avg_frame=([\d.]+)ms", log)
@@ -88,6 +98,7 @@ def main():
     ap.add_argument("--shot", default="")
     ap.add_argument("--out", default="")
     ap.add_argument("--sph", type=float, default=55.0)
+    ap.add_argument("--zoom", type=float, default=1.0)
     ap.add_argument("--quick", action="store_true", help="fewer hours")
     a = ap.parse_args()
     if a.child:
@@ -146,8 +157,23 @@ def main():
     for view in ("top", "chase"):
         day, night = ms.get((view, 12.0)), ms.get((view, 23.0))
         if day and night:
-            check(night <= day * 2.0, f"{view}: night frame {night:.0f} ms vs day {day:.0f} ms (limit 2x)")
+            check(night <= day * 1.4, f"{view}: night frame {night:.0f} ms vs day {day:.0f} ms (limit 1.4x)")
 
+    import fx
+    check(not any(fx.flat_quad("s", g) for g in (0.3, 1.0, 2.0)), "smoke is a soft puff, never a flat square")
+    print("zoom sweep at night (top-down, 23 h)")
+    lum = []
+    for z in (0.5, 0.8, 1.2, 2.0, 3.0):
+        r = run(a.world, "top", 23.0, frames=40, zoom=z, tag=f"_z{z}")
+        check("Traceback" not in r["log"] and "[guard]" not in r["log"], f"zoom {z}: no exceptions")
+        if r["shots"]:
+            l, blown = image_stats(r["shots"][-1])
+            lum.append(l)
+            check(blown < 0.04, f"zoom {z}: not overexposed ({blown * 100:.1f}% blown)")
+        sp = [x for x in r["rec"] if "max_aspect" in x]
+        check(bool(sp) and max(x["max_aspect"] for x in sp) <= 4.0, f"zoom {z}: no streak-shaped light sprites")
+    for u, v in zip(lum, lum[1:]):
+        check(0.6 <= v / u <= 1.6, f"zoom sweep: brightness {u:.0f} -> {v:.0f} changes smoothly")
     print("fast forward through dusk and dawn (clock 0.12 s per hour)")
     for view in ("top", "chase"):
         r = run(a.world, view, 17.0, frames=300, sph=0.12, tag="_ff")

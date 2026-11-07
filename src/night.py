@@ -6,45 +6,9 @@ import pyray as rl
 
 import clock
 import vehicles
+from lightmap import LightMap
 
 V3 = rl.Vector3
-LIGHT_R = 70.0                # only ground / buildings within this distance of the view centre get the light pass
-NL = 24                      # lights that really light the world per frame (nearest to the view centre)
-LIGHT_VS = """#version 330
-in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
-uniform mat4 mvp;
-out vec2 fragTexCoord; out vec4 fragColor; out vec3 wp;
-void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wp = vertexPosition;
-             gl_Position = mvp * vec4(vertexPosition, 1.0); gl_Position.z -= 0.0003 * gl_Position.w; }"""
-LIGHT_FS = """#version 330
-in vec2 fragTexCoord; in vec4 fragColor; in vec3 wp;
-uniform sampler2D texture0; uniform vec4 colDiffuse;
-uniform vec4 lpos[%d]; uniform vec4 lcol[%d]; uniform vec4 ldir[%d]; uniform int nl; uniform float wglow;
-out vec4 finalColor;
-void main(){
-  vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
-  vec3 alb = (texture(texture0, fragTexCoord) * fragColor * colDiffuse).rgb;
-  vec3 acc = vec3(0.0);
-  for (int i = 0; i < nl; i++) {
-    vec3 d = lpos[i].xyz - wp; float r = lpos[i].w; float q = dot(d, d);
-    if (q > r * r) continue;
-    float dist = sqrt(q); vec3 l = d / dist;
-    float f = 1.0 - dist / r; f *= f;
-    float spot = 1.0;
-    if (ldir[i].w > 0.0) spot = smoothstep(ldir[i].w, ldir[i].w + 0.12, dot(-l, ldir[i].xyz));
-    acc += lcol[i].rgb * (f * max(dot(n, l), 0.0) * spot * lcol[i].a);
-  }
-  vec3 em = vec3(0.0);
-  if (wglow > 0.0 && abs(n.y) < 0.6) {                      // lit windows: some of the dark glazing glows warm (one random flag per ~3 m cell)
-    float glass = 1.0 - smoothstep(0.16, 0.30, dot(texture(texture0, fragTexCoord).rgb, vec3(0.333)));
-    vec2 cell = floor(vec2((wp.x + wp.z) / 3.4, wp.y / 3.0));
-    float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
-    float on = step(0.62, h) * (0.75 + 0.25 * fract(h * 7.0));
-    em = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h)) * glass * on * wglow;   // a few cold TV-blue ones
-  }
-  acc = 0.75 * (1.0 - exp(-acc));                          // soft knee: stacked lights never blow the ground out to white
-  finalColor = vec4(alb * acc + em, 1.0);
-}""" % (NL, NL, NL)
 CELL = 60.0
 OG = 16.0
 
@@ -74,8 +38,8 @@ class Night:
         self.street = 0.0
         self.occ = []
         self.st = None                                 # the Streamer (set by main): its meshes are redrawn with the light shader
-        self.lt = []                                   # this frame's lights: (x, y, z, radius, r, g, b, intensity, dx, dy, dz, cone cos or 0)
-        self.lsh = None
+        self.lm = None                                 # the light map (lightmap.py), made on first use
+        self.active = False                            # prepare() queued lights for this frame
         self.lamp_r = {}
 
     def _seen(self, cam, x, z, y):
@@ -146,7 +110,6 @@ class Night:
         for b in sim.bodies:
             if b.kind in clock.EMERGENCY and rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3] and b.alive:
                 emerg.append((b.x, b.y, b.h, bool(getattr(b, "siren", False) or getattr(b, "service", False)) or (b.player_car and b.speed > 3), b.kind))
-        self.lt = []
         if dark > 0.02:
             tint = _col(255 - dark * 175, 255 - dark * 160, 255 - dark * 100, 255)      # never darker than ~30% / 37% / 61%: a baseline ambient light everywhere
             rl.begin_blend_mode(rl.BLEND_MULTIPLIED)
@@ -154,20 +117,14 @@ class Night:
             rl.end_blend_mode()
         rl.begin_blend_mode(rl.BLEND_ADDITIVE)
         if dark > 0.02:
-            r_lamp = 1.4 * ppm                                       # just the bulb: the light itself falls on the world (_light_pass)
-            for cx in range(int(rect[0] // CELL) - 1, int(rect[2] // CELL) + 2):      # one cell more: lamps just outside the view still light it
-                for cy in range(int(rect[1] // CELL) - 1, int(rect[3] // CELL) + 2):
-                    for x, y in self.cells.get((cx, cy), ()):
-                        self._glow(cam, x, y, 4.5, r_lamp, (255, 205, 120), 150 * dark)
-                        self.lt.append((x, self.w.ground_y(x, y) + 4.5, y, self._lamp_r(x, y), 1.0, 0.8, 0.47, 1.3 * dark, 0, 0, 0, 0.0))
             for p in (sim.peds.list if self.detail >= 1 else ()):         # NPC cyclists / mopeds / scooters: one lamp, one tail light
-                if p.mode == "walk" and p.arch in vehicles.JACK_KIND and rect[0] < p.x < rect[2] and rect[1] < p.y < rect[3]:
+                if p.mode == "walk" and p.arch in vehicles.JACK_KIND and self._vis(cam, rect, p.x, p.y):
                     self._lights(cam, p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], ppm, dark, False)
             for c in (sim.traffic.cars if self.detail >= 1 else ()):
-                if rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:
+                if self._vis(cam, rect, c.x, c.y):
                     self._lights(cam, c.x, c.y, c.h, c.kind, ppm, dark, c.braking)
             for b in sim.bodies:
-                if rect[0] < b.x < rect[2] and rect[1] < b.y < rect[3] and b.alive and not b.empty and not b.exploded:
+                if self._vis(cam, rect, b.x, b.y) and b.alive and not b.empty and not b.exploded:
                     self._lights(cam, b.x, b.y, b.h, b.kind, ppm, dark, b.braking)
         lights = getattr(sim, "lights", None)
         if lights is not None:                                       # traffic lights glow like tail lights: faint by day, bright at night
@@ -195,8 +152,15 @@ class Night:
                     self._glow(cam, px, py, top, 6.5 * ppm, col, a)
                     self._glow(cam, px, py, top, 2.2 * ppm, (255, 255, 255), a * 0.6)
         rl.end_blend_mode()
-        if dark > 0.02 and self.st is not None:
-            self._light_pass(cam, rect, dark)
+        if self.active and dark > 0.02:
+            self.lm.overlay(cam, dark)                             # the light map laid over the ground, then lamp bulbs
+            self.lm.windows(cam, dark)                             # some windows glow
+
+    def _vis(self, cam, rect, x, y):
+        """Is (x, y) worth a glow: in the visible rect (top-down) or within 90 m of the camera (street view)."""
+        if self.street:
+            return (x - cam.position.x) ** 2 + (y - cam.position.z) ** 2 < 8100.0
+        return rect[0] < x < rect[2] and rect[1] < y < rect[3]
 
     def _lamp_r(self, x, y):
         """Reach of a street lamp: 22 m, up to 34 m beside boulevards (wide roads), looked up once per lamp."""
@@ -209,63 +173,48 @@ class Night:
             r = self.lamp_r[k] = min(34.0, 22.0 + 1.5 * max(0.0, wmax - 8.0))
         return r
 
-    def _light_pass(self, cam, rect, dark):
-        """Lamps and vehicle lights as real lights: the ground, roads and buildings in view are drawn once more with a
-        shader that adds the light each one receives (after the night tint, so lit places come out bright)."""
-        if self.lsh is None:
-            try:
-                self.lsh = rl.load_shader_from_memory(LIGHT_VS, LIGHT_FS)
-                if not self.lsh.id or self.lsh.id == rl.rl_get_shader_id_default():
-                    raise RuntimeError("light shader did not compile")
-                self.lloc = [rl.get_shader_location(self.lsh, n) for n in ("lpos", "lcol", "ldir", "nl", "wglow")]
-            except Exception as e:  # noqa: BLE001
-                print(f"[gfx] world lights off: {e}")
-                self.lsh = False
-        if not self.lsh:
+    def prepare(self, cam, rect, ppm, sim, dark, sh, street=False):
+        """Before the frame is drawn (it renders a texture, which is not allowed inside the scene target): queue the lamps and
+        vehicle lights and paint the light map."""
+        self.street = (sh / 2) / math.tan(math.radians(cam.fovy) / 2) / ppm if street else 0.0
+        self.active = False
+        if dark <= 0.02 or self.st is None:
             return
-        cx, cz = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
-        if self.street:                                    # street view: the rect is huge, light only what is near the camera
-            cx, cz = cam.position.x, cam.position.z
-        LR = LIGHT_R if self.street else LIGHT_R + 40.0      # street view: only what is near the camera
-        R = LR + 34.0
-        lt = [l for l in self.lt if (l[0] - cx) ** 2 + (l[2] - cz) ** 2 < (LR + l[3]) ** 2]
-        lt = sorted(lt, key=lambda l: (l[0] - cx) ** 2 + (l[2] - cz) ** 2)[:NL]
-        n = len(lt)
-        pos, col, dr = [], [], []
-        for x, y, z, r, cr, cg, cb, k, dx, dy, dz, cone in lt:
-            pos += [x, y, z, r]
-            col += [cr, cg, cb, k]
-            dr += [dx, dy, dz, cone]
-        pad = [0.0] * (4 * (NL - n))
-        for loc, arr in zip(self.lloc[:3], (pos, col, dr)):
-            rl.set_shader_value_v(self.lsh, loc, rl.ffi.new("float[]", arr + pad), rl.SHADER_UNIFORM_VEC4, NL)
-        rl.set_shader_value(self.lsh, self.lloc[3], rl.ffi.new("int *", n), rl.SHADER_UNIFORM_INT)
-        rl.set_shader_value(self.lsh, self.lloc[4], rl.ffi.new("float *", min(1.0, dark * 1.4) * 0.95), rl.SHADER_UNIFORM_FLOAT)
-        S, st = self.w.chunk, self.st
-        ident = rl.matrix_identity()
-        rl.begin_mode_3d(cam)
-        try:
-            rl.rl_disable_backface_culling()
-            rl.rl_enable_depth_test()
-            rl.rl_disable_depth_mask()
-            rl.begin_blend_mode(rl.BLEND_ADDITIVE)
-            for cx_ in range(int(max(rect[0], cx - R) // S), int(min(rect[2], cx + R) // S) + 1):
-                for cy_ in range(int(max(rect[1], cz - R) // S), int(min(rect[3], cz + R) // S) + 1):
-                    g = st.ground.get((cx_, cy_))
-                    models = [g[2]] if g is not None and g[2] is not None else []
-                    me = st.meshes.get((cx_, cy_))
-                    if me is not None:
-                        models += list(me[0].values())
-                    for m in models:
-                        mat = m.materials[0]
-                        old = rl.ffi.new("Shader *", mat.shader)          # a real copy: mat.shader is a view into the material
-                        mat.shader = self.lsh
-                        rl.draw_mesh(m.meshes[0], mat, ident)
-                        mat.shader = old[0]
-            rl.end_blend_mode()
-        finally:
-            rl.rl_enable_depth_mask()
-            rl.end_mode_3d()
+        if self.lm is None:
+            self.lm = LightMap(self.w, self.st)
+        lm = self.lm
+        lm.begin(cam, rect, street)
+        for cx in range(int((lm.cx - lm.span / 2) // CELL) - 1, int((lm.cx + lm.span / 2) // CELL) + 2):
+            for cy in range(int((lm.cz - lm.span / 2) // CELL) - 1, int((lm.cz + lm.span / 2) // CELL) + 2):
+                for x, y in self.cells.get((cx, cy), ()):
+                    if lm.inside(x, y, 30.0):
+                        lm.pool(x, y, self._lamp_r(x, y), (255, 205, 120), 0.8)
+                        lm.bulb(x, self.w.ground_y(x, y) + 4.6, y, (255, 215, 140))
+        if self.detail >= 1:
+            for p in sim.peds.list:
+                if p.mode == "walk" and p.arch in vehicles.JACK_KIND and lm.inside(p.x, p.y, 10.0):
+                    self._vehicle(p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], False)
+            for c in sim.traffic.cars:
+                if lm.inside(c.x, c.y, 10.0):
+                    self._vehicle(c.x, c.y, c.h, c.kind, c.braking)
+        for b in sim.bodies:
+            if b.alive and not b.empty and not b.exploded and lm.inside(b.x, b.y, 10.0):
+                self._vehicle(b.x, b.y, b.h, b.kind, b.braking)
+        lm.render()
+        self.active = True
+
+    def _vehicle(self, x, y, h, kind, braking):
+        """Headlight beams and tail light pools of one vehicle into the light map."""
+        lm = self.lm
+        ca, sa = math.cos(h), math.sin(h)
+        L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
+        if kind in vehicles.BIKES:
+            lm.spot(x + ca * L * 0.8, y + sa * L * 0.8, h, 14.0, 6.0, (255, 240, 205), 0.8)
+            lm.pool(x - ca * L * 0.9, y - sa * L * 0.9, 2.5, (255, 30, 20), 0.9 if braking else 0.4)
+            return
+        for s in (-1, 1):
+            lm.spot(x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7, h, 22.0, 9.0, (255, 240, 205), 0.85)   # one beam per headlight
+            lm.pool(x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7, 3.2, (255, 30, 20), 0.9 if braking else 0.4)
 
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)
@@ -275,14 +224,12 @@ class Night:
         if kind in vehicles.BIKES:                                  # two-wheelers: a single lamp and tail light on the centre line
             lamp_y = 0.95 if vehicles.EXTRA[kind] != "kick" else 0.9
             hx, hy = x + ca * L * 0.8, y + sa * L * 0.8
-            self.lt.append((hx, self.w.ground_y(hx, hy) + 0.95, hy, 14.0, 1.0, 0.95, 0.8, 0.8 * dark, ca, -0.1, sa, 0.88))
             self._glow(cam, hx, hy, lamp_y, 0.8 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L * 0.9, y - sa * L * 0.9
             self._glow(cam, tx, ty, 0.6, (1.8 if braking else 1.0) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
             return
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
-            self.lt.append((hx, self.w.ground_y(hx, hy) + lamp_y, hy, 22.0, 1.0, 0.95, 0.8, 0.7 * dark, ca, -0.12, sa, 0.85))   # one spot per headlight
             self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
             self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))

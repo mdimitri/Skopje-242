@@ -14,6 +14,11 @@ def _gy(x, z):
     return GROUND(x, z) if GROUND else 0.0
 
 
+def flat_quad(kind, grow):
+    """True for particles drawn as a plain coloured square (sparks, bits); smoke, rings and glows are soft textures."""
+    return not (kind == "w" or kind == "s" or grow > 1.0 or kind in _GLOW)
+
+
 class Particles:
     """Flat camera-facing quads (the camera is top-down). One immediate-mode batch per frame."""
     __slots__ = ("p", "rng", "max")
@@ -99,7 +104,7 @@ class Particles:
         buckets = {}
         for q in self.p:
             k = q[13]
-            tex = _RING.id if k == "w" else (_SOFT.id if (q[10] > 1.0 or k in _GLOW) else 0)
+            tex = 0 if flat_quad(k, q[10]) else (_RING.id if k == "w" else _SOFT.id)
             buckets.setdefault((k in _GLOW, tex), []).append(q)
         for (add, tex), qs in sorted(buckets.items(), key=lambda kv: kv[0][0]):
             if add:
