@@ -1,10 +1,13 @@
-"""In-game multiplayer sync (host-authoritative world, each player owns their own character).
+"""In-game multiplayer sync: every PC simulates the world around its own player; players who come close share one simulation.
 
-Host: simulates traffic, pedestrians, buses and everything else, and sends every guest what is near that guest.
-Guest: runs its own Sim for its own player (Sim.client = True: no traffic / pedestrian / service AI) and draws the
-host's cars, pedestrians and moving bodies as puppets, interpolated between snapshots.
-Everyone: sends own state at STATE_HZ; remote players are drawn as a car body (in sim.bodies, flagged remote) or as a walker
-(sim.remote_foot, drawn by render).  Packet = kind(1) tick(4) count(1) + entries.
+Players closer than JOIN_D form a group (they leave it again beyond LEAVE_D).  The host works the groups out and tells everybody
+who the group's authority is (the lowest-numbered member, kept while it stays in the group).  The authority simulates traffic,
+pedestrians and buses round every member (Traffic/Peds.extra) and sends each follower what is near that follower; followers run
+with Sim.client = True and draw those as puppets.  A player alone is simply his own authority.  When a follower leaves, the
+puppets are adopted into real cars / pedestrians (Traffic.adopt / Peds.adopt) so nothing pops.  All traffic goes through the host
+(star network; the host forwards packets addressed to another guest).
+Everyone sends own state at STATE_HZ; other players are a car body (sim.bodies, flagged remote) or a walker (sim.remote_foot).
+Packet = kind(1) tick(4) count(1) src(1) dst(1) + entries; dst 255 = everybody.
 """
 import math
 import struct
@@ -14,9 +17,11 @@ import actors
 import vehicles
 
 STATE_HZ, SNAP_HZ = 20.0, 15.0
-R_CARS, R_PEDS, R_BODIES = 230.0, 130.0, 230.0
+R_CARS, R_PEDS, R_BODIES = 320.0, 140.0, 320.0
+JOIN_D, LEAVE_D = 560.0, 700.0                  # two players see the same part of the world when closer than 2 x max view (300 m); hysteresis
+ALL = 255
 K_PLAYER, K_CARS, K_PEDS, K_BODIES, K_WORLD = 1, 2, 3, 4, 5
-HDR = struct.Struct("!BIB")
+HDR = struct.Struct("!BIBBB")
 PLAYER = struct.Struct("!BBBBfffffffBBBB")     # pid flags kind color x y h vx vy z aux hp weapon atk lik
 CAR = struct.Struct("!HBBfffffhhh")            # id kind color x y h z v str*1000 pitch*1000 roll*1000
 PED = struct.Struct("!HBBBBBBBBfffff")         # id mode arch shirt skin pose flags atk v*20 x y h(+spin) anim hy
@@ -49,7 +54,7 @@ class Game:
         self.sim, self.ses = sim, session
         self.host = session.role == "host"
         self.pid = session.pid
-        sim.client = not self.host
+        sim.client = False
         sim.remote_foot = {}
         self.tick = 0
         self.t_state = self.t_snap = 0.0
@@ -58,6 +63,8 @@ class Game:
         self.cars, self.peds, self.bods = {}, {}, {}   # guest: wire id -> puppet (+ target, seen)
         self.now = 0.0
         self.addr = {}                                 # host: pid -> addr
+        self.auth = {}                                 # pid -> pid of the authority of that player's group
+        self.t_grp = 0.0
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
@@ -81,13 +88,13 @@ class Game:
             self.next_id = self.next_id % 65000 + 1
         return i
 
-    def _chunks(self, kind, entries, size):
+    def _chunks(self, kind, entries, size, dst):
         per = (MAX_PKT - HDR.size) // size
         for i in range(0, len(entries), per):
             part = entries[i:i + per]
-            yield HDR.pack(kind, self.tick, len(part)) + b"".join(part)
+            yield HDR.pack(kind, self.tick, len(part), self.pid, dst) + b"".join(part)
 
-    def _snapshot_for(self, gx, gy):
+    def _snapshot_for(self, gx, gy, dst):
         s = self.sim
         out = []
         r2 = R_CARS ** 2
@@ -96,7 +103,7 @@ class Game:
             if (c.x - gx) ** 2 + (c.y - gy) ** 2 < r2:
                 ents.append(CAR.pack(self._wid(c), _clampb(c.kind), _clampb(c.color), c.x, c.y, c.h, c.gz, c.v,
                                      _s16(c.str), _s16(c.pitch), _s16(c.roll)))
-        out += self._chunks(K_CARS, ents, CAR.size)
+        out += self._chunks(K_CARS, ents, CAR.size, dst)
         ents, r2 = [], R_PEDS ** 2
         for p in s.peds.list:
             if (p.x - gx) ** 2 + (p.y - gy) ** 2 < r2:
@@ -105,18 +112,18 @@ class Game:
                 pose = POSES.index(p.pose) if p.pose in POSES else 0
                 ents.append(PED.pack(self._wid(p), mode, _clampb(p.arch), _clampb(p.shirt), _clampb(p.skin), pose, fl,
                                      _clampb(p.atk_kind), _clampb(abs(getattr(p, "v", 0.0)) * 20), p.x, p.y, p.h + p.spin, p.anim, p.hy))
-        out += self._chunks(K_PEDS, ents, PED.size)
+        out += self._chunks(K_PEDS, ents, PED.size, dst)
         ents, r2 = [], R_BODIES ** 2
         for b in s.bodies:
             if b.player_car or getattr(b, "remote", False):
                 continue
             moving = b.vx * b.vx + b.vy * b.vy > 0.09
             if (moving or b.ctl is not None or b.service or b.burn > 0 or b.exploded) and (b.x - gx) ** 2 + (b.y - gy) ** 2 < r2:
-                fl = (1 if b.exploded else 0) | (2 if b.siren else 0) | (4 if b.burn > 0 else 0) | (8 if b.braking else 0)
+                fl = (1 if b.exploded else 0) | (2 if b.siren else 0) | (4 if b.burn > 0 else 0) | (8 if b.braking else 0) | (16 if (b.ctl is not None or b.service) else 0)
                 ents.append(BODY.pack(self._wid(b), _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h,
                                       b.az if b.az is not None else 0.0, math.hypot(b.vx, b.vy), _s16(b.wheel), _s16(b.pitch),
                                       _s16(b.roll), b.door, fl, _clampb(b.health * 2.55)))
-        out += self._chunks(K_BODIES, ents, BODY.size)
+        out += self._chunks(K_BODIES, ents, BODY.size, dst)
         return out
 
     # ------------------------------------------------------------------ per-frame
@@ -127,46 +134,151 @@ class Game:
         for kind, addr, body in ses.update():
             if kind == "unrel":
                 self._rx(addr, body)
+            elif kind == "rel" and not self.host and isinstance(body, dict) and body.get("t") == "grp":
+                self._set_auth({int(k): int(v) for k, v in body["a"].items()})
             elif kind == "gone" and self.host:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
                         self._drop_remote(pid)
         if ses.state != "playing" and not (self.host and ses.state == "lobby"):
             return
+        if not self.auth:
+            self.auth = {pid: pid for pid in ses.players}          # everybody starts on his own
         self.tick = (self.tick + 1) & 0xFFFFFFFF
-        peers = [(a, p) for a, p in ses.net.peers.items() if p.up]
         if self.now - self.t_state >= 1.0 / STATE_HZ:
             self.t_state = self.now
-            mine = HDR.pack(K_PLAYER, self.tick, 1) + self._my_state()
             if self.host:
                 states = [self._my_state()] + [r["raw"] for r in self.remote.values()]
-                pk = HDR.pack(K_PLAYER, self.tick, len(states)) + b"".join(states)
-                for a, _p in peers:
-                    ses.net.send_unrel(a, pk)
+                ses.net.broadcast_unrel(HDR.pack(K_PLAYER, self.tick, len(states), 0, ALL) + b"".join(states))
             else:
-                for a, _p in peers:
-                    ses.net.send_unrel(a, mine)
-        if self.host and self.now - self.t_snap >= 1.0 / SNAP_HZ:
+                ses.net.broadcast_unrel(HDR.pack(K_PLAYER, self.tick, 1, self.pid, 0) + self._my_state())
+        if self.host and self.now - self.t_grp >= 0.5:
+            self.t_grp = self.now
+            self._regroup()
+        fol = self._followers()
+        s.traffic.extra = s.peds.extra = [(self.remote[p]["x"], self.remote[p]["y"]) for p in fol]     # simulate round them too
+        if self.now - self.t_snap >= 1.0 / SNAP_HZ:
             self.t_snap = self.now
-            for pid, a in self.addr.items():
-                r = self.remote.get(pid)
-                if r is None or a not in ses.net.peers:
-                    continue
-                for pk in self._snapshot_for(r["x"], r["y"]):
-                    ses.net.send_unrel(a, pk)
-            hr = HDR.pack(K_WORLD, self.tick, 1) + WORLD.pack(s.clock.hour)
-            for a, _p in peers:
-                ses.net.send_unrel(a, hr)
+            for f in fol:
+                for pk in self._snapshot_for(self.remote[f]["x"], self.remote[f]["y"], f):
+                    self._send_to(f, pk)
+            if self.host:
+                ses.net.broadcast_unrel(HDR.pack(K_WORLD, self.tick, 1, 0, ALL) + WORLD.pack(s.clock.hour))
         self._apply_remote(dt)
-        if not self.host:
+        if s.client:
             self._apply_puppets(dt)
+
+    def _send_to(self, pid, pk):
+        net = self.ses.net
+        if self.host:
+            a = self.ses.players.get(pid, {}).get("addr")
+            if a is not None:
+                net.send_unrel(a, pk)
+        else:
+            net.send_unrel(self.ses._target, pk)             # the host passes it on
+
+    # ------------------------------------------------------------------ groups
+    def _followers(self):
+        return [p for p, a in self.auth.items() if a == self.pid and p != self.pid and p in self.remote]
+
+    def _regroup(self):
+        """Host: players closer than JOIN_D share a world (LEAVE_D to part again); the lowest-numbered authority keeps the group."""
+        fx, fy = self.sim.focus()[:2]
+        pos = {0: (fx, fy)}
+        for pid, r in self.remote.items():
+            pos[pid] = (r["x"], r["y"])
+        pids = sorted(pos)
+        par = {p: p for p in pids}
+
+        def find(x):
+            while par[x] != x:
+                par[x] = par[par[x]]
+                x = par[x]
+            return x
+        for i, a in enumerate(pids):
+            for b in pids[i + 1:]:
+                same = self.auth.get(a) is not None and self.auth.get(a) == self.auth.get(b)
+                if math.hypot(pos[a][0] - pos[b][0], pos[a][1] - pos[b][1]) < (LEAVE_D if same else JOIN_D):
+                    par[find(a)] = find(b)
+        groups = {}
+        for p in pids:
+            groups.setdefault(find(p), []).append(p)
+        new = {}
+        for m in groups.values():
+            prev = [p for p in m if self.auth.get(p) == p]
+            au = min(prev) if prev else min(m)
+            for p in m:
+                new[p] = au
+        if new != {p: self.auth.get(p) for p in new}:
+            self._set_auth(new)
+            self.ses.net.broadcast_rel({"t": "grp", "a": {str(k): v for k, v in new.items()}})
+
+    def _set_auth(self, new):
+        old = self.auth.get(self.pid, self.pid)
+        self.auth = new
+        nw = new.get(self.pid, self.pid)
+        if nw == old:
+            return
+        if nw != self.pid:
+            self._to_follower()
+        elif self.sim.client:
+            self._to_authority()
+
+    def _reset_puppets(self):
+        self.cars, self.peds, self.bods = {}, {}, {}
+
+    def _to_follower(self):
+        """Joined (or switched) a group: my own cars / pedestrians go, the authority's take their place."""
+        s = self.sim
+        s.client = True
+        s.traffic.cars.clear()
+        s.peds.list.clear()
+        s.bodies = [b for b in s.bodies if b is s.car or getattr(b, "remote", False) and not getattr(b, "puppet", False)
+                    or (b.speed < 0.3 and b.ctl is None and not b.service)]
+        self._reset_puppets()
+
+    def _to_authority(self):
+        """Left the group (or became its authority): the puppets turn into real cars, pedestrians and bodies, so nothing pops."""
+        s = self.sim
+        cars = [e["obj"] for e in self.cars.values() if e["obj"] is not None]
+        peds = [e["obj"] for e in self.peds.values() if e["obj"] is not None]
+        s.traffic.cars.clear()
+        s.peds.list.clear()
+        for c in cars:
+            if s.traffic.adopt(c):
+                s.traffic.cars.append(c)
+        for p in peds:
+            if p.mode in ("queue", "board", "alight", "play", "sit"):
+                p.mode = "walk"
+            if p.say_t > 1e8:
+                p.say_t = 10.0
+            if p.dead or s.peds.adopt(p):
+                s.peds.list.append(p)
+        keep = []
+        for b in s.bodies:
+            if getattr(b, "puppet", False):
+                ctl = next((e["t"][12] & 16 for e in self.bods.values() if e["obj"] is b), 0)
+                if ctl:
+                    continue                                    # a bus / emergency vehicle needs the host's dispatcher: gone
+                b.remote = b.puppet = False
+            keep.append(b)
+        s.bodies = keep
+        s.client = False
+        self._reset_puppets()
 
     # ------------------------------------------------------------------ receive
     def _rx(self, addr, data):
         if len(data) < HDR.size:
             return
-        kind, _tick, n = HDR.unpack_from(data)
+        kind, _tick, n, src, dst = HDR.unpack_from(data)
         off = HDR.size
+        if self.host and dst not in (0, ALL):                       # a guest's packet for another guest: pass it on
+            a = self.ses.players.get(dst, {}).get("addr")
+            if a is not None and a in self.ses.net.peers:
+                self.ses.net.send_unrel(a, data)
+            return
+        if kind in (K_CARS, K_PEDS, K_BODIES) and not (self.sim.client and src == self.auth.get(self.pid)):
+            return                                                  # only the authority of my group may tell me about the world
         try:
             if kind == K_PLAYER:
                 for _ in range(n):
@@ -186,8 +298,6 @@ class Game:
                              hp=t[11], wi=t[12], atk=t[13], lik=t[14], seen=self.now)
                     if "x" not in r:
                         r["x"], r["y"], r["h"] = t[4], t[5], t[6]
-            elif self.host:
-                return
             elif kind == K_CARS:
                 for _ in range(n):
                     t = CAR.unpack_from(data, off)
@@ -203,7 +313,7 @@ class Game:
                     t = BODY.unpack_from(data, off)
                     off += BODY.size
                     self._puppet(self.bods, t[0], t)
-            elif kind == K_WORLD:
+            elif kind == K_WORLD and not self.host:
                 self.sim.clock.hour = WORLD.unpack_from(data, off)[0] % 24.0
         except struct.error:
             pass

@@ -650,6 +650,20 @@ def _PED_R(p):
 
 
 class Peds:
+    extra = ()                                     # multiplayer: other players this PC simulates the world for (x, y)
+
+    def _d2(self, x, y, fx, fy):
+        d = (x - fx) ** 2 + (y - fy) ** 2
+        for ex, ey in self.extra:
+            d = min(d, (x - ex) ** 2 + (y - ey) ** 2)
+        return d
+
+    def _focus(self, fx, fy):
+        e = self.extra
+        if e and self.rng.random() < len(e) / (len(e) + 1.0):
+            return e[self.rng.randrange(len(e))]
+        return fx, fy
+
     def __init__(self, world, rng, target=110):
         self.w = world
         self.rng = rng
@@ -827,7 +841,7 @@ class Peds:
         self._tick = getattr(self, "_tick", 0) + 1
         for pi, p in enumerate(self.list):
             dt = dt0
-            if p.mode == "walk" and (p.x - fx) ** 2 + (p.y - fy) ** 2 > LOD_FAR2:      # far from the player: one step in three, three times as long
+            if p.mode == "walk" and self._d2(p.x, p.y, fx, fy) > LOD_FAR2:      # far from the player: one step in three, three times as long
                 if (pi + self._tick) % 3:
                     out.append(p)
                     continue
@@ -965,7 +979,7 @@ class Peds:
                     p.mode, p.t = "flee", 3.5
                     d = math.hypot(p.x - fx, p.y - fy) or 1.0
                     p.vx, p.vy = (p.x - fx) / d * 3.2, (p.y - fy) / d * 3.2
-                if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 320 ** 2:
+                if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
             if p.mode == "brawl":                                 # fighting another pedestrian
@@ -998,7 +1012,7 @@ class Peds:
                             ev("shout", text=talk.react("ko", o.arch, self.sim, lines("ko", o.arch), rng), x=o.x, y=o.y, who=vehicles.PED_NAMES[o.arch])
                         elif rng.random() < 0.25:
                             ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
-                if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 320 ** 2:
+                if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
             if p.mode == "fight":                                 # chasing the player
@@ -1050,7 +1064,7 @@ class Peds:
                             ev("hurt", ped=p, dmg=dmg)
                             if rng.random() < 0.3:
                                 ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
-                if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 320 ** 2:
+                if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
             if p.mode in ("flee", "rage"):
@@ -1080,7 +1094,7 @@ class Peds:
                         if sn is None:
                             continue
                         p.mode, p.e, p.s, p.d = "walk", sn[0], sn[1], rng.choice((1, -1))
-                if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 320 ** 2:
+                if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
             # ------------- the player walks into them: grumble, insult, threaten, then fight
@@ -1128,14 +1142,14 @@ class Peds:
                 p.say_t = rng.uniform(10, 28) / max(0.05, getattr(self.sim, "speech_freq", 1.0))
                 if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 22 ** 2:
                     ev("shout", text=talk.say(p, self.sim, rng) if self.sim else rng.choice(lines("idle", p.arch)), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
-            if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 300 ** 2:
+            if self._d2(p.x, p.y, fx, fy) < 300 ** 2:
                 out.append(p)
         self.list = out
         dt = dt0
         self._separate(dt, fx, fy)
         for _ in range(2):
             if len([q for q in self.list if q.mode == "walk"]) < self.target:
-                self.spawn(fx, fy)
+                self.spawn(*self._focus(fx, fy))
 
 
 # ===================================================================== traffic
@@ -1178,6 +1192,20 @@ def _rank(cls):
 
 
 class Traffic:
+    extra = ()                                     # multiplayer: other players this PC simulates the world for (x, y)
+
+    def _d2(self, x, y, fx, fy):
+        d = (x - fx) ** 2 + (y - fy) ** 2
+        for ex, ey in self.extra:
+            d = min(d, (x - ex) ** 2 + (y - ey) ** 2)
+        return d
+
+    def _focus(self, fx, fy):
+        e = self.extra
+        if e and self.rng.random() < len(e) / (len(e) + 1.0):
+            return e[self.rng.randrange(len(e))]
+        return fx, fy
+
     def __init__(self, world, rng, target=90):
         self.w = world
         self.rng = rng
@@ -1318,6 +1346,38 @@ class Traffic:
                 return
         c.v = e["speed"] * c.pace * .6
         self.cars.append(c)
+
+    def adopt(self, c):
+        """Multiplayer: put a car that came from the other PC's snapshot onto the nearest road so this PC can drive it on."""
+        w = self.w
+        best = None
+        cx, cy = int(c.x // w.sg), int(c.y // w.sg)
+        for ix in (cx - 1, cx, cx + 1):
+            for iy in (cy - 1, cy, cy + 1):
+                for ei in w.drive_cells.get((ix, iy), ()):
+                    e = w.edges[ei]
+                    pts, cum = e["pts"], e["cum"]
+                    for k in range(len(pts) - 1):
+                        (ax, ay), (bx, by) = pts[k], pts[k + 1]
+                        dx, dy = bx - ax, by - ay
+                        l2 = dx * dx + dy * dy or 1.0
+                        t = max(0.0, min(1.0, ((c.x - ax) * dx + (c.y - ay) * dy) / l2))
+                        d2 = (c.x - ax - dx * t) ** 2 + (c.y - ay - dy * t) ** 2
+                        if best is None or d2 < best[0]:
+                            best = (d2, ei, cum[k] + t * (cum[k + 1] - cum[k]), dx * math.cos(c.h) + dy * math.sin(c.h))
+        if best is None or best[0] > 14.0 ** 2:
+            return False
+        _d, ei, s_, dot = best
+        e = w.edges[ei]
+        c.e, c.s = ei, s_
+        c.d = 1 if (e["ow"] or dot >= 0) else -1
+        c.lidx = 0
+        self._set_lane(c, e)
+        c.pace = self.rng.uniform(0.85, 1.1) * vehicles.SPEED[c.kind]
+        c.nxt, c.blk, c.arr, c.rq, c.stn, c.dwell = None, None, None, None, None, None
+        c.stuck = c.shift = c.shift_t = c.avoid = c.yld = 0.0
+        c.x, c.y, c.h = self._place(c)
+        return True
 
     def _next_edge(self, c):
         w = self.w
@@ -1767,7 +1827,7 @@ class Traffic:
         gy = w.ground_y
         gy3 = lambda x_, y_, _wy: gy(x_, y_)          # level() for a car off a bridge (wy = -1e9 never reaches a deck)
         for ci, c in enumerate(self.cars):
-            if (c.x - fx) ** 2 + (c.y - fy) ** 2 > LOD_FAR2:         # far from the player: one step in three, three times as long (nobody sees it)
+            if self._d2(c.x, c.y, fx, fy) > LOD_FAR2:         # far from the player: one step in three, three times as long (nobody sees it)
                 if (ci + tick) % 3:
                     keep.append(c)
                     continue
@@ -1802,7 +1862,7 @@ class Traffic:
             braking = False
             at_red = False
             if c.nxt is not None and abs(c.turn) > self.UTURN and L - c.s < 40.0:
-                hold_at = self._uturn_hold(c, e, L - c.s, (c.x - fx) ** 2 + (c.y - fy) ** 2)
+                hold_at = self._uturn_hold(c, e, L - c.s, self._d2(c.x, c.y, fx, fy))
                 if hold_at is not None:
                     if hold_at < 0:
                         self.despawned += 1
@@ -1868,7 +1928,7 @@ class Traffic:
             if c.stuck > 3.0 and c.ghost <= 0 and gap is not None and gap < 0.0 and isinstance(lead, Car) and lead.v < 0.3 and not at_red:
                 c.ghost, c.stuck = 4.0, 0.0                       # two standing cars sit inside each other: neither can ever back out, so slip apart now
             if c.stuck > 5.0 and c.v < 0.5 and not at_red:
-                d2 = (c.x - fx) ** 2 + (c.y - fy) ** 2
+                d2 = self._d2(c.x, c.y, fx, fy)
                 if d2 > 150 ** 2 and c.stuck > 8.0:
                     self.despawned += 1                           # hopelessly stuck out of sight: gone, a new car comes
                     continue
@@ -1936,7 +1996,7 @@ class Traffic:
                 c.pitch += (pt - c.pitch) * kk
                 c.roll += (rl_ - c.roll) * kk
             keep.append(c)
-        self.cars = [c for c in keep if (c.x - fx) ** 2 + (c.y - fy) ** 2 < 460 ** 2]
+        self.cars = [c for c in keep if self._d2(c.x, c.y, fx, fy) < 460 ** 2]
         dt = dt0
         self._jam_t += dt
         if self._jam_t >= 1.0:
@@ -1944,7 +2004,7 @@ class Traffic:
             self._jam_t = 0.0
         for _ in range(2):
             if len(self.cars) < self.target:
-                self.spawn(fx, fy)
+                self.spawn(*self._focus(fx, fy))
 
 
 # ===================================================================== the whole game state
