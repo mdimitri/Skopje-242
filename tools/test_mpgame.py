@@ -21,6 +21,7 @@ for _ in range(400):
     host.update(); g.update(); time.sleep(0.005)
     if g.state == "lobby": break
 assert g.state == "lobby"
+host.set_cfg(ff=True)
 host.start()
 for _ in range(200):
     host.update(); g.update(); time.sleep(0.005)
@@ -86,5 +87,32 @@ frames(1)
 print("4 split: puppets before %d cars %d peds, real after %d cars %d peds" % (nc, npd, len(gs.traffic.cars), len(gs.peds.list)))
 frames(20)
 assert not gs.client
+# ---- 5. player vs player (friendly fire on)
+put(gs, hx + 6, hy + 6); frames(100)
+assert gs.client and hg.auth == {0: 0, 1: 0}
+hw, gw = hs.walker, gs.walker
+gw.x, gw.y = hw.x + 1.0, hw.y; gw.lx, gw.ly = gw.x, gw.y
+frames(25)
+def face():
+    gw.h = math.atan2(hw.y - gw.y, hw.x - gw.x)
+h0 = hw.health
+for _ in range(3):
+    face(); gw.atk_cd = 0; gs.attack(); frames(3)
+print("5a punches: host walker health %.0f -> %.0f" % (h0, hw.health)); assert hw.health < h0
+hw.health = 100.0; frames(5)
+gw.guns["pistol"] = 20; gw.weapon = "pistol"
+h1 = hw.health
+face(); gw.atk_cd = 0; gs.attack(); frames(12)
+print("5b pistol : host walker health %.0f -> %.0f" % (h1, hw.health)); assert hw.health < h1
+hs.pvp = False; h2 = hw.health; hg.take_hit(1, "shot", 30); assert hw.health == h2
+hs.pvp = True
+hw.health = 100.0; frames(5)
+gw.weapon = "fist"
+for _ in range(40):
+    if hw.health <= 0: break
+    face(); gw.atk_cd = 0; gs.attack(); frames(3)
+frames(10)
+print("5c kill   : host health %.0f, host deaths %d, guest kills %d" % (hw.health, hg.deaths, gg.kills))
+assert hw.health <= 0 and hg.deaths == 1 and gg.kills == 1
 print("bytes: host tx %d rx %d" % (host.net.bytes_tx, host.net.bytes_rx))
 print("OK mpgame groups")

@@ -2016,6 +2016,8 @@ class Sim:
         self.aggro, self.lang = 1, 1              # menu: how quarrelsome people are, how rude they talk
         self.client = False                       # multiplayer guest: traffic / pedestrians / services come from the host (mpgame.py)
         self.remote_foot = {}                     # multiplayer: other players on foot, drawn by render
+        self.pvp = True                           # multiplayer: friendly fire (players can hurt each other)
+        self.pvp_out = []                         # (pid, kind, amount) hits this player landed on others; mpgame sends them
         sx, sy, sh = world.spawn
         self.car = Body(sx, sy, sh, 1, 0)
         self.car.fuel = 1.0
@@ -2179,6 +2181,10 @@ class Sim:
         self.ev("bought", item=name, heal=heal, price=price)
 
     # ---------------------------------------------------------------- fighting
+    def _pvp_hit(self, pid, kind, amt):
+        if self.pvp:
+            self.pvp_out.append((pid, kind, amt))
+
     def attack(self):
         wk = self.walker
         if self.mode != "foot" or wk is None or wk.health <= 0 or wk.atk_cd > 0 or wk.z > 0.3:
@@ -2203,6 +2209,14 @@ class Sim:
             d = math.hypot(dx, dy)
             if d < reach and (d < 0.5 or (dx * fx + dy * fy) / d > 0.5) and d < bd:
                 best, bd = p, d
+        for rp in self.remote_foot.values():                       # another player: the hit is reported to him (mpgame)
+            dx, dy = rp["x"] - wk.x, rp["y"] - wk.y
+            d = math.hypot(dx, dy)
+            if d < reach and (d < 0.5 or (dx * fx + dy * fy) / d > 0.5) and d < bd:
+                self._pvp_hit(rp["pid"], "kick" if kick else "punch", dmg)
+                self.ev("kick" if kick else "punch", x=wk.x + fx, y=wk.y + fy, hit=True)
+                self.ev("hit", x=rp["x"], y=rp["y"], kick=kick)
+                return
         dg = self.dogs.pettable(wk.x, wk.y, wk.h, 1.8) if getattr(self, "dogs", None) is not None else None
         if dg is not None and (best is None or dg[1] < bd):        # the strays are friendly: a "hit" at one pets it
             wk.atk_t, wk.atk_cd = 0.0, 0.5
@@ -2311,6 +2325,9 @@ class Sim:
             pay *= 3                                       # crime pays triple
             self.money += pay
             self.ev("pay", x=x, y=y, amount=pay)
+        for rp in self.remote_foot.values():
+            if math.hypot(rp["x"] - x, rp["y"] - y) < 5:
+                self._pvp_hit(rp["pid"], "boom", 60)
         wk = self.walker
         if self.mode == "foot" and wk is not None and math.hypot(wk.x - x, wk.y - y) < 5:
             wk.health -= 60
@@ -2335,6 +2352,18 @@ class Sim:
             t = dx * fx + dy * fy
             if 0 < t < bt and abs(-dx * fy + dy * fx) < CIRC[b.kind][1]:
                 hit_body, bt = b, t
+        foot = None
+        for rp in self.remote_foot.values():                       # another player on foot
+            dx, dy = rp["x"] - ox, rp["y"] - oy
+            t = dx * fx + dy * fy
+            if 0 < t < bt and abs(-dx * fy + dy * fx) < 0.5:
+                foot, bt = rp, t
+        if foot is not None:
+            self._pvp_hit(foot["pid"], "swing", dmg)
+            self.ev("hit", x=foot["x"], y=foot["y"], kick=True)
+            best = hit_body = None
+        if hit_body is not None and getattr(hit_body, "pid", None) is not None:
+            self._pvp_hit(hit_body.pid, "car", 6)                  # another player's car
         if hit_body is not None and (best is None or (best.x - ox) * fx + (best.y - oy) * fy > bt):
             hit_body.health -= 6
             hit_body.dirty = True
@@ -2788,7 +2817,7 @@ class Sim:
                     wk.x += nx * pen
                     wk.y += ny * pen
                     wk.push_out(w)
-                    if closing > 4.5 and wk.inv_t <= 0 and not b.empty:
+                    if closing > 4.5 and wk.inv_t <= 0 and not b.empty and (self.pvp or not getattr(b, "remote", False)):
                         dmg = (closing - 3.0) * 5.5
                         wk.health -= dmg
                         wk.hurt_t, wk.inv_t = 0.5, 0.6

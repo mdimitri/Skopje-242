@@ -55,6 +55,13 @@ class Projectiles:
         sim, w = self.sim, self.sim.w
         x, y = p[0], p[1]
         r = 0.45 if p[7] != "rocket" else 0.7
+        for rp in sim.remote_foot.values():                      # another player on foot: the hit is reported to him (mpgame)
+            if (rp["x"] - x) ** 2 + (rp["y"] - y) ** 2 < r * r:
+                if p[7] == "rocket":
+                    return self._impact(p, "tree", None, x, y)
+                sim._pvp_hit(rp["pid"], "shot", p[6])
+                sim.ev("hit", x=rp["x"], y=rp["y"], kick=True)
+                return True
         for q in sim.peds.list:
             if q.mode not in ("dead", "air") and abs(q.x - x) < 1 and abs(q.y - y) < 1 and (q.x - x) ** 2 + (q.y - y) ** 2 < r * r:
                 return self._impact(p, "ped", q, x, y)
@@ -66,6 +73,8 @@ class Projectiles:
                 fx, fy = math.cos(b.h), math.sin(b.h)
                 lx, ly = (x - b.x) * fx + (y - b.y) * fy, -(x - b.x) * fy + (y - b.y) * fx
                 if abs(lx) < L + 0.4 and abs(ly) < Wd + 0.1:
+                    if getattr(b, "pid", None) is not None:
+                        sim._pvp_hit(b.pid, "car", p[6] * 0.35)    # another player's car
                     return self._impact(p, "car", b, x, y)
         for c in sim.traffic.cars:
             if abs(c.x - x) < 2.4 and abs(c.y - y) < 2.4 and (c.x - x) ** 2 + (c.y - y) ** 2 < 2.0 ** 2:

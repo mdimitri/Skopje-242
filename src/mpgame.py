@@ -65,6 +65,9 @@ class Game:
         self.addr = {}                                 # host: pid -> addr
         self.auth = {}                                 # pid -> pid of the authority of that player's group
         self.t_grp = 0.0
+        self.alive, self.last_hit = True, None            # my own death tracking (stats, kill credit)
+        sim.pvp = bool((session.start_info or {}).get("ff", False))
+        self.deaths = self.kills = 0
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
@@ -134,8 +137,8 @@ class Game:
         for kind, addr, body in ses.update():
             if kind == "unrel":
                 self._rx(addr, body)
-            elif kind == "rel" and not self.host and isinstance(body, dict) and body.get("t") == "grp":
-                self._set_auth({int(k): int(v) for k, v in body["a"].items()})
+            elif kind == "rel" and isinstance(body, dict):
+                self._rel(body)
             elif kind == "gone" and self.host:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
@@ -144,6 +147,7 @@ class Game:
             return
         if not self.auth:
             self.auth = {pid: pid for pid in ses.players}          # everybody starts on his own
+        self._pvp(s)
         self.tick = (self.tick + 1) & 0xFFFFFFFF
         if self.now - self.t_state >= 1.0 / STATE_HZ:
             self.t_state = self.now
@@ -167,6 +171,68 @@ class Game:
         self._apply_remote(dt)
         if s.client:
             self._apply_puppets(dt)
+
+    # ------------------------------------------------------------------ player vs player
+    def _route(self, to, obj):
+        """Reliable message for player `to`: the host handles it itself or passes it on."""
+        net = self.ses.net
+        if to == self.pid:
+            self._rel(obj)
+        elif self.host:
+            a = self.ses.players.get(to, {}).get("addr")
+            if a is not None and a in net.peers:
+                net.send_rel(a, obj)
+        else:
+            net.send_rel(self.ses._target, obj)
+
+    def _pvp(self, s):
+        """Hits I landed on other players go out; my own death is noticed (stats + credit for whoever hit me last)."""
+        out, s.pvp_out = s.pvp_out, []
+        for pid, kind, amt in out:
+            self._route(pid, {"t": "dmg", "to": pid, "k": kind, "a": round(amt, 1), "f": self.pid})
+        hp = (s.walker.health if s.mode == "foot" else s.car.health) if (s.walker or s.car) else 100
+        if self.alive and hp <= 0:
+            self.alive = False
+            self.deaths += 1
+            self.ses.prof.add(deaths=1)
+            if self.last_hit and self.now - self.last_hit[1] < 8.0:
+                self._route(self.last_hit[0], {"t": "kill", "to": self.last_hit[0], "v": self.pid})
+        elif not self.alive and hp > 0:
+            self.alive = True
+
+    def _rel(self, m):
+        t = m.get("t")
+        if t == "grp" and not self.host:
+            self._set_auth({int(k): int(v) for k, v in m["a"].items()})
+        elif t in ("dmg", "kill"):
+            to = m.get("to")
+            if to != self.pid:
+                self._route(to, m)                                 # host: for another guest
+            elif t == "dmg":
+                self.take_hit(int(m.get("f", -1)), str(m.get("k", "")), float(m.get("a", 0)))
+            else:
+                self.kills += 1
+                self.ses.prof.add(kills=1)
+                self.sim.ev("pvp_kill", victim=m.get("v"))
+
+    def take_hit(self, frm, kind, amt):
+        """Somebody hit me. Each player owns his own health: the attacker only reports."""
+        s = self.sim
+        if not s.pvp or amt <= 0 or amt > 200:
+            return
+        self.last_hit = (frm, self.now)
+        if s.mode == "foot":
+            wk = s.walker
+            if wk.health <= 0:
+                return
+            wk.health -= amt
+            wk.hurt_t = 0.4
+            if wk.health <= 0:
+                wk.cause = "fight" if kind in ("punch", "kick") else ("boom" if kind == "boom" else "car" if kind == "car" else "shot")
+        elif s.car is not None and s.car.health > 0:
+            s.car.health -= amt * (0.5 if kind != "boom" else 1.0)
+            s.car.dirty = True
+        s.ev("hit", x=s.focus()[0], y=s.focus()[1], kick=kind in ("kick", "boom"))
 
     def _send_to(self, pid, pk):
         net = self.ses.net
@@ -359,7 +425,7 @@ class Game:
                         s.bodies.remove(b)
                     kind = r["kind"] % len(vehicles.HALF_L)
                     b = r["body"] = actors.Body(r["x"], r["y"], r["h"], kind, r["color"])
-                    b.remote, b.empty, b.name = True, False, self.ses.players.get(pid, {}).get("name", "?")
+                    b.remote, b.empty, b.pid, b.name = True, False, pid, self.ses.players.get(pid, {}).get("name", "?")
                     s.bodies.append(b)
                 elif b not in s.bodies:
                     s.bodies.append(b)
