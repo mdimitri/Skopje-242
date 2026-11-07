@@ -76,6 +76,8 @@ BUILD = {
     "fill: gardens, scrub, boulders": "Градини, грмушки, камења",
     "carriageway cleanup": "Чистење на коловозите",
     "railway": "Железница",
+    "monument": "Го кревам споменикот на плоштад",
+    "petrol stations and car washes": "Бензинки и перална за коли",
 }
 
 # warnings by failure kind (tools/net.py)

@@ -47,10 +47,10 @@ MK_PART = {"meta": "основни податоци", "areas": "површини
            "buildings": "згради", "props": "дрвја, лампи и коли", "chunks": "делови на градот", "surf": "површини на земјата",
            "terrain": "рељеф"}
 MK_NOTE = {"textures": "Текстури", "overview mesh": "Мрежа за прегледната мапа", "car & pedestrian models": "Модели на возила и пешаци",
-           "your character": "Твојот лик", "pickups & weapons": "Предмети и оружје", "simulation": "Симулација",
-           "pavement grid": "Мрежа на тротоарите", "traffic lights": "Семафори", "sound": "Звук", "collision ready": "Судирите се подготвени",
+           "your character": "Те облекувам тебе, јунаку", "pickups & weapons": "Предмети и оружје", "simulation": "Го палам градот",
+           "pavement grid": "Мрежа на тротоарите", "traffic lights": "Ги палам семафорите", "sound": "Го вклучувам озвучувањето", "collision ready": "Судирите се подготвени",
            "routing graph": "Сообраќајна мрежа", "cached": "од кешот", "land use & parks": "Паркови и површини", "rivers": "Реки",
-           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја", "saving the map": "Ја зачувувам мапата"}
+           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја", "saving the map": "Ја сеирам и зачувувам мапата"}
 MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам {MK_PART.get(m[1], m[1])}: {m[2]}/{m[3]} {T.MB}"),
          (re.compile(r"^(\w+): unpacking$"), lambda m: f"Распакувам {MK_PART.get(m[1], m[1])}"),
          (re.compile(r"^(\w+): ok$"), lambda m: ""),

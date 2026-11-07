@@ -31,6 +31,19 @@ for name in ("MK_LEG", "MK_PART", "MK_NOTE", "MK_SUB"):
         chk(f"ui.{name}[{k}]", v)
 for q in slang.LOADING_QUIPS:
     chk("slang.LOADING_QUIPS", q)
+# every label / sub the build tools report must have a real translation (mk() is only a safety net, never a translator)
+import ast, glob   # noqa: E402
+for f in glob.glob(os.path.join(ROOT, "tools", "*.py")):
+    for n in ast.walk(ast.parse(open(f, encoding="utf-8").read())):
+        if not isinstance(n, ast.Call):
+            continue
+        nm = getattr(n.func, "id", getattr(n.func, "attr", ""))
+        S = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        S += [k.value.value for k in n.keywords if k.arg == "sub" and isinstance(k.value, ast.Constant)]
+        if nm in ("phase", "Bar") and S and S[0] not in T.BUILD:
+            bad.append((os.path.basename(f), f"no translation in strings.BUILD: {S[0]!r}"))
+        elif nm in ("span", "frac") and S and S[-1] not in ui.MK_SUB:
+            bad.append((os.path.basename(f), f"no translation in ui.MK_SUB: {S[-1]!r}"))
 # every English label/sub the build tools emit must come out Cyrillic through the loader's own translation
 srcs = open(os.path.join(ROOT, "src", "main.py"), encoding="utf-8").read()
 for f in os.listdir(os.path.join(ROOT, "tools")):
@@ -39,7 +52,8 @@ for f in os.listdir(os.path.join(ROOT, "tools")):
         for m in re.finditer(r'(?:span\([^"\n]*?,\s*[\d.]+,\s*[\d.]+,\s*|Bar\()"([^"]+)"', t):
             chk(f"tools/{f} sub/label {m[1]!r}", ui.mk(ui.MK_SUB.get(m[1], T.BUILD.get(m[1], m[1]))))
 for m in re.finditer(r'loader\.(?:tick\([^,]+,\s*|say\()f?"([^"{]+)', srcs):
-    chk(f"main.py note {m[1]!r}", ui.Loader._tr(m[1]))
+    if LAT.search(m[1]) and m[1] not in ui.MK_NOTE and not any(r.pattern.startswith('^' + m[1]) or r.match(m[1]) for r, _ in ui.MK_RE):
+        bad.append(("main.py", f"note has no translation in ui.MK_NOTE: {m[1]!r}"))
 chk("mk() sample", "overpass-api.de refresh")
 if bad:
     for w, s in bad:
