@@ -102,7 +102,7 @@ import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
-from hud import Hud, build_labels, draw_labels, draw_players   # noqa: E402
+from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint   # noqa: E402
 from render import LOD_PPM, Renderer   # noqa: E402
 from ui import Loader, fatal_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
@@ -1565,9 +1565,11 @@ def main():
         inp_last.clear()
         inp_last.update(inp)
         if show_map and not a.test:
-            pick = hud.map_pick(sw, sh)
-            if pick is not None:
-                sim.teleport(pick[0], pick[1])
+            hud.debug = bool(cfg.get("debug"))
+            pick = hud.act
+            hud.act = None
+            if pick is not None and hud.debug:
+                sim.teleport(pick[1], pick[2])
                 show_map = False
                 snap = True
         sf_due_ = False
@@ -1732,6 +1734,7 @@ def main():
             guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)
+            guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""

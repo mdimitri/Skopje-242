@@ -89,6 +89,43 @@ def draw_players(sim, cam, sw, sh):
         font.draw_text(lab, int(lx), int(ly), 16, rl.Color(*q["color"], 190))
 
 
+def draw_waypoint(hud, sim, cam, sw, sh):
+    """Navigation waypoint: a straight-line arrow at the screen edge (a pin when on screen) with the distance; clears itself within 50 m."""
+    if not hud.wp:
+        return
+    fx, fy = sim.focus()[:2]
+    tx, ty = hud.wp
+    d = math.hypot(tx - fx, ty - fy)
+    if d < 50:
+        hud.wp = None
+        hud.set_banner("Стигна на одредиште", 3.0)
+        return
+    lab = "%d м" % d if d < 1000 else "%.1f км" % (d / 1000)
+    col = rl.Color(40, 160, 255, 255)
+    sp = rl.get_world_to_screen(rl.Vector3(tx, sim.w.ground_y(tx, ty) + 3.0, ty), cam)
+    if 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30:
+        rl.draw_triangle(rl.Vector2(sp.x, sp.y), rl.Vector2(sp.x + 12, sp.y - 26), rl.Vector2(sp.x - 12, sp.y - 26), col)
+        font.draw_text(lab, int(sp.x - font.measure_text(lab, 18, True) / 2), int(sp.y - 48), 18, rl.WHITE, bold=True)
+        return
+    cx, cy = sw / 2, sh / 2
+    dx, dy = sp.x - cx, sp.y - cy
+    if not (math.isfinite(dx) and math.isfinite(dy)) or (dx == 0 and dy == 0):
+        dx, dy = tx - fx, ty - fy
+    a = math.atan2(dy, dx)
+    k = min((sw / 2 - 60) / (abs(math.cos(a)) + 1e-6), (sh / 2 - 60) / (abs(math.sin(a)) + 1e-6))
+    ax, ay = cx + math.cos(a) * k, cy + math.sin(a) * k
+    tip = rl.Vector2(ax + math.cos(a) * 26, ay + math.sin(a) * 26)
+    l_ = rl.Vector2(ax + math.cos(a + 2.5) * 24, ay + math.sin(a + 2.5) * 24)
+    r_ = rl.Vector2(ax + math.cos(a - 2.5) * 24, ay + math.sin(a - 2.5) * 24)
+    rl.draw_triangle(tip, r_, l_, col)
+    rl.draw_triangle_lines(tip, r_, l_, rl.WHITE)
+    wpx = font.measure_text(lab, 18, True)
+    lx = max(8, min(sw - wpx - 8, ax - math.cos(a) * (40 + wpx / 2) - wpx / 2))
+    ly = max(8, min(sh - 28, ay - math.sin(a) * 44 - 9))
+    font.draw_text(lab, int(lx) + 1, int(ly) + 1, 18, rl.Color(0, 0, 0, 180), bold=True)
+    font.draw_text(lab, int(lx), int(ly), 18, rl.WHITE, bold=True)
+
+
 def draw_labels(labels, cam, fx, fy, sw, sh):
     near = []
     for lb in labels:
@@ -140,6 +177,12 @@ class Hud:
         self.pois = []               # [x, y, category, name] faint points of interest (data/osm/map_pois.json)
         self.radio_line = ""          # car radio station / song, drawn in the vehicle panel
         self.place = ("", "", 0.0)   # neighbourhood tooltip: title, line, seconds left
+        self.debug = False           # settings "debug": the map menu offers teleporting
+        self.wp = None               # navigation waypoint (x, y) in metres, or None
+        self.sel = None              # point picked on the big map (x, y), shows the magnifier + menu
+        self._drag = False
+        self._menu_rect = None
+        self.act = None              # ("teleport", x, y) requested from the map menu, read by main
 
     def set_banner(self, text, secs=3.0):
         self.banner = (text, max(secs * 1.3, 1.4 + len(text) * 0.075))
@@ -178,6 +221,65 @@ class Hud:
         if mx <= m.x <= mx + mw and my <= m.y <= my + mh:
             return (m.x - mx) / mw * 2 * self.w.hx - self.w.hx, (m.y - my) / mh * 2 * self.w.hy - self.w.hy
         return None
+
+    def _map_pick_ui(self, sim, sw, sh, to_big, rect, focus):
+        """Click / drag on the big map picks a spot: a magnifier follows the cursor and a small menu offers Navigate (and Teleport in debug)."""
+        mx, my, mw, mh = rect
+        m = rl.get_mouse_position()
+        inmap = mx <= m.x <= mx + mw and my <= m.y <= my + mh
+        mr = self._menu_rect
+        on_menu = mr is not None and mr[0] <= m.x <= mr[0] + mr[2] and mr[1] <= m.y <= mr[1] + mr[3]
+        if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT):
+            self.sel, self._drag = None, False
+        if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and inmap and not on_menu:
+            self._drag = True
+        if not rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT):
+            self._drag = False
+        if self._drag and inmap:
+            self.sel = ((m.x - mx) / mw * 2 * self.w.hx - self.w.hx, (m.y - my) / mh * 2 * self.w.hy - self.w.hy)
+        if self.sel is None:
+            self._menu_rect = None
+            if self.wp:
+                font.draw_text("Десен клик / избери точка: нова навигација", mx, my + mh + 6, 16, rl.Color(200, 220, 255, 255))
+            return
+        sx, sy = self.sel
+        px, py = to_big(sx, sy)
+        rl.draw_circle_lines(int(px), int(py), 8, rl.Color(255, 255, 255, 255))
+        rl.draw_circle(int(px), int(py), 3, rl.Color(255, 60, 60, 255))
+        # magnifier: ~240 m square of the overview, zoomed
+        N, NH = self.ov.width, self.ov.height
+        k = N / (2 * self.w.hx)
+        half = 120 * k
+        cx = min(max((sx + self.w.hx) * k, half), N - half)
+        cy = min(max((sy + self.w.hy) * k, half), NH - half)
+        S = 210
+        bx = int(min(max(px + 18, 4), sw - S - 8))
+        by = int(min(max(py - S - 30, 4), sh - S - 150))
+        rl.draw_rectangle(bx - 3, by - 3, S + 6, S + 6, rl.Color(255, 255, 255, 255))
+        rl.draw_texture_pro(self.ov, rl.Rectangle(cx - half, cy - half, half * 2, half * 2), rl.Rectangle(bx, by, S, S), rl.Vector2(0, 0), 0.0, rl.WHITE)
+        qx = bx + S / 2 + ((sx + self.w.hx) * k - cx) / (half * 2) * S
+        qy = by + S / 2 + ((sy + self.w.hy) * k - cy) / (half * 2) * S
+        rl.draw_line(int(qx) - 10, int(qy), int(qx) + 10, int(qy), rl.Color(255, 40, 40, 255))
+        rl.draw_line(int(qx), int(qy) - 10, int(qx), int(qy) + 10, rl.Color(255, 40, 40, 255))
+        d = math.hypot(sx - focus[0], sy - focus[1])
+        nm = self._street_at(sx, sy)
+        lab = (nm + "  " if nm else "") + ("%d м" % d if d < 1000 else "%.1f км" % (d / 1000))
+        rl.draw_rectangle(bx, by + S - 22, S, 22, rl.Color(10, 10, 14, 200))
+        font.draw_text(font.fit(lab, 16, S - 8), bx + 4, by + S - 20, 16, rl.WHITE)
+        btns = ["Навигирај тука"] + (["Телепортирај"] if self.debug else []) + (["Откажи навигација"] if self.wp else [])
+        h, y0 = 34, by + S + 6
+        self._menu_rect = (bx, y0, S, len(btns) * (h + 4))
+        for i, b in enumerate(btns):
+            if font.button(b, bx, y0 + i * (h + 4), S, h, 18) and not self._drag:
+                if b.startswith("Навиг"):
+                    self.wp = (sx, sy)
+                    self.set_banner("Навигација активирана", 2.0)
+                elif b.startswith("Телеп"):
+                    self.act = ("teleport", sx, sy)
+                else:
+                    self.wp = None
+                    self.set_banner("Навигацијата е откажана", 2.0)
+                self.sel = None
 
     def draw(self, sim, sw, sh, show_map, prompt, streaming, ppm):
         W = self.w
@@ -274,6 +376,7 @@ class Hud:
         N, NH = self.ov.width, self.ov.height
         k = N / (2 * HX)
         if not show_map:
+            self.sel, self._drag, self._menu_rect = None, False, None
             ms = max(130, min(300, int(sh * 0.27)))                       # 240 px at 900 p; shrinks with the render resolution
             mx, my = 16, sh - ms - 16
             span = 380
@@ -342,6 +445,13 @@ class Hud:
                     qx, qy = mcx + (qx - mcx) / d * (mr - 6), mcy + (qy - mcy) / d * (mr - 6)
                 rl.draw_circle(int(qx), int(qy), 6, rl.WHITE)
                 rl.draw_circle(int(qx), int(qy), 4.5, rl.Color(*q["color"], 255))
+            if self.wp:                                                                 # waypoint, pinned to the rim when off the minimap
+                qx, qy = to_mm(*self.wp)
+                if not inside(qx, qy):
+                    d = math.hypot(qx - mcx, qy - mcy) or 1.0
+                    qx, qy = mcx + (qx - mcx) / d * (mr - 6), mcy + (qy - mcy) / d * (mr - 6)
+                rl.draw_circle(int(qx), int(qy), 6, rl.WHITE)
+                rl.draw_circle(int(qx), int(qy), 4.5, rl.Color(40, 160, 255, 255))
             qx, qy = to_mm(fx, fy)
             self._arrow(qx, qy, ang, 15)
         else:
@@ -384,6 +494,11 @@ class Hud:
             qx, qy = to_big(fx, fy)
             self._arrow(qx, qy, ang, 20)
             font.draw_text(TXT("hud.0019"), mx, my - 30, 22, rl.Color(255, 255, 255, 255))
+            if self.wp:
+                qx, qy = to_big(*self.wp)
+                rl.draw_circle(int(qx), int(qy), 9, rl.WHITE)
+                rl.draw_circle(int(qx), int(qy), 6, rl.Color(40, 160, 255, 255))
+            self._map_pick_ui(sim, sw, sh, to_big, (mx, my, mw, mh), (fx, fy))
 
     @staticmethod
     def _arrow(qx, qy, ang, s):
