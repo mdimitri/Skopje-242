@@ -48,6 +48,11 @@ def _strength(e):
     return 0.92 * t * t * (3.0 - 2.0 * t)
 
 
+def strength_at(hour, dark=0.0):
+    """Shadow strength 0..0.92 at a game hour: follows the sun's height and is 0 whenever the clock says it is dark."""
+    return _strength(sun_at(hour)[1]) * max(0.0, 1.0 - 2.0 * dark)
+
+
 def _look_at(eye, target):
     f = target - eye
     f /= np.linalg.norm(f)
@@ -103,7 +108,7 @@ class SunShadow:
                 gl3d.set_sun(self.L if self.L is not None else gl3d.SUN, 0.0, np.eye(4), 1.0 / SIZE, 0.0)
             return
         L, e = sun_at(hour)
-        k = _strength(e) * max(0.0, 1.0 - 1.6 * dark)      # no sun shadows once the game clock says it is getting dark
+        k = strength_at(hour, dark)                         # no sun shadows once the game clock says it is getting dark
         redraw = (self.center is None or self.L is None or np.abs(L - self.L).max() > SUN_STEP
                   or math.hypot(cx - self.center[0], cz - self.center[1]) > RECENTER
                   or self.st.mesh_loaded != self.loaded)

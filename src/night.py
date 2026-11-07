@@ -267,34 +267,6 @@ class Night:
             rl.rl_enable_depth_mask()
             rl.end_mode_3d()
 
-    def _beam(self, cam, x, y, ca, sa, a, length=13.0, spread=0.3):
-        """A headlight beam: exactly one soft triangle from the lamp forward."""
-        p, q = cam.position, cam.target
-        L = math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (q.z - p.z) ** 2)
-        def scr(d, side):
-            w_ = d * spread * side
-            px, py = x + ca * d - sa * w_, y + sa * d + ca * w_
-            gy = self.w.ground_y(px, py) + 0.15
-            if (px - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (py - p.z) * (q.z - p.z) <= 1.5 * L:
-                return None                                   # behind / right at the camera: it would project mirrored and screen-sized
-            return rl.get_world_to_screen(V3(px, gy, py), cam)
-        if not self._seen(cam, x, y, self.w.ground_y(x, y) + 0.7):
-            return                                            # the lamp itself is hidden: no cone either
-        p0, p1, p2 = scr(0.2, 0), scr(length, -1), scr(length, 1)
-        if p0 is None or p1 is None or p2 is None:
-            return
-        if (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x) > 0:   # raylib needs counter-clockwise
-            p1, p2 = p2, p1
-        # vertex colours: full at the lamp, fading to nothing at the far edge
-        rl.rl_set_texture(0)
-        rl.rl_begin(rl.RL_TRIANGLES)
-        rl.rl_color4ub(255, 238, 190, int(min(255, a * 0.4)))
-        rl.rl_vertex2f(p0.x, p0.y)
-        rl.rl_color4ub(255, 238, 190, 0)
-        rl.rl_vertex2f(p1.x, p1.y)
-        rl.rl_vertex2f(p2.x, p2.y)
-        rl.rl_end()
-
     def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
         ca, sa = math.cos(h), math.sin(h)
         L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2

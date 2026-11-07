@@ -1797,10 +1797,11 @@ float sunShadow(vec3 p, vec3 n){
 vec3 shade(vec3 c, float s){ return c * (1.0 - s * vec3(0.42, 0.37, 0.24)); }     // shadow: darker and a little blue
 // rough: 0 = mirror (glass, wet water), 1 = chalk. Relights the baked colour for the bumped normal and adds the sun glint.
 vec3 relight(vec3 c, vec3 n, vec3 nb, float rough, float k){
-  float d = 0.55 * (dot(nb, SUNL) - dot(n, SUNL));
+  float sk = clamp(shd.x / 0.92, 0.0, 1.0);                       // how much real sun there is: no relief relight or glint at night
+  float d = 0.55 * (dot(nb, SUNL) - dot(n, SUNL)) * sk;
   c *= 1.0 + k * d / (0.52 + 0.55 * max(dot(n, SUNL), 0.0));
   float sm = 1.0 - rough;
-  float spec = pow(max(dot(nb, SUNH), 0.0), mix(6.0, 120.0, sm * sm)) * sm * sm * 0.9;
+  float spec = pow(max(dot(nb, SUNH), 0.0), mix(6.0, 120.0, sm * sm)) * sm * sm * 0.9 * sk;
   return c + vec3(1.0, 0.96, 0.88) * spec * k;
 }
 """
@@ -1983,7 +1984,7 @@ void main(){
     c *= 1.0 - g * (rain * 0.2 + blot * 0.16);
     c = mix(c, vec3(0.50, 0.44, 0.38) * (0.8 + lum * 0.3), peel * g * 0.55);
   }
-  c *= (0.52 + 0.55 * max(dot(nrm, SUNL), 0.0)) / (0.52 + 0.55 * max(dot(nrm, vec3(-0.4494, 0.7990, -0.3995)), 0.0));   // vertex colours were lit by the old fixed sun: relight for the real one
+  c *= mix(1.0, (0.52 + 0.55 * max(dot(nrm, SUNL), 0.0)) / (0.52 + 0.55 * max(dot(nrm, vec3(-0.4494, 0.7990, -0.3995)), 0.0)), clamp(shd.x / 0.92, 0.0, 1.0));   // vertex colours were lit by the old fixed sun: relight for the real one
   c = shade(c, sunShadow(wp, nrm));
   finalColor = vec4(c, base.a);
 }"""

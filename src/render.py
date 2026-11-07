@@ -321,6 +321,7 @@ class Renderer:
         if n > 2.5:
             ox, oz = ox * 2.5 / n, oz * 2.5 / n
         k = self.sun_k
+        ox, oz = ox * k, oz * k                           # no sun: the contact shadow sits right under the body
         sl = math.hypot(L[0], L[2]) / L[1] if L[1] > 1e-6 else 3.0         # shadow length per metre of height
         dn = (-L[0] / (math.hypot(L[0], L[2]) or 1.0), -L[2] / (math.hypot(L[0], L[2]) or 1.0))
         for x, z, h, hl, hw, a, gy in items:
@@ -334,6 +335,7 @@ class Renderer:
             else:
                 x += ox
                 z += oz
+                a = int(a * (0.4 + 0.6 * k))                # at night only a faint contact patch remains
             ca, sa = math.cos(h), math.sin(h)
             rl.rl_color4ub(10, 10, 20, a)
             for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
