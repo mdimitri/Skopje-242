@@ -1886,6 +1886,16 @@ def main():
         traceback.print_exc()
         print(f"[build] leisure skipped: {e}")
 
+    stage("monument")
+    phase("monument")
+    try:                                                        # round 32: Warrior on a Horse in the Macedonia Square fountain
+        import monument
+        posts = list(posts) + monument.build(add_c, chunk_of, lambda x, y: T.hs(x, y))
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] monument skipped: {e}")
+
     stage("construction")
     phase("construction sites")
     works = []
