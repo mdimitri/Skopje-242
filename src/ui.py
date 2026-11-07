@@ -452,6 +452,9 @@ class Loader:
             if c["st"] in ("done", "cached"):
                 continue
             x0, y0, x1, y1 = c["r"]
+            x0, y0, x1, y1 = max(x0, bx[0]), max(y0, bx[1]), min(x1, bx[2]), min(y1, bx[3])   # elevation tiles overhang the box: clip to it
+            if x1 <= x0 or y1 <= y0:
+                continue
             col = {"active": rl.Color(255, int(170 + 60 * pulse), 60, 255), "fail": C_FAIL, "split": C_SPLIT}.get(c["st"], rl.Color(60, 64, 76, 255))
             rl.draw_rectangle_lines_ex(rl.Rectangle(x + (x0 - bx[0]) * sx + 1, y + (y0 - bx[1]) * sy + 1,
                                                     (x1 - x0) * sx - 2, (y1 - y0) * sy - 2), 1 if c["st"] == "pending" else 2, col)
