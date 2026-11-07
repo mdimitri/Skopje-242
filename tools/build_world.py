@@ -1891,6 +1891,10 @@ def main():
     try:                                                        # round 32: Warrior on a Horse in the Macedonia Square fountain
         import monument
         posts = list(posts) + monument.build(add_c, chunk_of, lambda x, y: T.hs(x, y))
+        import statues
+        _sp, _placed = statues.build(add_c, chunk_of, lambda x, y: _not_building(x, y) and not _is_water(x, y), lambda x, y: T.hs(x, y))
+        posts = list(posts) + _sp
+        print(f"[build] statues placed: {_placed}")
         for ri_, rd_ in enumerate(roads):                       # round 32: the Stone Bridge arcade
             if rd_["id"] == 411079115 and ri_ in decks:
                 monument.build_bridge(decks[ri_], lambda x, y: T.hs(x, y), mesh.add, chunk_of)
