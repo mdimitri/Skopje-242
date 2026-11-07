@@ -1697,6 +1697,7 @@ def main():
         if lod:
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
             renderer.sun = sunshadow.L
+            renderer.sun_k = sunshadow.strength / 0.92
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()

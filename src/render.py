@@ -43,6 +43,7 @@ class Renderer:
         self.overview = overview
         self._built = 0
         self.shadows = True
+        self.sun_k = 1.0              # 0..1: how much real sun there is (people's shadows fade with it)
         self.sun = None               # unit vector towards the sun (set by main each frame): contact shadows fall away from it
         self.car_models = {}
         self.front_wheels = {}        # kind -> (axle x, radius, track half, model)
@@ -319,10 +320,21 @@ class Renderer:
         n = math.hypot(ox, oz)
         if n > 2.5:
             ox, oz = ox * 2.5 / n, oz * 2.5 / n
+        k = self.sun_k
+        sl = math.hypot(L[0], L[2]) / L[1] if L[1] > 1e-6 else 3.0         # shadow length per metre of height
+        dn = (-L[0] / (math.hypot(L[0], L[2]) or 1.0), -L[2] / (math.hypot(L[0], L[2]) or 1.0))
         for x, z, h, hl, hw, a, gy in items:
+            if hl == hw and hl >= 0.3:                      # people: a shadow stretched from the feet away from the sun, as long as the body is tall
+                ln = min(6.0, 1.7 * sl * hl / 0.35)
+                x += dn[0] * ln / 2
+                z += dn[1] * ln / 2
+                h, hl, hw, a = math.atan2(dn[1], dn[0]), ln / 2 + 0.12, hw * 0.75, int(a * k)
+                if a <= 0:
+                    continue
+            else:
+                x += ox
+                z += oz
             ca, sa = math.cos(h), math.sin(h)
-            x += ox
-            z += oz
             rl.rl_color4ub(10, 10, 20, a)
             for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
                 lx, lz = sx * hl, sz * hw

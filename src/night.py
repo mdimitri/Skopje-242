@@ -8,7 +8,7 @@ import clock
 import vehicles
 
 V3 = rl.Vector3
-NL = 32                      # lights that really light the world per frame (nearest to the view centre)
+NL = 40                      # lights that really light the world per frame (nearest to the view centre)
 LIGHT_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp;
@@ -66,6 +66,7 @@ class Night:
         self.st = None                                 # the Streamer (set by main): its meshes are redrawn with the light shader
         self.lt = []                                   # this frame's lights: (x, y, z, radius, r, g, b, intensity, dx, dy, dz, cone cos or 0)
         self.lsh = None
+        self.lamp_r = {}
 
     def _seen(self, cam, x, z, y):
         """False when a building wall stands between the camera and the point (x, height y, z)."""
@@ -137,7 +138,7 @@ class Night:
                 emerg.append((b.x, b.y, b.h, bool(getattr(b, "siren", False) or getattr(b, "service", False)) or (b.player_car and b.speed > 3), b.kind))
         self.lt = []
         if dark > 0.02:
-            tint = _col(255 - dark * 190, 255 - dark * 172, 255 - dark * 105, 255)
+            tint = _col(255 - dark * 175, 255 - dark * 160, 255 - dark * 100, 255)      # never darker than ~30% / 37% / 61%: a baseline ambient light everywhere
             rl.begin_blend_mode(rl.BLEND_MULTIPLIED)
             rl.draw_rectangle(0, 0, sw, sh, tint)
             rl.end_blend_mode()
@@ -148,7 +149,7 @@ class Night:
                 for cy in range(int(rect[1] // CELL) - 1, int(rect[3] // CELL) + 2):
                     for x, y in self.cells.get((cx, cy), ()):
                         self._glow(cam, x, y, 4.5, r_lamp, (255, 205, 120), 150 * dark)
-                        self.lt.append((x, self.w.ground_y(x, y) + 4.5, y, 17.0, 1.0, 0.8, 0.47, 1.5 * dark, 0, 0, 0, 0.0))
+                        self.lt.append((x, self.w.ground_y(x, y) + 4.5, y, self._lamp_r(x, y), 1.0, 0.8, 0.47, 2.25 * dark, 0, 0, 0, 0.0))
             for p in (sim.peds.list if self.detail >= 1 else ()):         # NPC cyclists / mopeds / scooters: one lamp, one tail light
                 if p.mode == "walk" and p.arch in vehicles.JACK_KIND and rect[0] < p.x < rect[2] and rect[1] < p.y < rect[3]:
                     self._lights(cam, p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], ppm, dark, False)
@@ -186,6 +187,17 @@ class Night:
         rl.end_blend_mode()
         if dark > 0.02 and self.st is not None:
             self._light_pass(cam, rect)
+
+    def _lamp_r(self, x, y):
+        """Reach of a street lamp: 22 m, up to 34 m beside boulevards (wide roads), looked up once per lamp."""
+        k = (x, y)
+        r = self.lamp_r.get(k)
+        if r is None:
+            sg, w = self.w.sg, self.w
+            wmax = max((w.edges[i]["w"] for cx in (int((x - 12) // sg), int((x + 12) // sg)) for cy in (int((y - 12) // sg), int((y + 12) // sg))
+                        for i in w.drive_cells.get((cx, cy), ())), default=7.0)
+            r = self.lamp_r[k] = min(34.0, 22.0 + 1.5 * max(0.0, wmax - 8.0))
+        return r
 
     def _light_pass(self, cam, rect):
         """Lamps and vehicle lights as real lights: the ground, roads and buildings in view are drawn once more with a
@@ -282,9 +294,7 @@ class Night:
             return
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
-            if s < 0:
-                hx_, hy_ = x + ca * L, y + sa * L
-                self.lt.append((hx_, self.w.ground_y(hx_, hy_) + lamp_y, hy_, 24.0, 1.0, 0.95, 0.8, 1.5 * dark, ca, -0.12, sa, 0.8))
+            self.lt.append((hx, self.w.ground_y(hx, hy) + lamp_y, hy, 22.0, 1.0, 0.95, 0.8, 1.1 * dark, ca, -0.12, sa, 0.85))   # one spot per headlight
             self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
             self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
