@@ -139,6 +139,12 @@ class Services:
                     and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
             if near:
                 return min(near)[1]
+        if not c and to_call:                   # nothing in the ring: still the shortest drive, never a random far node
+            dist = self._to(x, y)
+            near = [(dist[n], p) for n, p in self._nodes.items() if n in dist and math.hypot(p[0] - fx, p[1] - fy) > 65.0
+                    and math.hypot(p[0] - x, p[1] - y) > 30.0]
+            if near:
+                return min(near)[1]
         if not c:
             c = [p for p in self._nodes.values() if math.hypot(p[0] - x, p[1] - y) > 80.0]
         return self.rng.choice(c) if c else None
