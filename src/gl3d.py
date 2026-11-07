@@ -1983,6 +1983,7 @@ void main(){
     c *= 1.0 - g * (rain * 0.2 + blot * 0.16);
     c = mix(c, vec3(0.50, 0.44, 0.38) * (0.8 + lum * 0.3), peel * g * 0.55);
   }
+  c *= (0.52 + 0.55 * max(dot(nrm, SUNL), 0.0)) / (0.52 + 0.55 * max(dot(nrm, vec3(-0.4494, 0.7990, -0.3995)), 0.0));   // vertex colours were lit by the old fixed sun: relight for the real one
   c = shade(c, sunShadow(wp, nrm));
   finalColor = vec4(c, base.a);
 }"""
