@@ -1537,6 +1537,10 @@ def main():
                     res_ = menu_mod.run(cfg, apply_cfg, True, save_fn=lambda n_: savegame.save(sim, cfg, n_))
                     if res_ == "quit":
                         break
+                    if res_ == "mainmenu":                 # relaunch: the fresh process opens on the title menu
+                        import updater
+                        updater.restart()
+                        break
                     if res_ == "chars":
                         if menu_mod.pick_character(cfg, aud):
                             break

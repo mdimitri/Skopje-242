@@ -106,7 +106,7 @@ def _rows(in_game, slots=(), settings_only=False):
         g += [Row("head", TXT("menu.0044")), *[Row("action", (TXT("menu.0045") + f'{n}:  {slots[n - 1]}'), f"save{n}") for n in range(1, len(slots) + 1)]]
     g += [Row("head", TXT("menu.0046")), *[Row("action", (TXT("menu.0047") + f'{n}:  {slots[n - 1]}'), f"load{n}") for n in range(1, len(slots) + 1)]]
     if in_game:
-        g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars")]
+        g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars"), Row("action", "Назад на главното мени", "mainmenu")]
     g += [Row("action", TXT("menu.0049"), "quit")]
     return R + [(0, r) for r in g] + [MAPROW]
 
@@ -565,6 +565,17 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 return "play"
             if k == "quit" and not font.confirm_quit():
                 continue
+            if k == "mainmenu":
+                ans = font.confirm_leave()
+                if ans is None:
+                    continue
+                if ans == "save" and save_fn is not None:
+                    n = next((i for i in range(1, savegame.SLOTS + 1) if savegame.read(i) is None), 1)   # first empty slot, else slot 1
+                    if not save_fn(n):
+                        flash, flash_t = TXT("menu.0057"), time.time()
+                        continue
+                cfg.save()
+                return k
             if k in ("quit", "chars"):
                 cfg.save()
                 return k

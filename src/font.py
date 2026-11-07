@@ -150,6 +150,38 @@ def confirm_quit(in_frame=False):
     return ans
 
 
+def confirm_leave():
+    """Modal "back to the main menu" card.  -> 'save' | 'lose' | None (cancel)."""
+    import time
+    t0 = time.time()
+    while True:
+        if rl.window_should_close():
+            return None
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(12, 14, 20, 255))
+        bw, bh = min(620, W - 40), 200
+        bx, by = (W - bw) // 2, (H - bh) // 2
+        rl.draw_rectangle(bx, by, bw, bh, rl.Color(28, 30, 40, 250))
+        rl.draw_rectangle_lines(bx, by, bw, bh, rl.Color(255, 205, 90, 255))
+        q = "Назад на главното мени?"
+        draw_text(q, bx + (bw - measure_text(q, 24, True)) // 2, by + 28, 24, rl.WHITE, bold=True)
+        hint = "Дали да го зачуваш напредокот или да го изгубиш?"
+        draw_text(hint, bx + (bw - measure_text(hint, 16)) // 2, by + 70, 16, rl.Color(170, 174, 185, 255))
+        bwid = (bw - 80) // 3
+        save = button("Зачувај", bx + 20, by + 116, bwid, 44, 20)
+        lose = button("Изгуби", bx + 40 + bwid, by + 116, bwid, 44, 20)
+        cancel = button("Откажи", bx + 60 + 2 * bwid, by + 116, bwid, 44, 20)
+        rl.end_drawing()
+        if time.time() - t0 > 0.25:                      # the click that opened the card must not answer it
+            if save or rl.is_key_pressed(rl.KEY_ENTER):
+                return "save"
+            if lose:
+                return "lose"
+            if cancel or rl.is_key_pressed(rl.KEY_ESCAPE):
+                return None
+
+
 def exit_button(x=None, y=10):
     """The always-there "× Излез" button: asks first, then closes the game."""
     if x is None:
