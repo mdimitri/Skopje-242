@@ -27,6 +27,8 @@ def _mix(a, b, k):
     return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
 
 
+MOON_AZ = 2.2                                             # fixed moon azimuth (rad)
+
 class Selfie:
     def __init__(self, root):
         self.root = os.path.join(root, "selfies")
@@ -110,10 +112,14 @@ class Selfie:
                     y = hy - el * hy * 1.1
                     tw = 0.6 + 0.4 * math.sin(t * 2.0 + az * 9)
                     rl.draw_circle(int(x), int(y), 1.4 if br > 0.8 else 1.0, rl.Color(255, 255, 235, int(a * br * tw)))
-            mx = sx(self.yaw + 0.5)
+            mx = sx(MOON_AZ)                                      # fixed spot in the world sky: only turning the camera moves it on screen
             if mx is not None:
-                rl.draw_circle_gradient(rl.Vector2(int(mx), int(hy * 0.4)), 70, rl.Color(230, 235, 255, int(60 * a / 255)), rl.Color(230, 235, 255, 0))
-                rl.draw_circle(int(mx), int(hy * 0.4), 24, rl.Color(240, 240, 225, a))
+                my = int(hy * 0.45)
+                r = int(sh * 0.11)                                # cartoonishly big
+                rl.draw_circle_gradient(rl.Vector2(int(mx), my), r * 2.6, rl.Color(200, 215, 255, int(70 * a / 255)), rl.Color(200, 215, 255, 0))
+                rl.draw_circle(int(mx), my, r, rl.Color(244, 242, 220, a))
+                for cx, cy, cr in ((-0.35, -0.25, 0.22), (0.30, 0.1, 0.16), (-0.1, 0.38, 0.12)):   # craters
+                    rl.draw_circle(int(mx + cx * r), int(my + cy * r), int(cr * r), rl.Color(214, 212, 190, a))
         if dark < 0.8:
             ca = int(235 * (1.0 - dark / 0.8))
             tint = _mix((255, 255, 255), (255, 200, 170), dusk)
