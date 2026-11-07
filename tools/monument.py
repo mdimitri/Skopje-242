@@ -203,3 +203,78 @@ def build(add, chunk_of, terrain_h=None):
             add(chunk_of(float(pos[:, 0].mean()), float(pos[:, 2].mean())), 3, pos, uv, col)
     t = float(terrain_h(CX, CZ)) if terrain_h else 0.0
     return [(CX, CZ, 3.3, t - 1.0, t + 30.0)]
+
+
+# ------------------------------------------------------------------------------------------------ the Stone Bridge
+BRIDGE_PTS = []                  # set by build_bridge(): centreline of the Stone Bridge; roads3d skips its generic piers there
+SAND, SAND2 = (200, 182, 146), (168, 152, 122)
+
+
+def on_bridge(x, z, r=0.0):
+    for (ax, ay), (bx, by) in zip(BRIDGE_PTS, BRIDGE_PTS[1:]):
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy or 1e-9
+        t = max(0.0, min(1.0, ((x - ax) * dx + (z - ay) * dy) / l2))
+        if math.hypot(x - ax - dx * t, z - ay - dy * t) < 5.0 + r:
+            return True
+    return False
+
+
+def build_bridge(deck, terrain_h, add_abs, chunk_of):
+    """Kamen Most: sandstone arcade (about one 17.8 m segmental arch per span) on both flanks of the generic deck, lamp pillars on
+    the piers and gate pillars at both ends. `deck` is terrain.Deck; everything is placed at absolute heights."""
+    BRIDGE_PTS[:] = list(deck.pts)
+    L = deck.len
+    nsp = max(3, round(L / 17.8))
+    span_l = L / nsp
+
+    def at(s):
+        s = max(0.0, min(L, s))
+        k = 0
+        while k < len(deck.cum) - 2 and deck.cum[k + 1] < s:
+            k += 1
+        t = (s - deck.cum[k]) / ((deck.cum[k + 1] - deck.cum[k]) or 1.0)
+        (ax, ay), (bx, by) = deck.pts[k], deck.pts[k + 1]
+        return (ax + (bx - ax) * t, ay + (by - ay) * t, deck.h[k] + (deck.h[k + 1] - deck.h[k]) * t,
+                math.atan2(by - ay, bx - ax))
+
+    off = deck.hw + 0.25
+    n_slice = max(2, int(span_l / 1.4))
+    for side in (-1, 1):
+        for sp in range(nsp):
+            g = G()
+            for i in range(n_slice):
+                pts = []
+                for u in (i / n_slice, (i + 1) / n_slice):
+                    s = (sp + u) * span_l
+                    x, z, dh, yaw = at(s)
+                    px, pz = x - math.sin(yaw) * side * off, z + math.cos(yaw) * side * off
+                    y0 = float(terrain_h(px, pz)) - 0.4
+                    q = abs(2 * u - 1) / 0.86                              # arch occupies the middle 86 % of the span
+                    ry = max(0.6, dh - 1.0 - y0 - 0.15)
+                    bot = y0 + (ry * math.sqrt(1 - q * q) if q < 1 else 0.0)
+                    pts.append((px, pz, bot, dh, yaw))
+                (x0_, z0_, b0, d0, ya), (x1_, z1_, b1, d1, _) = pts
+                nrm = (-math.sin(ya) * side, 0, math.cos(ya) * side)
+                if side < 0:
+                    g.quad((x0_, b0, z0_), (x1_, b1, z1_), (x1_, d1, z1_), (x0_, d0, z0_), SAND, nrm)
+                else:
+                    g.quad((x1_, b1, z1_), (x0_, b0, z0_), (x0_, d0, z0_), (x1_, d1, z1_), SAND, nrm)
+            pos, uv, col = g.out()
+            if len(pos):
+                mx, mz = float(pos[:, 0].mean()), float(pos[:, 2].mean())
+                add_abs(chunk_of(mx, mz), 3, pos, uv, col)
+    # pier lamp pillars + gate pillars
+    for k in range(nsp + 1):
+        x, z, dh, yaw = at(k * span_l)
+        end = k in (0, nsp)
+        for side in (-1, 1):
+            px, pz = x - math.sin(yaw) * side * (off - 0.3), z + math.cos(yaw) * side * (off - 0.3)
+            g = G()
+            h = 2.6 if end else 1.7
+            w = 0.9 if end else 0.6
+            g.box(px, dh, pz, w, h, w, SAND, yaw)
+            g.box(px, dh + h, pz, w + 0.2, 0.15, w + 0.2, SAND2, yaw)
+            g.box(px, dh + h + 0.15, pz, w * 0.6, 0.5, w * 0.6, (240, 226, 170), yaw)      # lantern
+            pos, uv, col = g.out()
+            add_abs(chunk_of(px, pz), 3, pos, uv, col)

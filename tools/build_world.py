@@ -1891,6 +1891,9 @@ def main():
     try:                                                        # round 32: Warrior on a Horse in the Macedonia Square fountain
         import monument
         posts = list(posts) + monument.build(add_c, chunk_of, lambda x, y: T.hs(x, y))
+        for ri_, rd_ in enumerate(roads):                       # round 32: the Stone Bridge arcade
+            if rd_["id"] == 411079115 and ri_ in decks:
+                monument.build_bridge(decks[ri_], lambda x, y: T.hs(x, y), mesh.add, chunk_of)
     except Exception as e:  # noqa: BLE001 - decoration
         import traceback
         traceback.print_exc()
@@ -2029,7 +2032,7 @@ def main():
     stage("roads3d")
     try:
         phase("3D roads")
-        roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r)           # no bridge pier in a street passing underneath
+        roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r) or __import__("monument").on_bridge(x, y)          # no bridge pier in a street passing underneath
         nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks)
         posts = list(posts) + piers
         roads3d_ok = True
