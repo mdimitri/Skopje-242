@@ -83,6 +83,8 @@ class Selfie:
         h = self.cy_
         az = o.az if o.az is not None else world.ground_y(o.x, o.y)
         back, up, ahead = (8.0, 5.5, 3.0) if sim.mode == "car" else (4.5, 3.6, 2.0)   # pitched ~25 deg down: horizon near the top edge
+        h += getattr(self, "look_yaw", 0.0)                # mouse free-look orbit (0 when the mouse steers)
+        up += getattr(self, "look_pitch", 0.0) * back
         px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
         self.yaw = h
         cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)

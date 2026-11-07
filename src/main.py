@@ -1594,7 +1594,15 @@ def main():
         if grab_ != mouse_grab:                               # street view on foot: the mouse is captured and turns the avatar
             (rl.disable_cursor if grab_ else rl.enable_cursor)()
             mouse_grab = grab_
-        if grab_ and sim.mode == "car":                      # the mouse steers like a wheel that slowly centres itself
+        if cfg["mouse_mode"] or not grab_:
+            selfie.look_yaw = selfie.look_pitch = 0.0
+        if grab_ and cfg["mouse_mode"] == 0:                  # free-look: the mouse only orbits the camera, keys do all the moving
+            md_ = rl.get_mouse_delta()
+            selfie.look_yaw = (getattr(selfie, "look_yaw", 0.0) + md_.x * 0.004 * cfg["mouse_sens"] + math.pi) % math.tau - math.pi
+            selfie.look_pitch = max(-0.4, min(1.2, getattr(selfie, "look_pitch", 0.0) + md_.y * 0.003 * cfg["mouse_sens"]))
+            if sim.mode != "car":
+                inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
+        elif grab_ and sim.mode == "car":                      # the mouse steers like a wheel that slowly centres itself
             mouse_steer = max(-1.0, min(1.0, mouse_steer * max(0.0, 1.0 - 2.5 * dt) + rl.get_mouse_delta().x * 0.012 * cfg["mouse_sens"]))
             if not inp.get("steer"):
                 inp["steer"] = mouse_steer
