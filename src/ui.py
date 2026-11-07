@@ -470,7 +470,7 @@ class Loader:
                     font.draw_text(name, px + 5, py - 6, 11, rl.Color(255, 255, 255, 215))
         ly = y + mh + 4                                                 # legend: what each colour is
         lx = x
-        for k in ("roads", "buildings", "areas", "water", "trees", "parked", "props", "pois", "chunk"):
+        for k in ("roads", "buildings", "areas", "water", "trees", "parked", "props", "pois"):
             c = MAP_COL[k]
             wd = font.measure_text(MK_LEG[k], 12) + 24
             if lx + wd > x + w:

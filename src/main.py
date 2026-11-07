@@ -646,7 +646,6 @@ def main():
     for i, key in enumerate(first):
         loader.tick(i / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
         streamer.update([key], True, 1e9)
-        loader.mark_rect(key[0] * S, key[1] * S, (key[0] + 1) * S, (key[1] + 1) * S)
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     loader.finish()
     keep_window_alive(False)
