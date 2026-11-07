@@ -14,6 +14,7 @@ import struct
 import time
 
 import actors
+import mp
 import vehicles
 
 STATE_HZ, SNAP_HZ = 20.0, 15.0
@@ -22,7 +23,7 @@ JOIN_D, LEAVE_D = 560.0, 700.0                  # two players see the same part 
 ALL = 255
 K_PLAYER, K_CARS, K_PEDS, K_BODIES, K_WORLD = 1, 2, 3, 4, 5
 HDR = struct.Struct("!BIBBB")
-PLAYER = struct.Struct("!BBBBfffffffBBBB")     # pid flags kind color x y h vx vy z aux hp weapon atk lik
+PLAYER = struct.Struct("!BBBBfffffffBBBBI")    # pid flags kind color x y h vx vy z aux hp weapon atk lik money
 CAR = struct.Struct("!HBBfffffhhh")            # id kind color x y h z v str*1000 pitch*1000 roll*1000
 PED = struct.Struct("!HBBBBBBBBfffff")         # id mode arch shirt skin pose flags atk v*20 x y h(+spin) anim hy
 BODY = struct.Struct("!HBBfffffhhhfBB")        # id kind color x y h z speed wheel*1000 pitch*1000 roll*1000 door flags health*2.55
@@ -75,12 +76,12 @@ class Game:
         if s.mode == "car" and s.car is not None:
             b = s.car
             return PLAYER.pack(self.pid, 0, _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h, b.vx, b.vy,
-                               b.az if b.az is not None else 0.0, b.wheel, _clampb(b.health), 0, 0, _clampb(getattr(s, "lik", 0)))
+                               b.az if b.az is not None else 0.0, b.wheel, _clampb(b.health), 0, 0, _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
         wk = s.walker
         wi = WLIST.index(wk.weapon) if wk.weapon in WLIST else 0
         fl = 1 | (2 if wk.health <= 0 else 0) | (4 if wk.speed > 6.0 else 0) | (8 if wk.moving else 0)
         return PLAYER.pack(self.pid, fl, 0, 0, wk.x, wk.y, wk.h, wk.vx, wk.vy, wk.az if wk.az is not None else 0.0, wk.anim,
-                           _clampb(wk.health), wi, (wk.atk_kind + 1) if wk.atk_t > 0 else 0, _clampb(getattr(s, "lik", 0)))
+                           _clampb(wk.health), wi, (wk.atk_kind + 1) if wk.atk_t > 0 else 0, _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
 
     # ------------------------------------------------------------------ host: build snapshots
     def _wid(self, obj):
@@ -169,8 +170,28 @@ class Game:
             if self.host:
                 ses.net.broadcast_unrel(HDR.pack(K_WORLD, self.tick, 1, 0, ALL) + WORLD.pack(s.clock.hour))
         self._apply_remote(dt)
+        self._view()
         if s.client:
             self._apply_puppets(dt)
+
+    def _view(self):
+        """What the HUD / map / name labels need: the other players, and the team's money (everybody's added up)."""
+        s = self.sim
+        pl = []
+        for pid, r in self.remote.items():
+            p = self.ses.players.get(pid)
+            if p is not None:
+                pl.append({"pid": pid, "name": p["name"], "color": mp.COLORS[p["color"] % 4], "x": r["x"], "y": r["y"], "h": r["h"],
+                           "hp": r["hp"], "foot": bool(r["flags"] & 1)})
+        me = self.ses.players.get(self.pid, {"color": 0})
+        near = [q for q in pl if q["hp"] > 0]
+        if near:
+            q = min(near, key=lambda q: (q["x"] - s.focus()[0]) ** 2 + (q["y"] - s.focus()[1]) ** 2)
+            s.respawn_hint = (q["x"], q["y"])
+        else:
+            s.respawn_hint = None
+        s.mp_view = {"players": pl, "me_color": mp.COLORS[me["color"] % 4],
+                     "team": int(s.money) + sum(r.get("money", 0) for r in self.remote.values())}
 
     # ------------------------------------------------------------------ player vs player
     def _route(self, to, obj):
@@ -361,7 +382,7 @@ class Game:
                         continue
                     r = self.remote.setdefault(pid, {"body": None})
                     r.update(raw=raw, flags=t[1], kind=t[2], color=t[3], tx=t[4], ty=t[5], th=t[6], vx=t[7], vy=t[8], z=t[9], aux=t[10],
-                             hp=t[11], wi=t[12], atk=t[13], lik=t[14], seen=self.now)
+                             hp=t[11], wi=t[12], atk=t[13], lik=t[14], money=t[15], seen=self.now)
                     if "x" not in r:
                         r["x"], r["y"], r["h"] = t[4], t[5], t[6]
             elif kind == K_CARS:

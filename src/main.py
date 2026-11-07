@@ -102,7 +102,7 @@ import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
-from hud import Hud, build_labels, draw_labels   # noqa: E402
+from hud import Hud, build_labels, draw_labels, draw_players   # noqa: E402
 from render import LOD_PPM, Renderer   # noqa: E402
 from ui import Loader, fatal_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
@@ -1731,6 +1731,7 @@ def main():
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
             guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
+            guard.run("players", draw_players, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""

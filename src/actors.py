@@ -2017,6 +2017,8 @@ class Sim:
         self.client = False                       # multiplayer guest: traffic / pedestrians / services come from the host (mpgame.py)
         self.remote_foot = {}                     # multiplayer: other players on foot, drawn by render
         self.pvp = True                           # multiplayer: friendly fire (players can hurt each other)
+        self.respawn_hint = None                  # multiplayer: where the nearest living other player is (you come back to life next to him)
+        self.mp_view = None                       # multiplayer: what the HUD shows (other players, team money), set by mpgame
         self.pvp_out = []                         # (pid, kind, amount) hits this player landed on others; mpgame sends them
         sx, sy, sh = world.spawn
         self.car = Body(sx, sy, sh, 1, 0)
@@ -2845,7 +2847,7 @@ class Sim:
                 if (self.respawn_t > 4.5 if ko else (self.respawn_t > 1.0 and again)) and (not waiting or again):
                     self.respawn_t = 0
                     if not ko:
-                        p = w.nearest_drive_point(wk.x, wk.y)
+                        p = w.nearest_drive_point(*(self.respawn_hint or (wk.x, wk.y)))
                         if p:
                             wk.x, wk.y = p[0], p[1] + 2.0
                     wk.az, wk.vz = None, 0.0

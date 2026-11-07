@@ -53,6 +53,42 @@ def build_labels(world, seed=5):
     return out
 
 
+def draw_players(sim, cam, sw, sh):
+    """Multiplayer: a name over every other player on screen; a semi-transparent arrow at the screen edge towards those off screen."""
+    mpv = getattr(sim, "mp_view", None)
+    if not mpv:
+        return
+    fx, fy = sim.focus()[:2]
+    for q in mpv["players"]:
+        sp = rl.get_world_to_screen(rl.Vector3(q["x"], sim.w.ground_y(q["x"], q["y"]) + 2.6, q["y"]), cam)
+        col = rl.Color(*q["color"], 255)
+        d = math.hypot(q["x"] - fx, q["y"] - fy)
+        if 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30:
+            wpx = font.measure_text(q["name"], 20, True)
+            rl.draw_rectangle_rounded(rl.Rectangle(sp.x - wpx / 2 - 8, sp.y - 24, wpx + 16, 26), 0.35, 5, rl.Color(10, 10, 14, 170))
+            font.draw_text(q["name"], int(sp.x - wpx / 2), int(sp.y - 22), 20, col, bold=True)
+            continue
+        cx, cy = sw / 2, sh / 2
+        dx, dy = sp.x - cx, sp.y - cy
+        if not (math.isfinite(dx) and math.isfinite(dy)) or (dx == 0 and dy == 0):
+            dx, dy = q["x"] - fx, q["y"] - fy
+        a = math.atan2(dy, dx)
+        k = min((sw / 2 - 50) / (abs(math.cos(a)) + 1e-6), (sh / 2 - 50) / (abs(math.sin(a)) + 1e-6))
+        ax, ay = cx + math.cos(a) * k, cy + math.sin(a) * k
+        tip = rl.Vector2(ax + math.cos(a) * 22, ay + math.sin(a) * 22)
+        l_ = rl.Vector2(ax + math.cos(a + 2.5) * 20, ay + math.sin(a + 2.5) * 20)
+        r_ = rl.Vector2(ax + math.cos(a - 2.5) * 20, ay + math.sin(a - 2.5) * 20)
+        fill, edge = rl.Color(*q["color"], 150), rl.Color(255, 255, 255, 170)
+        rl.draw_triangle(tip, r_, l_, fill)
+        rl.draw_triangle_lines(tip, r_, l_, edge)
+        lab = "%s  %d м" % (q["name"], int(d))
+        wpx = font.measure_text(lab, 16)
+        lx = max(8, min(sw - wpx - 8, ax - math.cos(a) * (34 + wpx / 2) - wpx / 2))
+        ly = max(8, min(sh - 26, ay - math.sin(a) * 40 - 8))
+        font.draw_text(lab, int(lx) + 1, int(ly) + 1, 16, rl.Color(0, 0, 0, 160))
+        font.draw_text(lab, int(lx), int(ly), 16, rl.Color(*q["color"], 190))
+
+
 def draw_labels(labels, cam, fx, fy, sw, sh):
     near = []
     for lb in labels:
@@ -117,6 +153,13 @@ class Hud:
         n, l, ps = self.place
         self.place = (n, l, ps - dt) if ps > 0 else ("", "", 0.0)
 
+    @staticmethod
+    def _big(text, x, y, size, col):
+        """Text with a dark outline so money / health / weapon stay readable on any ground."""
+        for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2), (2, 2)):
+            font.draw_text(text, x + ox, y + oy, size, rl.Color(0, 0, 0, 200))
+        font.draw_text(text, x, y, size, col)
+
     def map_rect(self, sw, sh):
         """Big map rectangle (x, y, w, h), keeping the world's aspect ratio."""
         mw = sw - 80
@@ -143,18 +186,21 @@ class Hud:
         # ---- stats (right)
         x = sw - 270
         clk = sim.clock
-        rl.draw_rectangle_rounded(rl.Rectangle(x - 10, 8, 268, 200), 0.1, 6, rl.Color(10, 10, 14, 150))
+        rl.draw_rectangle_rounded(rl.Rectangle(x - 10, 8, 268, 226 if getattr(sim, "mp_view", None) else 202), 0.1, 6, rl.Color(10, 10, 14, 170))
         font.draw_text(clk.label(), x + 150, 14, 26, rl.Color(255, 255, 255, 235))
         if clk.rush:
             font.draw_text(TXT("hud.0002"), x + 150, 42, 18, rl.Color(255, 120, 90, 255))
         elif clk.dark > 0.5:
             font.draw_text(TXT("hud.0003"), x + 150, 42, 18, rl.Color(150, 170, 255, 255))
         pz = getattr(sim, "money_pulse", 0.0)                          # swells when flying денари land
-        font.draw_text((f'{sim.money}' + TXT("hud.0004")), x, 14 - int(pz * 3), 24 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
+        mpv = getattr(sim, "mp_view", None)
+        self._big((f'{sim.money}' + TXT("hud.0004")), x, 12 - int(pz * 3), 32 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
+        if mpv:                                                        # multiplayer: the team's money (everybody's added up)
+            self._big("Тим: %d" % mpv["team"], x, 48, 22, rl.Color(120, 200, 255, 255))
         for i, (lbl, val) in enumerate(((TXT("hud.0005"), st["burek"]), (TXT("hud.0006"), st["peds"]), (TXT("hud.0007"), st.get("ko", 0)),
                                        (TXT("hud.0008"), st["stolen"]), (TXT("hud.0009"), st["boom"]), (TXT("hud.0010"), st["deaths"]))):
             i += 2.1
-            font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22), 20, rl.Color(250, 225, 120, 255) if i == 2.1 else rl.Color(235, 235, 235, 255))
+            font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22) + (24 if mpv else 0), 20, rl.Color(250, 225, 120, 255) if i == 2.1 else rl.Color(235, 235, 235, 255))
         # ---- vehicle panel
         c = sim.car
         if sim.mode == "car":
@@ -165,7 +211,7 @@ class Hud:
                 font.draw_text(font.fit(self.radio_line, 17, 520), sw - 540, sh - 24, 17, rl.Color(190, 235, 255, 230))
             hp = max(0.0, c.health) / 100.0
             self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
-            font.draw_text(f"{c.name}  {int(max(0, c.health))}%", sw - 260, sh - 128, 18, rl.Color(255, 255, 255, 230))
+            self._big(f"{c.name}  {int(max(0, c.health))}%", sw - 260, sh - 136, 24, rl.Color(255, 255, 255, 240))
             fu = max(0.0, getattr(c, "fuel", 1.0))
             self._bar(sw - 260, sh - 150, 240, 10, fu, rl.Color(230, 90, 60, 255) if fu < 0.15 else rl.Color(240, 170, 40, 255))
             font.draw_text((TXT("hud.0012") + f'{int(fu * 100)}%') + (TXT("hud.0013") if fu <= 0 else ""), sw - 260, sh - 170, 16,
@@ -178,8 +224,8 @@ class Hud:
                 self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
-                font.draw_text((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 130, 18, rl.Color(255, 255, 255, 230))
-                font.draw_text(font.fit(gun, 18, 240), sw - 260, sh - 220, 18, rl.Color(255, 230, 140, 255))
+                self._big((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 138, 26, rl.Color(255, 255, 255, 245))
+                self._big(font.fit(gun, 24, 250), sw - 260, sh - 232, 24, rl.Color(255, 230, 140, 255))
                 self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
@@ -289,6 +335,13 @@ class Hud:
                     qx, qy = to_mm(j.body.x, j.body.y)
                     if inside(qx, qy):
                         rl.draw_circle(int(qx), int(qy), 4, rl.Color(60, 120, 255, 255) if int(rl.get_time() * 4) & 1 else rl.Color(255, 50, 50, 255))
+            for q in (getattr(sim, "mp_view", None) or {}).get("players", ()):          # the other players, in their colours
+                qx, qy = to_mm(q["x"], q["y"])
+                if not inside(qx, qy):                                                  # off the minimap: pinned to its rim
+                    d = math.hypot(qx - mcx, qy - mcy) or 1.0
+                    qx, qy = mcx + (qx - mcx) / d * (mr - 6), mcy + (qy - mcy) / d * (mr - 6)
+                rl.draw_circle(int(qx), int(qy), 6, rl.WHITE)
+                rl.draw_circle(int(qx), int(qy), 4.5, rl.Color(*q["color"], 255))
             qx, qy = to_mm(fx, fy)
             self._arrow(qx, qy, ang, 15)
         else:
@@ -323,6 +376,11 @@ class Hud:
                 qx, qy = to_big(x, y)
                 rl.draw_circle(int(qx), int(qy), 4, rl.Color(120, 30, 30, 255))
                 font.draw_text(name, int(qx) + 7, int(qy) - 8, 16, rl.Color(120, 30, 30, 255))
+            for q in (getattr(sim, "mp_view", None) or {}).get("players", ()):
+                qx, qy = to_big(q["x"], q["y"])
+                rl.draw_circle(int(qx), int(qy), 9, rl.WHITE)
+                rl.draw_circle(int(qx), int(qy), 7, rl.Color(*q["color"], 255))
+                font.draw_text(q["name"], int(qx) + 11, int(qy) - 9, 18, rl.Color(*q["color"], 255))
             qx, qy = to_big(fx, fy)
             self._arrow(qx, qy, ang, 20)
             font.draw_text(TXT("hud.0019"), mx, my - 30, 22, rl.Color(255, 255, 255, 255))
