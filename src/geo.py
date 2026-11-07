@@ -9,5 +9,5 @@ M_LON = 111320.0 * math.cos(math.radians(LAT0))
 def project(lat, lon):
     return ((lon - LON0) * M_LON, -(lat - LAT0) * M_LAT)
 
-HX = 5500.0                         # half-size of the world box (east-west), same as tools/geo.py
-HY = 3500.0
+HX = 6000.0                         # half-size of the world box (east-west), same as tools/geo.py
+HY = 4000.0

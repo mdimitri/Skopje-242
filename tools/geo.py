@@ -5,8 +5,8 @@ west and 1 km to the north and south."""
 import math
 
 LAT0, LON0 = 41.9973, 21.4280      # Stone Bridge / Macedonia Square
-HX = 5500.0                        # half-size east-west in metres
-HY = 3500.0                        # half-size north-south in metres
+HX = 6000.0                        # half-size east-west in metres
+HY = 4000.0                        # half-size north-south in metres
 HALF = HX                          # (kept for old callers: the longest half-extent)
 M_LAT = 110574.0
 M_LON = 111320.0 * math.cos(math.radians(LAT0))
