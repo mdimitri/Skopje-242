@@ -77,6 +77,24 @@ MK_SUB = {"roads joined": "спојувам улици", "junctions": "крст�
 MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
            "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255),
            "bmesh": (255, 240, 170), "graph": (120, 190, 250), "bridge": (200, 160, 255), "road3d": (255, 255, 255), "props": (190, 120, 255)}
+# last line of defence: the loading screen never shows Latin letters; anything not translated above is written in Cyrillic
+_LAT = {"sh": "ш", "zh": "ж", "ch": "ч", "dj": "ѓ", "gj": "ѓ", "kj": "ќ", "dz": "ѕ", "lj": "љ", "nj": "њ", "dh": "д", "th": "т", "ph": "ф",
+        "a": "а", "b": "б", "c": "ц", "d": "д", "e": "е", "f": "ф", "g": "г", "h": "х", "i": "и", "j": "ј", "k": "к", "l": "л", "m": "м",
+        "n": "н", "o": "о", "p": "п", "q": "к", "r": "р", "s": "с", "t": "т", "u": "у", "v": "в", "w": "в", "x": "кс", "y": "и", "z": "з"}
+_LAT_RE = re.compile(r"sh|zh|ch|dj|gj|kj|dz|lj|nj|dh|th|ph|[a-z]", re.I)
+
+
+def mk(text):
+    """Same text with every Latin letter turned into its Macedonian Cyrillic counterpart (no-op for Cyrillic text)."""
+    def one(m):
+        c = _LAT[m[0].lower()]
+        return c.upper() if m[0][0].isupper() else c
+    if not text or not re.search(r"[A-Za-z]", str(text)):
+        return text
+    text = str(text).replace("OpenStreetMap", "ОпенСтритМап").replace("OSM", "ОСМ").replace("3D", "3Д")
+    return _LAT_RE.sub(one, text)
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TIMES = os.path.join(ROOT, "data", "cache", "build_times.json")
 
@@ -148,7 +166,7 @@ class Loader:
 
     # ---------------------------------------------------------------- stage control
     def say(self, text):
-        self.log.append(f"[{_fmt(time.time() - self.t0)}] {text}")
+        self.log.append(f"[{_fmt(time.time() - self.t0)}] {mk(text)}")
         del self.log[:-200]
 
     def begin(self, key, note=""):
@@ -197,7 +215,7 @@ class Loader:
             m = rx_.match(note)
             if m:
                 return fn(m)
-        return note
+        return mk(note)
 
     def overall(self):
         tot = sum(self.w.values()) or 1.0
@@ -232,7 +250,7 @@ class Loader:
             if st == "active":
                 self.active_id = cid
                 if prev != "active":
-                    self.say(f"↓ {nm} {where}" + (f" – {self.mirror}" if self.mirror else ""))
+                    self.say(f"↓ {nm} {where}")
             elif st == "done":
                 self.say(f"✓ {nm} {where}: {ev.get('n', 0)} {T.OBJECTS}" + (f" ({T.LEG_CACHED.lower()})" if ev.get("cached") else ""))
             elif st == "fail":
@@ -242,7 +260,7 @@ class Loader:
         elif t == "net":
             cid = ev.get("id", "")
             self.last_net = now
-            self.mirror = ev.get("mirror", self.mirror)
+            self.mirror = "•" if ev.get("mirror") or self.mirror else ""
             st = ev.get("state", "")
             self.net_state = st
             if st == "rest":
@@ -259,7 +277,7 @@ class Loader:
                 txt += f"  ({T.ATTEMPT} {ev['attempt']})"
             col = RED if kind in ("offline", "exhausted") else ORANGE
             self.alert = (txt, col, now + 14)
-            self.say(f"{ev.get('mirror', '')}: {txt}")
+            self.say(txt)
         elif t == "note":
             txt = T.NOTE.get(ev.get("kind", ""), "")
             if ev.get("left"):
@@ -327,9 +345,9 @@ class Loader:
         self.b_frac = max(self.b_frac, min(0.99, num / den))
         self.f["build"] = max(self.f["build"], self.b_frac)
         sub = ev.get("sub", "")
-        sub = MK_SUB.get(sub, sub)
+        sub = mk(MK_SUB.get(sub, sub))
         cnt = (f"{n * 100 // total}%" if total == 1000 else f"{n}/{total}  ({n * 100 // total}%)") if total else ""
-        self.note = T.BUILD.get(lab, lab) + (f"  ·  {sub}" if sub else "") + (f"   {cnt}" if cnt else "")
+        self.note = mk(T.BUILD.get(lab, lab)) + (f"  ·  {sub}" if sub else "") + (f"   {cnt}" if cnt else "")
 
     def build_finished(self, record=True):
         """Tool exited fine: remember how long each phase really took (next run's weights; not for the small demo city)."""
@@ -397,7 +415,7 @@ class Loader:
         # ---- the two bars
         if self.cur:
             fr = self.f[self.cur]
-            what = T.STAGE.get(self.cur, self.cur) + (f"  ·  {self.note}" if self.note else "")
+            what = mk(T.STAGE.get(self.cur, self.cur)) + (f"  ·  {mk(self.note)}" if self.note else "")
             self._tbar(m, cy, W - 2 * m, ch, fr, CUR_BAR, what, f"{fr * 100:3.0f}%")
         ov = self.overall()
         el = now - self.t0
@@ -607,7 +625,7 @@ class Loader:
             if self.mirror:
                 cid = self.active_id
                 what = T.LAYER.get(self.cells.get(cid, {}).get("layer", ""), "") if cid else ""
-                line = f"{T.L_SERVER}: {self.mirror}" + (f"   {what}" if what else "") + (f"   {T.L_WAIT} {self.wait_sec} {T.SEC}" if self.net_state == "wait" else "")
+                line = f"{T.L_SERVER}" + (f"   {what}" if what else "") + (f"   {T.L_WAIT} {self.wait_sec} {T.SEC}" if self.net_state == "wait" else "")
                 font.draw_text(font.fit(line, 14, w), x, y, 14, GREY)
                 y += 20
             cut = getattr(self, "cut", None)
@@ -623,14 +641,14 @@ class Loader:
             font.draw_text(font.fit(f"{T.REST} {left} {T.SEC}: {T.WARN.get(why, '')}", 15, w), x, y, 15, ORANGE)
             y += 22
         elif self.alert and now < self.alert[2]:
-            for ln in font.wrap(self.alert[0], 15, w)[:2]:
+            for ln in font.wrap(mk(self.alert[0]), 15, w)[:2]:
                 font.draw_text(ln, x, y, 15, self.alert[1])
                 y += 20
         if self.warn:
-            font.draw_text(font.fit(self.warn, 15, w), x, y, 15, ORANGE)
+            font.draw_text(font.fit(mk(self.warn), 15, w), x, y, 15, ORANGE)
             y += 22
         if self.radio_line:
-            font.draw_text(font.fit(self.radio_line, 14, w), x, y, 14, GREY)
+            font.draw_text(font.fit(mk(self.radio_line), 14, w), x, y, 14, GREY)
             y += 20
         return y
 
@@ -641,10 +659,10 @@ def fatal_screen(title, lines, seconds=0):
     while not rl.window_should_close():
         rl.begin_drawing()
         rl.clear_background(rl.Color(40, 18, 18, 255))
-        font.draw_text(title, 60, 60, 36, rl.Color(255, 120, 100, 255))
+        font.draw_text(mk(title), 60, 60, 36, rl.Color(255, 120, 100, 255))
         y = 120
         for ln in lines:
-            font.draw_text(ln[:130], 60, y, 18, rl.Color(230, 230, 230, 255))
+            font.draw_text(mk(ln)[:130], 60, y, 18, rl.Color(230, 230, 230, 255))
             y += 26
         font.draw_text(T.CLOSE_TO_EXIT, 60, y + 20, 18, rl.Color(200, 200, 200, 255))
         font.exit_button()

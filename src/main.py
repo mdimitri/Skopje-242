@@ -282,7 +282,7 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
     demo = os.path.join(ROOT, "data", "cache", "world_demo")
     osm = os.path.join(ROOT, "data", "osm")
     if refresh:
-        loader.say("refresh")
+        loader.say("Го освежувам светот")
         shutil.rmtree(real, ignore_errors=True)
         for fn in ("roads", "buildings", "areas", "pois", "places"):
             try:
