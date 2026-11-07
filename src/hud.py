@@ -89,6 +89,19 @@ def draw_players(sim, cam, sw, sh):
         font.draw_text(lab, int(lx), int(ly), 16, rl.Color(*q["color"], 190))
 
 
+def waypoint_screen_dir(cam, gx, gz):
+    """Screen direction (x right, y down) of a ground-plane offset (gx, gz) from the camera target; independent of perspective flips."""
+    fv = (cam.target.x - cam.position.x, cam.target.y - cam.position.y, cam.target.z - cam.position.z)
+    u = (cam.up.x, cam.up.y, cam.up.z)
+    r = (fv[1] * u[2] - fv[2] * u[1], fv[2] * u[0] - fv[0] * u[2], fv[0] * u[1] - fv[1] * u[0])           # right = forward x up
+    t = (r[1] * fv[2] - r[2] * fv[1], r[2] * fv[0] - r[0] * fv[2], r[0] * fv[1] - r[1] * fv[0])           # true up = right x forward
+    nr, nt = math.sqrt(sum(v * v for v in r)) or 1.0, math.sqrt(sum(v * v for v in t)) or 1.0
+    r, t = tuple(v / nr for v in r), tuple(v / nt for v in t)
+    sx = gx * r[0] + gz * r[2]
+    sy = -(gx * t[0] + gz * t[2])
+    return (sx, sy) if (sx or sy) else (gx, gz)
+
+
 def draw_waypoint(hud, sim, cam, sw, sh):
     """Navigation waypoint: a straight-line arrow at the screen edge (a pin when on screen) with the distance; clears itself within 50 m."""
     if not hud.wp:
@@ -103,14 +116,13 @@ def draw_waypoint(hud, sim, cam, sw, sh):
     lab = "%d м" % d if d < 1000 else "%.1f км" % (d / 1000)
     col = rl.Color(40, 160, 255, 255)
     sp = rl.get_world_to_screen(rl.Vector3(tx, sim.w.ground_y(tx, ty) + 3.0, ty), cam)
-    if 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30:
+    front = (tx - cam.position.x) * 0 + (ty - cam.position.z) * (cam.target.z - cam.position.z) < 0   # in front of the camera (it looks towards -z)
+    if 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30 and front:
         rl.draw_triangle(rl.Vector2(sp.x, sp.y), rl.Vector2(sp.x + 12, sp.y - 26), rl.Vector2(sp.x - 12, sp.y - 26), col)
         font.draw_text(lab, int(sp.x - font.measure_text(lab, 18, True) / 2), int(sp.y - 48), 18, rl.WHITE, bold=True)
         return
     cx, cy = sw / 2, sh / 2
-    dx, dy = sp.x - cx, sp.y - cy
-    if not (math.isfinite(dx) and math.isfinite(dy)) or (dx == 0 and dy == 0):
-        dx, dy = tx - fx, ty - fy
+    dx, dy = waypoint_screen_dir(cam, tx - cam.target.x, ty - cam.target.z)
     a = math.atan2(dy, dx)
     k = min((sw / 2 - 60) / (abs(math.cos(a)) + 1e-6), (sh / 2 - 60) / (abs(math.sin(a)) + 1e-6))
     ax, ay = cx + math.cos(a) * k, cy + math.sin(a) * k
