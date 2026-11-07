@@ -230,10 +230,10 @@ class Night:
                         models += list(me[0].values())
                     for m in models:
                         mat = m.materials[0]
-                        old = mat.shader
+                        old = rl.ffi.new("Shader *", mat.shader)          # a real copy: mat.shader is a view into the material
                         mat.shader = self.lsh
                         rl.draw_mesh(m.meshes[0], mat, ident)
-                        mat.shader = old
+                        mat.shader = old[0]
             rl.end_blend_mode()
         finally:
             rl.rl_enable_depth_mask()
