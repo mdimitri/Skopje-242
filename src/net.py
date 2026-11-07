@@ -10,6 +10,7 @@ import socket
 import struct
 import time
 
+PORT = 24242
 MAGIC = b"S242"
 HDR = struct.Struct("!4sBI")
 UNREL, REL, ACK, HELLO = 0, 1, 2, 3

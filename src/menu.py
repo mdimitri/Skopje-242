@@ -15,10 +15,11 @@ from updater import GAME_VERSION
 GOLD = rl.Color(240, 200, 60, 255)
 PINK = rl.Color(226, 32, 104, 255)
 # title menu (v3); new labels live here until they can be added to text/ (human-edited)
-TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
+TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
 NO_SAVE = "Нема зачувана игра"
 BACK = "Назад"
 _T = {}
+MP = {"session": None}     # set by the multiplayer lobby when the host pressed Start (the game itself joins in the next step)
 
 
 def _title():
@@ -398,6 +399,13 @@ def title_menu(aud=None, music=None):
             elif k == "quit":
                 if font.confirm_quit():
                     return "quit"
+            elif k == "multi":
+                import lobby
+                import profile
+                MP["session"] = lobby.run(profile.Profile(), aud, music)
+                if MP["session"]:
+                    return "multi"
+                t_open = time.time()
             else:
                 return k
         rl.begin_drawing()
