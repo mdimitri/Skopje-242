@@ -44,6 +44,12 @@ def _rows(in_game, slots=(), settings_only=False):
     pct = lambda v: f"{int(v * 100)}%"
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
     spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
+    def mz(base, floor):                       # "1,00x · 38×21 м": the ground the screen shows at this zoom (ppm as in main.py's camera, car standing still)
+        def f(v):
+            ppm = max(base * v, floor)
+            w, h = rl.get_screen_width(), rl.get_screen_height()
+            return f"{v:.2f}x · {w / ppm:.0f}×{h / ppm:.0f} м".replace(".", ",")
+        return f
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     H = lambda t: Row("head", t)
     R = [
@@ -69,8 +75,8 @@ def _rows(in_game, slots=(), settings_only=False):
         (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (3, H("Камера")),
-        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=xz, note=TXT("menu.0016"))),
-        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=xz)),
+        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=mz(26.0, 3.64 / 0.6), note=TXT("menu.0016"))),
+        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=mz(1.18 * 10.5, 0.97 / 0.6))),
         (3, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
         (3, Row("toggle", "Дебаг: гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
         (3, Row("toggle", "Дебаг: телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
