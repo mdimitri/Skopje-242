@@ -95,6 +95,7 @@ from bake import PPM, Streamer, bake_overview   # noqa: E402
 import fx as fx_mod   # noqa: E402
 from fx import Particles, Popups   # noqa: E402
 from night import Night   # noqa: E402
+from sunshadow import SunShadow   # noqa: E402
 from places import Places   # noqa: E402
 from speech import SpeechWorker   # noqa: E402
 import smog   # noqa: E402
@@ -478,6 +479,7 @@ def main():
         tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t, "graf": t, "brick": t, "conc": t, "concg": t, "cream": t, "mix": t}
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
+    sunshadow = SunShadow(world, streamer)
     renderer.log = log
     loader.tick(0.15, "overview mesh")
     renderer.build_overview()
@@ -573,6 +575,7 @@ def main():
             sim.places.lang = c["lang"]
         d = c["detail"]
         renderer.shadows = d >= 1
+        sunshadow.enabled = d >= 1
         flags["labels"] = d >= 1 and c["labels"]
         particles.max = (250, 600, 900)[d]
         night.detail = d
@@ -1690,6 +1693,9 @@ def main():
         else:
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
         guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
+        if lod:
+            guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
+            renderer.sun = sunshadow.L
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()

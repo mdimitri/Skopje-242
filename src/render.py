@@ -43,6 +43,7 @@ class Renderer:
         self.overview = overview
         self._built = 0
         self.shadows = True
+        self.sun = None               # unit vector towards the sun (set by main each frame): contact shadows fall away from it
         self.car_models = {}
         self.front_wheels = {}        # kind -> (axle x, radius, track half, model)
         self._own = {}                         # id(body) -> body with its own model
@@ -235,20 +236,6 @@ class Renderer:
                     _last_touch = st.meshes[key]
                     _last_touch[1] = st.frame
             self.drawn_meshes = nm
-            if lod and show_meshes and st.shadow:             # shadows over roads and pavements alike (transparent, no depth write)
-                rl.rl_disable_depth_mask()
-                rl.rl_set_blend_factors_separate(rl.RL_SRC_ALPHA, rl.RL_ONE_MINUS_SRC_ALPHA, rl.RL_ZERO, rl.RL_ONE,       # keep the target's alpha
-                                                 rl.RL_FUNC_ADD, rl.RL_FUNC_ADD)
-                rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)
-                try:
-                    for cx in range(x0, x1 + 1):
-                        for cy in range(y0, y1 + 1):
-                            sm = st.shadow.get((cx, cy))
-                            if sm is not None and sm[1] is not None:
-                                rl.draw_model(sm[1], V3(0, 0, 0), 1.0, WHITE)
-                finally:
-                    rl.end_blend_mode()
-                    rl.rl_enable_depth_mask()
             if lod:
                 if getattr(w, "roads3d", False):
                     self._decals(rect)
@@ -327,10 +314,15 @@ class Renderer:
     def _shadow_batch(self, items):
         rl.rl_disable_depth_mask()
         rl.rl_begin(rl.RL_QUADS)
+        L = self.sun if self.sun is not None else gl3d.SUN
+        ox, oz = -0.8 * L[0] / L[1], -0.8 * L[2] / L[1]                # the contact shadow of a ~0.8 m body falls away from the sun
+        n = math.hypot(ox, oz)
+        if n > 2.5:
+            ox, oz = ox * 2.5 / n, oz * 2.5 / n
         for x, z, h, hl, hw, a, gy in items:
             ca, sa = math.cos(h), math.sin(h)
-            x += 0.5
-            z += 0.4
+            x += ox
+            z += oz
             rl.rl_color4ub(10, 10, 20, a)
             for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
                 lx, lz = sx * hl, sz * hw

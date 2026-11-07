@@ -1719,6 +1719,43 @@ def pickup_model(kind):
     return make_model(*prism_arrays(0.32, 0.7, 8, (240, 240, 240), (190, 36, 30)))      # ajvar jar
 
 
+# ------------------------------------------------------------------ sun state shared by the ground, road and building shaders
+SHADOW_TEX = None               # packed-depth texture of the sun's view (set by sunshadow.py); models made later bind it to map 3
+_sun_shaders = []               # (shader, {uniform: location})
+_sun_state = {"L": SUN.copy(), "vp": np.eye(4), "shd": (0.0, 1.0 / 2048, 0.0)}
+
+
+def _sun_push(sh, loc):
+    L = _sun_state["L"]
+    H = L + np.array([0.0, 0.894, 0.447])
+    H = H / np.linalg.norm(H)
+    for name, v in (("SUNL", L), ("SUNH", H)):
+        if loc[name] >= 0:
+            rl.set_shader_value(sh, loc[name], ffi.new("float[3]", [float(x) for x in v]), rl.SHADER_UNIFORM_VEC3)
+    if loc["shd"] >= 0:
+        k, texel, bias = _sun_state["shd"]
+        rl.set_shader_value(sh, loc["shd"], ffi.new("float[4]", [k, texel, bias, 0.0]), rl.SHADER_UNIFORM_VEC4)
+    if loc["lightVP"] >= 0:
+        rl.set_shader_value_matrix(sh, loc["lightVP"], rl.Matrix(*[float(x) for x in _sun_state["vp"].ravel()]))
+
+
+def _sun_register(sh):
+    loc = {n: rl.get_shader_location(sh, n) for n in ("SUNL", "SUNH", "lightVP", "shd", "texture3")}
+    if loc["texture3"] >= 0:
+        rl.set_shader_value(sh, loc["texture3"], ffi.new("int *", 3), rl.SHADER_UNIFORM_INT)
+    _sun_shaders.append((sh, loc))
+    _sun_push(sh, loc)
+
+
+def set_sun(toward_sun, strength, light_vp, texel, bias):
+    """Move the sun: unit vector towards it, shadow strength 0..1, the shadow map's view-projection matrix (4x4, column vectors)."""
+    _sun_state["L"] = np.asarray(toward_sun, np.float64)
+    _sun_state["vp"] = light_vp
+    _sun_state["shd"] = (float(strength), float(texel), float(bias))
+    for sh, loc in _sun_shaders:
+        _sun_push(sh, loc)
+
+
 # ------------------------------------------------------------------ ground detail (cheap: one shader, one 256² texture)
 DETAIL_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
@@ -1727,8 +1764,11 @@ out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos; out vec3 wp;
 void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wpos = vertexPosition.xz; wp = vertexPosition;
              gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
 BUMP_FN = """
-const vec3 SUNL = vec3(-0.4494, 0.7990, -0.3995);
-const vec3 SUNH = normalize(vec3(-0.4494, 0.7990, -0.3995) + vec3(0.0, 0.894, 0.447));   // half vector, camera looks down at ~63 deg
+uniform vec3 SUNL;      // unit vector towards the sun (moves with the game clock, see set_sun)
+uniform vec3 SUNH;      // half vector sun / camera (the camera looks down at ~63 deg)
+uniform sampler2D texture3;     // sun shadow map: depth packed into red + green, seen from the sun
+uniform mat4 lightVP;
+uniform vec4 shd;       // x = shadow strength (0 = off), y = texel size, z = depth bias, w = unused
 vec3 geoN(vec3 p){ return normalize(cross(dFdx(p), dFdy(p))); }                           // faces the viewer for any visible surface
 // bump from a height value that is already in a register: derivatives only, so it costs no texture fetches
 vec3 bumpN(vec3 p, vec3 n, float h, float strength){
@@ -1738,6 +1778,23 @@ vec3 bumpN(vec3 p, vec3 n, float h, float strength){
   vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
   return normalize(abs(det) * n - strength * g);
 }
+// real-time sun shadow: 0 = lit ... shd.x = fully shadowed. Surfaces turned away from the sun keep their baked shading.
+float sunShadow(vec3 p, vec3 n){
+  float nl = dot(n, SUNL);
+  float k = smoothstep(0.02, 0.15, nl);
+  if (shd.x <= 0.0 || k <= 0.0) return 0.0;
+  vec3 s = (lightVP * vec4(p + n * (0.15 + 0.4 * (1.0 - nl)), 1.0)).xyz * 0.5 + 0.5;
+  float edge = smoothstep(0.0, 0.05, min(min(s.x, 1.0 - s.x), min(s.y, 1.0 - s.y)));
+  if (edge <= 0.0) return 0.0;
+  float z = s.z - shd.z;
+  vec2 o = vec2(0.75 * shd.y, 0.0);
+  vec4 a = vec4(texture(texture3, s.xy + o.xx + o.yy).rg, texture(texture3, s.xy - o.xx - o.yy).rg);
+  vec4 b = vec4(texture(texture3, s.xy + o.xy - o.yx).rg, texture(texture3, s.xy - o.xy + o.yx).rg);
+  vec4 d = vec4(a.x + a.y / 255.0, a.z + a.w / 255.0, b.x + b.y / 255.0, b.z + b.w / 255.0);
+  float occ = dot(vec4(lessThan(d, vec4(z))), vec4(0.25));
+  return shd.x * edge * k * occ;
+}
+vec3 shade(vec3 c, float s){ return c * (1.0 - s * vec3(0.42, 0.37, 0.24)); }     // shadow: darker and a little blue
 // rough: 0 = mirror (glass, wet water), 1 = chalk. Relights the baked colour for the bumped normal and adds the sun glint.
 vec3 relight(vec3 c, vec3 n, vec3 nb, float rough, float k){
   float d = 0.55 * (dot(nb, SUNL) - dot(n, SUNL));
@@ -1846,6 +1903,7 @@ void main(){
     rough = mix(rough, 0.12, wet);                                                         // water: glossy
     c = relight(c, n0, nb, rough, fadeb * mix(0.7, 1.4, wet));
   }
+  c = shade(c, sunShadow(wp, geoN(wp)));
   finalColor = vec4(c, base.a);
 }"""
 # the road / prop mesh (one material for both): only flat dark-grey surfaces get the road wear, walls and trees stay as baked
@@ -1882,6 +1940,7 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     rough = mix(rough, 0.3, (1.0 - road) * (1.0 - sw) * (1.0 - flat_));                  // upright props (signs, billboards, lamp poles): smooth painted metal, no relief
     c = relight(c, nrm, nb, rough, fadeb);
   }
+  c = shade(c, sunShadow(wp, nrm));
   finalColor = vec4(c, base.a);
 }"""
 # facades and roofs: texture emboss towards the fixed sun (window frames, bricks, tiles get relief), fine grit and weathering streaks
@@ -1924,6 +1983,7 @@ void main(){
     c *= 1.0 - g * (rain * 0.2 + blot * 0.16);
     c = mix(c, vec3(0.50, 0.44, 0.38) * (0.8 + lum * 0.3), peel * g * 0.55);
   }
+  c = shade(c, sunShadow(wp, nrm));
   finalColor = vec4(c, base.a);
 }"""
 _bld = None
@@ -1938,6 +1998,7 @@ def building_detail():
             try:
                 sh = rl.load_shader_from_memory(DETAIL_VS, BUILD_FS)
                 if sh.id and sh.id != rl.rl_get_shader_id_default():
+                    _sun_register(sh)
                     _bld = (sh, d[1])
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] building detail off: {e}")
@@ -1949,6 +2010,8 @@ def apply_building_detail(model):
     if d is not None and model is not None:
         model.materials[0].shader = d[0]
         model.materials[0].maps[1].texture = d[1]
+        if SHADOW_TEX is not None:
+            model.materials[0].maps[3].texture = SHADOW_TEX
 
 
 _solid = None
@@ -1964,6 +2027,7 @@ def road_detail():
             try:
                 sh = rl.load_shader_from_memory(DETAIL_VS, SOLID_FS)
                 if sh.id and sh.id != rl.rl_get_shader_id_default():
+                    _sun_register(sh)
                     _solid = (sh, d[1], d[3])
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] road detail off: {e}")
@@ -1976,6 +2040,8 @@ def apply_road_detail(model):
         model.materials[0].shader = d[0]
         model.materials[0].maps[1].texture = d[1]
         model.materials[0].maps[2].texture = d[2]
+        if SHADOW_TEX is not None:
+            model.materials[0].maps[3].texture = SHADOW_TEX
 
 
 _detail = None
@@ -2050,6 +2116,7 @@ def ground_detail():
         sh = rl.load_shader_from_memory(DETAIL_VS, DETAIL_FS)
         if not sh.id or sh.id == rl.rl_get_shader_id_default():
             raise RuntimeError("shader did not compile")
+        _sun_register(sh)
         _detail = (sh, tex, rl.get_shader_location(sh, "time"), ctex)
     except Exception as e:  # noqa: BLE001 - plain baked ground then
         print(f"[gfx] ground detail off: {e}")
@@ -2063,6 +2130,8 @@ def apply_ground_detail(model):
         model.materials[0].shader = d[0]
         model.materials[0].maps[1].texture = d[1]
         model.materials[0].maps[2].texture = d[3]
+        if SHADOW_TEX is not None:
+            model.materials[0].maps[3].texture = SHADOW_TEX
 
 
 def ground_time(t):
