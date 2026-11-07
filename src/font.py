@@ -137,8 +137,8 @@ def confirm_quit(in_frame=False):
         draw_text(q, bx + (bw - measure_text(q, 24, True)) // 2, by + 34, 24, rl.WHITE, bold=True)
         hint = TXT("font.0002")
         draw_text(hint, bx + (bw - measure_text(hint, 16)) // 2, by + 76, 16, rl.Color(170, 174, 185, 255))
-        stay = button("Остани", bx + 30, by + 116, bw // 2 - 40, 44, 20)
-        leave = button("Излези", bx + bw // 2 + 10, by + 116, bw // 2 - 40, 44, 20)
+        stay = button("Остани", bx + bw // 2 + 10, by + 116, bw // 2 - 40, 44, 20)
+        leave = button("Излези", bx + 30, by + 116, bw // 2 - 40, 44, 20)
         rl.end_drawing()
         if time.time() - t0 > 0.25:                      # the click that opened the card must not answer it
             if leave or rl.is_key_pressed(rl.KEY_Y) or rl.is_key_pressed(rl.KEY_ENTER):
