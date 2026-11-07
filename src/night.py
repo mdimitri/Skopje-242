@@ -18,7 +18,7 @@ void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; wp = vertex
 LIGHT_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec3 wp;
 uniform sampler2D texture0; uniform vec4 colDiffuse;
-uniform vec4 lpos[%d]; uniform vec4 lcol[%d]; uniform vec4 ldir[%d]; uniform int nl;
+uniform vec4 lpos[%d]; uniform vec4 lcol[%d]; uniform vec4 ldir[%d]; uniform int nl; uniform float wglow;
 out vec4 finalColor;
 void main(){
   vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -33,7 +33,15 @@ void main(){
     if (ldir[i].w > 0.0) spot = smoothstep(ldir[i].w, ldir[i].w + 0.12, dot(-l, ldir[i].xyz));
     acc += lcol[i].rgb * (f * max(dot(n, l), 0.0) * spot * lcol[i].a);
   }
-  finalColor = vec4(alb * acc, 1.0);
+  vec3 em = vec3(0.0);
+  if (wglow > 0.0 && abs(n.y) < 0.6) {                      // lit windows: some of the dark glazing glows warm (one random flag per ~3 m cell)
+    float glass = 1.0 - smoothstep(0.16, 0.30, dot(texture(texture0, fragTexCoord).rgb, vec3(0.333)));
+    vec2 cell = floor(vec2((wp.x + wp.z) / 3.4, wp.y / 3.0));
+    float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    float on = step(0.62, h) * (0.75 + 0.25 * fract(h * 7.0));
+    em = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h)) * glass * on * wglow;   // a few cold TV-blue ones
+  }
+  finalColor = vec4(alb * acc + em, 1.0);
 }""" % (NL, NL, NL)
 CELL = 60.0
 OG = 16.0
@@ -186,7 +194,7 @@ class Night:
                     self._glow(cam, px, py, top, 2.2 * ppm, (255, 255, 255), a * 0.6)
         rl.end_blend_mode()
         if dark > 0.02 and self.st is not None:
-            self._light_pass(cam, rect)
+            self._light_pass(cam, rect, dark)
 
     def _lamp_r(self, x, y):
         """Reach of a street lamp: 22 m, up to 34 m beside boulevards (wide roads), looked up once per lamp."""
@@ -199,7 +207,7 @@ class Night:
             r = self.lamp_r[k] = min(34.0, 22.0 + 1.5 * max(0.0, wmax - 8.0))
         return r
 
-    def _light_pass(self, cam, rect):
+    def _light_pass(self, cam, rect, dark):
         """Lamps and vehicle lights as real lights: the ground, roads and buildings in view are drawn once more with a
         shader that adds the light each one receives (after the night tint, so lit places come out bright)."""
         if self.lsh is None:
@@ -207,11 +215,11 @@ class Night:
                 self.lsh = rl.load_shader_from_memory(LIGHT_VS, LIGHT_FS)
                 if not self.lsh.id or self.lsh.id == rl.rl_get_shader_id_default():
                     raise RuntimeError("light shader did not compile")
-                self.lloc = [rl.get_shader_location(self.lsh, n) for n in ("lpos", "lcol", "ldir", "nl")]
+                self.lloc = [rl.get_shader_location(self.lsh, n) for n in ("lpos", "lcol", "ldir", "nl", "wglow")]
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] world lights off: {e}")
                 self.lsh = False
-        if not self.lsh or not self.lt:
+        if not self.lsh:
             return
         cx, cz = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
         lt = sorted(self.lt, key=lambda l: (l[0] - cx) ** 2 + (l[2] - cz) ** 2)[:NL]
@@ -225,6 +233,7 @@ class Night:
         for loc, arr in zip(self.lloc[:3], (pos, col, dr)):
             rl.set_shader_value_v(self.lsh, loc, rl.ffi.new("float[]", arr + pad), rl.SHADER_UNIFORM_VEC4, NL)
         rl.set_shader_value(self.lsh, self.lloc[3], rl.ffi.new("int *", n), rl.SHADER_UNIFORM_INT)
+        rl.set_shader_value(self.lsh, self.lloc[4], rl.ffi.new("float *", min(1.0, dark * 1.4) * 0.95), rl.SHADER_UNIFORM_FLOAT)
         S, st = self.w.chunk, self.st
         ident = rl.matrix_identity()
         rl.begin_mode_3d(cam)
