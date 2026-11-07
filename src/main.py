@@ -525,6 +525,7 @@ def main():
     cabin_music = radio_mod.CabinMusic(aud, car_radio)
     spk = SpeechWorker()
     night = Night(world)
+    night.st = streamer
     places = Places(world)
     sim.places = places
     import transit
