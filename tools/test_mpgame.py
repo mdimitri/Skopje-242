@@ -114,5 +114,48 @@ for _ in range(40):
 frames(10)
 print("5c kill   : host health %.0f, host deaths %d, guest kills %d" % (hw.health, hg.deaths, gg.kills))
 assert hw.health <= 0 and hg.deaths == 1 and gg.kills == 1
+# ---- 6. shared things: parked cars taken, dropped cars, stealing a traffic car as a follower, riding the host's bus
+import actors, vehicles
+hw.health = 100.0; hs.walker.cause = None; frames(5)
+pk = actors.Body(hw.x + 40, hw.y + 40, 0.0, 1, 0); pk.parked_idx = 999
+hs.bodies.append(pk); gs.gone.add(999); frames(30)
+print("6a parked car taken by guest -> removed on host:", pk not in hs.bodies and 999 in hs.gone)
+assert pk not in hs.bodies and 999 in hs.gone
+dr = [b for b in gs.bodies if getattr(b, "drop_pid", None) == 0]
+print("6b host's dropped car visible to guest:", len(dr))
+assert len(dr) == 1
+car = dr[0]
+gw.x, gw.y = car.x + 2.0, car.y + 1.0; gw.lx, gw.ly = gw.x, gw.y
+frames(10)
+assert gs.try_enter() is True
+frames(80)
+print("6c guest took it: guest mode %s, host still has its car: %s, host drop_body %s" % (gs.mode, hs.car in hs.bodies, hg.drop_body))
+assert gs.mode == "car" and hg.drop_body is None and hs.car not in hs.bodies
+gs.exit_car(); frames(20)
+# stealing a traffic car as a follower
+gw = gs.walker
+tgt = min(gs.traffic.cars, key=lambda c: math.hypot(c.x - gw.x, c.y - gw.y))
+hostcar = min(hs.traffic.cars, key=lambda c: math.hypot(c.x - tgt.x, c.y - tgt.y))
+gw.x, gw.y = tgt.x + 1.5, tgt.y; gw.lx, gw.ly = gw.x, gw.y
+assert gs.try_enter() is True
+frames(40)
+print("6d traffic car stolen by follower -> host dropped it:", hostcar not in hs.traffic.cars)
+assert hostcar not in hs.traffic.cars
+# the bus
+frames(120)
+bus = actors.Body(hw.x + 8, hw.y, 0.0, 1, 0); bus.bus_line = "T1"; bus.ctl = (0.0, 0.0, True); bus.empty = False
+hs.bodies.append(bus); frames(30)
+pb = [b for b in gs.bodies if getattr(b, "puppet", False) and getattr(b, "bus_line", None)]
+print("6e bus puppets on guest:", len(pb)); assert len(pb) == 1
+gs.exit_car() if gs.mode == "car" else None
+gw = gs.walker; gw.x, gw.y = pb[0].x + 0.3, pb[0].y + 1.2; gw.lx, gw.ly = gw.x, gw.y
+gs.money = 100
+assert gs.try_enter() is True
+frames(40)
+print("6f riding: guest riding puppet bus %s, mode %s; host sees guest drawn: body %s foot %s" % (gs.riding is not None, gs.mode, hg.remote[1].get("body"), 1 in hs.remote_foot))
+assert gs.riding is not None and gs.mode == "car" and gs.car in gs.bodies
+assert hg.remote[1].get("body") is None and 1 not in hs.remote_foot
+gs.exit_car(); frames(10)
+assert gs.mode == "foot"
 print("bytes: host tx %d rx %d" % (host.net.bytes_tx, host.net.bytes_rx))
 print("OK mpgame groups")

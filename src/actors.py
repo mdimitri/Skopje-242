@@ -2019,6 +2019,8 @@ class Sim:
         self.pvp = True                           # multiplayer: friendly fire (players can hurt each other)
         self.respawn_hint = None                  # multiplayer: where the nearest living other player is (you come back to life next to him)
         self.mp_view = None                       # multiplayer: what the HUD shows (other players, team money), set by mpgame
+        self.mp_taken = []                        # multiplayer follower: puppet traffic cars I stole (the authority must drop them)
+        self.last_exit = None                     # the car I got out of last (multiplayer shares it as a dropped car)
         self.pvp_out = []                         # (pid, kind, amount) hits this player landed on others; mpgame sends them
         sx, sy, sh = world.spawn
         self.car = Body(sx, sy, sh, 1, 0)
@@ -2413,6 +2415,8 @@ class Sim:
         for b in self.bodies:
             if not b.alive or b.burn > 0.5:
                 continue
+            if getattr(b, "remote", False) and getattr(b, "drop_pid", None) is None and not (getattr(b, "puppet", False) and getattr(b, "bus_line", None)):
+                continue                                           # another player's occupied car, or a host puppet: not for the taking
             L = CIRC[b.kind][0]
             fx, fy = math.cos(b.h), math.sin(b.h)
             t = max(-L, min(L, (wk.x - b.x) * fx + (wk.y - b.y) * fy))
@@ -2442,12 +2446,14 @@ class Sim:
             c = best
             b = self.traffic.make_body(c)
             self.traffic.cars.remove(c)
+            if self.client:
+                self.mp_taken.append(c)
             self.bodies.append(b)
             self.stats["stolen"] += 1
             self._start_jack(b, "driver", 1.65)
             return True
-        elif getattr(b_ := best, "bus_line", None) and not b_.empty and getattr(self, "transit", None) is not None \
-                and any(bus.body is b_ for bus in self.transit.buses):
+        elif getattr(b_ := best, "bus_line", None) and not b_.empty and ((getattr(self, "transit", None) is not None
+                and any(bus.body is b_ for bus in self.transit.buses)) or getattr(b_, "puppet", False)):
             self.riding = b_                                       # hop on as a passenger: the driver keeps driving
             self.car = b_
             self.mode = "car"
@@ -2470,6 +2476,8 @@ class Sim:
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
                 b.parked_idx = None
+            if getattr(b, "drop_pid", None) is not None:           # a car another player left standing: it is mine now (mpgame tells him)
+                b.remote = False
             self._start_jack(b, None, 0.5 if b.kind in vehicles.BIKES else 1.0)
             return True
         self._board(b)
@@ -2648,6 +2656,7 @@ class Sim:
             return
         b.empty = True
         b.player_car = False
+        self.last_exit = b
         L, W = CIRC[b.kind][0], CIRC[b.kind][1]
         lx, ly = math.sin(b.h), -math.cos(b.h)
         for side in (1, -1):

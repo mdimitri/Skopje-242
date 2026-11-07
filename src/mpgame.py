@@ -69,13 +69,16 @@ class Game:
         self.alive, self.last_hit = True, None            # my own death tracking (stats, kill credit)
         sim.pvp = bool((session.start_info or {}).get("ff", False))
         self.deaths = self.kills = 0
+        self.byid = {}                                    # authority: wire id -> object (to drop a car a follower stole)
+        self.drop_body = None                             # the car I left standing (shared as a dropped car)
+        self._gone_seen = set(sim.gone)
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
         s = self.sim
         if s.mode == "car" and s.car is not None:
             b = s.car
-            return PLAYER.pack(self.pid, 0, _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h, b.vx, b.vy,
+            return PLAYER.pack(self.pid, 32 if getattr(s, "riding", None) is not None else 0, _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h, b.vx, b.vy,
                                b.az if b.az is not None else 0.0, b.wheel, _clampb(b.health), 0, 0, _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
         wk = s.walker
         wi = WLIST.index(wk.weapon) if wk.weapon in WLIST else 0
@@ -89,6 +92,7 @@ class Game:
         i = self.ids.get(k)
         if i is None:
             i = self.ids[k] = self.next_id
+            self.byid[i] = obj
             self.next_id = self.next_id % 65000 + 1
         return i
 
@@ -123,7 +127,7 @@ class Game:
                 continue
             moving = b.vx * b.vx + b.vy * b.vy > 0.09
             if (moving or b.ctl is not None or b.service or b.burn > 0 or b.exploded) and (b.x - gx) ** 2 + (b.y - gy) ** 2 < r2:
-                fl = (1 if b.exploded else 0) | (2 if b.siren else 0) | (4 if b.burn > 0 else 0) | (8 if b.braking else 0) | (16 if (b.ctl is not None or b.service) else 0)
+                fl = (1 if b.exploded else 0) | (2 if b.siren else 0) | (4 if b.burn > 0 else 0) | (8 if b.braking else 0) | (16 if (b.ctl is not None or b.service) else 0) | (32 if getattr(b, "bus_line", None) else 0)
                 ents.append(BODY.pack(self._wid(b), _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h,
                                       b.az if b.az is not None else 0.0, math.hypot(b.vx, b.vy), _s16(b.wheel), _s16(b.pitch),
                                       _s16(b.roll), b.door, fl, _clampb(b.health * 2.55)))
@@ -139,7 +143,7 @@ class Game:
             if kind == "unrel":
                 self._rx(addr, body)
             elif kind == "rel" and isinstance(body, dict):
-                self._rel(body)
+                self._rel(body, addr)
             elif kind == "gone" and self.host:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
@@ -149,6 +153,7 @@ class Game:
         if not self.auth:
             self.auth = {pid: pid for pid in ses.players}          # everybody starts on his own
         self._pvp(s)
+        self._shared(s)
         self.tick = (self.tick + 1) & 0xFFFFFFFF
         if self.now - self.t_state >= 1.0 / STATE_HZ:
             self.t_state = self.now
@@ -193,6 +198,47 @@ class Game:
         s.mp_view = {"players": pl, "me_color": mp.COLORS[me["color"] % 4],
                      "team": int(s.money) + sum(r.get("money", 0) for r in self.remote.values())}
 
+    # ------------------------------------------------------------------ shared things: parked cars taken, stolen traffic cars, dropped cars
+    def _bcast(self, obj, skip=None):
+        """Reliable message for everybody else (through the host)."""
+        obj = dict(obj, all=1)
+        net = self.ses.net
+        if self.host:
+            net.broadcast_rel(obj, skip=skip)
+        else:
+            net.send_rel(self.ses._target, obj)
+
+    def _shared(self, s):
+        new = set(s.gone) - self._gone_seen
+        for i in new:
+            self._bcast({"t": "gone", "i": i})
+        self._gone_seen |= new
+        for c in s.mp_taken:
+            wid = next((i for i, e in self.cars.items() if e["obj"] is c), None)
+            au = self.auth.get(self.pid, self.pid)
+            if wid is not None and au != self.pid:
+                self._route(au, {"t": "take", "to": au, "i": wid})
+        s.mp_taken = []
+        lb = getattr(s, "last_exit", None)
+        want = lb if (s.mode == "foot" and lb is not None and lb in s.bodies and lb.empty and lb.alive) else None
+        if want is not self.drop_body:
+            if self.drop_body is not None:
+                self._bcast({"t": "undrop", "p": self.pid})
+            if want is not None:
+                self._bcast({"t": "drop", "p": self.pid, "k": want.kind, "c": want.color, "x": round(want.x, 2), "y": round(want.y, 2),
+                             "h": round(want.h, 3), "hp": round(want.health)})
+            self.drop_body = want
+        for b in s.bodies:                                           # somebody else's dropped car that I took: tell its owner
+            if getattr(b, "drop_pid", None) is not None and not b.remote:
+                self._route(b.drop_pid, {"t": "claim", "to": b.drop_pid})
+                b.drop_pid = None
+
+    def _drop_of(self, pid):
+        for b in self.sim.bodies:
+            if getattr(b, "drop_pid", None) == pid and b.remote:
+                self.sim.bodies.remove(b)
+                return
+
     # ------------------------------------------------------------------ player vs player
     def _route(self, to, obj):
         """Reliable message for player `to`: the host handles it itself or passes it on."""
@@ -221,8 +267,39 @@ class Game:
         elif not self.alive and hp > 0:
             self.alive = True
 
-    def _rel(self, m):
+    def _rel(self, m, addr=None):
         t = m.get("t")
+        if m.get("all") and self.host and addr is not None:
+            self.ses.net.broadcast_rel(m, skip=addr)                 # for everybody: pass it on
+        s = self.sim
+        if t == "gone":
+            i = m.get("i")
+            if isinstance(i, int):
+                s.gone.add(i)
+                self._gone_seen.add(i)
+                s.bodies = [b for b in s.bodies if not (b.parked_idx == i and b.empty and b is not s.car)]
+        elif t == "drop":
+            p = m.get("p")
+            if p != self.pid and p in self.ses.players:
+                self._drop_of(p)
+                try:
+                    b = actors.Body(float(m["x"]), float(m["y"]), float(m["h"]), int(m["k"]) % len(vehicles.HALF_L), int(m["c"]))
+                except (KeyError, TypeError, ValueError):
+                    return
+                b.remote, b.drop_pid, b.empty, b.health = True, p, True, float(m.get("hp", 100))
+                b.name = self.ses.players[p]["name"] + "'s " + b.name
+                s.bodies.append(b)
+        elif t == "undrop":
+            self._drop_of(m.get("p"))
+        elif t == "claim" and m.get("to") == self.pid:
+            if self.drop_body is not None and self.drop_body in s.bodies and self.drop_body.empty:
+                s.bodies.remove(self.drop_body)
+            self.drop_body = None
+            self._bcast({"t": "undrop", "p": self.pid})
+        elif t == "take" and m.get("to") == self.pid:
+            c = self.byid.get(m.get("i"))
+            if c is not None and c in s.traffic.cars:
+                s.traffic.cars.remove(c)
         if t == "grp" and not self.host:
             self._set_auth({int(k): int(v) for k, v in m["a"].items()})
         elif t in ("dmg", "kill"):
@@ -419,6 +496,7 @@ class Game:
         if r and r.get("body") is not None and r["body"] in self.sim.bodies:
             self.sim.bodies.remove(r["body"])
         self.sim.remote_foot.pop(pid, None)
+        self._drop_of(pid)
 
     def _apply_remote(self, dt):
         s, k = self.sim, min(1.0, dt * 14.0)
@@ -429,7 +507,13 @@ class Game:
             r["x"] += (r["tx"] - r["x"]) * k
             r["y"] += (r["ty"] - r["y"]) * k
             r["h"] = _lerp_a(r["h"], r["th"], k)
-            if r["flags"] & 1:                                           # on foot
+            if r["flags"] & 32:                                          # riding a bus: nothing to draw (the bus is drawn anyway)
+                if r.get("body") is not None:
+                    if r["body"] in s.bodies:
+                        s.bodies.remove(r["body"])
+                    r["body"] = None
+                s.remote_foot.pop(pid, None)
+            elif r["flags"] & 1:                                         # on foot
                 if r.get("body") is not None:
                     if r["body"] in s.bodies:
                         s.bodies.remove(r["body"])
@@ -498,6 +582,8 @@ class Game:
             p.x, p.y, p.h, p.spin, p.anim, p.hy = e["x"], e["y"], e["h"], 0.0, t[12], t[13]
             plist.append(p)
         keep = [b for b in s.bodies if not getattr(b, "puppet", False)]
+        if s.car is not None and getattr(s.car, "puppet", False) and s.car not in keep:
+            keep.append(s.car)                                       # the bus I ride on stays in the world
         for wid in [i for i, e in self.bods.items() if self.now - e["seen"] > 1.0]:
             del self.bods[wid]
         for e in self.bods.values():
@@ -515,9 +601,11 @@ class Game:
             b.wheel, b.pitch, b.roll, b.door = t[8] / 1000.0, t[9] / 1000.0, t[10] / 1000.0, t[11]
             b.exploded, b.siren, b.braking = bool(t[12] & 1), bool(t[12] & 2), bool(t[12] & 8)
             b.burn = 1.0 if t[12] & 4 else 0.0
+            b.bus_line = "mp" if t[12] & 32 else None
             b.health = t[13] / 2.55
             b.vx, b.vy = math.cos(b.h) * t[7], math.sin(b.h) * t[7]
-            keep.append(b)
+            if b is not s.car:
+                keep.append(b)
         s.bodies = keep
 
 
