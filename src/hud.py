@@ -117,7 +117,8 @@ def draw_waypoint(hud, sim, cam, sw, sh):
     col = rl.Color(40, 160, 255, 255)
     sp = rl.get_world_to_screen(rl.Vector3(tx, sim.w.ground_y(tx, ty) + 3.0, ty), cam)
     front = (tx - cam.position.x) * 0 + (ty - cam.position.z) * (cam.target.z - cam.position.z) < 0   # in front of the camera (it looks towards -z)
-    if 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30 and front:
+    hud.wp_t += rl.get_frame_time()
+    if hud.wp_t > 2.2 and 30 < sp.x < sw - 30 and 30 < sp.y < sh - 30 and front:
         rl.draw_triangle(rl.Vector2(sp.x, sp.y), rl.Vector2(sp.x + 12, sp.y - 26), rl.Vector2(sp.x - 12, sp.y - 26), col)
         font.draw_text(lab, int(sp.x - font.measure_text(lab, 18, True) / 2), int(sp.y - 48), 18, rl.WHITE, bold=True)
         return
@@ -125,7 +126,9 @@ def draw_waypoint(hud, sim, cam, sw, sh):
     dx, dy = waypoint_screen_dir(cam, tx - cam.target.x, ty - cam.target.z)
     a = math.atan2(dy, dx)
     k = min((sw / 2 - 60) / (abs(math.cos(a)) + 1e-6), (sh / 2 - 60) / (abs(math.sin(a)) + 1e-6))
-    ax, ay = cx + math.cos(a) * k, cy + math.sin(a) * k
+    pr = min(1.0, hud.wp_t / 2.0)
+    pr = pr * pr * (3 - 2 * pr)                          # eases out from the screen centre to the edge: GPS is on, this way
+    ax, ay = cx + math.cos(a) * k * pr, cy + math.sin(a) * k * pr
     pul = 1.0 + 0.08 * math.sin(rl.get_time() * 5.0)
     ca, sa = math.cos(a), math.sin(a)
 
@@ -209,6 +212,7 @@ class Hud:
         self.sel = None              # point picked on the big map (x, y), shows the magnifier + menu
         self._drag = False
         self._menu_rect = None
+        self.wp_t = 9.0              # seconds since the waypoint was set (drives the centre-to-edge arrow animation)
         self.act = None              # ("teleport", x, y) requested from the map menu, read by main
 
     def set_banner(self, text, secs=3.0):
@@ -299,8 +303,9 @@ class Hud:
         for i, b in enumerate(btns):
             if font.button(b, bx, y0 + i * (h + 4), S, h, 18) and not self._drag:
                 if b.startswith("Навиг"):
-                    self.wp = (sx, sy)
+                    self.wp, self.wp_t = (sx, sy), 0.0
                     self.set_banner("Навигација активирана", 2.0)
+                    self.act = ("close",)
                 elif b.startswith("Телеп"):
                     self.act = ("teleport", sx, sy)
                 else:

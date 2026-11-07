@@ -1568,7 +1568,9 @@ def main():
             hud.debug = bool(cfg.get("debug"))
             pick = hud.act
             hud.act = None
-            if pick is not None and hud.debug:
+            if pick is not None and pick[0] == "close":
+                show_map = False
+            elif pick is not None and hud.debug:
                 sim.teleport(pick[1], pick[2])
                 show_map = False
                 snap = True
