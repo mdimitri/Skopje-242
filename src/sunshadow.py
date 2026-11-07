@@ -95,7 +95,7 @@ class SunShadow:
         except Exception as e:  # noqa: BLE001 - no shadows rather than no game
             print(f"[gfx] sun shadows off: {e}")
 
-    def update(self, hour, cx, cz):
+    def update(self, hour, cx, cz, dark=0.0):
         """Call once per frame before drawing (outside any texture mode): moves the sun and redraws the map when needed."""
         if not (self.ok and self.enabled):
             if self.strength:
@@ -103,7 +103,7 @@ class SunShadow:
                 gl3d.set_sun(self.L if self.L is not None else gl3d.SUN, 0.0, np.eye(4), 1.0 / SIZE, 0.0)
             return
         L, e = sun_at(hour)
-        k = _strength(e)
+        k = _strength(e) * max(0.0, 1.0 - 1.6 * dark)      # no sun shadows once the game clock says it is getting dark
         redraw = (self.center is None or self.L is None or np.abs(L - self.L).max() > SUN_STEP
                   or math.hypot(cx - self.center[0], cz - self.center[1]) > RECENTER
                   or self.st.mesh_loaded != self.loaded)

@@ -1695,7 +1695,7 @@ def main():
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
         guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         if lod:
-            guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2)
+            guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
             renderer.sun_k = sunshadow.strength / 0.92
         worst_bake = max(worst_bake, streamer.bake_ms)

@@ -8,7 +8,8 @@ import clock
 import vehicles
 
 V3 = rl.Vector3
-NL = 40                      # lights that really light the world per frame (nearest to the view centre)
+LIGHT_R = 70.0                # only ground / buildings within this distance of the view centre get the light pass
+NL = 24                      # lights that really light the world per frame (nearest to the view centre)
 LIGHT_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp;
@@ -41,6 +42,7 @@ void main(){
     float on = step(0.62, h) * (0.75 + 0.25 * fract(h * 7.0));
     em = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h)) * glass * on * wglow;   // a few cold TV-blue ones
   }
+  acc = 0.75 * (1.0 - exp(-acc));                          // soft knee: stacked lights never blow the ground out to white
   finalColor = vec4(alb * acc + em, 1.0);
 }""" % (NL, NL, NL)
 CELL = 60.0
@@ -157,7 +159,7 @@ class Night:
                 for cy in range(int(rect[1] // CELL) - 1, int(rect[3] // CELL) + 2):
                     for x, y in self.cells.get((cx, cy), ()):
                         self._glow(cam, x, y, 4.5, r_lamp, (255, 205, 120), 150 * dark)
-                        self.lt.append((x, self.w.ground_y(x, y) + 4.5, y, self._lamp_r(x, y), 1.0, 0.8, 0.47, 2.25 * dark, 0, 0, 0, 0.0))
+                        self.lt.append((x, self.w.ground_y(x, y) + 4.5, y, self._lamp_r(x, y), 1.0, 0.8, 0.47, 1.3 * dark, 0, 0, 0, 0.0))
             for p in (sim.peds.list if self.detail >= 1 else ()):         # NPC cyclists / mopeds / scooters: one lamp, one tail light
                 if p.mode == "walk" and p.arch in vehicles.JACK_KIND and rect[0] < p.x < rect[2] and rect[1] < p.y < rect[3]:
                     self._lights(cam, p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], ppm, dark, False)
@@ -222,7 +224,12 @@ class Night:
         if not self.lsh:
             return
         cx, cz = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
-        lt = sorted(self.lt, key=lambda l: (l[0] - cx) ** 2 + (l[2] - cz) ** 2)[:NL]
+        if self.street:                                    # street view: the rect is huge, light only what is near the camera
+            cx, cz = cam.position.x, cam.position.z
+        LR = LIGHT_R if self.street else LIGHT_R + 40.0      # street view: only what is near the camera
+        R = LR + 34.0
+        lt = [l for l in self.lt if (l[0] - cx) ** 2 + (l[2] - cz) ** 2 < (LR + l[3]) ** 2]
+        lt = sorted(lt, key=lambda l: (l[0] - cx) ** 2 + (l[2] - cz) ** 2)[:NL]
         n = len(lt)
         pos, col, dr = [], [], []
         for x, y, z, r, cr, cg, cb, k, dx, dy, dz, cone in lt:
@@ -242,8 +249,8 @@ class Night:
             rl.rl_enable_depth_test()
             rl.rl_disable_depth_mask()
             rl.begin_blend_mode(rl.BLEND_ADDITIVE)
-            for cx_ in range(int(rect[0] // S), int(rect[2] // S) + 1):
-                for cy_ in range(int(rect[1] // S), int(rect[3] // S) + 1):
+            for cx_ in range(int(max(rect[0], cx - R) // S), int(min(rect[2], cx + R) // S) + 1):
+                for cy_ in range(int(max(rect[1], cz - R) // S), int(min(rect[3], cz + R) // S) + 1):
                     g = st.ground.get((cx_, cy_))
                     models = [g[2]] if g is not None and g[2] is not None else []
                     me = st.meshes.get((cx_, cy_))
@@ -296,14 +303,14 @@ class Night:
         if kind in vehicles.BIKES:                                  # two-wheelers: a single lamp and tail light on the centre line
             lamp_y = 0.95 if vehicles.EXTRA[kind] != "kick" else 0.9
             hx, hy = x + ca * L * 0.8, y + sa * L * 0.8
-            self.lt.append((hx, self.w.ground_y(hx, hy) + 0.95, hy, 14.0, 1.0, 0.95, 0.8, 1.2 * dark, ca, -0.1, sa, 0.88))
+            self.lt.append((hx, self.w.ground_y(hx, hy) + 0.95, hy, 14.0, 1.0, 0.95, 0.8, 0.8 * dark, ca, -0.1, sa, 0.88))
             self._glow(cam, hx, hy, lamp_y, 0.8 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L * 0.9, y - sa * L * 0.9
             self._glow(cam, tx, ty, 0.6, (1.8 if braking else 1.0) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
             return
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
-            self.lt.append((hx, self.w.ground_y(hx, hy) + lamp_y, hy, 22.0, 1.0, 0.95, 0.8, 1.1 * dark, ca, -0.12, sa, 0.85))   # one spot per headlight
+            self.lt.append((hx, self.w.ground_y(hx, hy) + lamp_y, hy, 22.0, 1.0, 0.95, 0.8, 0.7 * dark, ca, -0.12, sa, 0.85))   # one spot per headlight
             self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
             tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
             self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
