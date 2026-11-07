@@ -401,7 +401,7 @@ def title_menu(aud=None, music=None):
                     return "quit"
             elif k == "multi":
                 import lobby
-                import profile
+                import mpprofile as profile
                 MP["session"] = lobby.run(profile.Profile(), aud, music)
                 if MP["session"]:
                     return "multi"

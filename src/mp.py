@@ -8,7 +8,7 @@ import threading
 import time
 
 import discovery
-import net
+import mpnet as net
 
 VER = 1
 MAX_PLAYERS = 4
@@ -260,7 +260,7 @@ class Session:
 
 
 def _name(n, players):
-    import profile
+    import mpprofile as profile
     n = profile.clean(str(n or "")) or "Играч"
     base, i = n, 2
     while any(p["name"] == n for p in players.values()):

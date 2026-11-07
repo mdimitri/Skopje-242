@@ -9,7 +9,7 @@ import pyray as rl
 import font
 import mp
 import places
-import profile
+import mpprofile as profile
 import present
 
 GOLD = rl.Color(240, 200, 60, 255)

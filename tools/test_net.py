@@ -1,7 +1,7 @@
 """Loopback test for src/net.py: handshake, ordered reliable delivery under 30% loss, unreliable newest-wins."""
 import os, random, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-import net
+import mpnet as net
 
 random.seed(1)
 host, cli = net.Net(0, accept=True), net.Net(0)

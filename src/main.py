@@ -654,6 +654,7 @@ def main():
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
+    mpg = None                                             # multiplayer sync (mpgame.Game) when a lobby game was started
     log("[game] ready")
     if a.nomenu and loader.music is not None:
         loader.music.close()
@@ -667,6 +668,13 @@ def main():
         apply_cfg(cfg, True)
         characters.apply(sim, cfg["lik"])
         sim.clock.hour = cfg["hour"] % 24.0
+        _ms = menu_mod.MP.get("session")
+        if _ms is not None and _ms.state == "playing":
+            import atexit
+            import mpgame
+            mpg = mpgame.Game(sim, _ms)
+            mpgame.spawn(sim, world, _ms)
+            atexit.register(_ms.leave)
         if res_.startswith("load"):
             d_ = savegame.read(int(res_[4:]))
             if d_:
@@ -1601,6 +1609,8 @@ def main():
         # ------------------------------------------------ simulation
         if guard.run("sim", sim.update, dt, inp, 2) is None and "sim" in guard.disabled:
             hud.set_banner(TXT("main.0042"), 4)
+        if mpg is not None:
+            guard.run("mp", mpg.update, dt)
         guard.run("events", handle_events)
         guard.run("effects", effects, dt)
         guard.run("exhaust", exhaust, dt)

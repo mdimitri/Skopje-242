@@ -1954,6 +1954,8 @@ class Sim:
         self.rng = rng
         self.events = []
         self.aggro, self.lang = 1, 1              # menu: how quarrelsome people are, how rude they talk
+        self.client = False                       # multiplayer guest: traffic / pedestrians / services come from the host (mpgame.py)
+        self.remote_foot = {}                     # multiplayer: other players on foot, drawn by render
         sx, sy, sh = world.spawn
         self.car = Body(sx, sy, sh, 1, 0)
         self.car.fuel = 1.0
@@ -2765,12 +2767,13 @@ class Sim:
                     ev("wake" if ko else "respawn")
         # ---------------- other bodies
         fx, fy, fvx, fvy = self.focus()
-        self._dispatch()
-        self.services.update(dt)
+        if not self.client:
+            self._dispatch()
+            self.services.update(dt)
         self.chaos.update(dt)
-        if getattr(self, "transit", None) is not None:
+        if getattr(self, "transit", None) is not None and not self.client:
             self.transit.update(dt)
-        if getattr(self, "kids", None) is not None:
+        if getattr(self, "kids", None) is not None and not self.client:
             self.kids.update(dt)
         if getattr(self, "dogs", None) is not None:
             self.dogs.update(dt)
@@ -2782,6 +2785,8 @@ class Sim:
             self.works.update(dt)
         self.shots.update(dt)
         for b in list(self.bodies):
+            if getattr(b, "remote", False):                      # another player's car / a host puppet: placed by mpgame, not simulated here
+                continue
             b.age += dt
             if b is not self.car or self.mode == "foot":
                 if b is not self.car or self.mode == "foot":
@@ -2875,9 +2880,10 @@ class Sim:
                 self.walker.x, self.walker.y, _z, _h = tr.line.at(tr.s - tr.d * (trains.CAR_L / 2))
         elif tr is not None:
             self.train_ride = None
-        self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, self.walker if self.mode == "foot" else None)
+        if not self.client:
+            self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, self.walker if self.mode == "foot" else None)
         self._cull_t -= dt
-        if self._cull_t <= 0:                       # thin the crowd / traffic when the clock says it is quiet
+        if self._cull_t <= 0 and not self.client:                       # thin the crowd / traffic when the clock says it is quiet
             self._cull_t = 0.2
             cars = self.traffic.cars
             if len(cars) > self.traffic.target + 2:
@@ -2890,12 +2896,13 @@ class Sim:
                 if (far.x - fx) ** 2 + (far.y - fy) ** 2 > 110 ** 2:
                     self.peds.list.remove(far)
         self.peds.walker = self.walker if self.mode == "foot" else None
-        self.peds.update(dt, fx, fy, self.bodies, self.ev)
+        if not self.client:
+            self.peds.update(dt, fx, fy, self.bodies, self.ev)
         self._parked(fx, fy)
         # cleanup far away, burnt out or useless bodies
         keep = []
         for b in self.bodies:
-            if b is self.car:
+            if b is self.car or getattr(b, "remote", False):
                 keep.append(b)
                 continue
             d2 = (b.x - fx) ** 2 + (b.y - fy) ** 2

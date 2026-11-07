@@ -1,7 +1,7 @@
 """Lobby protocol test: host + 3 guests over loopback, chat, colours, full-game denial, duplicate names, start, host closing."""
 import os, sys, time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-import mp, profile
+import mp, mpprofile as profile
 
 def prof(name, uid):
     p = profile.Profile("/nonexistent/p.json"); p.name, p.uid = name, uid; return p

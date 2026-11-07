@@ -5,7 +5,7 @@ import pyray as rl
 rl.set_config_flags(rl.FLAG_WINDOW_HIDDEN * 0)
 rl.init_window(1280, 720, "t")
 import font; font.load()
-import lobby, mp, profile
+import lobby, mp, mpprofile as profile
 out = sys.argv[1]; os.makedirs(out, exist_ok=True)
 prof = profile.Profile("/nonexistent/p.json"); prof.name = "Мартин"
 state = {"n": 0, "name": "x"}

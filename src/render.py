@@ -480,6 +480,12 @@ class Renderer:
             seat = vehicles.EXTRA[cb.kind] != "kick"
             peds.append((cb.x - math.cos(cb.h) * (0.3 if seat else 0.0), gy + (0.0 if seat else 0.2), cb.y - math.sin(cb.h) * (0.3 if seat else 0.0),
                          cb.h, 100 + getattr(sim, "lik", 0), 0, 13 if seat else 12, 3))
+        for rp in getattr(sim, "remote_foot", {}).values():            # other players on foot (multiplayer)
+            if self._in(rp["x"], rp["y"], rect):
+                fr = rp["frame"] if rp["frame"] is not None else self._gait(100, rp["anim"], rp["run"])
+                gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
+                peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3))
+                sh.append((rp["x"], rp["y"], 0, 0.35, 0.35, 60, gy))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 12
