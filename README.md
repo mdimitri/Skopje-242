@@ -18,6 +18,14 @@
 | ![Ноќ](docs/screenshots/night.jpg) | ![Сообраќај на раскрсница](docs/screenshots/traffic.jpg) |
 | ![Киоск](docs/screenshots/kiosk.jpg) | ![Знаменитост](docs/screenshots/poi.jpg) |
 
+## Како никнува градот
+
+Истото место (Јане Сандански), од голата земја до ноќен град, од лево на десно:
+
+| 1 · Терен | 2 · OSM мапа | 3 · Патишта | 4 · Згради | 5 · Луѓе и коли | 6 · Светла |
+|---|---|---|---|---|---|
+| ![Терен](docs/screenshots/build_1_terrain.jpg) | ![OSM мапа](docs/screenshots/build_2_osm.jpg) | ![Патишта и инфраструктура](docs/screenshots/build_3_roads.jpg) | ![Згради](docs/screenshots/build_4_buildings.jpg) | ![Актери](docs/screenshots/build_5_actors.jpg) | ![Осветлување](docs/screenshots/build_6_lighting.jpg) |
+
 ## Содржина
 
 [Пуштање](#пуштање) · [Ново](#ново) · [Команди](#команди) · [Што има](#што-има) · [Што каде е](#што-каде-е) · [Ограничувања](#ограничувања) · [Заслуги](#заслуги-и-лиценци)
