@@ -37,7 +37,16 @@ class Terrain:
         return (a * (1 - ty) + b * ty).astype(np.float32)
 
     def hs(self, x, y):
-        return float(self.h(x, y))
+        """Scalar height: the same arithmetic as h() (float64 bilinear, rounded to float32 at the end) without the numpy overhead."""
+        nx1, ny1 = self.nx - 1.001, self.ny - 1.001
+        fx = min(max((float(x) + self.hx) / STEP, 0.0), nx1)
+        fy = min(max((float(y) + self.hy) / STEP, 0.0), ny1)
+        ix, iy = int(fx), int(fy)
+        tx, ty = fx - ix, fy - iy
+        item = self.g.item
+        a = item(iy, ix) * (1 - tx) + item(iy, ix + 1) * tx
+        b = item(iy + 1, ix) * (1 - tx) + item(iy + 1, ix + 1) * tx
+        return float(np.float32(a * (1 - ty) + b * ty))
 
 
 def flat(hx, hy):
