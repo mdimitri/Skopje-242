@@ -1845,10 +1845,10 @@ def main():
         sf_on = sf_on or ch_on or cn_on
         sim.view_rect = None if (sf_on or cine.active) else (rect[0] - 20, rect[1] - 20, rect[2] + 20, rect[3] + 20)      # actors off this ground rectangle step at a third of the rate
         popups.street = ch_on
-        lite_ = ()
-        far_c_set = ()
+        # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         lite_ = ()
+        far_c_set = ()
         if ch_on:                                  # street view: chunks out to 2.25x the full-detail radius, the far ring at low quality
             o_ = sim.car if sim.mode == "car" else sim.walker
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
