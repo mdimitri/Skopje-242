@@ -573,7 +573,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                     off = w / 2 + 2.3
                     px, py = x + rx * off, y + ry * off
                     if ok(px, py) and not_building(px, py) and not_building(px + rx * 1.2, py + ry * 1.2):
-                        put(bus_shelter(px, py, math.atan2(dy, dx)), px, py)
+                        put(bus_shelter(px, py, math.atan2(dy, dx) + (math.pi if side < 0 else 0.0)), px, py)
                         put(sign(px + dx * 2.2, py + dy * 2.2, rx, ry, "bus"), px + dx * 2.2, py + dy * 2.2)
                         posts += [(px + dx * 2.3, py + dy * 2.3, 0.25), (px - dx * 2.3, py - dy * 2.3, 0.25)]
                         counts["stops"] += 1
@@ -745,7 +745,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             if on_road(px, py, 0.5):
                 continue
             if not_building(px, py) and not is_water(px, py):
-                put(bus_shelter(px, py, math.atan2(dy, dx)), px, py, False)
+                put(bus_shelter(px, py, math.atan2(dy, dx) + (math.pi if side < 0 else 0.0)), px, py, False)
                 put(sign(px + dx * 3.2, py + dy * 3.2, rx, ry, "bus"), px + dx * 3.2, py + dy * 3.2, False)
                 posts += [(px + dx * 2.3, py + dy * 2.3, 0.25), (px - dx * 2.3, py - dy * 2.3, 0.25)]
                 bx_, by_ = qx + rx * (e["w"] / 2 - 1.2), qy + ry * (e["w"] / 2 - 1.2)
