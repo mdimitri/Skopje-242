@@ -36,6 +36,9 @@ import fastrl   # noqa: E402,F401 - raw cffi functions behind the plain-argument
 import font   # noqa: E402
 
 
+_EARLY_MUSIC = None
+
+
 def _early_splash():
     """Open the window and paint one frame before the ~heavy module imports below, so the player sees the game at once."""
     if any(x.split("=")[0] in ("--test", "--sound-dry", "--size") for x in sys.argv[1:]):
@@ -43,7 +46,7 @@ def _early_splash():
     try:
         import settings as st
         cfg = st.Settings()
-        W, H = st.RESOLUTIONS[cfg["res"]]
+        W, H = st.RESOLUTIONS[cfg["resolution"]]
         rl.set_trace_log_level(rl.LOG_WARNING)
         rl.set_config_flags(rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0))
         rl.init_window(W, H, TXT("main.0002"))
@@ -59,6 +62,10 @@ def _early_splash():
         font.draw_text("Се вчитува ...", W // 2 - 80, H - 60, 24, rl.Color(230, 226, 232, 255), bold="cond")
         rl.end_drawing()
         rl.poll_input_events()
+        if "--mute" not in sys.argv and cfg["vol_master"] >= 0.01:      # music from the very first frame
+            import loadmusic
+            global _EARLY_MUSIC
+            _EARLY_MUSIC = loadmusic.LoadMusic(volume=cfg["vol_master"] * cfg["vol_radio"])
     except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed
         pass
 
@@ -466,7 +473,7 @@ def main():
     ap.add_argument("--deck", action="store_true", help="with --start: stand on the bridge deck if there is one")
     a = ap.parse_args()
     cfg = settings_mod.Settings()
-    W, H = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["res"]]
+    W, H = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["resolution"]]
 
     rl.set_trace_log_level(rl.LOG_WARNING)
     flags = rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0)
@@ -497,7 +504,7 @@ def main():
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
         import loadmusic
-        loader.music = loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
+        loader.music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
     while True:
@@ -642,7 +649,7 @@ def main():
             if is_borderless() != bool(c["fullscreen"]):
                 set_borderless(bool(c["fullscreen"]))
             elif not c["fullscreen"] and not a.size:
-                w_, h_ = fit_window(*settings_mod.RESOLUTIONS[c["res"]])
+                w_, h_ = fit_window(*settings_mod.RESOLUTIONS[c["resolution"]])
                 if (rl.get_screen_width(), rl.get_screen_height()) != (w_, h_):
                     rl.set_window_size(w_, h_)
                     center_window(w_, h_)
@@ -1485,7 +1492,7 @@ def main():
             present_mod.off()
             if font.confirm_quit(True):
                 break
-        sw, sh = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["res"]]
+        sw, sh = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["resolution"]]
         present.activate(sw, sh)                        # the frame is drawn at the menu resolution and scaled to the window
         focused_now = bool(rl.is_window_focused())
         if focused_now != win_focus:
@@ -1770,9 +1777,9 @@ def main():
         # ------------------------------------------------ camera
         speed = math.hypot(fvx, fvy)
         if sim.mode == "car":
-            tgt_ppm = 1.18 * (10.5 - 2.3 * min(speed / 32.0, 1.0)) * user_zoom * cfg["zoom_car"]
+            tgt_ppm = (rl.get_screen_width() / 100.0) * (10.5 - 2.3 * min(speed / 32.0, 1.0)) / 10.5 * user_zoom * cfg["zoom_car"]   # zoom 1 = 100 m of ground across the screen, whatever its size
         else:
-            tgt_ppm = 26.0 * user_zoom * cfg["zoom_walk"]
+            tgt_ppm = (rl.get_screen_width() / 60.0) * user_zoom * cfg["zoom_walk"]                                                 # zoom 1 = 60 m across
         tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)
         sim.view_r = max(150.0, min(300.0, 1250.0 / max(ppm, 1.0) + 60.0))      # parked cars are placed this far round the camera

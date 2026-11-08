@@ -36,7 +36,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003")]   # Игра · Градот · Луѓето · Графика · Звук
+TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003"), "Дебаг"]   # Игра · Градот · Луѓето · Графика · Звук · Дебаг
 
 
 def _rows(in_game, slots=(), settings_only=False):
@@ -44,10 +44,10 @@ def _rows(in_game, slots=(), settings_only=False):
     pct = lambda v: f"{int(v * 100)}%"
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
     spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
-    def mz(base, floor):                       # "1,00x · 38×21 м": the ground the screen shows at this zoom (ppm as in main.py's camera, car standing still)
+    def mz(metres, floor):                     # "1,00x · 60×34 м": the ground the screen shows at this zoom (ppm as in main.py's camera, car standing still)
         def f(v):
-            ppm = max(base * v, floor)
             w, h = rl.get_screen_width(), rl.get_screen_height()
+            ppm = max(w / metres * v, floor)
             return f"{v:.2f}x · {w / ppm:.0f}×{h / ppm:.0f} м".replace(".", ",")
         return f
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
@@ -68,18 +68,19 @@ def _rows(in_game, slots=(), settings_only=False):
         (1, Row("toggle", TXT("menu.0038"), "ambulance")),
         (1, Row("toggle", TXT("menu.0039"), "fire")),
         (3, H("Екран")),
-        (3, Row("choice", TXT("menu.0008"), "res", [f"{w} x {h}" for w, h in S.RESOLUTIONS])),
+        (3, Row("choice", TXT("menu.0008"), "resolution", [S.res_label(w, h) for w, h in S.RESOLUTIONS])),
         (3, Row("toggle", TXT("menu.0009"), "fullscreen")),
         # new labels live here until they can be added to text/ (human-edited)
         (3, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
         (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (3, H("Камера")),
-        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=mz(26.0, 3.64 / 0.6), note=TXT("menu.0016"))),
-        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=mz(1.18 * 10.5, 0.97 / 0.6))),
+        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=mz(60.0, 3.64 / 0.6), note=TXT("menu.0016"))),
+        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=mz(100.0, 0.97 / 0.6))),
         (3, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (3, Row("toggle", "Дебаг: гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
-        (3, Row("toggle", "Дебаг: телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
+        (5, H("Дебаг")),
+        (5, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
+        (5, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
         (3, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
         (3, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
         (3, H("Ознаки")),

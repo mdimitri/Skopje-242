@@ -163,7 +163,7 @@ keys = sorted({k for f in F for k in f if k not in ("frame",)})
 sub = {k: round(sum(f.get(k, 0.0) for f in F) / max(1, len(F)), 2) for k in keys}
 q = sorted(ft)
 out = dict(tag=tag, mode=a.mode, view=a.view, size=a.size or "settings",
-           settings={k: M.settings_mod.Settings().get(k) for k in ("res", "scale", "aa", "detail", "fullscreen", "smog", "traffic", "peds") if k in M.settings_mod.Settings()}, world=a.world, frames=len(F),
+           settings={k: M.settings_mod.Settings().get(k) for k in ("resolution", "scale", "aa", "detail", "fullscreen", "smog", "traffic", "peds") if k in M.settings_mod.Settings()}, world=a.world, frames=len(F),
            frame_ms=dict(mean=round(statistics.mean(ft), 2), median=round(statistics.median(ft), 2),
                          p95=round(q[int(len(q) * 0.95) - 1], 2), worst=round(q[-1], 2)),
            fps=round(1000.0 / statistics.mean(ft), 1), cores_busy=round(cpu / wall, 2) if wall > 0 else None,

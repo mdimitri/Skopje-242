@@ -6,8 +6,22 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.path.join(ROOT, "settings.json")
 
-RESOLUTIONS = [(1280, 720), (1600, 900), (1920, 1080), (2560, 1440), (960, 540), (1024, 768), (1366, 768), (1440, 900),
-               (1680, 1050), (1920, 1200), (2560, 1080), (3440, 1440), (3840, 2160)]
+RESOLUTIONS = sorted({(w, h) for w, h in [
+    (1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160), (960, 540),          # 16:9
+    (1280, 800), (1440, 900), (1680, 1050), (1920, 1200), (2560, 1600),                                   # 16:10
+    (1024, 768), (1280, 960), (1600, 1200),                                                               # 4:3
+    (2560, 1080), (3440, 1440),                                                                           # 21:9
+    (1280, 1024)]})                                                                                       # 5:4, sorted by width then height
+
+
+def res_label(w, h):
+    from math import gcd
+    g = gcd(w, h)
+    a, b = w // g, h // g
+    a, b = {(8, 5): (16, 10), (64, 27): (21, 9), (43, 18): (21, 9), (683, 384): (16, 9), (85, 48): (16, 9)}.get((a, b), (a, b))
+    return f"{w} x {h}  ({a}:{b})"
+
+
 SCALE = ["Блиски соседи (остри пиксели)", "Мазно (билинеарно)"]
 AA = ["Исклучено", "MSAA 4x", "FXAA", "MSAA 4x + FXAA"]
 DETAIL = [TXT("settings.0001"), TXT("settings.0002"), TXT("settings.0003")]
@@ -24,7 +38,7 @@ VOICES = [TXT("settings.0014"), TXT("settings.0015")]
 MOUSE_MODE = ["Следење", "Управување", "Слободно гледање"]
 
 DEFAULTS = {
-    "res": 1, "aa": 1, "scale": 1, "fullscreen": False, "detail": 2,
+    "resolution": RESOLUTIONS.index((1600, 900)), "aa": 1, "scale": 1, "fullscreen": False, "detail": 2,
     "vol_master": 0.8, "vol_sfx": 1.0, "vol_engine": 0.8, "vol_ambient": 0.8, "vol_speech": 1.0, "vol_radio": 0.7,
     "lik": 0, "hour": 17.0, "time_speed": 3, "traffic": 3, "peds": 3,
     "ambulance": True, "fire": True, "voice": 1, "speech_speed": 2, "speech_freq": 3, "aggro": 1, "lang": 1, "osm_source": 0, "smog": True, "smog_level": 1.0, "pollution": 1.0,

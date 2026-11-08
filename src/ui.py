@@ -387,13 +387,16 @@ class Loader:
         ch = max(18, th - 4)                                          # the running step, slightly above it
         ty, cy = H - th, H - th - 6 - ch
         asp = (self.box[3] - self.box[1]) / (self.box[2] - self.box[0])
-        self.map_w = max(120, min(int(W * 0.30), int(H * 0.42 / asp)))
+        full_w = max(120, min(int(W * 0.30), int(H * 0.42 / asp)))
+        self.map_w = int(full_w * 0.75)                               # 75% of the old size
         self.GEO_W = 2 * self.map_w                                   # painted at twice the size, shown at half with bilinear filtering
         self._paint()
         rl.begin_drawing()
         poster_mod.draw_splash(W, H)
-        panel_h = int(self.map_w * asp) + 50
-        top = cy - m - panel_h
+        panel_h = int(self.map_w * asp) + 50                          # map + legend
+        top = cy - m - panel_h                                        # sits right above the step bar
+        old_h = int(full_w * asp) + 50
+        ltop = cy - m - old_h // 2                             # left field: half its old height, down on the bars
         rl.draw_rectangle_gradient_v(0, top - 60, W, H - top + 60, rl.Color(8, 6, 14, 0), rl.Color(8, 6, 14, 225))
         # ---- bottom right: the live map
         mx = W - m - self.map_w
@@ -401,7 +404,7 @@ class Loader:
         self._map(mx, top, self.map_w, 0)
         # ---- bottom left: what is happening, in detail
         lw = mx - 3 * m
-        y = top
+        y = ltop
         for ln in font.wrap(self.quip, 18, lw)[:1]:
             font.draw_text(ln, m, y, 18, rl.Color(255, 205, 225, 255), bold="cond")
             y += 26
