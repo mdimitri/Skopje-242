@@ -10,6 +10,7 @@ import random
 import numpy as np
 
 from furniture import G
+import par
 from progress import Bar
 from junk import _prism
 
@@ -134,6 +135,14 @@ def vines(g, x, z, yaw, rr):
     return ln / 2 + 1.5, rows * 1.1 + 1.5
 
 
+def _build_ops(ops):
+    """One block's scrub / boulders / haystacks / tufts -> its mesh (runs in a worker)."""
+    g = G()
+    for op in ops:
+        {"s": scrub, "b": boulder, "h": haystack, "t": tuft}[op[0]](g, *op[1:])
+    return g.out()
+
+
 def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
     """dense(x, y): built-up share 0..1; free(x, y): open ground; area_ok(x, y): not inside a park/wood/pitch/plaza/water area.
     -> (posts, trees)"""
@@ -147,14 +156,10 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
     samples = []
     cnt = dict(garden=0, scrub=0, vines=0, hay=0, rock=0, tuft=0, tree=0)
 
-    def put(g, x, z):
-        pos, uv, col = g.out()
-        if len(pos):
-            add(chunk_of(x, z), 3, pos, uv, col)
-
     def ok(x, z, r):
         return all(free(x + dx, z + dz) and area_ok(x + dx, z + dz) for dx, dz in ((0, 0), (r, 0), (-r, 0), (0, r), (0, -r)))
 
+    jobs, ops_n = [], 0                                                     # in block order: ("add", key, mesh) | ("ops", key, [op, ...])
     bar = Bar("fill: gardens, scrub, boulders", nb, unit=" rows")
     for by in range(nb):
         bar.update(by)
@@ -170,7 +175,7 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
             if hi and m < 0.42 and roll < 0.30 and ok(cx, cz, 7.0):
                 g = G()
                 w, dd = garden(g, cx, cz, r.choice((0, math.pi / 2)) + r.uniform(-.15, .15), r)
-                put(g, cx, cz)
+                jobs.append(("add", chunk_of(cx, cz), g.out()))
                 posts.append((cx - w / 2 + 1.4, cz, 1.3))
                 samples.append((round(cx), round(cz)))
                 cnt["garden"] += 1
@@ -180,10 +185,10 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
             elif not hi and 0.5 < m < 0.7 and wet[by, bx] > 0.45 and roll < 0.35 and ok(cx, cz, 12.0):
                 g = G()
                 hw, hd = vines(g, cx, cz, r.uniform(0, 3.14), r)
-                put(g, cx, cz)
+                jobs.append(("add", chunk_of(cx, cz), g.out()))
                 cnt["vines"] += 1
             elif roll < 0.65 + 0.3 * (1 - m):                              # dry scrub, boulders, tufts: denser where the mood is dry
-                g = G()
+                ops = []                                                    # the shapes only use their own seeds: built later, in parallel
                 for _ in range(r.randint(3, 6)):
                     px, pz = cx + r.uniform(-6, 6), cz + r.uniform(-6, 6)
                     if not ok(px, pz, 1.2):
@@ -191,25 +196,31 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
                     k = r.random()
                     if k < 0.40:
                         rb = r.uniform(0.5, 1.1)
-                        scrub(g, px, pz, rb, cnt["scrub"] + bx)
+                        ops.append(("s", px, pz, rb, cnt["scrub"] + bx))
                         cnt["scrub"] += 1
                     elif k < 0.47:
                         rb = r.uniform(0.4, 0.9)
-                        boulder(g, px, pz, rb, bx + by)
+                        ops.append(("b", px, pz, rb, bx + by))
                         posts.append((px, pz, rb * 0.9))
                         cnt["rock"] += 1
                     elif k < 0.53 and not hi:
-                        haystack(g, px, pz, bx * 7 + by)
+                        ops.append(("h", px, pz, bx * 7 + by))
                         posts.append((px, pz, 1.0))
                         cnt["hay"] += 1
                     else:
                         for _t in range(r.randint(2, 4)):
-                            tuft(g, px + r.uniform(-1.2, 1.2), pz + r.uniform(-1.2, 1.2), bx + by + _t)
+                            ops.append(("t", px + r.uniform(-1.2, 1.2), pz + r.uniform(-1.2, 1.2), bx + by + _t))
                         cnt["tuft"] += 1
-                put(g, cx, cz)
+                jobs.append(("ops", chunk_of(cx, cz), ops))
                 if r.random() < 0.16 and m > 0.4 and ok(cx, cz, 3.5):          # a lone walnut / mulberry / poplar
                     trees.append((cx + r.uniform(-4, 4), cz + r.uniform(-4, 4), r.uniform(2.4, 4.0), r.randint(0, 3)))
                     cnt["tree"] += 1
+    todo = [j[2] for j in jobs if j[0] == "ops"]
+    built = iter(par.pmap(_build_ops, todo, chunk=64))
+    for kind, key, data in jobs:
+        pos, uv, col = data if kind == "add" else next(built)
+        if len(pos):
+            add(key, 3, pos, uv, col)
     bar.done()
     log("[build] fill: " + ", ".join(f"{v} {k}" for k, v in cnt.items()))
     log(f"[build] fill samples: {samples[::max(1, len(samples) // 8)]}")

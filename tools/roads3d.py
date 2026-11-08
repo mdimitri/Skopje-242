@@ -10,6 +10,7 @@ import os
 
 import numpy as np
 
+import par
 from progress import Bar
 
 SUN = np.array([-0.45, 0.80, -0.40])
@@ -32,6 +33,7 @@ SW_W, SW_H = 2.0, 0.16
 Y_BASE, Y_STEP = 0.05, 0.016
 PIECE = 24.0                                             # longest ribbon piece (also keeps pieces inside their chunk)
 SAG = 0.012                                              # allowed gap between a flat piece and the curved terrain (m)
+CHUNK = 120.0                                            # chunk size of build_world.chunk_of (pool workers rebuild it)
 _T = None                                                # terrain used by the piece splitter (set by build)
 
 
@@ -175,22 +177,23 @@ class Out:
     def quad(self, a, b, c, d, col, shade=TOP):
         """a..d: (x, y_up, z) corners in order."""
         key = self.chunk_of((a[0] + c[0]) * 0.5, (a[2] + c[2]) * 0.5)
-        e = self.d.setdefault((key, id(self.deck)), ([], [], self.deck))
+        e = self.d.setdefault((key, id(self.deck)), ([], [], self.deck, []))
         rgba = (min(255, col[0] * shade), min(255, col[1] * shade), min(255, col[2] * shade), 255)
         e[0].extend((a, b, c, a, c, d))
         e[1].extend((rgba,) * 6)
         self.n += 6
 
     def flush(self, add, mat):
-        for k_, ((key, _did), (p, c, deck)) in enumerate(self.d.items()):
+        for k_, ((key, _did), (p, c, deck, pre)) in enumerate(self.d.items()):
             if _TICK[0] and k_ % 8 == 0:
                 _TICK[0](k_ / max(1, len(self.d)))
-            pos = np.array(p, np.float32)
+            pos = np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)])      # pre: blocks from the pool workers
+            c = np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
             elif self.T is not None:
                 pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
-            add(key, mat, pos, np.zeros((len(pos), 2), np.float32), np.array(c, np.uint8))
+            add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
 
 
 def _strip(out, L, R, y, col, shade=TOP):
@@ -684,6 +687,204 @@ def _pier(out, x, z, yaw, sx, sz, y0, y1, col=(168, 164, 156)):
         out.quad((a[0], y1, a[1]), (b[0], y1, b[1]), (b[0], y0, b[1]), (a[0], y0, a[1]), col, sh)
 
 
+class _X:
+    """Everything one street's geometry needs, read-only (shared with the pool workers)."""
+
+
+def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
+    """The geometry of edge i: its ribbon, asphalt, pavements, markings, bridge body -> out / pout / piers / ribs / trims."""
+    edges, joints, plates, partners, deg, decks, cov, T = X.edges, X.joints, X.plates, X.partners, X.deg, X.decks, X.cov, X.T
+    e = edges[i]
+    if not (e["drive"] or e["walk"]):
+        return
+    cls, pts, w = _base(e["cls"]), e["pts"], e["w"]
+    if len(pts) < 2:
+        return
+    fr = _frames(pts)
+    y = y_of(e)
+    hw = w / 2
+    if e["bridge"]:
+        ribs[i] = (pts, [hw] * len(pts), fr, 0, len(pts) - 1)
+    else:
+        ribs[i] = _ribbon(e, i, joints, plates)
+    RP, RH, RF, RK0, RK1 = ribs[i]
+    deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
+    out.deck = deck
+    foot = cls in FOOT
+    jit = 0 if foot else (i * 7 % 9) - 4
+    base = FILL.get(cls, (100, 102, 108))
+    col = tuple(max(0, min(255, c + jit)) for c in base)
+    a0, a1 = (RK0, RK1) if RK1 > RK0 else (0, len(RP) - 1)
+    AP, AF, AH = RP[a0:a1 + 1], RF[a0:a1 + 1], RH[a0:a1 + 1]       # asphalt: up to the junction plates' cuts
+    L, R = _offset_v(AP, AF, AH, 1), _offset_v(AP, AF, AH, -1)
+    if not foot:                                           # gutter strips + the asphalt itself
+        g = 0.42
+        L2, R2 = _offset_v(AP, AF, AH, 1, -g), _offset_v(AP, AF, AH, -1, -g)
+        dark = tuple(c * 0.8 for c in col)
+        _strip(out, L, L2, y, dark)
+        _strip(out, R2, R, y, dark)
+        _strip(out, L2, R2, y, col)
+    else:
+        if not e["drive"] and not e["bridge"]:
+            lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False))
+            if lr is not None:
+                _strip(out, lr[0], lr[1], y, col)
+        else:
+            _strip(out, L, R, y, col)
+    # round fill at both ends so mitred junctions have no gaps
+    for p, end_ in ((pts[0], 0), (pts[-1], 1)):
+        if (i, end_) in joints:                            # shared cross-section: nothing to fill
+            continue
+        if (e["a"] if end_ == 0 else e["b"]) in plates:      # the plate covers the junction
+            continue
+        if e["bridge"] and deg.get(e["a"] if end_ == 0 else e["b"], 0) >= 2:     # deck meets its approach road: no bulge over it
+            continue
+        if foot and not e["drive"] and cov.covered(p[0], p[1], i, False):
+            continue                                       # a footway's end on a carriageway: no disc of pavement there
+        r = hw - (0.0 if foot else 0.0)
+        ring = [(p[0] + math.cos(a * math.pi / 6) * r, p[1] + math.sin(a * math.pi / 6) * r) for a in range(12)]
+        for k in range(0, 12, 2):
+            a, b, c2 = ring[k], ring[(k + 1) % 12], ring[(k + 2) % 12]
+            out.quad((p[0], y + 0.003, p[1]), (a[0], y + 0.003, a[1]), (b[0], y + 0.003, b[1]), (c2[0], y + 0.003, c2[1]), col)
+    # pavements with a curb face, trimmed exactly where another road's asphalt starts (never drawn over it)
+    if cls in SIDEWALK and not e["bridge"]:
+        skip = partners.get(i, ())
+        for side in (1, -1):
+            inner = _offset_v(RP, RF, RH, side)
+            sw_ = e.get("sw")
+            if sw_:                                         # wider pavement beside diagonal bays, eased back to normal over the last 6 m of each end
+                dd = [min(math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]), math.hypot(q[0] - pts[-1][0], q[1] - pts[-1][1])) for q in RP]
+                sw_ = [SW_W + (sw_ - SW_W) * min(1.0, max(0.0, (d_ - 10.0) / 6.0)) for d_ in dd]
+            outer = _offset_v(RP, RF, RH, side, sw_ or SW_W)
+            piece = 0
+            first = last = None
+            for k in range(RK0, RK1):                       # from the plate's cut to the plate's cut (or the shared joint)
+                ln = math.hypot(RP[k + 1][0] - RP[k][0], RP[k + 1][1] - RP[k][1])
+                nsub = _pieces(ln, RP[k][0], RP[k][1], RP[k + 1][0], RP[k + 1][1], 10.0)
+                I0, I1, O0, O1 = inner[k], inner[k + 1], outer[k], outer[k + 1]
+                lerp = lambda A, B, t: (A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t)
+
+                bend = any(RF[q][1] > 1.01 for q in range(max(0, k - 6), min(len(RP), k + 8)))
+                near_k = range(max(0, k - 6), min(len(RP) - 1, k + 7)) if bend else ()
+                hmin = min(RH[max(0, k - 6):k + 8]) - 0.1
+                busy = bend or any(cov.others(q[0], q[1], i, skip) for q in (I0, I1, O0, O1))
+
+                def bad(t):
+                    ip, op = lerp(I0, I1, t), lerp(O0, O1, t)
+                    for u in (0.04, 0.5, 0.96):
+                        px_, py_ = ip[0] + (op[0] - ip[0]) * u, ip[1] + (op[1] - ip[1]) * u
+                        if cov.covered(px_, py_, i, False, skip=skip):
+                            return True
+                        for q in near_k:                    # inside of a tight bend: the offset folds over the road's own asphalt
+                            if _pdist(px_, py_, RP[q][0], RP[q][1], RP[q + 1][0], RP[q + 1][1]) < hmin:
+                                return True
+                    return False
+                for sp in range(nsub):
+                    runs = _free_runs(bad, sp / nsub, (sp + 1) / nsub, ln / nsub) if busy else ((sp / nsub, (sp + 1) / nsub),)
+                    for t0, t1 in runs:
+                        i0, i1, o0, o1 = lerp(I0, I1, t0), lerp(I0, I1, t1), lerp(O0, O1, t0), lerp(O0, O1, t1)
+                        if first is None:
+                            first = (i0, o0)
+                        last = (i1, o1)
+                        piece += 1
+                        pav = 178 + (4 if piece % 2 else -4)
+                        pc = (pav, pav - 4, pav - 12)
+                        out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), pc)
+                        out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]),
+                                 (150, 148, 142), 0.78)
+            if first is not None:                            # where the pavement really starts / stops: the curb corners join there
+                trims[(i, 0, side)], trims[(i, 1, side)] = first, last
+    # dead ends: the pavement wraps round the rounded asphalt end instead of stopping flush with it
+    if cls in SIDEWALK and not e["bridge"]:
+        for end_ in (0, 1):
+            nd = e["a"] if end_ == 0 else e["b"]
+            if (i, end_) in joints or nd in plates or deg.get(nd, 0) != 1:
+                continue
+            p_ = pts[0] if end_ == 0 else pts[-1]
+            da = _away(e, end_)
+            nx_, ny_ = -da[1], da[0]
+            prev = None
+            for q in range(9):
+                th = math.pi * q / 8
+                ux, uy = nx_ * math.cos(th) - da[0] * math.sin(th), ny_ * math.cos(th) - da[1] * math.sin(th)
+                cur = ((p_[0] + ux * hw, p_[1] + uy * hw), (p_[0] + ux * (hw + SW_W), p_[1] + uy * (hw + SW_W)))
+                if prev:
+                    (i0, o0), (i1, o1) = prev, cur
+                    out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (172, 168, 158))
+                    out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (150, 148, 142), 0.78)
+                prev = cur
+    # lane markings
+    if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
+        _markings(out, cov, i, e, pts, fr, y + 0.025)
+    if deck is not None:                                   # girders + piers under the deck
+        _slab(out, pts, fr, hw + 0.0, y)
+        if do_piers:
+            _piers(pout, piers, deck, T)
+    out.deck = None
+
+
+def _prepare(edges, joints, plates, decks, T):
+    X = _X()
+    X.edges, X.joints, X.plates, X.decks, X.T = edges, joints, plates, decks, T
+    partners = {}                                          # edge -> the edges it continues into at a shared joint (they never cut its pavement)
+    jn = {}
+    for (k_, end_) in joints:
+        jn.setdefault(edges[k_]["a"] if end_ == 0 else edges[k_]["b"], []).append(k_)
+    for ks in jn.values():
+        for k_ in ks:
+            partners.setdefault(k_, set()).update(q for q in ks if q != k_)
+    deg = {}
+    for e_ in edges:
+        if e_["drive"] or e_["walk"]:
+            deg[e_["a"]] = deg.get(e_["a"], 0) + 1
+            deg[e_["b"]] = deg.get(e_["b"], 0) + 1
+    X.partners, X.deg = partners, deg
+    return X
+
+
+_W = [None]                                                # the worker's own copy of the context
+
+
+def _init_worker(edges, joints, plates, decks, T, chunk):
+    global _T
+    _T = T
+    _MICRO.clear()
+    for i_, e_ in enumerate(edges):
+        _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
+    X = _prepare(edges, joints, plates, decks, T)
+    X.cov = Cover(edges)
+    X.cov.set_cores(edges, plates)
+    X.chunk_of = lambda x, z: (math.floor(x / chunk), math.floor(z / chunk))      # = build_world.chunk_of
+    X.roadof = {id(d): r for r, d in (decks or {}).items()}
+    _W[0] = X
+
+
+def _pack(out, roadof):
+    """An Out's entries as arrays that cross the process boundary cheaply: [(chunk key, road of its deck or None, pos, rgba)]."""
+    return [(key, roadof.get(did), np.array(p, np.float32).reshape(-1, 3), np.array(c, np.uint8).reshape(-1, 4))
+            for (key, did), (p, c, _deck, _pre) in out.d.items()]
+
+
+def _edge_job(job):
+    """job = [(edge index, builds its bridge piers?)] in order -> its meshes and per-edge results (runs in a worker)."""
+    X = _W[0]
+    out, pout = Out(X.chunk_of, X.T), Out(X.chunk_of)
+    ribs, trims, piers = {}, {}, []
+    for i, do_piers in job:
+        e = X.edges[i]
+        out.deck = X.decks.get(e["road"]) if (X.decks and e["bridge"]) else None
+        _edge_body(i, X, out, pout, piers, ribs, trims, do_piers)
+    return _pack(out, X.roadof), _pack(pout, X.roadof), ribs, trims, piers, out.n, pout.n
+
+
+def _merge(out, packed, decks):
+    for key, road, pos, col in packed:
+        deck = decks.get(road) if road is not None else None
+        e = out.d.setdefault((key, id(deck)), ([], [], deck, []))
+        e[3].append((pos, col))
+        out.n += len(pos)
+
+
 def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     """Adds all road geometry to the mesh accumulator.  -> (number of vertices, pier collision posts)."""
     global _T
@@ -721,136 +922,34 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
-    for n_, i in enumerate(order):
-        prog(0.06 + 0.64 * n_ / max(1, len(order)), "streets")
+    pier_edges, done_ = set(), set()
+    for i in order:
         e = edges[i]
-        if not (e["drive"] or e["walk"]):
-            continue
-        cls, pts, w = _base(e["cls"]), e["pts"], e["w"]
-        if len(pts) < 2:
-            continue
-        fr = _frames(pts)
-        y = y_of(e)
-        hw = w / 2
-        if e["bridge"]:
-            ribs[i] = (pts, [hw] * len(pts), fr, 0, len(pts) - 1)
-        else:
-            ribs[i] = _ribbon(e, i, joints, plates)
-        RP, RH, RF, RK0, RK1 = ribs[i]
-        deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
-        out.deck = deck
-        foot = cls in FOOT
-        jit = 0 if foot else (i * 7 % 9) - 4
-        base = FILL.get(cls, (100, 102, 108))
-        col = tuple(max(0, min(255, c + jit)) for c in base)
-        a0, a1 = (RK0, RK1) if RK1 > RK0 else (0, len(RP) - 1)
-        AP, AF, AH = RP[a0:a1 + 1], RF[a0:a1 + 1], RH[a0:a1 + 1]       # asphalt: up to the junction plates' cuts
-        L, R = _offset_v(AP, AF, AH, 1), _offset_v(AP, AF, AH, -1)
-        if not foot:                                           # gutter strips + the asphalt itself
-            g = 0.42
-            L2, R2 = _offset_v(AP, AF, AH, 1, -g), _offset_v(AP, AF, AH, -1, -g)
-            dark = tuple(c * 0.8 for c in col)
-            _strip(out, L, L2, y, dark)
-            _strip(out, R2, R, y, dark)
-            _strip(out, L2, R2, y, col)
-        else:
-            if not e["drive"] and not e["bridge"]:
-                lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False))
-                if lr is not None:
-                    _strip(out, lr[0], lr[1], y, col)
-            else:
-                _strip(out, L, R, y, col)
-        # round fill at both ends so mitred junctions have no gaps
-        for p, end_ in ((pts[0], 0), (pts[-1], 1)):
-            if (i, end_) in joints:                            # shared cross-section: nothing to fill
-                continue
-            if (e["a"] if end_ == 0 else e["b"]) in plates:      # the plate covers the junction
-                continue
-            if e["bridge"] and deg.get(e["a"] if end_ == 0 else e["b"], 0) >= 2:     # deck meets its approach road: no bulge over it
-                continue
-            if foot and not e["drive"] and cov.covered(p[0], p[1], i, False):
-                continue                                       # a footway's end on a carriageway: no disc of pavement there
-            r = hw - (0.0 if foot else 0.0)
-            ring = [(p[0] + math.cos(a * math.pi / 6) * r, p[1] + math.sin(a * math.pi / 6) * r) for a in range(12)]
-            for k in range(0, 12, 2):
-                a, b, c2 = ring[k], ring[(k + 1) % 12], ring[(k + 2) % 12]
-                out.quad((p[0], y + 0.003, p[1]), (a[0], y + 0.003, a[1]), (b[0], y + 0.003, b[1]), (c2[0], y + 0.003, c2[1]), col)
-        # pavements with a curb face, trimmed exactly where another road's asphalt starts (never drawn over it)
-        if cls in SIDEWALK and not e["bridge"]:
-            skip = partners.get(i, ())
-            for side in (1, -1):
-                inner = _offset_v(RP, RF, RH, side)
-                sw_ = e.get("sw")
-                if sw_:                                         # wider pavement beside diagonal bays, eased back to normal over the last 6 m of each end
-                    dd = [min(math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]), math.hypot(q[0] - pts[-1][0], q[1] - pts[-1][1])) for q in RP]
-                    sw_ = [SW_W + (sw_ - SW_W) * min(1.0, max(0.0, (d_ - 10.0) / 6.0)) for d_ in dd]
-                outer = _offset_v(RP, RF, RH, side, sw_ or SW_W)
-                piece = 0
-                first = last = None
-                for k in range(RK0, RK1):                       # from the plate's cut to the plate's cut (or the shared joint)
-                    ln = math.hypot(RP[k + 1][0] - RP[k][0], RP[k + 1][1] - RP[k][1])
-                    nsub = _pieces(ln, RP[k][0], RP[k][1], RP[k + 1][0], RP[k + 1][1], 10.0)
-                    I0, I1, O0, O1 = inner[k], inner[k + 1], outer[k], outer[k + 1]
-                    lerp = lambda A, B, t: (A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t)
-
-                    bend = any(RF[q][1] > 1.01 for q in range(max(0, k - 6), min(len(RP), k + 8)))
-                    near_k = range(max(0, k - 6), min(len(RP) - 1, k + 7)) if bend else ()
-                    hmin = min(RH[max(0, k - 6):k + 8]) - 0.1
-                    busy = bend or any(cov.others(q[0], q[1], i, skip) for q in (I0, I1, O0, O1))
-
-                    def bad(t):
-                        ip, op = lerp(I0, I1, t), lerp(O0, O1, t)
-                        for u in (0.04, 0.5, 0.96):
-                            px_, py_ = ip[0] + (op[0] - ip[0]) * u, ip[1] + (op[1] - ip[1]) * u
-                            if cov.covered(px_, py_, i, False, skip=skip):
-                                return True
-                            for q in near_k:                    # inside of a tight bend: the offset folds over the road's own asphalt
-                                if _pdist(px_, py_, RP[q][0], RP[q][1], RP[q + 1][0], RP[q + 1][1]) < hmin:
-                                    return True
-                        return False
-                    for sp in range(nsub):
-                        runs = _free_runs(bad, sp / nsub, (sp + 1) / nsub, ln / nsub) if busy else ((sp / nsub, (sp + 1) / nsub),)
-                        for t0, t1 in runs:
-                            i0, i1, o0, o1 = lerp(I0, I1, t0), lerp(I0, I1, t1), lerp(O0, O1, t0), lerp(O0, O1, t1)
-                            if first is None:
-                                first = (i0, o0)
-                            last = (i1, o1)
-                            piece += 1
-                            pav = 178 + (4 if piece % 2 else -4)
-                            pc = (pav, pav - 4, pav - 12)
-                            out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), pc)
-                            out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]),
-                                     (150, 148, 142), 0.78)
-                if first is not None:                            # where the pavement really starts / stops: the curb corners join there
-                    trims[(i, 0, side)], trims[(i, 1, side)] = first, last
-        # dead ends: the pavement wraps round the rounded asphalt end instead of stopping flush with it
-        if cls in SIDEWALK and not e["bridge"]:
-            for end_ in (0, 1):
-                nd = e["a"] if end_ == 0 else e["b"]
-                if (i, end_) in joints or nd in plates or deg.get(nd, 0) != 1:
-                    continue
-                p_ = pts[0] if end_ == 0 else pts[-1]
-                da = _away(e, end_)
-                nx_, ny_ = -da[1], da[0]
-                prev = None
-                for q in range(9):
-                    th = math.pi * q / 8
-                    ux, uy = nx_ * math.cos(th) - da[0] * math.sin(th), ny_ * math.cos(th) - da[1] * math.sin(th)
-                    cur = ((p_[0] + ux * hw, p_[1] + uy * hw), (p_[0] + ux * (hw + SW_W), p_[1] + uy * (hw + SW_W)))
-                    if prev:
-                        (i0, o0), (i1, o1) = prev, cur
-                        out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (172, 168, 158))
-                        out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (150, 148, 142), 0.78)
-                    prev = cur
-        # lane markings
-        if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
-            _markings(out, cov, i, e, pts, fr, y + 0.025)
-        if deck is not None:                                   # girders + piers under the deck
-            _slab(out, pts, fr, hw + 0.0, y)
-            if e["road"] not in pier_done:
-                pier_done.add(e["road"])
-                _piers(pout, piers, deck, T)
-        out.deck = None
+        if (e["drive"] or e["walk"]) and len(e["pts"]) >= 2 and e["road"] not in done_ and decks and e["bridge"] and decks.get(e["road"]) is not None:
+            done_.add(e["road"])
+            pier_edges.add(i)
+    X = _prepare(edges, joints, plates, decks, T)
+    X.cov, X.chunk_of = cov, chunk_of
+    nj = par.jobs()
+    if nj > 1 and len(order) > 400 and chunk_of(CHUNK * 3 + 1, -CHUNK * 2 - 1) == (3, -3):
+        nslice = nj * 6
+        slices = [[(i, False) for i in order[k * len(order) // nslice:(k + 1) * len(order) // nslice]] for k in range(nslice)]
+        for k_, (po, pp, rb, tr, pr, n1, n2) in enumerate(par.pmap(_edge_job, slices, init=(_init_worker, (edges, joints, plates, decks, T, CHUNK)), chunk=1)):
+            prog(0.06 + 0.64 * (k_ + 1) / nslice, "streets")
+            _merge(out, po, decks)
+            _merge(pout, pp, decks)
+            ribs.update(rb)
+            trims.update(tr)
+            piers.extend(pr)
+        for i in order:                                    # piers last: PIER_SKIP (a closure over the lane grid) lives in this process only
+            if i in pier_edges:
+                _piers(pout, piers, decks[edges[i]["road"]], T)
+    else:
+        for n_, i in enumerate(order):
+            prog(0.06 + 0.64 * n_ / max(1, len(order)), "streets")
+            e = edges[i]
+            out.deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
+            _edge_body(i, X, out, pout, piers, ribs, trims, i in pier_edges)
     hulls = []
     _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
     _junctions(out, edges, plates, hulls)
@@ -875,7 +974,7 @@ def _debug_dump(out, edges, prefix, S=8.0, R=45.0, count=14):
     """ROADS_DEBUG=<path prefix>: writes top-down PNGs (<prefix>_N.png) around the busiest junctions, bridge ends and dead ends."""
     from PIL import Image, ImageDraw
     tris = []
-    for (p, c, deck) in out.d.values():
+    for (p, c, deck, _pre) in out.d.values():
         for k in range(0, len(p), 3):
             tris.append((p[k:k + 3], c[k], deck is not None))
     tris.sort(key=lambda t: max(q[1] for q in t[0]) + (1.0 if t[2] else 0.0))
