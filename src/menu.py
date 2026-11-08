@@ -101,6 +101,7 @@ def _rows(in_game, slots=(), settings_only=False):
     ]
     R += [(5, H("Демо режим")),
           (5, Row("action", "Пушти го демото", "demo")),
+          (5, Row("slider", "Тилт-шифт (мазнотија горе и долу)", "demo_dof", lo=0.0, hi=1.0, fmt=pct, note="0% = исклучено, повисоко = поизразен ефект на играчка-град")),
           (5, Row("head", "Хеликоптер на ТВ вести лета над градот, а камерата полека")),
           (5, Row("head", "се врти околу него. Кој било клавиш или клик го прекинува."))]
     MAPROW = (0, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041")))   # was the Мапа tab

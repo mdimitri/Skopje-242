@@ -1929,6 +1929,7 @@ def main():
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
+            present.dof, present.dof_bar = (cfg["demo_dof"], 0.085) if cn_on else (0.0, 0.0)
             present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
             t_sw = time.perf_counter()
             rl.end_drawing()
