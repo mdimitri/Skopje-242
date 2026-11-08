@@ -1750,7 +1750,7 @@ def main():
         """Share of building cells within rad metres: a quiet, built-up street has plenty."""
         cx_, cy_ = to_cell(x, y)
         k = int(rad / CELL)
-        x0_, x1_, y0_, y1_ = max(cx_ - k, 0), min(cx_ + k + 1, NCX), max(cy_ - k, 0), min(cy_ + k + 1, NCY)
+        x0_, x1_, y0_, y1_ = min(max(cx_ - k, 0), NCX), min(max(cx_ + k + 1, 0), NCX), min(max(cy_ - k, 0), NCY), min(max(cy_ + k + 1, 0), NCY)
         n_ = (x1_ - x0_) * (y1_ - y0_)
         return float(_bi[y1_, x1_] - _bi[y0_, x1_] - _bi[y1_, x0_] + _bi[y0_, x0_]) / n_ if n_ > 0 else 0.0
 
