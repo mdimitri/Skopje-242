@@ -720,6 +720,13 @@ def main():
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
+    def cine_go():                                          # menu tab "Демо": the helicopter tour, any key or click ends it
+        cine.home = sim.focus()[:2]
+        cine.start(10)
+        sim.clock.hour = cine.v["hour"]
+        rl.hide_cursor()
+        while rl.get_key_pressed():
+            pass
     mpg = None                                             # multiplayer sync (mpgame.Game) when a lobby game was started
     log("[game] ready")
     if a.nomenu and loader.music is not None:
@@ -734,6 +741,8 @@ def main():
         apply_cfg(cfg, True)
         characters.apply(sim, cfg["lik"])
         sim.clock.hour = cfg["hour"] % 24.0
+        if res_ == "demo":
+            cine_go()
         _ms = menu_mod.MP.get("session")
         if _ms is not None and _ms.state == "playing":
             import atexit
@@ -1613,12 +1622,16 @@ def main():
                             if d_:
                                 savegame.restore(sim, cfg, d_)
                                 apply_cfg(cfg, True)
+                        elif res_ == "demo":
+                            cine_go()
                         else:                              # new game: the chosen character, fresh stats
                             savegame.new_character(sim, cfg["lik"])
                             sim.clock.hour = cfg["hour"] % 24.0
                         snap = True
                         hud.set_banner(TXT("main.0039"), 3.0)
                         res_ = ""
+                    if res_ == "demo":
+                        cine_go()
                     if res_ == "chars":
                         if menu_mod.pick_character(cfg, aud):
                             break
@@ -1784,6 +1797,11 @@ def main():
             Hc = 0.0
         cn_on = False
         cine_shot_ = None
+        if cine.active and not a.test and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT)):
+            cine.stop()                                      # back where the player was
+            rl.show_cursor()
+            sim.teleport(*cine.home)
+            snap = True
         if cine.active:
             if cine_prev is not None:
                 cine_shot_ = cine_prev.tick(frame, lambda h_: setattr(sim.clock, "hour", h_))
