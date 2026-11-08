@@ -295,13 +295,24 @@ def build():
         x = x + np.sin(2 * np.pi * res_f * t) * np.exp(-t / res_q) * 0.35 * hard           # sole / surface ring
         x = x + burst(0.07, toe * hard, 4, 0.012) + np.where(t >= 0.07, np.sin(2 * np.pi * thud_f * 1.3 * (t - 0.07)) * np.exp(-(t - 0.07) / 0.03), 0.0) * toe * 0.6
         return (x / np.abs(x).max() * 0.7).astype(np.float32)
+    # reference-matched boot step (footsteps.mp3 study): ~95% of the energy under 300 Hz, a dull thump (50-70 Hz or ~155 Hz,
+    # the reference alternates the two foot sounds) with a short 3 ms attack, 40-100 ms body decay and a ragged low-passed tail
+    def boot(f0, dur=0.3, tail=0.08, amp=1.0):
+        t = _t(dur)
+        n = len(t)
+        att = np.minimum(1.0, t / 0.003)
+        x = np.sin(2 * np.pi * f0 * (1.0 + 0.5 * np.exp(-t / 0.02)) * t) * np.exp(-t / 0.045) * att
+        x = x + 0.5 * np.sin(2 * np.pi * f0 * 0.5 * t) * np.exp(-t / 0.07) * att
+        nz = _lp(rng.standard_normal(n).astype(np.float32), 60) * 9
+        x = x + nz * np.exp(-t / tail) * att * 0.5 * (1 + 0.5 * np.sin(2 * np.pi * rng.uniform(18, 30) * t))
+        return (x / np.abs(x).max() * 0.7 * amp).astype(np.float32)
     for suf in ("", "_b", "_c"):
         j_ = rng.uniform(0.9, 1.12)
-        S["step_asphalt" + suf] = step(0.9, 95 * j_, 1500 * j_, 0.012, 0.35, 0.5)
-        S["step_run_asphalt" + suf] = step(1.1, 120 * j_, 1800 * j_, 0.01, 0.4, 0.25, 0.2)
+        S["step_asphalt" + suf] = boot((155 if suf == "_c" else 62) * j_)
+        S["step_run_asphalt" + suf] = boot((165 if suf == "_c" else 75) * j_, 0.22, 0.05, 1.1)
         S["step_grass" + suf] = step(0.1, 70 * j_, 400 * j_, 0.02, 1.0, 0.3, 0.3)
         S["step_dirt" + suf] = step(0.35, 85 * j_, 800 * j_, 0.015, 1.3, 0.35, 0.28)
-        S["step_wood" + suf] = step(0.7, 150 * j_, 380 * j_, 0.07, 0.25, 0.5, 0.32)
+        S["step_wood" + suf] = boot((190 if suf == "_c" else 95) * j_, 0.32, 0.1)
     t = _t(0.3)
     nz = _lp(rng.standard_normal(len(t)).astype(np.float32), 4)
     x = nz * np.exp(-t / 0.06) + np.sin(2 * np.pi * (300 + 900 * t) * t) * np.exp(-t / 0.05) * 0.5
