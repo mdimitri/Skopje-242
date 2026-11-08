@@ -110,8 +110,14 @@ class SunShadow:
         L, e = sun_at(hour)
         k = strength_at(hour, dark)                         # no sun shadows once the game clock says it is getting dark
         redraw = (self.center is None or self.L is None or np.abs(L - self.L).max() > SUN_STEP
-                  or math.hypot(cx - self.center[0], cz - self.center[1]) > RECENTER
-                  or self.st.mesh_loaded != self.loaded)
+                  or math.hypot(cx - self.center[0], cz - self.center[1]) > RECENTER)
+        if not redraw and self.st.mesh_loaded != self.loaded:              # new meshes: only those inside the map matter
+            pad = HALF + 170.0
+            near = self.st.loaded_near(self.loaded, self.center[0] - pad, self.center[1] - pad, self.center[0] + pad, self.center[1] + pad)
+            if near is False:
+                self.loaded = self.st.mesh_loaded
+            else:
+                redraw = True
         if not redraw:
             if abs(k - self.strength) > 0.01:                # the strength fades slowly at dawn and dusk
                 self.strength = k

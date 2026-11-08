@@ -20,6 +20,8 @@ def _job(spec):
         return gl3d.ped_arrays(*spec[1:])
     if kind == "car":
         return gl3d.car_arrays(spec[1], spec[2], (), 0.0, False, True)
+    if kind == "carlod":                                   # front wheels in the body (straight): one draw call for a distant car
+        return gl3d.car_arrays(spec[1], spec[2], (), 0.0, False, False)
     raise ValueError(spec)
 
 

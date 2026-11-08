@@ -116,6 +116,7 @@ class Renderer:
         self.drawn_meshes = 0
         self.frustum = None
         self.mb = modelpool.Builder()             # new car / person models made on other cores
+        self.car_lods = {}                        # (kind, colour) -> car with its front wheels built in (distant cars: 1 draw, not 3)
 
     # ---------------------------------------------------------------- camera
     def camera(self, cx, cz, ppm, sw, sh, cy=0.0):
@@ -210,6 +211,16 @@ class Renderer:
             m = self.car_models[key] = gl3d.car_model(kind, color, (), 0.0, False, True)
         return m
 
+    LOD_PX = 40.0                         # a plain car shorter than this on screen is drawn as one model (front wheels straight)
+
+    def car_lod(self, kind, color):
+        key = (kind, color)
+        m = self.car_lods.get(key)
+        if m is None and not self.mb.want(("carlod",) + key, ("carlod",) + key) and self._built < self.BUILD_BUDGET:
+            self._built += 1
+            m = self.car_lods[key] = gl3d.car_model(kind, color, (), 0.0, False, False)
+        return m
+
     @staticmethod
     def _gait(arch, anim, run):
         """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
@@ -262,7 +273,7 @@ class Renderer:
     def _collect_models(self):
         """Upload the models the workers finished (arrays -> VRAM)."""
         for key, arrs in self.mb.ready():
-            store, k = (self.ped_models, key[1:]) if key[0] == "ped" else (self.car_models, key[1:])
+            store, k = {"ped": self.ped_models, "car": self.car_models, "carlod": self.car_lods}[key[0]], key[1:]
             if store.get(k) is None:
                 store[k] = gl3d.make_model(*arrs)
 
@@ -511,7 +522,7 @@ class Renderer:
         cars, doors = [], []
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect):
-                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str))
+                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color))
                 sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
         for b in sim.bodies:
             if self._in(b.x, b.y, rect):
@@ -524,7 +535,8 @@ class Renderer:
                     self._vanish_t = t
                     self.log(f"[vanish] player car not drawn: model {m is not None} own {b.model is not None} dirty {b.dirty} "
                              f"kind {b.kind} colour {b.color} y {gy}")
-                cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll, b.kind, b.wheel))
+                cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll, b.kind, b.wheel,
+                             b.color if b.model is None and b.color >= 0 and not b.exploded else None))
                 if b.door > 0.01:
                     doors.append((b, gy))
                 hl = vehicles.HALF_L[b.kind] + 0.1
@@ -629,11 +641,22 @@ class Renderer:
                 self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
         if self.shadows:
             self._shadow_batch(sh)
-        for x, z, h, m, tint, gy, pitch, roll, kind, ang in cars:
+        fr = self.frustum
+        for x, z, h, m, tint, gy, pitch, roll, kind, ang, col in cars:
             if m is None:
                 continue
             M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
                                                       rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+            if col is not None and fr is not None and kind not in vehicles.BIKES:
+                px, py, pz = fr.p
+                if vehicles.DIMS[kind][0] * fr.fpx < self.LOD_PX * math.sqrt((x - px) ** 2 + (gy - py) ** 2 + (z - pz) ** 2):
+                    ml = self.car_lod(kind, col)
+                    if ml is not None:                       # small on screen: one model, front wheels straight
+                        old = ml.transform
+                        ml.transform = M
+                        rl.draw_model(ml, ZERO, 1.0, tint)
+                        ml.transform = old
+                        continue
             old = m.transform
             m.transform = M                                  # tilt with the slope: roll, pitch, heading, then move
             rl.draw_model(m, V3(0, 0, 0), 1.0, tint)

@@ -194,6 +194,7 @@ class Streamer:
         self.mesh_loaded = 0
         self.blocks = {}      # demo far ring: (bx, by) -> [{mat: model}, last_used, sphere, chunk keys]; BLOCK x BLOCK chunks per draw call
         self.covered = set()  # chunk keys drawn by a block (their own meshes are not drawn)
+        self.recent = []      # (load number, bb) of the latest mesh loads
         self.sph = {}         # key -> bounding sphere (x, y, z, r) of its meshes / of its ground mesh: view-frustum culling
         self.gsph = {}
         self.size = int((world.chunk + 2 * world.margin) * PPM)
@@ -274,8 +275,22 @@ class Streamer:
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
         bb = ch.get("bb") if ch else None
+        self.recent.append((self.mesh_loaded + 1, bb))         # (the sun shadow redraws only for new meshes near it)
+        if len(self.recent) > 256:
+            del self.recent[:128]
         self.sph[key] = _sphere(bb[0], bb[1], bb[2], bb[3], y0, y1) if bb is not None and y1 >= y0 else None
         self.mesh_loaded += 1
+
+    def loaded_near(self, since, x0, z0, x1, z1):
+        """Was a chunk mesh touching the box loaded after load number `since`?  (None when the log does not reach back.)"""
+        if not self.recent or self.recent[0][0] > since + 1:
+            return None
+        for n, bb in reversed(self.recent):
+            if n <= since:
+                break
+            if bb is None or (bb[2] >= x0 and bb[0] <= x1 and bb[3] >= z0 and bb[1] <= z1):
+                return True
+        return False
 
     def get_ground(self, key):
         e = self.ground.get(key)
