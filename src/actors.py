@@ -813,6 +813,26 @@ class Peds:
                             a.y -= ny * push * wa
                             b.x += nx * push * (1.0 - wa)
                             b.y += ny * push * (1.0 - wa)
+        wk = self.walker                                          # the player on foot is solid too: bump, bounce back, the other gets shoved
+        if wk is not None and wk.health > 0 and wk.z < 0.5:
+            for (cx, cy) in ((int(wk.x // 2.0) + i, int(wk.y // 2.0) + j) for i in (-1, 0, 1) for j in (-1, 0, 1)):
+                for p in grid.get((cx, cy), ()):
+                    r = _PED_R(p) + 0.38
+                    ex, ey = p.x - wk.x, p.y - wk.y
+                    d2 = ex * ex + ey * ey
+                    if d2 >= r * r or (p.gz is not None and abs(p.gz - wk.az) > 2.0):
+                        continue
+                    d = math.sqrt(d2) or 1e-4
+                    nx, ny = ex / d, ey / d
+                    ov = r - d
+                    wk.x -= nx * ov * 0.5
+                    wk.y -= ny * ov * 0.5
+                    p.x += nx * ov * 0.5
+                    p.y += ny * ov * 0.5
+                    vn = wk.vx * nx + wk.vy * ny
+                    if vn > 0:                                    # walking into them: bounce off
+                        wk.vx -= nx * vn * 1.6
+                        wk.vy -= ny * vn * 1.6
 
     def _bumped(self, p, wk, ev):
         """The player shoved past p: first a grumble, then insults and threats; after a few bumps p goes for them."""
