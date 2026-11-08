@@ -372,6 +372,11 @@ def make(i, x, z, yaw, seed):
     return g
 
 
+def make_out(job):
+    """job = (item, x, z, yaw, seed) -> the piece's (pos, uv, col) arrays (runs in a pool worker)."""
+    return make(*job).out()
+
+
 def footprint(i):
     s = CATALOG[i][2]
     return max(0.4, s[0] / 2)

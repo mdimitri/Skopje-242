@@ -20,6 +20,7 @@ import mapbox_earcut as earcut
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from geo import HX, HY, project
 from progress import Bar, each, phase, spread, flat, frac, span
+import par
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1180,6 +1181,88 @@ def load_elements(src):
     return elements
 
 
+_BT = [None]                                  # the pool worker's copy of the terrain
+
+
+def _bld_init(T):
+    _BT[0] = T
+
+
+def _bld_job(job):
+    """One building's meshes on the terrain (walls, roof, facade extras, graffiti, roof junk) -> (binfo entry, [(material, pos, uv, col)]).
+    Runs in a pool worker; the building's own random streams make the result independent of the other buildings."""
+    (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) = job
+    T = _BT[0]
+    adds = []
+    ring = np.asarray(outer, np.float64)
+    tz = T.h(ring[:, 0], ring[:, 1])
+    cxm, cym = ring[:, 0].mean(), ring[:, 1].mean()
+    base = float(np.mean(tz)) if len(tz) else 0.0
+    skirt = max(0.0, base - float(min(tz.min(), T.hs(cxm, cym)))) + 0.3
+    skirt_a = np.full(len(outer), -skirt, np.float32)
+
+    def badd(m, pos, uv, col, base=base):
+        pos = np.asarray(pos, np.float32).copy()
+        pos[:, 1] += base
+        adds.append((m, pos, uv, col))
+
+    binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
+    w = walls(outer, h, wallc, skirt_a)
+    if w:
+        badd(mat, *w)
+    rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
+    extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60) else []
+    n_el = min(1.0, len(extras) / 40.0)                                       # the more added elements, the more graffiti
+    if rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
+        gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
+        if gg:
+            badd(MAT_GRAF, *gg)
+    if small:
+        badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
+        if rg.random() < 0.14:                                             # a piece on the visible roof slope (80% fewer than v42)
+            pg = pitched_graffiti(outer, h, 1.8 + math.sqrt(ar) * 0.12, rg)
+            if pg:
+                badd(MAT_GRAF, *pg)
+    else:
+        for hole in holes:
+            hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32))
+            if hw_:
+                badd(mat, *hw_)
+        fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
+        if fp:
+            badd(MAT_ROOF, *fp)
+        pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
+        if pr:
+            badd(MAT_SOLID, *pr)
+        if ar > 70 and rg.random() < 0.17:                                  # roof pieces (80% fewer than v42): the only graffiti a top-down camera reads
+            rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
+            if rgf:
+                badd(MAT_GRAF, *rgf)
+        for ex_ in (roof_structure(outer, h, rg, roofc) if (ar > 80 and h > 8) else ()):
+            badd(MAT_SOLID, *ex_)
+        for ex_ in extras:
+            badd(MAT_SOLID, *ex_)
+        for (px, py, sx, sz, hh) in rooftop:
+            badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
+        rj = random.Random(hash(key) ^ len(outer) * 977 ^ int(cxm * 13))
+        if ar > 40 and rj.random() < 0.85:                      # roof junk: dishes, tanks, coops, laundry ...
+            import junk
+            x0_, y0_ = ring[:, 0].min(), ring[:, 1].min()
+            x1_, y1_ = ring[:, 0].max(), ring[:, 1].max()
+            for _k in range(rj.randint(5, 8 + int(min(30, ar / 40)))):
+                for _try in range(6):
+                    px_, py_ = rj.uniform(x0_, x1_), rj.uniform(y0_, y1_)
+                    if _inside_ring(px_, py_, outer, 1.0):
+                        g_ = junk.make(rj.choice(junk.ROOF), px_, py_, rj.uniform(0, 6.283), rj.randrange(1 << 20))
+                        pos_, uv_, col_ = g_.out()
+                        if len(pos_):
+                            pos_ = pos_.copy()
+                            pos_[:, 1] += h
+                            badd(MAT_SOLID, pos_, uv_, col_)
+                        break
+    return binf, adds
+
+
 def stage(name, **kw):
     """Marks a stage boundary of main() for tools/stages.py (incremental build); a plain run ignores it."""
 
@@ -1407,6 +1490,7 @@ def main():
                       for a_, b_ in zip(rd["pts"], rd["pts"][1:])])
     bmap = {id(b_["ring"]): b_ for b_ in buildings}
     n_clip = n_drop = 0
+    jobs_ = []
     for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
         o2 = clip_ring(outer, bgrid)
         if o2 is not outer:
@@ -1430,72 +1514,11 @@ def main():
                 xs_ = [p[0] for p in o2]
                 ys_ = [p[1] for p in o2]
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
-        ring = np.asarray(outer, np.float64)
-        tz = T.h(ring[:, 0], ring[:, 1])
-        cxm, cym = ring[:, 0].mean(), ring[:, 1].mean()
-        base = float(np.mean(tz)) if len(tz) else 0.0
-        skirt = max(0.0, base - float(min(tz.min(), T.hs(cxm, cym)))) + 0.3
-        skirt_a = np.full(len(outer), -skirt, np.float32)
-
-        def badd(m, pos, uv, col, base=base, key=key):
-            pos = np.asarray(pos, np.float32).copy()
-            pos[:, 1] += base
-            mesh.add(key, m, pos, uv, col)
-
-        binfo.append((key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min())))
-        w = walls(outer, h, wallc, skirt_a)
-        if w:
-            badd(mat, *w)
-        rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
-        extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60) else []
-        n_el = min(1.0, len(extras) / 40.0)                                       # the more added elements, the more graffiti
-        if rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
-            gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
-            if gg:
-                badd(MAT_GRAF, *gg)
-        if small:
-            badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
-            if rg.random() < 0.14:                                             # a piece on the visible roof slope (80% fewer than v42)
-                pg = pitched_graffiti(outer, h, 1.8 + math.sqrt(ar) * 0.12, rg)
-                if pg:
-                    badd(MAT_GRAF, *pg)
-        else:
-            for hole in holes:
-                hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32))
-                if hw_:
-                    badd(mat, *hw_)
-            fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
-            if fp:
-                badd(MAT_ROOF, *fp)
-            pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
-            if pr:
-                badd(MAT_SOLID, *pr)
-            if ar > 70 and rg.random() < 0.17:                                  # roof pieces (80% fewer than v42): the only graffiti a top-down camera reads
-                rgf = roof_graffiti(outer, (ring[:, 0].min(), ring[:, 1].min(), ring[:, 0].max(), ring[:, 1].max()), h, rg, 2 if ar > 350 else 1)
-                if rgf:
-                    badd(MAT_GRAF, *rgf)
-            for ex_ in (roof_structure(outer, h, rg, roofc) if (ar > 80 and h > 8) else ()):
-                badd(MAT_SOLID, *ex_)
-            for ex_ in extras:
-                badd(MAT_SOLID, *ex_)
-            for (px, py, sx, sz, hh) in rooftop:
-                badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
-            rj = random.Random(hash(key) ^ len(outer) * 977 ^ int(cxm * 13))
-            if ar > 40 and rj.random() < 0.85:                      # roof junk: dishes, tanks, coops, laundry ...
-                import junk
-                x0_, y0_ = ring[:, 0].min(), ring[:, 1].min()
-                x1_, y1_ = ring[:, 0].max(), ring[:, 1].max()
-                for _k in range(rj.randint(5, 8 + int(min(30, ar / 40)))):
-                    for _try in range(6):
-                        px_, py_ = rj.uniform(x0_, x1_), rj.uniform(y0_, y1_)
-                        if _inside_ring(px_, py_, outer, 1.0):
-                            g_ = junk.make(rj.choice(junk.ROOF), px_, py_, rj.uniform(0, 6.283), rj.randrange(1 << 20))
-                            pos_, uv_, col_ = g_.out()
-                            if len(pos_):
-                                pos_ = pos_.copy()
-                                pos_[:, 1] += h
-                                badd(MAT_SOLID, pos_, uv_, col_)
-                            break
+        jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop))
+    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16):         # the meshes: pure per-building work, on all cores
+        binfo.append(binf_)
+        for m_, pos_, uv_, col_ in adds_:
+            mesh.add(binf_[0], m_, pos_, uv_, col_)
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
     print(f"[build] buildings clipped off roads/pavements: {n_clip} trimmed, {n_drop} dropped")
     if binfo:                                                  # TV / phone cables from block to block

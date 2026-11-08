@@ -9,6 +9,7 @@ import random
 
 import numpy as np
 
+import par
 from progress import frac, span
 
 SUN = np.array([-0.45, 0.80, -0.40])
@@ -679,6 +680,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     # ---------------------------------------------------------------- junk and garbage (round 10)
     import junk
     nj = 0
+    pieces = []
     for e in span(edges, 0.8, 0.95, "junk and garbage"):
         cls, L, w = e["cls"], e["len"], e["w"]
         if e["bridge"] or L < 20 or cls in ("motorway", "trunk"):
@@ -695,13 +697,15 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 px, py = x + dy * side * off, y - dx * side * off
                 i = r.choice(junk.STREET)
                 if ok(px, py) and not_building(px, py) and not on_road(px, py, junk.footprint(i) + 0.3):
-                    g = junk.make(i, px, py, r.uniform(0, 6.283), nj)
-                    if put(g, px, py, False):
-                        nj += 1
-                        if junk.footprint(i) > 0.55:
-                            posts.append((px, py, min(1.2, junk.footprint(i) * 0.8)))
+                    pieces.append((i, px, py, r.uniform(0, 6.283), nj))      # built in parallel below
+                    nj += 1
+                    if junk.footprint(i) > 0.55:
+                        posts.append((px, py, min(1.2, junk.footprint(i) * 0.8)))
             s += r.uniform(1.4, 2.6)
     counts["junk"] = nj
+    for (i, px, py, _y, _s), (pos, uv, col) in zip(pieces, par.pmap(junk.make_out, pieces, chunk=256)):
+        if len(pos):
+            add(chunk_of(px, py), MAT, pos, uv, col)
 
     n0 = len(posts)
     posts = [p for p in span(posts, 0.95, 0.97, "kept off the roadway") if len(p) > 3 or p[2] >= 0.5 or not on_road(p[0], p[1])]
