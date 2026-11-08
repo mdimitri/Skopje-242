@@ -1832,10 +1832,14 @@ def main():
             rl.clear_background(rl.Color(26, 28, 32, 255))
             if sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
+                if cn_on:
+                    cine.sky_layers(cam, sw, sh, sim.clock.dark, sim.clock.hour)
                 guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1 if not cn_on else 3.0, True)
                 if cn_on:
                     guard.run("heli", cine.draw_heli, cam, sim.clock.dark)
-                if not ch_on:                          # the street view has the horizon near the top: the band read as a veil
+                if cn_on:
+                    cine.haze(cam, sw, sh, sim.clock.dark, sim.clock.hour)
+                elif not ch_on:                        # the street view has the horizon near the top: the band read as a veil
                     selfie.haze(sf_hy, sim.clock.dark, sw)
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)

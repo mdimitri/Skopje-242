@@ -37,6 +37,8 @@ VARIANTS = [
          hour=6.5, R=680, dh=140, w=1.8, alt=190, speed=14, fov=20, hscale=3.4),
     dict(name="Осмица", en="Figure-eight dolly: camera sweeps in and out on a looping path, blue hour", mode="dolly",
          hour=20.0, R=240, dh=110, alt=150, speed=16, fov=42),
+    dict(name="Преливање", en="Blend: starts high above the helicopter, slowly sinks to the low chase view while always turning slowly",
+         mode="blend", hour=9.0, alt=140, speed=20, fov=50, hscale=3.0),
 ]
 
 
@@ -115,8 +117,8 @@ class Route:
 
 
 class Demo:
-    VIEW_NEAR = 240.0          # full detail within this many metres of the helicopter, low quality (no facade/road detail) beyond
-    VIEW_FAR = 560.0
+    VIEW_NEAR = 300.0          # full detail within this many metres of the helicopter, low quality (no facade/road detail) beyond
+    VIEW_FAR = 720.0
 
     def __init__(self, world, selfie):
         self.w = world
@@ -194,6 +196,11 @@ class Demo:
             a = 0.6 + math.radians(v["w"]) * t
             k = 0.5 - 0.5 * math.cos(t * math.tau / 40.0)
             R, dh = 150 + (v["R"] + 160 - 150) * k, 45 + (v["dh"] + 90 - 45) * k
+        elif m == "blend":                                  # top view -> low chase view -> back, one cycle 80 s, turning all the time
+            k = 0.5 - 0.5 * math.cos(t * math.tau / 80.0)
+            k = k * k * (3.0 - 2.0 * k)
+            R, dh = 120.0 + 40.0 * k, 330.0 - 288.0 * k
+            a = hh + math.pi + 0.07 * t
         elif m == "chase":
             a = hh + math.pi + 0.35 * math.sin(t * 0.22)
             R, dh = v["R"], v["dh"] + 8 * math.sin(t * 0.4)
@@ -265,6 +272,12 @@ class Demo:
         finally:
             rl.end_mode_3d()
 
+    def sky_layers(self, cam, sw, sh, dark, hour):
+        draw_mountains(cam, self.yaw, sw, sh, dark, hour)
+
+    def haze(self, cam, sw, sh, dark, hour):
+        draw_haze(cam, self.yaw, sw, sh, dark, hour)
+
     # ---------------------------------------------------------------- 2D layer
     def overlay(self, sw, sh, font, place):
         bar = int(sh * 0.085)
@@ -277,6 +290,78 @@ class Demo:
             font.draw_text(self.place.upper(), 48, sh - bar - 56, 34, rl.Color(255, 255, 255, int(235 * a)))
         if self.fade > 0:
             rl.draw_rectangle(0, 0, sw, sh, rl.Color(0, 0, 0, int(255 * min(1.0, self.fade))))
+
+
+# Mountains round Skopje as seen from the centre, by game azimuth (0 = east, 90 = south, -90 = north):
+# (azimuth deg, half width deg, peak elevation deg, distance km, seed, snow)
+RANGES = [(-150, 42, 4.6, 32.0, 4, True),      # Šar Mountains / Ljuboten, far north-west
+          (140, 40, 3.8, 40.0, 5, True),       # Jakupica / Solunska Glava, far south-west
+          (-70, 55, 6.0, 12.0, 2, False),      # Skopska Crna Gora, north
+          (95, 48, 7.5, 6.0, 1, False),        # Vodno, south
+          (20, 45, 3.2, 20.0, 3, False)]       # eastern hills
+
+
+def _mix(a, b, k):
+    return tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+
+
+def _prof(a_deg, rng):
+    az, half, peak, _dist, seed, _snow = rng
+    d = _wrap(math.radians(a_deg - az)) / math.radians(half)
+    if abs(d) >= 1.0:
+        return 0.0
+    env = math.cos(d * math.pi / 2) ** 1.5
+    n = 0.62 + 0.22 * math.sin(a_deg * 0.31 + seed) + 0.12 * math.sin(a_deg * 0.83 + seed * 2.1) + 0.06 * math.sin(a_deg * 2.1 + seed * 5.3)
+    return peak * env * n
+
+
+def _haze_col(dark, hour):
+    dusk = 1.0 - abs(dark - 0.5) * 2.0 if 0.0 < dark < 1.0 else 0.0
+    return _mix(_mix((205, 220, 235), (255, 190, 140), dusk * 0.8), (30, 36, 70), dark)
+
+
+def _horizon_y(cam, yaw, sh):
+    far = V3(cam.position.x + math.cos(yaw) * 4000.0, cam.position.y, cam.position.z + math.sin(yaw) * 4000.0)
+    return rl.get_world_to_screen(far, cam).y
+
+
+def draw_mountains(cam, yaw, sw, sh, dark, hour):
+    """Layers of Macedonian mountains behind the city, fading into haze with distance."""
+    hy = _horizon_y(cam, yaw, sh)
+    f = (sh / 2) / math.tan(math.radians(cam.fovy) / 2)
+    if hy < -f * 0.2:
+        return hy
+    hz = _haze_col(dark, hour)
+    night = _mix((46, 70, 84), (10, 14, 30), dark)
+    for rng in sorted(RANGES, key=lambda r: -r[3]):
+        dist, snow = rng[3], rng[5]
+        k = min(0.72, 0.1 + dist / 70.0)
+        col = _mix(night, hz, k)
+        cap = _mix(col, (245, 247, 250), 0.55 * (1 - dark * 0.6))
+        for x in range(0, sw, 5):
+            a = math.degrees(yaw + math.atan((x + 2 - sw / 2) / f))
+            e = _prof(a, rng)
+            if e <= 0.0:
+                continue
+            y = hy - f * math.tan(math.radians(e))
+            if y >= sh:
+                continue
+            rl.draw_rectangle(x, int(y), 5, int(max(hy - y, 0) + sh * 0.4), rl.Color(*col, 255))
+            if snow and e > rng[2] * 0.62:
+                rl.draw_rectangle(x, int(y), 5, int(min(hy - y, (e - rng[2] * 0.62) * f * 0.03 + 3)), rl.Color(*cap, 255))
+    return hy
+
+
+def draw_haze(cam, yaw, sw, sh, dark, hour):
+    """Thick haze band round the true horizon: hides where the baked city ends and sits under the mountains."""
+    hy = _horizon_y(cam, yaw, sh)
+    f = (sh / 2) / math.tan(math.radians(cam.fovy) / 2)
+    if hy < -sh * 0.3 or hy > sh * 1.5:
+        return
+    c = _haze_col(dark, hour)
+    up, down = int(f * 0.16), int(f * 0.42)
+    rl.draw_rectangle_gradient_v(0, int(hy) - up, sw, up, rl.Color(*c, 0), rl.Color(*c, 120))
+    rl.draw_rectangle_gradient_v(0, int(hy), sw, down, rl.Color(*c, 120), rl.Color(*c, 0))
 
 
 class Preview:
