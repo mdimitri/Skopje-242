@@ -1294,6 +1294,8 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
+    bang_t = [3.0]
+
     def engine_pitch(b, nm, fr, thr):
         """Revs follow the speed through five gears (rising, drop at each shift), a little higher under throttle, smoothed so shifts glide;
         every car gets its own base pitch, an electric motor just whines up with speed."""
@@ -1342,9 +1344,20 @@ def main():
             for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
                 if nm == prof:                                       # this very car always uses the same recording, however often you leave and re-enter it
                     thr_ = abs(inp_last.get("throttle", 0))
-                    aud.loop(nm, 0.15 + 0.35 * thr_ + 0.1 * fr, engine_pitch(c, nm, fr, thr_), "engine", 0.5, car_seed(c))
+                    aud.loop(nm, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * max(0.0, min(1.0, (70.0 - c.health) / 70.0))), engine_pitch(c, nm, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * max(0.0, (70.0 - c.health) / 70.0)), "engine", 0.5, car_seed(c))
                 else:
                     aud.loop(nm, 0.0, 1.0, "engine")
+            dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
+            if dmg_ > 0:
+                aud.loop("engine_rattle", 0.12 + 0.75 * dmg_ ** 1.2, 0.85 + 0.3 * fr + 0.2 * dmg_, "engine", 0.5, 0)
+                aud.loop("engine_grind", 0.55 * dmg_ ** 1.5, 0.8 + 0.5 * fr, "engine", 0.5, 0)
+                bang_t[0] -= 1 / 60
+                if bang_t[0] <= 0:
+                    aud.play("engine_bang", 0.35 + 0.65 * dmg_, 0.8 + random.random() * 0.4, "engine")
+                    bang_t[0] = random.uniform(2.5, 6.0) * (1.05 - dmg_) ** 2 + 0.25
+            else:
+                aud.loop("engine_rattle", 0.0, 1.0, "engine")
+                aud.loop("engine_grind", 0.0, 1.0, "engine")
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
             hard_brake = inp_last.get("throttle", 0) < -0.5 and c.speed > 6
             aud.loop("screech", 0.12 if hard_brake else 0.0, 1.3, "sfx") if not (c.slip > 3.0 and c.speed > 4) else None   # brake squeal
@@ -1352,7 +1365,7 @@ def main():
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_rattle", "engine_grind", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:
@@ -1368,6 +1381,8 @@ def main():
                 aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), engine_pitch(near_c, nm, fr_, 0.6) * dop_, "engine", pan_of(near_c.x, fx_, nd), car_seed(near_c))
             else:
                 aud.loop("ai_" + nm, 0.0, 1.0, "engine")
+        dn_ = max(0.0, min(1.0, (70.0 - near_c.health) / 70.0)) if near_c is not None else 0.0
+        aud.loop("ai_engine_rattle", 0.5 * dn_ * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.9 + 0.2 * dn_, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
         best, near_v = {}, {}
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:
