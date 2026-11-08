@@ -1181,6 +1181,14 @@ def load_elements(src):
     return elements
 
 
+def _tree_job(a):
+    return tree_geo(*a)
+
+
+def _lamp_job(a):
+    return lamp_geo(*a)
+
+
 _BT = [None]                                  # the pool worker's copy of the terrain
 
 
@@ -2087,10 +2095,12 @@ def main():
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
     posts = [p if len(p) >= 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 1.0, "collision posts")]
 
-    for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]]))):
-        add_c(chunk_of(x, y), MAT_SOLID, *tree_geo(x, y, r_, sh, i))
-    for x, y in each(lamps, "lamp meshes", feed=("props", None, lambda p: [p[0], p[1]])):
-        add_c(chunk_of(x, y), MAT_SOLID, *lamp_geo(x, y))
+    tj_ = [(x, y, r_, sh, i) for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]])))]
+    for (x, y, _r, _s, _i), g_ in zip(tj_, par.pmap(_tree_job, tj_, chunk=256)):                 # the meshes themselves on all cores
+        add_c(chunk_of(x, y), MAT_SOLID, *g_)
+    lj_ = [(x, y) for x, y in each(lamps, "lamp meshes", feed=("props", None, lambda p: [p[0], p[1]]))]
+    for (x, y), g_ in zip(lj_, par.pmap(_lamp_job, lj_, chunk=256)):
+        add_c(chunk_of(x, y), MAT_SOLID, *g_)
 
     # ---- chunk index (for ground baking) ---------------------------------------------------------
     stage("index")
