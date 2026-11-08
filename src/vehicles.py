@@ -120,6 +120,12 @@ EXTRA = [v[7] for v in _V]
 BUS = 6
 MARITSA = IDS.index("Maritsa")
 HEAVY = [IDS.index(n) for n in ("Kamion Tovarnik", "Tir Rinfuz", "Cisterna Gorivo")]      # lorries: big roads only, no tight turns
+SEMI = IDS.index("Tir Rinfuz")
+SEMI_TRACTOR_L = 6.4                                          # the tractor unit's own length; the rest of the 15.8 m rig is the hinged trailer
+SEMI_SHIFT = DIMS[SEMI][0] / 2 - SEMI_TRACTOR_L / 2           # tractor model centre ahead of the rig centre
+SEMI_HITCH = SEMI_SHIFT - 1.8                                 # fifth wheel / kingpin, ahead of the rig centre (m)
+SEMI_TRAILER_L = DIMS[SEMI][0] / 2 + SEMI_HITCH               # kingpin to the trailer's tail
+SEMI_AXLE = SEMI_TRAILER_L - 2.6                              # kingpin to the trailer's axle group
 HEAVY_W = [5, 3, 2]                                                                       # share of the heavy traffic
 LARGE = [d[0] >= 6.4 for d in DIMS]                           # need a wide road
 _SPEED = {"truck": 0.75, "tractor": 0.45, "bus": 0.8, "limo": 0.7}

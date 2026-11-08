@@ -500,6 +500,9 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
     xb, xf = -L / 2, L / 2
     bar = lambda x, z, c1, c2: (box(x, top_h if st == "truck" else roof, z - 0.3, 0.3, 0.14, 0.55, c1),
                                 box(x, top_h if st == "truck" else roof, z + 0.3, 0.3, 0.14, 0.55, c2))
+    if ex == "semi":                                                       # tractor unit: fifth-wheel plate on the chassis
+        box(xb + 1.35, belt, 0, 1.5, 0.14, W * 0.8, (40, 42, 46))
+        return
     if st == "truck":                                                      # cargo box behind the cab
         x1 = cx - cl / 2 - 0.12
         cgl, cgx = x1 - xb, (x1 + xb) / 2
@@ -674,7 +677,9 @@ def front_wheel(kind):
     """(axle x, track half-width z, wheel model with its centre at the origin) of a car's front wheels, which the renderer
     turns by the steering angle (car_arrays(steer_wheels=True) leaves them out of the body)."""
     L, W = V.DIMS[kind % V.N][:2]
-    wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], L)[0]
+    semi = V.EXTRA[kind % V.N] == "semi"
+    wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L)[0]
+    wx += V.SEMI_SHIFT if semi else 0.0
     v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array((158, 158, 164), np.float32))
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
@@ -688,6 +693,9 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     L, W, y0, belt, roof = V.DIMS[kind]
     st = V.STYLE[kind]
     ex = V.EXTRA[kind]
+    semi = ex == "semi"
+    if semi:
+        L = V.SEMI_TRACTOR_L                                       # tractor unit only; the trailer is trailer_arrays, hinged at the fifth wheel
     top_h = roof                                                   # full height (cargo box on trucks)
     if st == "truck":
         roof = belt + 1.5                                          # cab roof
@@ -763,12 +771,21 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     gap = 0.16 if st == "bus" else 0.13
     x_lo, x_hi = cx - cl / 2 + 0.12, cx + cl / 2 - 0.12
     wl = (x_hi - x_lo - gap * (nwin - 1)) / nwin
+    dd = st == "bus" and ex == "jsp" and roof > 4.0                          # double-decker: two rows of windows, a floor band between
+    rows = [(wy0, belt + 1.30), (belt + 1.70, wy1)] if dd else [(wy0, wy1)]
     for s in (-1, 1):
-        for k in range(nwin):
-            xa = x_lo + k * (wl + gap)
-            quad((xa, wy0, s * (cw / 2 + 0.012)), (wl, 0, 0), (0, wy1 - wy0, 0), (0, 0, s), gl((0, 0, s)), 2, 1, True, cab)
+        for r0, r1 in rows:
+            for k in range(nwin):
+                xa = x_lo + k * (wl + gap)
+                quad((xa, r0, s * (cw / 2 + 0.012)), (wl, 0, 0), (0, r1 - r0, 0), (0, 0, s), gl((0, 0, s)), 2, 1, True, cab)
+        if dd:                                                                # cream stripe along the upper-deck floor
+            quad((cx - cl / 2 + 0.05, belt + 1.42, s * (cw / 2 + 0.014)), (cl - 0.1, 0, 0), (0, 0.16, 0), (0, 0, s), (232, 226, 200), 1, 1, True, cab)
     if st != "pickup" or True:
-        quad((cx + cl / 2 + 0.012, belt + 0.07 * H, -(cw / 2 - 0.09)), (0, 0, cw - 0.18), (0, 0.86 * H, 0), (1, 0, 0), gl((1, 0, 0)), 2, 1, True, cab)
+        if dd:
+            for r0, r1 in ((belt + 0.22, belt + 1.30), (belt + 1.70, belt + 0.93 * H)):
+                quad((cx + cl / 2 + 0.012, r0, -(cw / 2 - 0.09)), (0, 0, cw - 0.18), (0, r1 - r0, 0), (1, 0, 0), gl((1, 0, 0)), 2, 1, True, cab)
+        else:
+            quad((cx + cl / 2 + 0.012, belt + 0.07 * H, -(cw / 2 - 0.09)), (0, 0, cw - 0.18), (0, 0.86 * H, 0), (1, 0, 0), gl((1, 0, 0)), 2, 1, True, cab)
         quad((cx - cl / 2 - 0.012, belt + 0.10 * H, -(cw / 2 - 0.09)), (0, 0, cw - 0.18), (0, 0.78 * H, 0), (-1, 0, 0), gl((-1, 0, 0)), 2, 1, True, cab)
     if player:
         quad((cx - cl / 2, roof + 0.006, -0.16 * W), (cl, 0, 0), (0, 0, 0.32 * W), (0, 1, 0), (240, 240, 240), 2, 1, True, cab)
@@ -831,7 +848,7 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
             quad((xb + 0.2, belt - 0.42, zz), (L - 0.4, 0, 0), (0, 0.22, 0), (0, 0, s), tuple(accent))
             if s > 0:
                 for dx in (L * 0.30, -L * 0.18):
-                    quad((dx, y0 + 0.08, zz + 0.004), (1.1, 0, 0), (0, roof - y0 - 0.5, 0), (0, 0, 1), (58, 72, 96), 1, 2)
+                    quad((dx, y0 + 0.08, zz + 0.004), (1.1, 0, 0), (0, (1.8 if dd else roof - y0 - 0.5), 0), (0, 0, 1), (58, 72, 96), 1, 2)
         mx = cx + cl / 2 - 0.12
         box(mx, belt + 0.18, s * (W / 2 + 0.08), 0.1, 0.1, 0.16, (40, 40, 44))      # mirrors
     if st == "pickup":
@@ -869,7 +886,48 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)))
             parts.append((v, c, False))
 
+    if semi:                                                                # move the short tractor to the front of the rig's footprint
+        parts[:] = [(v + np.array((V.SEMI_SHIFT, 0, 0), np.float32), c, d) for v, c, d in parts]
     return _finish_arrays(parts, dents, burnt, belt)
+
+
+def trailer_arrays():
+    """Semi trailer, origin at the kingpin, extending towards -x; hinged to the tractor's fifth wheel by the renderer."""
+    A = lambda c: np.array(c, np.float32)
+    parts = []
+    W, T, y0, top = 2.55, V.SEMI_TRAILER_L, 0.95, 4.05
+    def box(cx_, cy_, cz_, sx, sy, sz, col):
+        for _n, (v, n) in box_faces(cx_, cy_, cz_, sx, sy, sz).items():
+            parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), False))
+    def quad(o, du, dv, n, col):
+        v = grid_face(o, du, dv, 1, 1)
+        parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), False))
+    box(-T / 2 + 0.3, y0, 0, T, top - y0, W, (214, 216, 220))                      # box body
+    box(-T / 2 + 0.3, 0.62, 0, T - 0.4, 0.3, 0.9, (40, 42, 46))                    # chassis beam under it
+    box(-0.1, 0.78, 0, 0.5, 0.2, 0.9, (40, 42, 46))                                 # kingpin plate
+    box(-2.6, 0.3, 0.7, 0.14, 0.7, 0.14, (60, 62, 68))                              # landing legs
+    box(-2.6, 0.3, -0.7, 0.14, 0.7, 0.14, (60, 62, 68))
+    for sd in (-1, 1):
+        zs = sd * (W / 2 + 0.012)
+        quad((-T + 0.6, y0 + 1.1, zs), (T - 0.9, 0, 0), (0, 0.55, 0), (0, 0, sd), (40, 90, 170))   # livery stripe
+        quad((-T + 0.4, y0 - 0.02, zs), (T - 0.6, 0, 0), (0, 0.12, 0), (0, 0, sd), (40, 42, 46))   # lower skirt rail
+        for k in range(1, 6):                                                        # panel ribs
+            quad((-k * T / 6.0, y0 + 0.1, zs), (0.05, 0, 0), (0, top - y0 - 0.2, 0), (0, 0, sd), (176, 178, 184))
+        box(-T + 0.15, y0 + 0.2, sd * (W / 2 - 0.2), 0.1, 0.18, 0.2, (210, 30, 30))      # tail lamps
+        box(-T - 0.05, 0.62, sd * (W / 2 - 0.3), 0.04, 0.45, 0.5, (30, 30, 34))          # mudflaps
+    quad((-T + 0.3 - 0.01, y0 + 0.1, -W / 2 + 0.05), (0, 0, W - 0.1), (0, top - y0 - 0.2, 0), (-1, 0, 0), (200, 202, 208))  # rear doors
+    quad((-T + 0.3 - 0.012, y0 + 0.1, -0.015), (0, 0, 0.03), (0, top - y0 - 0.2, 0), (-1, 0, 0), (60, 62, 68))
+    box(-T + 0.2, 0.62, 0, 0.1, 0.12, W * 0.92, (60, 62, 68))                         # underride bar
+    for ax in (-T + 1.4, -T + 2.6, -T + 3.8):                                         # tri-axle
+        for sd in (-1, 1):
+            v, c = _cyl(ax, 0.5, sd * (W / 2 - 0.02), 0.5, 0.3, A((26, 26, 28)), A((158, 158, 164)))
+            parts.append((v, c, False))
+    return _finish_arrays(parts, (), 0.0, y0)
+
+
+def trailer_model():
+    pos, uv, col = trailer_arrays()
+    return make_model(pos, uv, col)
 
 
 def _finish_arrays(parts, dents, burnt, belt):
@@ -904,6 +962,8 @@ def door_geom(kind):
     front, rear = cx + cl * 0.30, cx - cl * 0.20
     if V.STYLE[kind] in ("bus", "truck", "tractor", "pickup"):
         rear = front - min(1.0, cl * 0.5)
+    if V.EXTRA[kind] == "semi":
+        front, rear = V.SEMI_SHIFT + V.SEMI_TRACTOR_L / 2 - 2.45 / 2 + 0.74, V.SEMI_SHIFT + V.SEMI_TRACTOR_L / 2 - 2.45 / 2 - 0.26
     return front, max(0.6, front - rear)
 
 

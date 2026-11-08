@@ -1185,7 +1185,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
@@ -1213,6 +1213,7 @@ class Car:
         self.stn = None            # petrol station / car wash (stations.py site index) it is heading for or standing at
         self.dwell = None          # seconds left standing at it (None: not there yet)
         self.stn_t = 0.0           # give up on the visit after this long
+        self.trh = None            # semi: heading of the trailer, which follows the tractor round bends (None: straight behind)
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -2026,6 +2027,12 @@ class Traffic:
                 kk = min(1.0, dt * 8) if dt != dt0 else min(1.0, dt * 16)
                 c.pitch += (pt - c.pitch) * kk
                 c.roll += (rl_ - c.roll) * kk
+            if c.kind == vehicles.SEMI:                           # kingpin trailer: yaws towards the tractor's heading at v / axle-distance
+                dh = (c.h - c.trh + math.pi) % math.tau - math.pi if c.trh is not None else 0.0
+                if c.trh is None or abs(dh) > 1.2:
+                    c.trh = c.h
+                else:
+                    c.trh += abs(c.v) * dt / vehicles.SEMI_AXLE * math.sin(dh)
             keep.append(c)
         self.cars = [c for c in keep if self._d2(c.x, c.y, fx, fy) < 460 ** 2]
         dt = dt0

@@ -184,6 +184,16 @@ class Renderer:
             m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, True, True)
         return m
 
+    trailer_m = None
+
+    def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll):
+        """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th."""
+        hx, hy = x + math.cos(h) * vehicles.SEMI_HITCH, y + math.sin(h) * vehicles.SEMI_HITCH
+        out.append((hx, hy, th, gy, pitch, roll))
+        sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, 1.0, 70, gy))
+        mid = vehicles.SEMI_TRAILER_L / 2 - 0.3
+        sh.append((hx - math.cos(th) * mid, hy - math.sin(th) * mid, th, vehicles.SEMI_TRAILER_L / 2 + 0.2, 1.0, 70, gy))
+
     def _free_orphans(self, bodies):
         """Dented / burnt cars own a model; give its video memory back once the car is gone (never for a car still in play)."""
         live = {id(b) for b in bodies}
@@ -511,11 +521,14 @@ class Renderer:
                 if m is not None:
                     rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
         # cars
-        cars, doors = [], []
+        cars, doors, trailers = [], [], []
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color))
-                sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
+                if c.kind == vehicles.SEMI:
+                    self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll)
+                else:
+                    sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
         for b in sim.bodies:
             if self._in(b.x, b.y, rect):
                 tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
@@ -531,8 +544,11 @@ class Renderer:
                              b.color if b.model is None and b.color >= 0 and not b.exploded else None))
                 if b.door > 0.01:
                     doors.append((b, gy))
-                hl = vehicles.HALF_L[b.kind] + 0.1
-                sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
+                if b.kind == vehicles.SEMI:
+                    self._trailer(trailers, sh, b.x, b.y, b.h, b.h, gy, b.pitch, b.roll)
+                else:
+                    hl = vehicles.HALF_L[b.kind] + 0.1
+                    sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
         # peds
         peds = []
         far2 = 90.0 ** 2 if self._ppm < 4.0 else 1e18                  # zoomed far out, people beyond 90 m from the view centre are 1-2 pixel dots: not worth a draw call each
@@ -634,6 +650,16 @@ class Renderer:
         if self.shadows:
             self._shadow_batch(sh)
         fr = self.frustum
+        if trailers:
+            if self.trailer_m is None:
+                self.trailer_m = gl3d.trailer_model()
+            tm = self.trailer_m
+            old = tm.transform
+            for x, z, h, gy, pitch, roll in trailers:
+                tm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
+                                                                     rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+                rl.draw_model(tm, V3(0, 0, 0), 1.0, WHITE)
+            tm.transform = old
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col in cars:
             if m is None:
                 continue
