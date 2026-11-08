@@ -168,6 +168,14 @@ def draw_decal(d):
 CAR_COLORS = gl3d.CAR_COLORS
 
 
+BLOCK = 4             # demo far ring: chunks per block side
+
+
+def _sphere(x0, z0, x1, z1, y0, y1):
+    """Bounding sphere of a box (x0..x1, y0..y1, z0..z1)."""
+    return ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5, 0.5 * math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2) + 1.0)
+
+
 class Streamer:
     """LRU caches of baked ground textures and uploaded 3D chunk meshes, with a per-frame time budget."""
 
@@ -184,6 +192,10 @@ class Streamer:
         self.baked = 0
         self.bake_ms = 0.0
         self.mesh_loaded = 0
+        self.blocks = {}      # demo far ring: (bx, by) -> [{mat: model}, last_used, sphere, chunk keys]; BLOCK x BLOCK chunks per draw call
+        self.covered = set()  # chunk keys drawn by a block (their own meshes are not drawn)
+        self.sph = {}         # key -> bounding sphere (x, y, z, r) of its meshes / of its ground mesh: view-frustum culling
+        self.gsph = {}
         self.size = int((world.chunk + 2 * world.margin) * PPM)
         self.pool = []
         self.decals = {}      # key -> history list (replayed on rebake)
@@ -211,6 +223,7 @@ class Streamer:
         pos = P.reshape(-1, 3)[idx]
         uv = U.reshape(-1, 2)[idx]
         col = np.full((len(idx), 4), 255, np.uint8)
+        self.gsph[key] = _sphere(x0, z0, x0 + side, z0 + side, float(Y.min()), float(Y.max()))
         m = gl3d.make_model(pos, uv, col)
         if m is not None:
             gl3d.set_texture(m, rt.texture)
@@ -235,9 +248,13 @@ class Streamer:
         (self.lite_keys.add if lite else self.lite_keys.discard)(key)
         (self.far_keys.add if far else self.far_keys.discard)(key)
         out = {}
+        y0, y1 = 1e9, -1e9
         if ch:
             for mat, (off, n) in ch["m"].items():
                 pos, uv, col = self.world.mesh_arrays(off, n)
+                if n:
+                    ys = pos[:, 1]
+                    y0, y1 = min(y0, float(ys.min())), max(y1, float(ys.max()))
                 if self.world.broken:
                     pos = self.world.hide_broken(pos, ch.get("bb"))
                 if far and mat == 3:
@@ -256,6 +273,8 @@ class Streamer:
                         gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
+        bb = ch.get("bb") if ch else None
+        self.sph[key] = _sphere(bb[0], bb[1], bb[2], bb[3], y0, y1) if bb is not None and y1 >= y0 else None
         self.mesh_loaded += 1
 
     def get_ground(self, key):
@@ -294,7 +313,24 @@ class Streamer:
         self.frame += 1
         t0 = time.perf_counter()
         n = 0
+        elig = self._blocks_wanted(wanted, far) if far else {}
         for key in wanted:
+            if key in far and (key[0] // BLOCK, key[1] // BLOCK) in elig:
+                bk = (key[0] // BLOCK, key[1] // BLOCK)
+                b = self.blocks.get(bk)
+                if b is not None:
+                    b[1] = self.frame
+                    continue
+                if n and (time.perf_counter() - t0) * 1000 > budget_ms:
+                    break
+                try:
+                    self._load_block(bk)
+                except Exception as e:  # noqa: BLE001
+                    self.errors += 1
+                    print(f"[stream] block {bk} failed: {e}")
+                    self.blocks[bk] = [{}, self.frame, None, ()]
+                n += 1
+                continue
             need_g = key not in self.ground and key not in self.bad and key not in far      # far ring: buildings only, no ground bake
             up = key in self.meshes and ((key in self.lite_keys and key not in lite) or (key in self.far_keys and key not in far))           # came close: swap the low-quality meshes for full ones
             need_m = want_meshes and (key not in self.meshes or up) and key not in self.bad and key in self.world.chunks
@@ -321,9 +357,65 @@ class Streamer:
                 self.bad.add(key)
                 print(f"[stream] chunk {key} failed: {e}")
             n += 1
+        self._retire_blocks(elig, set(wanted))
         self._evict()
         self._purge_decals()
         self._flush_decals()
+
+    # ---- demo far ring: BLOCK x BLOCK chunks merged into one model per material (the same triangles, 1/16 of the draw calls)
+    def _blocks_wanted(self, wanted, far):
+        """Blocks to draw merged: at least one far chunk wanted, none of their chunks wanted at a nearer quality."""
+        near = {(k[0] // BLOCK, k[1] // BLOCK) for k in wanted if k not in far}
+        return {bk: 1 for bk in ((k[0] // BLOCK, k[1] // BLOCK) for k in far) if bk not in near}
+
+    def _load_block(self, bk):
+        keys = [(bk[0] * BLOCK + i, bk[1] * BLOCK + j) for i in range(BLOCK) for j in range(BLOCK)]
+        keys = [k for k in keys if k in self.world.chunks and k not in self.bad]
+        parts = {}
+        x0 = z0 = y0 = 1e18
+        x1 = z1 = y1 = -1e18
+        for k in keys:
+            ch = self.world.chunks[k]
+            bb = ch.get("bb")
+            for mat, (off, n) in ch["m"].items():
+                if mat in (3, 6) or not n:
+                    continue                                     # like a far chunk: no roads, no decals
+                pos, uv, col = self.world.mesh_arrays(off, n)
+                if self.world.broken:
+                    pos = self.world.hide_broken(pos, bb)
+                n3 = n - n % 3
+                parts.setdefault(mat, []).append((pos[:n3], uv[:n3], col[:n3]))
+                ys = pos[:, 1]
+                y0, y1 = min(y0, float(ys.min())), max(y1, float(ys.max()))
+            if bb is not None:
+                x0, z0, x1, z1 = min(x0, bb[0]), min(z0, bb[1]), max(x1, bb[2]), max(z1, bb[3])
+        out = {}
+        names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix")
+        for mat, ps in parts.items():
+            m = gl3d.make_model(np.concatenate([p[0] for p in ps]), np.concatenate([p[1] for p in ps]), np.concatenate([p[2] for p in ps]))
+            if m is not None:
+                gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
+                out[mat] = m
+        sph = _sphere(x0, z0, x1, z1, y0, y1) if out and y1 >= y0 else None
+        self.blocks[bk] = [out, self.frame, sph, tuple(keys)]
+        for k in keys:                                           # the block draws these now: free their own far meshes
+            e = self.meshes.pop(k, None)
+            if e is not None:
+                for m in e[0].values():
+                    gl3d.free_model(m)
+            self.covered.add(k)
+
+    def _retire_blocks(self, elig, wanted):
+        for bk, b in list(self.blocks.items()):
+            if bk in elig:
+                continue
+            ks = b[3]
+            if any(k in wanted for k in ks) and not all(k in self.meshes or k not in wanted or k in self.bad for k in ks):
+                continue                                         # came nearer: keep drawing it until its chunks are loaded one by one
+            for m in b[0].values():
+                gl3d.free_model(m)
+            del self.blocks[bk]
+            self.covered.difference_update(ks)
 
     def _evict(self):
         if len(self.ground) > self.max_ground:

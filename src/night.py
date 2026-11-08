@@ -83,15 +83,17 @@ class Night:
 
     def _glow(self, cam, x, z, y, rad_px, col, a):
         gy = y + self.w.ground_y(x, z)
-        if not self._seen(cam, x, z, gy):
-            return
-        sp = rl.get_world_to_screen(V3(x, gy, z), cam)
         if self.street:
             p, q = cam.position, cam.target
             if (x - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (z - p.z) * (q.z - p.z) <= 0:
                 return                                         # behind the camera
             rad_px *= self.street / max(2.0, math.sqrt((x - p.x) ** 2 + (gy - p.y) ** 2 + (z - p.z) ** 2))
-        if -rad_px < sp.x < rl.get_screen_width() + rad_px and -rad_px < sp.y < rl.get_screen_height() + rad_px:
+            if rad_px < 0.5:
+                return                                         # far away: smaller than a pixel
+        sp = rl.get_world_to_screen(V3(x, gy, z), cam)
+        if not (-rad_px < sp.x < rl.get_screen_width() + rad_px and -rad_px < sp.y < rl.get_screen_height() + rad_px):
+            return                                             # off screen: no need for the (costly) wall test
+        if self._seen(cam, x, z, gy):
             rl.draw_circle_gradient(rl.Vector2(sp.x, sp.y), rad_px, _col(col[0], col[1], col[2], a), _col(0, 0, 0, 0))
 
     def draw(self, cam, rect, ppm, sim, dark, t, sw, sh, street=False):

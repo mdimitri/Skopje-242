@@ -54,6 +54,10 @@ sys.argv = game
 os.chdir(ROOT)
 
 import pyray as rl  # noqa: E402
+try:
+    import fastrl  # noqa: F401,E402  (the game swaps pyray functions for raw ones on import: wrap after that)
+except ImportError:
+    pass
 
 _scf = rl.set_config_flags
 rl.set_config_flags = lambda f: _scf(f & ~rl.FLAG_VSYNC_HINT)   # never wait for the monitor
@@ -71,20 +75,26 @@ import main as M  # noqa: E402
 
 frames, cur = [], {}
 calls = {"draw": 0}
-for nm in ("draw_model", "draw_mesh", "draw_model_ex"):
-    f0 = getattr(rl, nm)
-    def wrap(*x, _f=f0):
-        calls["draw"] += 1
-        return _f(*x)
-    setattr(rl, nm, wrap)
+import raylib  # noqa: E402  (hot loops call the raw cffi functions directly)
+for mod, names in ((rl, ("draw_model", "draw_mesh", "draw_model_ex")), (raylib, ("DrawModel", "DrawMesh", "DrawModelEx"))):
+    for nm in names:
+        f0 = getattr(mod, nm)
+        def wrap(*x, _f=f0):
+            calls["draw"] += 1
+            return _f(*x)
+        setattr(mod, nm, wrap)
 
 orig_run = M.Guard.run
+errors = {}
 def run(self, nm, fn, *x, **kw):
     t0 = time.perf_counter()
+    e0 = self.errors.get(nm, 0)
     try:
         return orig_run(self, nm, fn, *x, **kw)
     finally:
         cur[nm] = cur.get(nm, 0.0) + (time.perf_counter() - t0) * 1000
+        if self.errors.get(nm, 0) != e0:
+            errors[nm] = errors.get(nm, 0) + 1          # a subsystem raised: the numbers are not valid (see logs/game.log)
 M.Guard.run = run
 
 prof = cProfile.Profile() if a.prof else None
@@ -128,7 +138,7 @@ out = dict(tag=tag, mode=a.mode, view=a.view, size=a.size or "settings",
            frame_ms=dict(mean=round(statistics.mean(ft), 2), median=round(statistics.median(ft), 2),
                          p95=round(q[int(len(q) * 0.95) - 1], 2), worst=round(q[-1], 2)),
            fps=round(1000.0 / statistics.mean(ft), 1), cores_busy=round(cpu / wall, 2) if wall > 0 else None,
-           cpu_count=os.cpu_count(), per_frame=sub)
+           cpu_count=os.cpu_count(), errors=errors, per_frame=sub)
 if prof:
     st = pstats.Stats(prof)
     rows = sorted(st.stats.items(), key=lambda kv: -kv[1][2])[:45]
@@ -143,4 +153,6 @@ if prof:
     print("[perf] top functions (calls, own ms/frame, total ms/frame):")
     for r in out["top_tottime"][:30]:
         print(f"   {r[2]:8.3f} {r[3]:8.3f} {r[1]:8d}  {r[0]}")
+if errors:
+    print(f"[perf] WARNING: subsystems failed during the run {errors} - see logs/game.log; these numbers are NOT valid")
 print("[perf] wrote", path)

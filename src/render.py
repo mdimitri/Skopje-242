@@ -3,6 +3,7 @@ import math
 
 import numpy as np
 import pyray as rl
+import raylib as RL            # the raw cffi functions: no per-call argument conversion (hot loops only)
 
 import actors
 import birdart
@@ -21,6 +22,51 @@ V3 = rl.Vector3
 UP = V3(0, 1, 0)
 ONE = V3(1, 1, 1)
 LOD_PPM = 2.4
+ZERO = V3(0, 0, 0)
+
+
+class Frustum:
+    """View frustum of a perspective Camera3D: sphere tests (one in Python, many at once in numpy)."""
+
+    def __init__(self, cam, aspect, far):
+        p, t = cam.position, cam.target
+        fx, fy, fz = t.x - p.x, t.y - p.y, t.z - p.z
+        n = math.sqrt(fx * fx + fy * fy + fz * fz) or 1.0
+        fx, fy, fz = fx / n, fy / n, fz / n
+        rx, rz = -fz, fx                                    # right = forward x up (up = +y)
+        n = math.hypot(rx, rz) or 1.0
+        rx, rz = rx / n, rz / n
+        ux, uy, uz = -rz * fy, rz * fx - rx * fz, rx * fy   # up' = right x forward
+        self.p = (p.x, p.y, p.z)
+        self.f, self.r, self.u = (fx, fy, fz), (rx, 0.0, rz), (ux, uy, uz)
+        self.tv = math.tan(math.radians(cam.fovy) / 2)
+        self.th = self.tv * aspect
+        self.kv, self.kh = math.sqrt(1 + self.tv ** 2), math.sqrt(1 + self.th ** 2)
+        self.far = far
+
+    def sphere(self, x, y, z, r):
+        px, py, pz = self.p
+        dx, dy, dz = x - px, y - py, z - pz
+        f = self.f
+        zc = dx * f[0] + dy * f[1] + dz * f[2]
+        if zc < -r or zc > self.far + r:
+            return False
+        xc = dx * self.r[0] + dz * self.r[2]
+        if abs(xc) - zc * self.th > r * self.kh:
+            return False
+        u = self.u
+        yc = dx * u[0] + dy * u[1] + dz * u[2]
+        return abs(yc) - zc * self.tv <= r * self.kv
+
+    def spheres(self, S):
+        """S: (N, 4) array of x, y, z, r -> bool mask of the spheres that touch the frustum."""
+        D = S[:, :3] - np.asarray(self.p)
+        r = S[:, 3]
+        zc = D @ np.asarray(self.f)
+        xc = D @ np.asarray(self.r)
+        yc = D @ np.asarray(self.u)
+        return ((zc >= -r) & (zc <= self.far + r) & (np.abs(xc) - zc * self.th <= r * self.kh)
+                & (np.abs(yc) - zc * self.tv <= r * self.kv))
 
 
 def quad_tex(tex_id, x0, z0, x1, z1, y, flip):
@@ -210,6 +256,8 @@ class Renderer:
             lod = ppm >= LOD_PPM
             drawn = 0
             missing = not lod
+            fr = self.frustum = Frustum(cam, rl.get_render_width() / max(1, rl.get_render_height()), H * 4 + 400)
+            gsph = st.gsph
             if lod:
                 x0, x1 = math.floor((rect[0]) / S), math.floor(rect[2] / S)
                 y0, y1 = math.floor((rect[1]) / S), math.floor(rect[3] / S)
@@ -217,8 +265,10 @@ class Renderer:
                     for cy in range(y0, y1 + 1):
                         gm = st.get_ground_model((cx, cy))
                         if gm is not None:
-                            rl.draw_model(gm, V3(0, 0, 0), 1.0, WHITE)
-                            drawn += 1
+                            sp = gsph.get((cx, cy))
+                            if sp is None or fr.sphere(*sp):
+                                RL.DrawModel(gm, ZERO, 1.0, WHITE)
+                                drawn += 1
                         else:
                             missing = True
             if missing or far_overview:                    # the coarse whole-city model is only seen where a chunk is not baked yet
@@ -226,16 +276,19 @@ class Renderer:
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
-                for key, (models, _last) in list(st.meshes.items()):
-                    ch = w.chunks.get(key)
-                    bb = ch["bb"] if ch else None
-                    if bb is None or bb[2] < rect[0] or bb[0] > rect[2] or bb[3] < rect[1] or bb[1] > rect[3]:
-                        continue
-                    for m in models.values():
-                        rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                cov = st.covered
+                for key, e in self._visible_meshes(st, fr, rect):
+                    if key in cov:
+                        continue                                # drawn by its block (demo far ring)
+                    for m in e[0].values():
+                        RL.DrawModel(m, ZERO, 1.0, WHITE)
                     nm += 1
-                    _last_touch = st.meshes[key]
-                    _last_touch[1] = st.frame
+                    e[1] = st.frame
+                for b in st.blocks.values():
+                    if b[2] is not None and fr.sphere(*b[2]):
+                        for m in b[0].values():
+                            RL.DrawModel(m, ZERO, 1.0, WHITE)
+                        nm += 1
             self.drawn_meshes = nm
             if lod:
                 if getattr(w, "roads3d", False):
@@ -250,6 +303,28 @@ class Renderer:
                 particles.draw()
         finally:
             rl.end_mode_3d()
+
+    def _visible_meshes(self, st, fr, rect):
+        """(key, streamer entry) of the uploaded chunk meshes inside the rectangle and the view frustum (one numpy test)."""
+        keys = list(st.meshes)
+        if keys != getattr(self, "_vm_keys", None):
+            self._vm_keys = keys
+            sph = st.sph
+            bbs, ss = [], []
+            for k in keys:
+                ch = self.w.chunks.get(k)
+                bb = ch["bb"] if ch else None
+                sp = sph.get(k)
+                bbs.append(bb[:4] if bb is not None else (1e9, 1e9, -1e9, -1e9))
+                ss.append(sp if sp is not None else (0.0, 0.0, 0.0, 1e9))
+            self._vm_bb = np.asarray(bbs, np.float64).reshape(-1, 4)
+            self._vm_s = np.asarray(ss, np.float64).reshape(-1, 4)
+        if not keys:
+            return []
+        B = self._vm_bb
+        ok = (B[:, 2] >= rect[0]) & (B[:, 0] <= rect[2]) & (B[:, 3] >= rect[1]) & (B[:, 1] <= rect[3]) & fr.spheres(self._vm_s)
+        me = st.meshes
+        return [(keys[i], me[keys[i]]) for i in np.flatnonzero(ok)]
 
     def _decals(self, rect):
         """Skid marks, blood and scorch as flat quads just above the 3D road surface."""

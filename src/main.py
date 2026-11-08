@@ -31,6 +31,7 @@ except Exception:  # noqa: BLE001
     pass
 
 import pyray as rl   # noqa: E402
+import fastrl   # noqa: E402,F401 - raw cffi functions behind the plain-argument pyray names (SK242_FASTRL=0 turns it off)
 import font   # noqa: E402
 
 
