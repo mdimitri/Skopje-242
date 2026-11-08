@@ -1,0 +1,45 @@
+{
+  "id": "amb_railway_42df04",
+  "prompt": "railway, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 136500
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 136500,
+      "file": "amb_railway_42df04_v01_seed136500.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 136501,
+      "file": "amb_railway_42df04_v02_seed136501.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 136502,
+      "file": "amb_railway_42df04_v03_seed136502.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 136503,
+      "file": "amb_railway_42df04_v04_seed136503.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_railway",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_railway_42df04.json",
+  "completed_at": "2026-10-25T01:17:44+00:00"
+}

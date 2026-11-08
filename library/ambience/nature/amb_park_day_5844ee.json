@@ -1,0 +1,55 @@
+{
+  "id": "amb_park_day_5844ee",
+  "prompt": "park, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 593200
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 593200,
+      "file": "amb_park_day_5844ee_v01_seed593200.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 593201,
+      "file": "amb_park_day_5844ee_v02_seed593201.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 593202,
+      "file": "amb_park_day_5844ee_v03_seed593202.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 593203,
+      "file": "amb_park_day_5844ee_v04_seed593203.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 593204,
+      "file": "amb_park_day_5844ee_v05_seed593204.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 593205,
+      "file": "amb_park_day_5844ee_v06_seed593205.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_park_day",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_park_day_5844ee.json",
+  "completed_at": "2026-10-25T01:22:35+00:00"
+}

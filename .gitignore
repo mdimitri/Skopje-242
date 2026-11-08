@@ -8,7 +8,6 @@ build/
 assets/radio/
 .crlf/
 sound_requests/
-library/
 .version
 Skopje 242.lnk
 _old/

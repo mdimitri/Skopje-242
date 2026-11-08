@@ -1,0 +1,55 @@
+{
+  "id": "city_bd95bc",
+  "prompt": "city noise, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 706000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 706000,
+      "file": "city_bd95bc_v01_seed706000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 706001,
+      "file": "city_bd95bc_v02_seed706001.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 706002,
+      "file": "city_bd95bc_v03_seed706002.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 706003,
+      "file": "city_bd95bc_v04_seed706003.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 706004,
+      "file": "city_bd95bc_v05_seed706004.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 706005,
+      "file": "city_bd95bc_v06_seed706005.mp3"
+    }
+  ],
+  "meta": {
+    "key": "city",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "city_bd95bc.json",
+  "completed_at": "2026-10-25T01:06:37+00:00"
+}

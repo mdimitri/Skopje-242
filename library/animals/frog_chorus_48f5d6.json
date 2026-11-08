@@ -1,0 +1,50 @@
+{
+  "id": "frog_chorus_48f5d6",
+  "prompt": "frogs at night, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 621300
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 621300,
+      "file": "frog_chorus_48f5d6_v01_seed621300.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 621301,
+      "file": "frog_chorus_48f5d6_v02_seed621301.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 621302,
+      "file": "frog_chorus_48f5d6_v03_seed621302.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 621303,
+      "file": "frog_chorus_48f5d6_v04_seed621303.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 621304,
+      "file": "frog_chorus_48f5d6_v05_seed621304.mp3"
+    }
+  ],
+  "meta": {
+    "key": "frog_chorus",
+    "category": "animals",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "frog_chorus_48f5d6.json",
+  "completed_at": "2026-10-25T01:08:43+00:00"
+}

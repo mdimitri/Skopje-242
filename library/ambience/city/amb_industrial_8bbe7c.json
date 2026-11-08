@@ -1,0 +1,50 @@
+{
+  "id": "amb_industrial_8bbe7c",
+  "prompt": "factory hum, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 658500
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 658500,
+      "file": "amb_industrial_8bbe7c_v01_seed658500.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 658501,
+      "file": "amb_industrial_8bbe7c_v02_seed658501.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 658502,
+      "file": "amb_industrial_8bbe7c_v03_seed658502.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 658503,
+      "file": "amb_industrial_8bbe7c_v04_seed658503.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 658504,
+      "file": "amb_industrial_8bbe7c_v05_seed658504.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_industrial",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_industrial_8bbe7c.json",
+  "completed_at": "2026-10-25T00:56:28+00:00"
+}

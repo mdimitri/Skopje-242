@@ -1,0 +1,50 @@
+{
+  "id": "amb_wedding_distant_fa391e",
+  "prompt": "balkan wedding music far away, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 448000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 448000,
+      "file": "amb_wedding_distant_fa391e_v01_seed448000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 448001,
+      "file": "amb_wedding_distant_fa391e_v02_seed448001.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 448002,
+      "file": "amb_wedding_distant_fa391e_v03_seed448002.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 448003,
+      "file": "amb_wedding_distant_fa391e_v04_seed448003.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 448004,
+      "file": "amb_wedding_distant_fa391e_v05_seed448004.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_wedding_distant",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_wedding_distant_fa391e.json",
+  "completed_at": "2026-10-25T01:09:22+00:00"
+}

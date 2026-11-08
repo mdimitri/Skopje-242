@@ -1,0 +1,55 @@
+{
+  "id": "construction_ec0b2e",
+  "prompt": "construction site, steady constant sound",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 20600
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 20600,
+      "file": "construction_ec0b2e_v01_seed20600.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 20601,
+      "file": "construction_ec0b2e_v02_seed20601.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 20602,
+      "file": "construction_ec0b2e_v03_seed20602.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 20603,
+      "file": "construction_ec0b2e_v04_seed20603.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 20604,
+      "file": "construction_ec0b2e_v05_seed20604.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 20605,
+      "file": "construction_ec0b2e_v06_seed20605.mp3"
+    }
+  ],
+  "meta": {
+    "key": "construction",
+    "category": "construction",
+    "loop": true,
+    "level": 0.8,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "construction_ec0b2e.json",
+  "completed_at": "2026-10-25T01:03:33+00:00"
+}

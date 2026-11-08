@@ -1,0 +1,55 @@
+{
+  "id": "amb_bazaar_932fe1",
+  "prompt": "busy market, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 353400
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 353400,
+      "file": "amb_bazaar_932fe1_v01_seed353400.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 353401,
+      "file": "amb_bazaar_932fe1_v02_seed353401.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 353402,
+      "file": "amb_bazaar_932fe1_v03_seed353402.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 353403,
+      "file": "amb_bazaar_932fe1_v04_seed353403.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 353404,
+      "file": "amb_bazaar_932fe1_v05_seed353404.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 353405,
+      "file": "amb_bazaar_932fe1_v06_seed353405.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_bazaar",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.7,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_bazaar_932fe1.json",
+  "completed_at": "2026-10-25T01:24:56+00:00"
+}

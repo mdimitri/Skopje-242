@@ -1,0 +1,55 @@
+{
+  "id": "fireworks_distant_568b8d",
+  "prompt": "fireworks far away, short punchy movie sound effect",
+  "seconds": 3.0,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 5.0,
+    "sigma_shift": 5.0,
+    "seed": 524200
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 524200,
+      "file": "fireworks_distant_568b8d_v01_seed524200.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 524201,
+      "file": "fireworks_distant_568b8d_v02_seed524201.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 524202,
+      "file": "fireworks_distant_568b8d_v03_seed524202.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 524203,
+      "file": "fireworks_distant_568b8d_v04_seed524203.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 524204,
+      "file": "fireworks_distant_568b8d_v05_seed524204.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 524205,
+      "file": "fireworks_distant_568b8d_v06_seed524205.mp3"
+    }
+  ],
+  "meta": {
+    "key": "fireworks_distant",
+    "category": "ambience",
+    "loop": false,
+    "level": 0.4,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "fireworks_distant_568b8d.json",
+  "completed_at": "2026-10-25T01:13:33+00:00"
+}

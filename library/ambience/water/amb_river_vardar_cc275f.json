@@ -1,0 +1,55 @@
+{
+  "id": "amb_river_vardar_cc275f",
+  "prompt": "river, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 285700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 285700,
+      "file": "amb_river_vardar_cc275f_v01_seed285700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 285701,
+      "file": "amb_river_vardar_cc275f_v02_seed285701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 285702,
+      "file": "amb_river_vardar_cc275f_v03_seed285702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 285703,
+      "file": "amb_river_vardar_cc275f_v04_seed285703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 285704,
+      "file": "amb_river_vardar_cc275f_v05_seed285704.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 285705,
+      "file": "amb_river_vardar_cc275f_v06_seed285705.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_river_vardar",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_river_vardar_cc275f.json",
+  "completed_at": "2026-10-25T01:02:43+00:00"
+}

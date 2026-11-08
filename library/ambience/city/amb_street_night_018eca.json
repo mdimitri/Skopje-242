@@ -1,0 +1,55 @@
+{
+  "id": "amb_street_night_018eca",
+  "prompt": "street at night, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 244000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 244000,
+      "file": "amb_street_night_018eca_v01_seed244000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 244001,
+      "file": "amb_street_night_018eca_v02_seed244001.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 244002,
+      "file": "amb_street_night_018eca_v03_seed244002.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 244003,
+      "file": "amb_street_night_018eca_v04_seed244003.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 244004,
+      "file": "amb_street_night_018eca_v05_seed244004.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 244005,
+      "file": "amb_street_night_018eca_v06_seed244005.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_street_night",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_street_night_018eca.json",
+  "completed_at": "2026-10-25T01:16:33+00:00"
+}

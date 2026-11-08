@@ -1,0 +1,50 @@
+{
+  "id": "amb_playground_d49113",
+  "prompt": "kids playing, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 58700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 58700,
+      "file": "amb_playground_d49113_v01_seed58700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 58701,
+      "file": "amb_playground_d49113_v02_seed58701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 58702,
+      "file": "amb_playground_d49113_v03_seed58702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 58703,
+      "file": "amb_playground_d49113_v04_seed58703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 58704,
+      "file": "amb_playground_d49113_v05_seed58704.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_playground",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_playground_d49113.json",
+  "completed_at": "2026-10-25T01:14:12+00:00"
+}

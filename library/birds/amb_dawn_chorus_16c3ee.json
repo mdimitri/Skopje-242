@@ -1,0 +1,55 @@
+{
+  "id": "amb_dawn_chorus_16c3ee",
+  "prompt": "birds at dawn, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 863900
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 863900,
+      "file": "amb_dawn_chorus_16c3ee_v01_seed863900.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 863901,
+      "file": "amb_dawn_chorus_16c3ee_v02_seed863901.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 863902,
+      "file": "amb_dawn_chorus_16c3ee_v03_seed863902.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 863903,
+      "file": "amb_dawn_chorus_16c3ee_v04_seed863903.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 863904,
+      "file": "amb_dawn_chorus_16c3ee_v05_seed863904.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 863905,
+      "file": "amb_dawn_chorus_16c3ee_v06_seed863905.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_dawn_chorus",
+    "category": "birds",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_dawn_chorus_16c3ee.json",
+  "completed_at": "2026-10-25T00:59:23+00:00"
+}

@@ -1,0 +1,55 @@
+{
+  "id": "amb_wind_trees_cb7274",
+  "prompt": "wind in trees, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 893700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 893700,
+      "file": "amb_wind_trees_cb7274_v01_seed893700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 893701,
+      "file": "amb_wind_trees_cb7274_v02_seed893701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 893702,
+      "file": "amb_wind_trees_cb7274_v03_seed893702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 893703,
+      "file": "amb_wind_trees_cb7274_v04_seed893703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 893704,
+      "file": "amb_wind_trees_cb7274_v05_seed893704.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 893705,
+      "file": "amb_wind_trees_cb7274_v06_seed893705.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_wind_trees",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_wind_trees_cb7274.json",
+  "completed_at": "2026-10-25T01:15:46+00:00"
+}

@@ -1,0 +1,50 @@
+{
+  "id": "amb_traffic_jam_f68232",
+  "prompt": "traffic jam honking, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 870400
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 870400,
+      "file": "amb_traffic_jam_f68232_v01_seed870400.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 870401,
+      "file": "amb_traffic_jam_f68232_v02_seed870401.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 870402,
+      "file": "amb_traffic_jam_f68232_v03_seed870402.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 870403,
+      "file": "amb_traffic_jam_f68232_v04_seed870403.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 870404,
+      "file": "amb_traffic_jam_f68232_v05_seed870404.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_traffic_jam",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.7,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_traffic_jam_f68232.json",
+  "completed_at": "2026-10-25T01:10:02+00:00"
+}

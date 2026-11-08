@@ -1,0 +1,55 @@
+{
+  "id": "birds_3fec2e",
+  "prompt": "birds in park, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 717000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 717000,
+      "file": "birds_3fec2e_v01_seed717000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 717001,
+      "file": "birds_3fec2e_v02_seed717001.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 717002,
+      "file": "birds_3fec2e_v03_seed717002.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 717003,
+      "file": "birds_3fec2e_v04_seed717003.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 717004,
+      "file": "birds_3fec2e_v05_seed717004.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 717005,
+      "file": "birds_3fec2e_v06_seed717005.mp3"
+    }
+  ],
+  "meta": {
+    "key": "birds",
+    "category": "birds",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "birds_3fec2e.json",
+  "completed_at": "2026-10-25T01:20:37+00:00"
+}

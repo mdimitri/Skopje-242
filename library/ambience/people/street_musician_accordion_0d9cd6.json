@@ -1,0 +1,50 @@
+{
+  "id": "street_musician_accordion_0d9cd6",
+  "prompt": "accordion music, lively ambience with small random sounds",
+  "seconds": 20,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 494600
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 494600,
+      "file": "street_musician_accordion_0d9cd6_v01_seed494600.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 494601,
+      "file": "street_musician_accordion_0d9cd6_v02_seed494601.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 494602,
+      "file": "street_musician_accordion_0d9cd6_v03_seed494602.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 494603,
+      "file": "street_musician_accordion_0d9cd6_v04_seed494603.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 494604,
+      "file": "street_musician_accordion_0d9cd6_v05_seed494604.mp3"
+    }
+  ],
+  "meta": {
+    "key": "street_musician_accordion",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "street_musician_accordion_0d9cd6.json",
+  "completed_at": "2026-10-25T01:17:13+00:00"
+}

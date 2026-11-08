@@ -1,0 +1,55 @@
+{
+  "id": "amb_forest_night_061e1c",
+  "prompt": "forest at night, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 673500
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 673500,
+      "file": "amb_forest_night_061e1c_v01_seed673500.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 673501,
+      "file": "amb_forest_night_061e1c_v02_seed673501.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 673502,
+      "file": "amb_forest_night_061e1c_v03_seed673502.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 673503,
+      "file": "amb_forest_night_061e1c_v04_seed673503.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 673504,
+      "file": "amb_forest_night_061e1c_v05_seed673504.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 673505,
+      "file": "amb_forest_night_061e1c_v06_seed673505.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_forest_night",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_forest_night_061e1c.json",
+  "completed_at": "2026-10-25T01:25:43+00:00"
+}

@@ -1,0 +1,50 @@
+{
+  "id": "amb_street_quiet_01f1b5",
+  "prompt": "quiet street, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 860300
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 860300,
+      "file": "amb_street_quiet_01f1b5_v01_seed860300.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 860301,
+      "file": "amb_street_quiet_01f1b5_v02_seed860301.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 860302,
+      "file": "amb_street_quiet_01f1b5_v03_seed860302.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 860303,
+      "file": "amb_street_quiet_01f1b5_v04_seed860303.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 860304,
+      "file": "amb_street_quiet_01f1b5_v05_seed860304.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_street_quiet",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_street_quiet_01f1b5.json",
+  "completed_at": "2026-10-25T01:12:00+00:00"
+}

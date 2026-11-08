@@ -1,0 +1,55 @@
+{
+  "id": "wind_gust_8d8c09",
+  "prompt": "wind gust, short punchy movie sound effect",
+  "seconds": 3.0,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 5.0,
+    "sigma_shift": 5.0,
+    "seed": 345300
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 345300,
+      "file": "wind_gust_8d8c09_v01_seed345300.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 345301,
+      "file": "wind_gust_8d8c09_v02_seed345301.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 345302,
+      "file": "wind_gust_8d8c09_v03_seed345302.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 345303,
+      "file": "wind_gust_8d8c09_v04_seed345303.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 345304,
+      "file": "wind_gust_8d8c09_v05_seed345304.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 345305,
+      "file": "wind_gust_8d8c09_v06_seed345305.mp3"
+    }
+  ],
+  "meta": {
+    "key": "wind_gust",
+    "category": "ambience",
+    "loop": false,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "wind_gust_8d8c09.json",
+  "completed_at": "2026-10-25T01:04:38+00:00"
+}

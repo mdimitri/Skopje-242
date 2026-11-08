@@ -1,0 +1,50 @@
+{
+  "id": "amb_meadow_day_25546f",
+  "prompt": "meadow insects, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 294700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 294700,
+      "file": "amb_meadow_day_25546f_v01_seed294700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 294701,
+      "file": "amb_meadow_day_25546f_v02_seed294701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 294702,
+      "file": "amb_meadow_day_25546f_v03_seed294702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 294703,
+      "file": "amb_meadow_day_25546f_v04_seed294703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 294704,
+      "file": "amb_meadow_day_25546f_v05_seed294704.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_meadow_day",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_meadow_day_25546f.json",
+  "completed_at": "2026-10-25T01:11:20+00:00"
+}

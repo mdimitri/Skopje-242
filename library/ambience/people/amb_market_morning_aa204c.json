@@ -1,0 +1,50 @@
+{
+  "id": "amb_market_morning_aa204c",
+  "prompt": "morning market, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 401800
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 401800,
+      "file": "amb_market_morning_aa204c_v01_seed401800.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 401801,
+      "file": "amb_market_morning_aa204c_v02_seed401801.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 401802,
+      "file": "amb_market_morning_aa204c_v03_seed401802.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 401803,
+      "file": "amb_market_morning_aa204c_v04_seed401803.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 401804,
+      "file": "amb_market_morning_aa204c_v05_seed401804.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_market_morning",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_market_morning_aa204c.json",
+  "completed_at": "2026-10-25T01:08:04+00:00"
+}

@@ -1,0 +1,55 @@
+{
+  "id": "traffic_af57f3",
+  "prompt": "busy traffic, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 559200
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 559200,
+      "file": "traffic_af57f3_v01_seed559200.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 559201,
+      "file": "traffic_af57f3_v02_seed559201.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 559202,
+      "file": "traffic_af57f3_v03_seed559202.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 559203,
+      "file": "traffic_af57f3_v04_seed559203.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 559204,
+      "file": "traffic_af57f3_v05_seed559204.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 559205,
+      "file": "traffic_af57f3_v06_seed559205.mp3"
+    }
+  ],
+  "meta": {
+    "key": "traffic",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.7,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "traffic_af57f3.json",
+  "completed_at": "2026-10-25T01:05:28+00:00"
+}

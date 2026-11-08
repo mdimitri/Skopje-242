@@ -1,0 +1,45 @@
+{
+  "id": "amb_football_pitch_be00f1",
+  "prompt": "kids playing football, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 199000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 199000,
+      "file": "amb_football_pitch_be00f1_v01_seed199000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 199001,
+      "file": "amb_football_pitch_be00f1_v02_seed199001.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 199002,
+      "file": "amb_football_pitch_be00f1_v03_seed199002.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 199003,
+      "file": "amb_football_pitch_be00f1_v04_seed199003.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_football_pitch",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_football_pitch_be00f1.json",
+  "completed_at": "2026-10-25T00:58:00+00:00"
+}

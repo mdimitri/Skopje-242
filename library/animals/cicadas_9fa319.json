@@ -1,0 +1,55 @@
+{
+  "id": "cicadas_9fa319",
+  "prompt": "cicadas, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 61100
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 61100,
+      "file": "cicadas_9fa319_v01_seed61100.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 61101,
+      "file": "cicadas_9fa319_v02_seed61101.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 61102,
+      "file": "cicadas_9fa319_v03_seed61102.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 61103,
+      "file": "cicadas_9fa319_v04_seed61103.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 61104,
+      "file": "cicadas_9fa319_v05_seed61104.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 61105,
+      "file": "cicadas_9fa319_v06_seed61105.mp3"
+    }
+  ],
+  "meta": {
+    "key": "cicadas",
+    "category": "animals",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "cicadas_9fa319.json",
+  "completed_at": "2026-10-25T01:24:09+00:00"
+}

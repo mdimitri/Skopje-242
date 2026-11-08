@@ -1,0 +1,60 @@
+{
+  "id": "amb_forest_day_f62601",
+  "prompt": "forest, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 675000
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 675000,
+      "file": "amb_forest_day_f62601_v01_seed675000.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 282990749,
+      "file": "amb_forest_day_f62601_v02_seed282990749.mp3",
+      "redone_at": "2026-10-25T01:01:45+00:00"
+    },
+    {
+      "version": 3,
+      "seed": 1975981277,
+      "file": "amb_forest_day_f62601_v03_seed1975981277.mp3",
+      "redone_at": "2026-10-25T01:01:36+00:00"
+    },
+    {
+      "version": 4,
+      "seed": 1507276330,
+      "file": "amb_forest_day_f62601_v04_seed1507276330.mp3",
+      "redone_at": "2026-10-25T01:01:28+00:00"
+    },
+    {
+      "version": 5,
+      "seed": 1715169326,
+      "file": "amb_forest_day_f62601_v05_seed1715169326.mp3",
+      "redone_at": "2026-10-25T01:01:53+00:00"
+    },
+    {
+      "version": 6,
+      "seed": 2070393048,
+      "file": "amb_forest_day_f62601_v06_seed2070393048.mp3",
+      "redone_at": "2026-10-25T01:01:11+00:00"
+    }
+  ],
+  "meta": {
+    "key": "amb_forest_day",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_forest_day_f62601.json",
+  "completed_at": "2026-10-25T01:00:13+00:00"
+}

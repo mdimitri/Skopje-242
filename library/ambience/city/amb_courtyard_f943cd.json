@@ -1,0 +1,50 @@
+{
+  "id": "amb_courtyard_f943cd",
+  "prompt": "apartment courtyard, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 570400
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 570400,
+      "file": "amb_courtyard_f943cd_v01_seed570400.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 570401,
+      "file": "amb_courtyard_f943cd_v02_seed570401.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 570402,
+      "file": "amb_courtyard_f943cd_v03_seed570402.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 570403,
+      "file": "amb_courtyard_f943cd_v04_seed570403.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 570404,
+      "file": "amb_courtyard_f943cd_v05_seed570404.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_courtyard",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_courtyard_f943cd.json",
+  "completed_at": "2026-10-25T00:54:15+00:00"
+}

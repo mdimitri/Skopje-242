@@ -1,0 +1,45 @@
+{
+  "id": "amb_creek_be960e",
+  "prompt": "stream, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 238200
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 238200,
+      "file": "amb_creek_be960e_v01_seed238200.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 238201,
+      "file": "amb_creek_be960e_v02_seed238201.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 238202,
+      "file": "amb_creek_be960e_v03_seed238202.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 238203,
+      "file": "amb_creek_be960e_v04_seed238203.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_creek",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_creek_be960e.json",
+  "completed_at": "2026-10-25T00:58:33+00:00"
+}

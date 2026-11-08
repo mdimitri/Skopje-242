@@ -1,0 +1,55 @@
+{
+  "id": "crickets_903779",
+  "prompt": "crickets, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 5700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 5700,
+      "file": "crickets_903779_v01_seed5700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 5701,
+      "file": "crickets_903779_v02_seed5701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 5702,
+      "file": "crickets_903779_v03_seed5702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 5703,
+      "file": "crickets_903779_v04_seed5703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 5704,
+      "file": "crickets_903779_v05_seed5704.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 5705,
+      "file": "crickets_903779_v06_seed5705.mp3"
+    }
+  ],
+  "meta": {
+    "key": "crickets",
+    "category": "animals",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "crickets_903779.json",
+  "completed_at": "2026-10-25T01:23:22+00:00"
+}

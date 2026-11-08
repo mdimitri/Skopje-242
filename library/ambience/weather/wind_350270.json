@@ -1,0 +1,56 @@
+{
+  "id": "wind_350270",
+  "prompt": "wind, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 878200
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 878200,
+      "file": "wind_350270_v01_seed878200.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 878201,
+      "file": "wind_350270_v02_seed878201.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 878202,
+      "file": "wind_350270_v03_seed878202.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 878203,
+      "file": "wind_350270_v04_seed878203.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 878204,
+      "file": "wind_350270_v05_seed878204.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 1148694260,
+      "file": "wind_350270_v06_seed1148694260.mp3",
+      "redone_at": "2026-10-25T00:56:37+00:00"
+    }
+  ],
+  "meta": {
+    "key": "wind",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "wind_350270.json",
+  "completed_at": "2026-10-25T00:55:46+00:00"
+}

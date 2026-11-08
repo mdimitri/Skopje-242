@@ -1,0 +1,55 @@
+{
+  "id": "amb_city_far_df75b8",
+  "prompt": "distant city, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 69800
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 69800,
+      "file": "amb_city_far_df75b8_v01_seed69800.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 69801,
+      "file": "amb_city_far_df75b8_v02_seed69801.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 69802,
+      "file": "amb_city_far_df75b8_v03_seed69802.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 69803,
+      "file": "amb_city_far_df75b8_v04_seed69803.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 69804,
+      "file": "amb_city_far_df75b8_v05_seed69804.mp3"
+    },
+    {
+      "version": 6,
+      "seed": 69805,
+      "file": "amb_city_far_df75b8_v06_seed69805.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_city_far",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.6,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_city_far_df75b8.json",
+  "completed_at": "2026-10-25T01:19:11+00:00"
+}

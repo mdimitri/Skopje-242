@@ -1,0 +1,50 @@
+{
+  "id": "amb_pigeons_square_be0885",
+  "prompt": "pigeons, lively ambience with small random sounds",
+  "seconds": 24,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 185700
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 185700,
+      "file": "amb_pigeons_square_be0885_v01_seed185700.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 185701,
+      "file": "amb_pigeons_square_be0885_v02_seed185701.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 185702,
+      "file": "amb_pigeons_square_be0885_v03_seed185702.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 185703,
+      "file": "amb_pigeons_square_be0885_v04_seed185703.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 185704,
+      "file": "amb_pigeons_square_be0885_v05_seed185704.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_pigeons_square",
+    "category": "birds",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_pigeons_square_be0885.json",
+  "completed_at": "2026-10-25T01:19:50+00:00"
+}

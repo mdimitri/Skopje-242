@@ -1,0 +1,50 @@
+{
+  "id": "amb_night_party_a04b60",
+  "prompt": "party music far away, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 97400
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 97400,
+      "file": "amb_night_party_a04b60_v01_seed97400.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 97401,
+      "file": "amb_night_party_a04b60_v02_seed97401.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 97402,
+      "file": "amb_night_party_a04b60_v03_seed97402.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 97403,
+      "file": "amb_night_party_a04b60_v04_seed97403.mp3"
+    },
+    {
+      "version": 5,
+      "seed": 97404,
+      "file": "amb_night_party_a04b60_v05_seed97404.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_night_party",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.4,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_night_party_a04b60.json",
+  "completed_at": "2026-10-25T01:18:23+00:00"
+}

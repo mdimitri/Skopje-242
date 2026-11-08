@@ -1,0 +1,45 @@
+{
+  "id": "amb_lake_shore_e72ca5",
+  "prompt": "lake waves, lively ambience with small random sounds",
+  "seconds": 30,
+  "params": {
+    "num_inference_steps": 100,
+    "cfg_scale": 4.0,
+    "sigma_shift": 5.0,
+    "seed": 712400
+  },
+  "model": "OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+  "format": "mp3 128kbps",
+  "sample_rate": 48000,
+  "files": [
+    {
+      "version": 1,
+      "seed": 712400,
+      "file": "amb_lake_shore_e72ca5_v01_seed712400.mp3"
+    },
+    {
+      "version": 2,
+      "seed": 712401,
+      "file": "amb_lake_shore_e72ca5_v02_seed712401.mp3"
+    },
+    {
+      "version": 3,
+      "seed": 712402,
+      "file": "amb_lake_shore_e72ca5_v03_seed712402.mp3"
+    },
+    {
+      "version": 4,
+      "seed": 712403,
+      "file": "amb_lake_shore_e72ca5_v04_seed712403.mp3"
+    }
+  ],
+  "meta": {
+    "key": "amb_lake_shore",
+    "category": "ambience",
+    "loop": true,
+    "level": 0.5,
+    "game": "skopje242 v2.1"
+  },
+  "request_file": "amb_lake_shore_e72ca5.json",
+  "completed_at": "2026-10-25T01:21:09+00:00"
+}
