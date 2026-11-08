@@ -404,6 +404,7 @@ class SpeechWorker:
 if __name__ == "__main__":                       # setup.ps1: prove that Suze speaks
     import sys
     import wave
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # cp1252 consoles choke on Cyrillic
     sv = SuzeVoice()
     sv.load()
     print("[voice]", sv.state, sv.note)
