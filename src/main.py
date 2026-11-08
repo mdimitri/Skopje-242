@@ -1797,7 +1797,10 @@ def main():
             Hc = 0.0
         cn_on = False
         cine_shot_ = None
-        if cine.active and not a.test and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT)):
+        if cine.active and not a.test and cine.t <= 1.0:
+            while rl.get_key_pressed():                       # the click / Enter that started the demo must not end it
+                pass
+        elif cine.active and not a.test and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT)):
             cine.stop()                                      # back where the player was
             rl.show_cursor()
             sim.teleport(*cine.home)
