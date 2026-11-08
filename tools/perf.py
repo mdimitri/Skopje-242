@@ -121,6 +121,16 @@ for spec in (("render", "Renderer", "_actors"), ("render", "Renderer", "_decals"
              ("night", "Night", "draw"), ("sunshadow", "SunShadow", "_draw_depth")):
     _sub(*spec)
 
+import gc  # noqa: E402
+_gc_t = [0.0]
+def _gccb(phase, info):
+    if phase == "start":
+        _gc_t[0] = time.perf_counter()
+    else:
+        k = f"gc{info['generation']}"
+        cur[k] = cur.get(k, 0.0) + (time.perf_counter() - _gc_t[0]) * 1000      # (also counted inside the subsystem it hit)
+gc.callbacks.append(_gccb)
+
 prof = cProfile.Profile() if a.prof else None
 state = {"n": 0, "t": None, "cpu": None, "w0": None, "c0": None}
 _ed = rl.end_drawing
