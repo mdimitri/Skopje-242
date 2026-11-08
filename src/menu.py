@@ -36,7 +36,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003"), "Демо"]   # Игра · Градот · Луѓето · Графика · Звук · Демо
+TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003")]   # Игра · Градот · Луѓето · Графика · Звук
 
 
 def _rows(in_game, slots=(), settings_only=False):
@@ -99,11 +99,6 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
         (4, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
     ]
-    R += [(5, H("Демо режим")),
-          (5, Row("action", "Пушти го демото", "demo")),
-          (5, Row("slider", "Тилт-шифт (мазнотија горе и долу)", "demo_dof", lo=0.0, hi=1.0, fmt=pct, note="0% = исклучено, повисоко = поизразен ефект на играчка-град")),
-          (5, Row("head", "Хеликоптер на ТВ вести лета над градот, а камерата полека")),
-          (5, Row("head", "се врти околу него. Кој било клавиш или клик го прекинува."))]
     MAPROW = (0, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041")))   # was the Мапа tab
     if settings_only:                    # opened from the title menu: only the options, and a way back
         return R + [MAPROW, (0, Row("action", BACK, "play"))]
@@ -455,8 +450,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     if not in_game and not settings_only:     # start: the title menu over the splash art
         while True:
             ch = title_menu(aud, music)
-            if ch in ("quit", "demo"):
-                return ch
+            if ch == "quit":
+                return "quit"
             if ch.startswith("cont"):
                 cfg.save()
                 return "load" + ch[4:]
@@ -465,9 +460,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                     if music is not None:
                         music.update()
                     poster.draw_splash(rl.get_screen_width(), rl.get_screen_height())
-                r_ = run(cfg, apply, False, bg, aud, music=music, settings_only=True)
-                if r_ in ("quit", "demo"):
-                    return r_
+                if run(cfg, apply, False, bg, aud, music=music, settings_only=True) == "quit":
+                    return "quit"
                 continue
             pick_character.load = False         # new game: choose who you are
             if pick_character(cfg, aud, music):
@@ -583,7 +577,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                         continue
                 cfg.save()
                 return k
-            if k in ("quit", "chars", "demo"):
+            if k in ("quit", "chars"):
                 cfg.save()
                 return k
             if k.startswith("load"):

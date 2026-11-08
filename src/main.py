@@ -98,13 +98,11 @@ import fx as fx_mod   # noqa: E402
 from fx import Particles, Popups   # noqa: E402
 from night import Night   # noqa: E402
 from sunshadow import SunShadow   # noqa: E402
-from skyline import Skyline   # noqa: E402
 from places import Places   # noqa: E402
 from speech import SpeechWorker   # noqa: E402
 import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
-import demo as demo_mod   # noqa: E402
 import signals   # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint   # noqa: E402
 from render import LOD_PPM, Renderer   # noqa: E402
@@ -462,7 +460,6 @@ def main():
     ap.add_argument("--demo", action="store_true", help="offline synthetic demo city")
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
     ap.add_argument("--nomenu", action="store_true", help="skip the start menu")
-    ap.add_argument("--cine", default="", help="cinematic demo variant 0-9; with --test a comma list = save preview frames of those variants")
     ap.add_argument("--car", action="store_true", help="start inside the car (default: on foot next to it)")
     ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
     ap.add_argument("--foot", action="store_true", help="start on foot (with --start: at the nearest footpath)")
@@ -685,18 +682,6 @@ def main():
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
     selfie = selfie_mod.Selfie(ROOT)
-    cine = demo_mod.Demo(world, selfie)
-    skyline = Skyline(world, streamer)
-    cine_prev = None
-    if a.cine:
-        cine_vs = [int(v_) for v_ in a.cine.split(",")]
-        if a.test:
-            cine_prev = demo_mod.Preview(cine, cine_vs, dwell=int(os.environ.get("SK242_CINE_DWELL", "14")))
-            cine.start(cine_vs[0], seed=3)
-            skyline.start()
-        else:
-            cine.start(cine_vs[0])
-            skyline.start()
     guard = Guard(lambda m: hud.set_banner(m, 5))
     apply_cfg(cfg, True)
 
@@ -751,14 +736,6 @@ def main():
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
-    def cine_go():                                          # menu tab "Демо": the helicopter tour, any key or click ends it
-        cine.home = sim.focus()[:2]
-        cine.start(10)
-        skyline.start()
-        sim.clock.hour = cine.v["hour"]
-        rl.hide_cursor()
-        while rl.get_key_pressed():
-            pass
     mpg = None                                             # multiplayer sync (mpgame.Game) when a lobby game was started
     log("[game] ready")
     if a.nomenu and loader.music is not None:
@@ -773,8 +750,6 @@ def main():
         apply_cfg(cfg, True)
         characters.apply(sim, cfg["lik"])
         sim.clock.hour = cfg["hour"] % 24.0
-        if res_ == "demo":
-            cine_go()
         _ms = menu_mod.MP.get("session")
         if _ms is not None and _ms.state == "playing":
             import atexit
@@ -1351,19 +1326,6 @@ def main():
             return
         aud.listener(fx_, fy_)
         aud.update()
-        if cine.active:                                          # helicopter height: wind and the muffled city, nothing from the streets (no birds, no engines)
-            aud.set_zoom(0.0)
-            aud.cabin = False
-            keep = ("amb_wind_high", "amb_city_far", "wind", "city")
-            for nm_ in list(aud._cur):
-                if nm_ not in keep:
-                    aud.loop(nm_, 0.0)
-            tf_ = min(1.5, sim.clock.traffic) / 1.5
-            aud.loop("amb_wind_high", 0.9)
-            aud.loop("amb_city_far", 0.7 * (0.45 + 0.55 * tf_))
-            aud.loop("wind", 0.3)
-            aud.loop("city", 0.1 * tf_)
-            return
         aud.set_zoom(max(0.0, min(1.0, (math.log(max(ppm, 1.0)) - math.log(3.0)) / (math.log(40.0) - math.log(3.0)))))        # camera height -> how much street / how much city bed
         tf = min(1.5, sim.clock.traffic) / 1.5
         if sim.mode == "car":
@@ -1667,16 +1629,12 @@ def main():
                             if d_:
                                 savegame.restore(sim, cfg, d_)
                                 apply_cfg(cfg, True)
-                        elif res_ == "demo":
-                            cine_go()
                         else:                              # new game: the chosen character, fresh stats
                             savegame.new_character(sim, cfg["lik"])
                             sim.clock.hour = cfg["hour"] % 24.0
                         snap = True
                         hud.set_banner(TXT("main.0039"), 3.0)
                         res_ = ""
-                    if res_ == "demo":
-                        cine_go()
                     if res_ == "chars":
                         if menu_mod.pick_character(cfg, aud):
                             break
@@ -1793,7 +1751,7 @@ def main():
         if song:
             hud.set_banner(TXT("main.0043") + song, 2.0)
         aud.cabin = sim.mode == "car"                            # inside a car: the world is muffled, your radio plays clearly
-        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted and sim.mode != "car" and not cine.active, cfg["vol_radio"])
+        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted and sim.mode != "car", cfg["vol_radio"])
         res = spk.poll()
         if res is not None:
             key, pcm, sr_ = res
@@ -1840,49 +1798,20 @@ def main():
         elif ch_on:
             cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
-        cn_on = False
-        cine_shot_ = None
-        if cine.active and not a.test and cine.t <= 1.0:
-            while rl.get_key_pressed():                       # the click / Enter that started the demo must not end it
-                pass
-        elif cine.active and not a.test and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT)):
-            cine.stop()                                      # back where the player was
-            rl.show_cursor()
-            sim.teleport(*cine.home)
-            snap = True
-        if cine.active:
-            if cine_prev is not None:
-                cine_shot_ = cine_prev.tick(frame, lambda h_: setattr(sim.clock, "hour", h_))
-            cine.update(dt)
-            if math.hypot(cine.hx - fx, cine.hz - fy) > 200.0:           # the simulation (traffic, people) follows the helicopter
-                guard.run("cine_tp", sim.teleport, cine.hx, cine.hz)
-            cam, rect, far_ = cine.camera()
-            Hc = (far_ + 400.0) / 4.0
-            selfie.yaw = cine.yaw
-            cn_on = True
-            ch_on = False                                    # the demo camera wins over the street view (streaming, popups, sky)
-        sf_on = sf_on or ch_on or cn_on
-        sim.view_rect = None if (sf_on or cine.active) else (rect[0] - 20, rect[1] - 20, rect[2] + 20, rect[3] + 20)      # actors off this ground rectangle step at a third of the rate
+        sf_on = sf_on or ch_on
+        sim.view_rect = None if sf_on else (rect[0] - 20, rect[1] - 20, rect[2] + 20, rect[3] + 20)      # actors off this ground rectangle step at a third of the rate
         popups.street = ch_on
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         lite_ = ()
-        far_c_set = ()
         if ch_on:                                  # street view: chunks out to 2.25x the full-detail radius, the far ring at low quality
             o_ = sim.car if sim.mode == "car" else sim.walker
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
             wanted, lite_, _f = ring_want(o_.x, o_.y, far_, near_)
             lod = True
-        elif cn_on:                                 # the helicopter's surroundings: full detail near it, low quality further out
-            far_c, near_c = min(rect[2] - cine.hx, cine.VIEW_REAL), cine.VIEW_NEAR
-            wanted, lite_, far_c_set = ring_want(cine.hx, cine.hz, far_c, near_c, cine.VIEW_MID)
-            streamer.max_mesh = max(streamer.max_mesh, 2400)          # the far ring keeps a lot of low-quality building meshes
-            lod = True
         else:
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
-        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_, far_c_set if cn_on else ())
-        if cn_on:
-            guard.run("skyline", skyline.update)
+        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         if lod:
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
@@ -1896,16 +1825,8 @@ def main():
             rl.clear_background(rl.Color(26, 28, 32, 255))
             if sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
-                if cn_on:
-                    guard.run("cine_sky", cine.sky_layers, cam, sw, sh, sim.clock.dark, sim.clock.hour)
-                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1 if not cn_on else 3.0, True,
-                          (cine.hx - cine.ACTORS, cine.hz - cine.ACTORS, cine.hx + cine.ACTORS, cine.hz + cine.ACTORS) if cn_on else None,
-                          (skyline, (cine.hx, cine.hz), cine.VIEW_MID + 340.0) if cn_on else None)
-                if cn_on:
-                    guard.run("heli", cine.draw_heli, cam, sim.clock.dark)
-                if cn_on:
-                    cine.haze(cam, sw, sh, sim.clock.dark, sim.clock.hour)
-                elif not ch_on:                        # the street view has the horizon near the top: the band read as a veil
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
+                if not ch_on:                          # the street view has the horizon near the top: the band read as a veil
                     selfie.haze(sf_hy, sim.clock.dark, sw)
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
@@ -1916,11 +1837,10 @@ def main():
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
-            if not cn_on:
-                guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
-                guard.run("gains", gains.draw, cam, (sw - 230, 26))
-                guard.run("players", draw_players, sim, cam, sw, sh)
-                guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
+            guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
+            guard.run("gains", gains.draw, cam, (sw - 230, 26))
+            guard.run("players", draw_players, sim, cam, sw, sh)
+            guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""
@@ -1941,29 +1861,26 @@ def main():
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
-            if cn_on:
-                near_ = min(places.list, key=lambda p_: (p_[1] - cine.hx) ** 2 + (p_[2] - cine.hz) ** 2)[0] if places.list else ""
-                cine.overlay(sw, sh, font, near_)
-            elif sf_on and selfie.active:
+            if sf_on and selfie.active:
                 selfie.overlay(sw, sh)
                 if sf_due_:
                     selfie.take()
             else:
                 pois.draw(sim, sw, sh)
-            if not selfie.active and not cn_on:                       # the chase view keeps the HUD, so M opens the map there too
+            if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             vs_ = spk.status()
-            if vs_ and not cn_on:
+            if vs_:
                 font.draw_text(TXT("main.0049") + vs_, 16, 62, 16, rl.Color(255, 220, 150, 220))
-            if not a.test and not cn_on:
+            if not a.test:
                 font.draw_text(TXT("main.0050"),
                              16, sh - 30 if False else 36, 16, rl.Color(255, 255, 255, 170))
-            if show_dbg and not cn_on:
+            if show_dbg:
                 font.draw_text(f"{rl.get_fps()} fps  {dt_real * 1000:.1f} ms | ground {renderer.drawn_chunks}/{len(streamer.ground)} "
                              f"meshes {renderer.drawn_meshes}/{len(streamer.meshes)} baked {streamer.baked} (last {streamer.bake_ms:.0f} ms) "
                              f"| cars {len(sim.traffic.cars)} bodies {len(sim.bodies)} peds {len(sim.peds.list)} "
                              f"parts {len(particles.p)} | ppm {ppm:.1f} err {sum(guard.errors.values())}", 12, 10, 16, rl.Color(255, 255, 255, 255))
-            if not a.test and not cn_on:                       # mouse buttons: options menu and exit, always on screen
+            if not a.test:                                     # mouse buttons: options menu and exit, always on screen
                 bx_ = sw - 300 - 112 * 3
                 if font.button(TXT("main.0051"), bx_, 10, 104, 34):
                     want_chars = True
@@ -1971,7 +1888,6 @@ def main():
                     want_menu = True
                 font.exit_button(bx_ + 224, 10)
         finally:
-            present.dof, present.dof_bar = (cfg["demo_dof"], 0.085) if cn_on else (0.0, 0.0)
             present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
             t_sw = time.perf_counter()
             rl.end_drawing()
@@ -1999,12 +1915,6 @@ def main():
         if a.test and a.shot and (frame in (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1) or (boom_ > 0 and frame - boom_ in (4, 12, 24, 45, 90))):
             img = rl.load_image_from_screen()
             rl.export_image(img, f"{a.shot}_{frame}.png")
-            rl.unload_image(img)
-        if cine_prev is not None and cine_shot_ and a.shot:
-            if cine_shot_ == "end":
-                break
-            img = rl.load_image_from_screen()
-            rl.export_image(img, f"{a.shot}_{cine_shot_}.png")
             rl.unload_image(img)
         if a.test and frame >= a.test:
             break

@@ -1,6 +1,5 @@
-"""Repeatable frame profiler for the game and the demo (no game code is changed; everything is wrapped from outside).
+"""Repeatable frame profiler for the game (no game code is changed; everything is wrapped from outside).
 
-  python tools/perf.py --mode demo --frames 600 --world data/cache/world      # helicopter demo (variant 10, fixed seed)
   python tools/perf.py --mode car  --frames 600                                # driving (the --test autopilot), top-down view
   python tools/perf.py --mode car  --view chase                                # driving, 3rd-person (chase) view
   python tools/perf.py --mode foot --frames 600                                # on foot
@@ -23,29 +22,25 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--mode", default="demo", choices=("demo", "car", "foot"))
+ap.add_argument("--mode", default="car", choices=("car", "foot"))
 ap.add_argument("--frames", type=int, default=600)
 ap.add_argument("--warm", type=int, default=120, help="first frames left out of the statistics (loading, first streaming)")
 ap.add_argument("--world", default="")
 ap.add_argument("--size", default="", help="window size; default: the resolution in settings.json")
 ap.add_argument("--view", default="top", choices=("top", "chase"), help="top-down or 3rd-person (chase) camera")
-ap.add_argument("--variant", default="10")
 ap.add_argument("--hour", default="")
 ap.add_argument("--prof", action="store_true")
 ap.add_argument("--tag", default="")
 ap.add_argument("extra", nargs="*", help="more arguments for main.py (after --)")
 a = ap.parse_args()
-tag = a.tag or (a.mode + ("_chase" if a.view == "chase" and a.mode != "demo" else ""))
+tag = a.tag or (a.mode + ("_chase" if a.view == "chase" else ""))
 
 game = ["main.py", "--test", str(a.frames), "--mute"] + (["--size", a.size] if a.size else [])
 if a.world:
     game += ["--world", a.world]
 if a.hour:
     game += ["--hour", a.hour]
-if a.mode == "demo":
-    game += ["--cine", a.variant]
-    os.environ["SK242_CINE_DWELL"] = str(a.frames + 100)       # one continuous flight, no jumps
-elif a.mode == "car":
+if a.mode == "car":
     game += ["--car"]
 else:
     game += ["--walker"]

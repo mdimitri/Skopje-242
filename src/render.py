@@ -277,7 +277,7 @@ class Renderer:
             if store.get(k) is None:
                 store[k] = gl3d.make_model(*arrs)
 
-    def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False, actor_rect=None, skyline=None):
+    def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
         self._collect_models()
         self._ppm = ppm
@@ -312,34 +312,18 @@ class Renderer:
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
-                cov = st.covered
                 for key, e in self._visible_meshes(st, fr, rect):
-                    if key in cov:
-                        continue                                # drawn by its block (demo far ring)
                     for m in e[0].values():
                         RL.DrawModel(m, ZERO, 1.0, WHITE)
                     nm += 1
                     e[1] = st.frame
-                for b in st.blocks.values():
-                    if b[2] is not None and fr.sphere(*b[2]):
-                        for m in b[0].values():
-                            RL.DrawModel(m, ZERO, 1.0, WHITE)
-                        nm += 1
-            if skyline is not None and lod:                   # demo: plain-box buildings out to the horizon until the real far blocks are loaded
-                sk, (hx_, hz_), rmin = skyline
-                for bk, (m_, sp_) in sk.models.items():
-                    if bk in st.blocks or math.hypot(sp_[0] - hx_, sp_[2] - hz_) < rmin or not fr.sphere(*sp_):
-                        continue
-                    RL.DrawModel(m_, ZERO, 1.0, WHITE)
-                    nm += 1
             self.drawn_meshes = nm
             if lod:
                 if getattr(w, "roads3d", False):
                     self._decals(rect)
-                ar_ = actor_rect or rect                          # demo: people and cars only close to the helicopter
-                self._actors(ar_, sim, t)
-                self._shots(ar_, sim)
-                self._balls(ar_, sim)
+                self._actors(rect, sim, t)
+                self._shots(rect, sim)
+                self._balls(rect, sim)
                 if getattr(sim, "lights", None) is not None:
                     sim.lights.draw(rect, w.ground_y, fr.seen)
                 if getattr(sim, "trains", None) is not None:

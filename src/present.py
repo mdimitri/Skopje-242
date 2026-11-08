@@ -32,40 +32,6 @@ void main() {
 }
 """
 
-# Tilt-shift / "toytown": the picture stays sharp in a horizontal band round the middle and blurs towards the top and bottom,
-# a little more colour and contrast like a miniature model. strength 0..1; the black demo bars (bar = fraction of the height) stay crisp.
-DOF_FS = """#version 330
-in vec2 fragTexCoord;
-in vec4 fragColor;
-uniform sampler2D texture0;
-uniform vec2 px;
-uniform float strength;
-uniform float bar;
-out vec4 finalColor;
-void main() {
-    vec2 uv = fragTexCoord;
-    float d = abs(uv.y - 0.5) * 2.0;                                  // 0 in the middle, 1 at the top / bottom edge
-    float r = strength * 14.0 * smoothstep(0.18, 1.0, d);             // blur radius in pixels
-    vec3 c = texture(texture0, uv).rgb;
-    if (r > 0.4 && abs(uv.y - 0.5) < 0.5 - bar) {
-        vec3 acc = c;
-        float wsum = 1.0;
-        for (int i = 1; i <= 24; i++) {                               // golden-angle disc
-            float a = float(i) * 2.39996;
-            vec2 o = vec2(cos(a), sin(a)) * sqrt(float(i) / 24.0) * r * px;
-            vec2 u2 = vec2(uv.x + o.x, clamp(uv.y + o.y, bar + 0.002, 1.0 - bar - 0.002));
-            acc += texture(texture0, u2).rgb;
-            wsum += 1.0;
-        }
-        c = acc / wsum;
-    }
-    float l = dot(c, vec3(0.299, 0.587, 0.114));
-    c = mix(vec3(l), c, 1.0 + 0.35 * strength);                        // saturation
-    c = (c - 0.5) * (1.0 + 0.12 * strength) + 0.5;                     // contrast
-    finalColor = vec4(c, 1.0);
-}
-"""
-
 
 _orig_w, _orig_h, _orig_w2s = rl.get_screen_width, rl.get_screen_height, rl.get_world_to_screen
 vw = vh = 0                      # 0 = off: the helpers answer with the window
@@ -100,9 +66,6 @@ class Present:
         self.rt = None
         self.sh = None
         self.loc = 0
-        self.dof = 0.0                 # tilt-shift strength 0..1 (demo mode); 0 = off
-        self.dof_bar = 0.0
-        self.dsh = None
         self.dest = (0.0, 0.0, 1.0, 1.0)
 
     def _shader(self):
@@ -111,13 +74,6 @@ class Present:
             self.sh = rl.load_shader_from_memory(vs, FS)
             self.loc = rl.get_shader_location(self.sh, "px")
         return self.sh
-
-    def _dof_shader(self):
-        if self.dsh is None:
-            vs = "#version 330\nin vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor; uniform mat4 mvp; out vec2 fragTexCoord; out vec4 fragColor;\nvoid main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor; gl_Position = mvp * vec4(vertexPosition, 1.0); }"
-            self.dsh = rl.load_shader_from_memory(vs, DOF_FS)
-            self.dloc = tuple(rl.get_shader_location(self.dsh, n) for n in ("px", "strength", "bar"))
-        return self.dsh
 
     def activate(self, w, h):
         """Loop start: choose the buffer size, map the mouse (call once per frame, before reading input)."""
@@ -147,15 +103,6 @@ class Present:
         rl.clear_background(rl.BLACK)
         src = rl.Rectangle(0, 0, vw, -vh)
         dst = rl.Rectangle(*self.dest)
-        if self.dof > 0.0:
-            sh = self._dof_shader()
-            rl.set_shader_value(sh, self.dloc[0], rl.ffi.new("float[2]", [1.0 / vw, 1.0 / vh]), rl.SHADER_UNIFORM_VEC2)
-            rl.set_shader_value(sh, self.dloc[1], rl.ffi.new("float *", self.dof), rl.SHADER_UNIFORM_FLOAT)
-            rl.set_shader_value(sh, self.dloc[2], rl.ffi.new("float *", self.dof_bar), rl.SHADER_UNIFORM_FLOAT)
-            rl.begin_shader_mode(sh)
-            rl.draw_texture_pro(self.rt.texture, src, dst, rl.Vector2(0, 0), 0.0, rl.WHITE)
-            rl.end_shader_mode()
-            return
         if fxaa:
             sh = self._shader()
             rl.set_shader_value(sh, self.loc, rl.ffi.new("float[2]", [1.0 / vw, 1.0 / vh]), rl.SHADER_UNIFORM_VEC2)
