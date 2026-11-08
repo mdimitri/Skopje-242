@@ -2900,7 +2900,17 @@ class Sim:
                 continue
             b.age += dt
             if b is not self.car or self.mode == "foot":
-                if b is not self.car or self.mode == "foot":
+                if b.ctl is None and not b.player_car and not b.air and b.vx * b.vx + b.vy * b.vy < 1e-8 and abs(b.w) < 1e-4:
+                    rp = getattr(b, "rest_pose", None)           # at rest: after a second of standing still it sleeps
+                    if rp is not None and abs(rp[0] - b.x) + abs(rp[1] - b.y) + abs(rp[2] - b.h) < 1e-4:
+                        b.rest_n = getattr(b, "rest_n", 0) + 1
+                        if b.rest_n >= 60:
+                            b.w = 0.0
+                    else:
+                        b.rest_pose, b.rest_n = (b.x, b.y, b.h), 0
+                else:
+                    b.rest_n = 0
+                if getattr(b, "rest_n", 0) < 60:                  # (anything that moves it - a push, a hit, a blast - wakes it)
                     drive(b, *(b.ctl if b.ctl is not None and not b.player_car else (0.0, 0.0, True)), dt, w)
                     settle(b, w, dt, ev)
                     for e in collide_static(b, w):
