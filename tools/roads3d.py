@@ -543,12 +543,24 @@ def _clip_foot(L, R, covered):
     return None if t is None else (t[0][::-1], t[1][::-1])
 
 
-def _in_hulls(hulls, x, y):
-    """Is (x, y) inside a junction plate (the convex asphalt hull)?"""
-    for x0, y0, x1, y1, H in hulls:
-        if x0 <= x <= x1 and y0 <= y <= y1 and all((H[(k + 1) % len(H)][0] - H[k][0]) * (y - H[k][1]) - (H[(k + 1) % len(H)][1] - H[k][1]) * (x - H[k][0]) >= -0.05 for k in range(len(H))) \
-                or x0 <= x <= x1 and y0 <= y <= y1 and all((H[(k + 1) % len(H)][0] - H[k][0]) * (y - H[k][1]) - (H[(k + 1) % len(H)][1] - H[k][1]) * (x - H[k][0]) <= 0.05 for k in range(len(H))):
-            return True
+def _hull_grid(hulls, c=40.0):
+    """The junction hulls indexed by 40 m cell: (cell -> hulls whose box touches it)."""
+    g = {}
+    for h in hulls:
+        for cx in range(int(h[0] // c), int(h[2] // c) + 1):
+            for cy in range(int(h[1] // c), int(h[3] // c) + 1):
+                g.setdefault((cx, cy), []).append(h)
+    return g
+
+
+def _in_hulls(hulls, x, y, c=40.0):
+    """Is (x, y) inside a junction plate (the convex asphalt hull)?  `hulls` = _hull_grid()."""
+    for x0, y0, x1, y1, H in hulls.get((int(x // c), int(y // c)), ()):
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            n = len(H)
+            side = [(H[(k + 1) % n][0] - H[k][0]) * (y - H[k][1]) - (H[(k + 1) % n][1] - H[k][1]) * (x - H[k][0]) for k in range(n)]
+            if all(v >= -0.05 for v in side) or all(v <= 0.05 for v in side):
+                return True
     return False
 
 
@@ -558,6 +570,7 @@ _TICK = [None]                                             # progress of the slo
 def _corners(out, edges, plates, ribs, trims, cov, hulls):
     """Curb corners at every junction: the pavements of neighbouring roads join in a smooth arc (shared vertices at both
     ends), with asphalt filling the space between the arc and the junction plate."""
+    hulls = _hull_grid(hulls)
     for k_, (node, (lst, maxhw)) in enumerate(plates.items()):
         if _TICK[0] and k_ % 16 == 0:
             _TICK[0](k_ / max(1, len(plates)))
