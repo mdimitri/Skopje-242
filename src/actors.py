@@ -326,7 +326,18 @@ _RAD = [_rad(k) for k in range(len(vehicles.DIMS))]          # radius of the cir
 
 
 LOD_FAR2 = 100.0 ** 2          # beyond this distance from the player cars and walkers are simulated at a third of the rate
+LOD_NEAR2 = 35.0 ** 2          # always full rate this close to the player, whatever the camera shows
 _CELL = 10.0
+
+
+def _lod_far(owner, x, y, d2):
+    """True when (x, y) is off screen: outside the camera's ground rectangle (sim.view_rect) and not right beside the player.
+    No rectangle (street / selfie / cine camera, which can look any way): the old 100 m circle."""
+    sim = owner.sim
+    vr = getattr(sim, "view_rect", None) if sim is not None else None
+    if vr is None:
+        return d2 > LOD_FAR2
+    return d2 > LOD_NEAR2 and not (vr[0] < x < vr[2] and vr[1] < y < vr[3])
 
 
 def _cells(objs):
@@ -841,7 +852,7 @@ class Peds:
         self._tick = getattr(self, "_tick", 0) + 1
         for pi, p in enumerate(self.list):
             dt = dt0
-            if p.mode == "walk" and self._d2(p.x, p.y, fx, fy) > LOD_FAR2:      # far from the player: one step in three, three times as long
+            if p.mode == "walk" and _lod_far(self, p.x, p.y, self._d2(p.x, p.y, fx, fy)):      # far from the player: one step in three, three times as long
                 if (pi + self._tick) % 3:
                     out.append(p)
                     continue
@@ -1827,7 +1838,7 @@ class Traffic:
         gy = w.ground_y
         gy3 = lambda x_, y_, _wy: gy(x_, y_)          # level() for a car off a bridge (wy = -1e9 never reaches a deck)
         for ci, c in enumerate(self.cars):
-            if self._d2(c.x, c.y, fx, fy) > LOD_FAR2:         # far from the player: one step in three, three times as long (nobody sees it)
+            if _lod_far(self, c.x, c.y, self._d2(c.x, c.y, fx, fy)):         # off screen: one step in three, three times as long (nobody sees it)
                 if (ci + tick) % 3:
                     keep.append(c)
                     continue

@@ -1816,6 +1816,7 @@ def main():
             selfie.yaw = cine.yaw
             cn_on = True
         sf_on = sf_on or ch_on or cn_on
+        sim.view_rect = None if (sf_on or cine.active) else (rect[0] - 20, rect[1] - 20, rect[2] + 20, rect[3] + 20)      # actors off this ground rectangle step at a third of the rate
         popups.street = ch_on
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
