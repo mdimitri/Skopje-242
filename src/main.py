@@ -1684,13 +1684,13 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
-        grab_ = cfg["debug_chase"] and (sim.walker is not None if sim.mode == "foot" else sim.mode == "car") and not selfie.active and not show_map and not a.test
+        grab_ = cfg["debug_chase"] and (sim.walker is not None if sim.mode == "foot" else sim.mode == "car") and not selfie.active and not show_map and not a.test and cfg["mouse_mode"] != 0
         if grab_ != mouse_grab:                               # street view on foot: the mouse is captured and turns the avatar
             (rl.disable_cursor if grab_ else rl.enable_cursor)()
             mouse_grab = grab_
-        if cfg["mouse_mode"] or not grab_:
+        if cfg["mouse_mode"] != 2 or not grab_:
             selfie.look_yaw = selfie.look_pitch = 0.0
-        if grab_ and cfg["mouse_mode"] == 0:                  # free-look: the mouse only orbits the camera, keys do all the moving
+        if grab_ and cfg["mouse_mode"] == 2:                  # free-look: the mouse only orbits the camera, keys do all the moving
             md_ = rl.get_mouse_delta()
             selfie.look_yaw = (getattr(selfie, "look_yaw", 0.0) + md_.x * 0.004 * cfg["mouse_sens"] + math.pi) % math.tau - math.pi
             selfie.look_pitch = max(-0.4, min(1.2, getattr(selfie, "look_pitch", 0.0) + md_.y * 0.003 * cfg["mouse_sens"]))

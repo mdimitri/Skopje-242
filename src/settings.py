@@ -21,7 +21,7 @@ AGGRO = [TXT("settings.0007"), TXT("settings.0008"), TXT("settings.0009"), TXT("
 LANGUAGE = [TXT("settings.0011"), TXT("settings.0012"), TXT("settings.0013")]
 VOICES = [TXT("settings.0014"), TXT("settings.0015")]
 
-MOUSE_MODE = ["Слободно гледање", "Управување"]
+MOUSE_MODE = ["Следење", "Управување", "Слободно гледање"]
 
 DEFAULTS = {
     "res": 1, "aa": 1, "scale": 1, "fullscreen": False, "detail": 2,
