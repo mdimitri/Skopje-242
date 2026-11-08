@@ -136,7 +136,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     dmg = 1.0 if p.health > 35 else 0.7           # a wrecked engine is slower
     fx, fy = math.cos(p.h), math.sin(p.h)
     vf = p.vx * fx + p.vy * fy
-    p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt)
+    p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt * (HERO["drv"] if p.player_car else 1.0))
     maxang = STEER / (1.0 + abs(vf) / (8.0 if L_ < 6 else 13.0))
     p.wheel = p.steer * maxang
     om = 0.0
@@ -531,6 +531,10 @@ class Ped:
         return self.mode in ("dead", "air")
 
 
+# multipliers of the chosen hero (set by characters.set_hero from hero_profiles stats); 1.0 = average
+HERO = {"spd": 1.0, "str": 1.0, "end": 1.0, "drv": 1.0}
+
+
 class Walker:
     """The player on foot."""
 
@@ -619,7 +623,7 @@ class Walker:
         if jump and self.z <= 0.001:
             self.vz = 6.4
             self.az += 0.02
-        sp = 9.5 if run else 5.75
+        sp = (9.5 if run else 5.75) * HERO["spd"]
         self.h += turn * (3.4 if not run else 3.0) * dt
         k = min(1.0, 12 * dt)
         if world.hilly and self.z <= 0.001:                      # Tobler's hiking function: slow uphill, a little faster gently downhill
@@ -1087,7 +1091,7 @@ class Peds:
                         p.atk_cd, p.atk_t = rng.uniform(0.8, 1.2), 0.3
                         p.atk_kind = 4 if rng.random() < 0.65 else 5
                         if wk.z < 0.5 and wk.inv_t <= 0:
-                            dmg = vehicles.FIGHT[p.arch][2] * rng.uniform(0.8, 1.3)
+                            dmg = vehicles.FIGHT[p.arch][2] * rng.uniform(0.8, 1.3) * HERO["end"]
                             wk.health -= dmg
                             wk.hurt_t = 0.35
                             if wk.health <= 0:
@@ -2240,7 +2244,7 @@ class Sim:
         wk.atk_cd = 0.62 if kick else 0.38
         wk.combo = 0 if kick else wk.combo + 1
         wk.combo_t = 1.1
-        dmg = 26.0 if kick else 14.0
+        dmg = (26.0 if kick else 14.0) * HERO["str"]
         reach = 1.9 if kick else 1.6
         fx, fy = math.cos(wk.h), math.sin(wk.h)
         best, bd = None, 1e9

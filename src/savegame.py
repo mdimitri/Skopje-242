@@ -61,6 +61,7 @@ def restore(sim, cfg, d):
     import actors
     import characters
     sim.lik = d["lik"]
+    characters.set_hero(sim.lik)
     sim.money = d["money"]
     sim.clock.hour = cfg["hour"] = float(d["hour"])
     sim.stats.update(d.get("stats", {}))

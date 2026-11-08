@@ -169,6 +169,55 @@ def _layout(n, W, H, aspect):
     return cols, rows, cw, ch, gx, gy, top
 
 
+def _hero_panel(sel, card, cw, ch, W, H):
+    """Big window for the hovered hero: large portrait, role / money / quote, 8 stat bars (n/8 blocks), story, goal, ability, weakness."""
+    import hero_profiles as HP
+    hid, name = C.LIKOVI[sel][0], C.LIKOVI[sel][1]
+    pr = HP.profile(hid)
+    pw, ph = min(W - 40, max(560, int(W * 0.5))), H - 150 - 70
+    px = 20 if card[0] + cw / 2 > W / 2 else W - pw - 20             # opens on the side away from the card
+    py = 70
+    fs = max(13, min(19, H // 46))
+    rl.draw_rectangle(px, py, pw, ph, rl.Color(14, 17, 25, 245))
+    rl.draw_rectangle_lines_ex(rl.Rectangle(px, py, pw, ph), 3, GOLD)
+    tw = int(pw * 0.36)
+    t = _portrait(sel)
+    if t:
+        poster.draw_fit(t, px + 10, py + 10, tw - 10, int(ph * 0.5))
+    x2 = px + tw + 14
+    w2 = pw - tw - 28
+    font.draw_text(font.fit(name, fs + 8, w2, True), x2, py + 10, fs + 8, GOLD, bold=True)
+    font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2), x2, py + 14 + fs + 8, fs, rl.Color(200, 205, 215, 255))
+    for k, ln in enumerate(font.wrap(f"„{pr['quote']}“", fs, w2)[:2]):
+        font.draw_text(ln, x2, py + 20 + 2 * fs + 8 + k * (fs + 3), fs, rl.Color(240, 225, 160, 255))
+    y = py + 30 + 4 * fs + 14
+    rowh = (py + int(ph * 0.5) - y) // 8
+    rowh = max(fs + 2, rowh)
+    bw = max(16, (w2 - 150) // 8 - 3)
+    for k, (key, nm) in enumerate(zip(HP.STAT_KEYS, HP.STAT_NAMES)):
+        v = pr["stats"][key]
+        n = round(v / 12.5)                                           # 0..100 -> 0..8 blocks
+        yy = y + k * rowh
+        bad = key == "somnitelnost"                                   # a high value is the bad one
+        col = rl.Color(220, 90, 80, 255) if (bad and v > 60) else rl.Color(90, 200, 120, 255) if not bad else rl.Color(230, 190, 60, 255)
+        font.draw_text(nm, x2, yy, fs, rl.Color(225, 225, 230, 255))
+        for b in range(8):
+            rl.draw_rectangle(x2 + 112 + b * (bw + 3), yy + 2, bw, fs, col if b < n else rl.Color(50, 55, 68, 255))
+        font.draw_text(str(v), x2 + 112 + 8 * (bw + 3) + 6, yy, fs, rl.Color(200, 205, 215, 255))
+    y = py + int(ph * 0.5) + 16
+    tx, tw2 = px + 14, pw - 28
+    for label, txt in (("Приказна", pr["story"]), ("Цел", pr["goal"]),
+                       (pr["ability_name"], pr["ability"]), ("Слабост", pr["weakness"])):
+        font.draw_text(label + ":", tx, y, fs, GOLD, bold=True)
+        y += fs + 3
+        for ln in font.wrap(txt, fs, tw2):
+            if y > py + ph - fs - 4:
+                break
+            font.draw_text(ln, tx, y, fs, rl.Color(225, 225, 230, 255))
+            y += fs + 2
+        y += 5
+
+
 def pick_character(cfg, aud=None, music=None):
     present.off()                         # menus draw straight to the window
 
@@ -266,6 +315,7 @@ def pick_character(cfg, aud=None, music=None):
             nm = font.fit(name, fs, cw - 12, True)
             font.draw_text(nm, cx + (cw - font.measure_text(nm, fs, True)) // 2, cy + ch - 30 + g, fs,
                            GOLD if on else rl.Color(220, 220, 225, 255), bold=True)
+        _hero_panel(sel, pos(sel), cw, ch, W, H)
         name, stats, money = C.LIKOVI[sel][1], C.LIKOVI[sel][2], C.LIKOVI[sel][3]
         by = H - 118
         rl.draw_rectangle(0, by - 8, W, 126, rl.Color(8, 10, 14, 200))

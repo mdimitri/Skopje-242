@@ -2,6 +2,7 @@
 ако некоја недостасува, се црта привремена картичка.  Статистиките се текст; во играта влијае само почетниот паричник."""
 from texts import TXT
 import os
+import hero_profiles
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(ROOT, "assets", "likovi")
@@ -40,10 +41,22 @@ def image_path(i):
     return p if os.path.exists(p) else None
 
 
+def set_hero(i):
+    """Stats -> gameplay multipliers (actors.HERO): speed, fight damage dealt/taken, car steering response."""
+    import actors
+    hid = LIKOVI[i % len(LIKOVI)][0]
+    st = lambda k: hero_profiles.stat(hid, k)
+    actors.HERO["spd"] = 0.8 + 0.4 * st("brzina") / 100          # 10 -> 0.84, 50 -> 1.0, 100 -> 1.2
+    actors.HERO["str"] = 0.6 + 0.8 * st("sila") / 100            # punches and kicks hit harder / softer
+    actors.HERO["end"] = 1.3 - 0.6 * st("izdrzlivost") / 100     # damage taken in fights
+    actors.HERO["drv"] = 0.6 + 0.8 * st("vozenje") / 100         # how fast the steering follows the keys
+
+
 def apply(sim, i):
     """Применува одбран лик на новата игра."""
     sim.lik = i % len(LIKOVI)
+    set_hero(i)
     try:
-        sim.money = LIKOVI[i % len(LIKOVI)][3]
+        sim.money = hero_profiles.profile(LIKOVI[i % len(LIKOVI)][0])["money"]
     except Exception:  # noqa: BLE001
         pass
