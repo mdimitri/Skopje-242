@@ -176,6 +176,7 @@ class Streamer:
         self.tex = tex
         self.max_ground, self.max_mesh = max_ground, max_mesh
         self.lite_keys = set()
+        self.far_keys = set()                                  # demo far ring: meshes without roads
         self.ground = {}      # key -> [rt, last_used]
         self.meshes = {}      # key -> [{mat: model}, last_used]
         self.bad = set()
@@ -229,15 +230,18 @@ class Streamer:
         self.baked += 1
         self.bake_ms = (time.perf_counter() - t0) * 1000
 
-    def _load_meshes(self, key, lite=False):
+    def _load_meshes(self, key, lite=False, far=False):
         ch = self.world.chunks.get(key)
         (self.lite_keys.add if lite else self.lite_keys.discard)(key)
+        (self.far_keys.add if far else self.far_keys.discard)(key)
         out = {}
         if ch:
             for mat, (off, n) in ch["m"].items():
                 pos, uv, col = self.world.mesh_arrays(off, n)
                 if self.world.broken:
                     pos = self.world.hide_broken(pos, ch.get("bb"))
+                if far and mat == 3:
+                    continue                                     # far ring (demo): no road meshes, the overview map shows them
                 if mat == 6 and ("graf" not in self.tex or lite):
                     continue                                     # atlas failed: no decals rather than facade-textured ones
                 m = gl3d.make_model(pos, uv, col)
@@ -285,14 +289,14 @@ class Streamer:
             return e[0]
         return None
 
-    def update(self, wanted, want_meshes, budget_ms=8.0, lite=()):
+    def update(self, wanted, want_meshes, budget_ms=8.0, lite=(), far=()):
         """lite: keys loaded at low quality (no facade/road detail, no graffiti) until they leave the set, then reloaded in full."""
         self.frame += 1
         t0 = time.perf_counter()
         n = 0
         for key in wanted:
-            need_g = key not in self.ground and key not in self.bad
-            up = key in self.meshes and key in self.lite_keys and key not in lite           # came close: swap the low-quality meshes for full ones
+            need_g = key not in self.ground and key not in self.bad and key not in far      # far ring: buildings only, no ground bake
+            up = key in self.meshes and ((key in self.lite_keys and key not in lite) or (key in self.far_keys and key not in far))           # came close: swap the low-quality meshes for full ones
             need_m = want_meshes and (key not in self.meshes or up) and key not in self.bad and key in self.world.chunks
             if key in self.ground:
                 self.ground[key][1] = self.frame
@@ -311,7 +315,7 @@ class Streamer:
                     if up:
                         for m in self.meshes.pop(key)[0].values():
                             gl3d.free_model(m)
-                    self._load_meshes(key, key in lite)
+                    self._load_meshes(key, key in lite, key in far)
             except Exception as e:  # noqa: BLE001 - never let one chunk kill the game
                 self.errors += 1
                 self.bad.add(key)

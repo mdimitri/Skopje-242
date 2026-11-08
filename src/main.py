@@ -1837,10 +1837,12 @@ def main():
                 return math.hypot(max(k_[0] * S - cine.hx, 0, cine.hx - (k_[0] + 1) * S), max(k_[1] * S - cine.hz, 0, cine.hz - (k_[1] + 1) * S))
             wanted = [k_ for k_ in wanted if gap_c(k_) < far_c]
             lite_ = {k_ for k_ in wanted if gap_c(k_) >= near_c}
+            far_c_set = {k_ for k_ in lite_ if gap_c(k_) >= cine.VIEW_MID}
+            streamer.max_mesh = max(streamer.max_mesh, 2400)          # the far ring keeps a lot of low-quality building meshes
             lod = True
         else:
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
-        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
+        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_, far_c_set if cn_on else ())
         if lod:
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
@@ -1855,7 +1857,7 @@ def main():
             if sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
                 if cn_on:
-                    cine.sky_layers(cam, sw, sh, sim.clock.dark, sim.clock.hour)
+                    guard.run("cine_sky", cine.sky_layers, cam, sw, sh, sim.clock.dark, sim.clock.hour)
                 guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1 if not cn_on else 3.0, True)
                 if cn_on:
                     guard.run("heli", cine.draw_heli, cam, sim.clock.dark)

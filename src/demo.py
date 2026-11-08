@@ -118,7 +118,8 @@ class Route:
 
 class Demo:
     VIEW_NEAR = 300.0          # full detail within this many metres of the helicopter, low quality (no facade/road detail) beyond
-    VIEW_FAR = 720.0
+    VIEW_MID = 900.0           # beyond this: buildings only, no ground bake, no roads (the overview map shows them)
+    VIEW_FAR = 2880.0          # 4x the first version
 
     def __init__(self, world, selfie):
         self.w = world
@@ -273,6 +274,7 @@ class Demo:
             rl.end_mode_3d()
 
     def sky_layers(self, cam, sw, sh, dark, hour):
+        draw_sun(cam, sw, sh, hour, dark)
         draw_mountains(cam, self.yaw, sw, sh, dark, hour)
 
     def haze(self, cam, sw, sh, dark, hour):
@@ -350,6 +352,28 @@ def draw_mountains(cam, yaw, sw, sh, dark, hour):
             if snow and e > rng[2] * 0.62:
                 rl.draw_rectangle(x, int(y), 5, int(min(hy - y, (e - rng[2] * 0.62) * f * 0.03 + 3)), rl.Color(*cap, 255))
     return hy
+
+
+def draw_sun(cam, sw, sh, hour, dark):
+    """The sun disc where the real sun is (same sun_at() as the shadows): behind the scene, so roofs and ridges cover it."""
+    from sunshadow import sun_at
+    L, e = sun_at(hour)
+    if e < -0.04:
+        return
+    fx, fy, fz = cam.target.x - cam.position.x, cam.target.y - cam.position.y, cam.target.z - cam.position.z
+    n = math.sqrt(fx * fx + fy * fy + fz * fz) or 1.0
+    if (fx * L[0] + fy * L[1] + fz * L[2]) / n < 0.05:
+        return
+    sp = rl.get_world_to_screen(V3(cam.position.x + L[0] * 5000, cam.position.y + L[1] * 5000, cam.position.z + L[2] * 5000), cam)
+    vis = max(0.0, min(1.0, (e + 0.04) / 0.08))
+    low = max(0.0, min(1.0, 1.0 - e / 0.35))
+    col = _mix((255, 246, 222), (255, 170, 90), low)
+    x, y = int(sp.x), int(sp.y)
+    rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+    rl.draw_circle_gradient(rl.Vector2(x, y), int(sh * 0.45), rl.Color(*col, int(70 * vis)), rl.Color(*col, 0))
+    rl.draw_circle_gradient(rl.Vector2(x, y), int(sh * 0.12), rl.Color(*col, int(150 * vis)), rl.Color(*col, 0))
+    rl.end_blend_mode()
+    rl.draw_circle(x, y, max(6, int(sh * 0.028)), rl.Color(255, 252, 235, int(255 * vis)))
 
 
 def draw_haze(cam, yaw, sw, sh, dark, hour):
