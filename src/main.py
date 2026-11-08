@@ -104,7 +104,7 @@ import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint   # noqa: E402
 from render import LOD_PPM, Renderer   # noqa: E402
-from ui import Loader, fatal_screen   # noqa: E402
+from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
 
 LOG_DIR = os.path.join(ROOT, "logs")
@@ -222,6 +222,16 @@ def _stale(path, osm):
             sys.modules.pop(m, None)
 
 
+def terrain_ok(osm):
+    """terrain.npy exists AND matches the current world box (a file from an older, smaller box made a silently flat city)."""
+    try:
+        import numpy as np
+        g = np.load(os.path.join(osm, "terrain.npy"), mmap_mode="r")
+        return g.shape == (int(round(2 * geo_mod.HY / 10.0)) + 1, int(round(2 * geo_mod.HX / 10.0)) + 1)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def plan_needs(a):
     """What has to happen before the game can start? -> {'osm': bool, 'dem': bool, 'build': bool}"""
     if a.demo or a.world:
@@ -238,7 +248,7 @@ def plan_needs(a):
     retry = bool(box) and not box.get("complete", True) and time.time() - box.get("t", 0) > 3600
     extras = all(os.path.exists(os.path.join(osm, f)) for f in ("rail.json", "signals.json"))   # trains + real lights
     n = {"osm": a.refresh or not have or not box_ok or retry or (not extras and bool(box) and box.get("complete", True)),
-         "dem": not os.path.exists(os.path.join(osm, "terrain.npy"))}
+         "dem": not terrain_ok(osm)}
     n["build"] = n["osm"] or n["dem"] or not os.path.isdir(real) or _stale(real, osm)
     return n
 
@@ -274,6 +284,13 @@ def start_radio_fetch(loader):
     threading.Thread(target=reader, daemon=True).start()
 
 
+DOWNLOAD_ROUNDS = 8
+
+
+class DownloadError(Exception):
+    pass
+
+
 def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
     """Load the world; download what is missing; on corruption rebuild; if that fails fall back to the demo city."""
     import shutil
@@ -305,43 +322,72 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
             loader.warn = f"{e}"
             log(f"[world] {e}")
             loader.ensure_stage("build", 30)
-    if not demo_only:
-        if need.get("osm"):
-            loader.begin("osm")
-            osm_src = os.environ.get("SK242_SOURCE") or settings_mod.MAP_SOURCE_IDS[settings_mod.Settings()["osm_source"] % 3]
-            # the game needs the whole map: an incomplete download is resumed, switching routes, before anything is built
-            order = [osm_src] + [s for s in ("geofabrik", "overpass", "auto") if s != osm_src]
-            for k, route in enumerate(order):
-                log(f"[osm] download round {k + 1} via {route}")
-                rc = run_tool(["tools/fetch_osm.py", "--source", route], loader, "osm", max_sec=62 * 60)
-                if rc == 0:
-                    break
-            if rc == 2:
-                loader.warn = T.PARTIAL
-            loader.f["osm"] = 1.0
-        if need.get("dem") or (not os.path.exists(os.path.join(osm, "terrain.npy")) and need.get("osm")):
-            loader.begin("dem")
-            run_tool(["tools/fetch_terrain.py"], loader, "dem", max_sec=20 * 60)       # optional: flat terrain if it fails
-            loader.f["dem"] = 1.0
-        if os.path.exists(os.path.join(osm, "roads.json")):
+    if demo_only:
+        loader.warn = T.FALLBACK_DEMO
+        if not os.path.isdir(demo):
             loader.ensure_stage("build", 30)
             loader.begin("build")
-            if run_tool(["tools/build_world.py", "--src", osm, "--out", real], loader, "build", max_sec=3600) == 0:
-                loader.build_finished()
-                try:
-                    return attempt(real)
-                except WorldError as e:
-                    log(f"[world] rebuild unusable: {e}")
-    loader.warn = T.FALLBACK_DEMO
-    log("[world] falling back to demo city")
-    if not os.path.isdir(demo):
+            if run_tool(["tools/make_synthetic_osm.py"], loader, "build") != 0 or run_tool(
+                    ["tools/build_world.py", "--src", os.path.join(ROOT, "data", "osm_demo"), "--out", demo], loader, "build") != 0:
+                raise WorldError("could not build any world (see logs/game.log)")
+            loader.build_finished(record=False)
+        return attempt(demo)
+    # the real map only: a missing piece is fetched again (both downloaders resume from their caches), never replaced by a fake city
+    osm_src = os.environ.get("SK242_SOURCE") or settings_mod.MAP_SOURCE_IDS[settings_mod.Settings()["osm_source"] % 3]
+    order = [osm_src] + [s for s in ("geofabrik", "overpass", "auto") if s != osm_src]
+
+    def osm_complete():
+        try:
+            bx = json.load(open(os.path.join(osm, "box.json")))
+        except Exception:  # noqa: BLE001
+            return False
+        return bool(bx.get("complete")) and bx.get("hx") == geo_mod.HX and bx.get("hy") == geo_mod.HY and \
+            os.path.exists(os.path.join(osm, "roads.json"))
+
+    dem_file = os.path.join(osm, "terrain.npy")
+    if not terrain_ok(osm):
+        try:
+            os.remove(dem_file)                                       # wrong box: fetch it again
+        except OSError:
+            pass
+    todo_osm = bool(need.get("osm")) or not osm_complete()
+    todo_dem = not terrain_ok(osm)
+    for rnd in range(1, DOWNLOAD_ROUNDS + 1):
+        if not (todo_osm or todo_dem):
+            break
+        if rnd > 1:
+            for left in range(30 * min(rnd - 1, 4), 0, -1):          # growing pause, the splash says why it waits
+                loader.warn = T.RETRYING.format(n=rnd, total=DOWNLOAD_ROUNDS, s=left)
+                loader.draw(True)
+                time.sleep(1)
+                if rl.window_should_close():
+                    raise SystemExit(0)
+        loader.warn = T.RETRYING_NOW.format(n=rnd, total=DOWNLOAD_ROUNDS) if rnd > 1 else ""
+        if todo_osm:
+            loader.begin("osm")
+            route = order[(rnd - 1) % len(order)]
+            log(f"[osm] download round {rnd} via {route}")
+            run_tool(["tools/fetch_osm.py", "--source", route], loader, "osm", max_sec=62 * 60)
+            todo_osm = not osm_complete()
+        if todo_dem:
+            loader.begin("dem")
+            run_tool(["tools/fetch_terrain.py"], loader, "dem", max_sec=20 * 60)
+            todo_dem = not terrain_ok(osm)
+    if todo_osm or todo_dem:
+        raise DownloadError(T.DL_FAILED)
+    loader.warn = ""
+    loader.f["osm"] = loader.f["dem"] = 1.0
+    if need.get("build") or not os.path.isdir(real) or need.get("osm") or need.get("dem"):
         loader.ensure_stage("build", 30)
         loader.begin("build")
-        if run_tool(["tools/make_synthetic_osm.py"], loader, "build") != 0 or run_tool(
-                ["tools/build_world.py", "--src", os.path.join(ROOT, "data", "osm_demo"), "--out", demo], loader, "build") != 0:
-            raise WorldError("could not build any world (see logs/game.log)")
-        loader.build_finished(record=False)
-    return attempt(demo)
+        if run_tool(["tools/build_world.py", "--src", osm, "--out", real], loader, "build", max_sec=3600) != 0:
+            raise DownloadError(T.BUILD_FAILED)
+        loader.build_finished()
+    try:
+        return attempt(real)
+    except WorldError as e:
+        log(f"[world] {e}")
+        raise DownloadError(T.BUILD_FAILED)
 
 
 # ----------------------------------------------------------------------- main
@@ -452,7 +498,17 @@ def main():
         loader.music = loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
-    world = ensure_world(a.world, loader, a.demo, a.refresh, need)
+    while True:
+        try:
+            world = ensure_world(a.world, loader, a.demo, a.refresh, need)
+            break
+        except DownloadError as e:                     # never a fake city: say what is wrong and offer another try
+            log(f"[world] {e}")
+            if not retry_screen(T.DL_TITLE, [str(e)]):
+                raise SystemExit(1)
+            need = plan_needs(a)
+            need["osm"] = need["build"] = True
+            loader.warn = ""
     log(f"[game] world: {len(world.buildings)} buildings, {len(world.roads)} roads, {len(world.edges)} edges, "
         f"{len(world.trees)} trees, {len(world.parked)} parked cars")
 

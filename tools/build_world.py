@@ -1215,8 +1215,10 @@ def main():
         T = terrain_mod.load(tfile, HX, HY)
         print(f"[build] terrain: {tfile} (range {float(T.g.min()):+.0f} .. {float(T.g.max()):+.0f} m)")
         real_terrain = True
-    except Exception as ex:  # noqa: BLE001 - the city still builds, just flat
-        print(f"[build] terrain: none ({ex}) - FLAT city. Run tools/fetch_terrain.py for hills and slopes")
+    except Exception as ex:  # noqa: BLE001
+        if "--allow-flat" not in sys.argv:
+            raise SystemExit(f"[build] terrain missing or for another box ({ex}); run tools/fetch_terrain.py --force")
+        print(f"[build] terrain: none ({ex}) - FLAT city (--allow-flat)")
         T = terrain_mod.flat(HX, HY)
         real_terrain = False
 

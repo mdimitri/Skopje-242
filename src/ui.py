@@ -672,3 +672,23 @@ def fatal_screen(title, lines, seconds=0):
         rl.end_drawing()
         if seconds and time.time() - t0 > seconds:
             break
+
+
+def retry_screen(title, lines):
+    """An error with a way out: Enter = try again (True), Esc / closing the window = quit (False)."""
+    while not rl.window_should_close():
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(40, 18, 18, 255))
+        font.draw_text(mk(title), 60, 60, 36, rl.Color(255, 120, 100, 255))
+        y = 120
+        for ln in lines:
+            for part in font.wrap(mk(ln), 18, 1100):
+                font.draw_text(part, 60, y, 18, rl.Color(230, 230, 230, 255))
+                y += 26
+        font.draw_text(T.DL_RETRY_KEYS, 60, y + 20, 18, rl.Color(200, 200, 200, 255))
+        rl.end_drawing()
+        if rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_KP_ENTER):
+            return True
+        if rl.is_key_pressed(rl.KEY_ESCAPE):
+            return False
+    return False

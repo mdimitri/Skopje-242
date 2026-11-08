@@ -107,3 +107,11 @@ NOTE = {
 PARTIAL = TXT("strings.0086")
 FALLBACK_DEMO = TXT("strings.0087")
 CLOSE_TO_EXIT = TXT("strings.0088")
+
+# ------------------------------------------------------------------ real map only (no fake city); literals here because text/ is edited by hand
+RETRYING = "Мапата сè уште не е целосно преземена – повторен обид {n}/{total} за {s} сек…"
+RETRYING_NOW = "Го дополнувам она што недостасува – обид {n}/{total}…"
+DL_TITLE = "Мапата на Скопје не е преземена"
+DL_FAILED = "Не успеав да ја преземам целата мапа или теренот (серверите не одговараат или нема интернет). Преземеното е зачувано и ќе продолжи од каде застанало."
+BUILD_FAILED = "Градот не можеше да се изгради од преземените податоци (види logs/game.log)."
+DL_RETRY_KEYS = "Enter – обиди се повторно    Esc – излез"
