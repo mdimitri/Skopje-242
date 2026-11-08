@@ -169,6 +169,16 @@ def _layout(n, W, H, aspect):
     return cols, rows, cw, ch, gx, gy, top
 
 
+def _grad(t):
+    """Red (t=0) -> orange -> yellow (0.5) -> green (1)."""
+    stops = ((0.0, (214, 52, 48)), (0.25, (232, 128, 46)), (0.5, (238, 208, 56)), (0.75, (150, 205, 70)), (1.0, (62, 196, 104)))
+    for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+        if t <= t1:
+            f = (t - t0) / (t1 - t0)
+            return rl.Color(*(int(a + (b - a) * f) for a, b in zip(c0, c1)), 255)
+    return rl.Color(*stops[-1][1], 255)
+
+
 def _panel_rect(W, H):
     pw = int(W * 0.5)
     return W - pw - 16, 102, pw, H - 102 - 34
@@ -209,9 +219,8 @@ def _hero_panel(sel, W, H):
     rowh = fs + 5
     for key, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES):
         v = pr["stats"][key]
-        n = round(v / 12.5)                                               # 0..100 -> 0..8 blocks
-        bad = key == "somnitelnost"                                       # for Сомнителност a high value is the bad one
-        col = rl.Color(230, 190, 60, 255) if (bad and v <= 60) else rl.Color(220, 90, 80, 255) if bad else rl.Color(90, 200, 120, 255)
+        n = max(1, -(-v * 8 // 100))                                      # 0..100 -> 1..8 blocks (rounded up, never empty)
+        col = _grad((n - 1) / 7.0)                                        # 1 block red ... half yellow ... full green
         font.draw_text(nm, x2, y, fs, white)
         for b in range(8):
             rl.draw_rectangle(x2 + lw + b * (bw + 3), y + 2, bw, fs, col if b < n else rl.Color(50, 55, 68, 255))
@@ -257,6 +266,7 @@ def pick_character(cfg, aud=None, music=None):
 
     last = sel
     pick_character._armed = False
+    pick_character.back = False
     t_open = time.time()
     while True:
         armed = time.time() - t_open > 0.35 and not rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT) or getattr(pick_character, "_armed", False)
@@ -295,6 +305,10 @@ def pick_character(cfg, aud=None, music=None):
         if armed and rl.is_key_pressed(rl.KEY_L):
             pick_character.load = True
             return done(sel)
+        if armed and (rl.is_key_pressed(rl.KEY_BACKSPACE) or rl.is_key_pressed(rl.KEY_ESCAPE)
+                      or (rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 450 <= m.x < W - 240 and 56 <= m.y < 96)):
+            pick_character.back = True                                  # back to the main menu: nothing is chosen or saved
+            return False
         if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 230 <= m.x < W - 20 and 56 <= m.y < 96:
             pick_character.load = True
             return done(sel)
@@ -333,6 +347,8 @@ def pick_character(cfg, aud=None, music=None):
                 font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, True)) // 2, cy + ch - 40 + g + k * (fs + 2), fs,
                                GOLD if on else rl.Color(220, 220, 225, 255), bold=True)
         _hero_panel(sel, W, H)
+        rl.draw_rectangle_rounded(rl.Rectangle(W - 450, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
+        font.draw_text("← " + BACK, W - 434, 64, 22, GOLD, bold=True)
         rl.draw_rectangle_rounded(rl.Rectangle(W - 230, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
         font.draw_text(TXT("menu.0053"), W - 214, 64, 22, GOLD, bold=True)
         font.draw_text(TXT("menu.0054"), 24, H - 26, 16, rl.Color(150, 150, 160, 255))
@@ -531,6 +547,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             pick_character.load = False         # new game: choose who you are
             if pick_character(cfg, aud, music):
                 return "quit"
+            if pick_character.back:
+                continue                        # Назад: the title menu again
             cfg.save()
             if not pick_character.load:
                 return "play"

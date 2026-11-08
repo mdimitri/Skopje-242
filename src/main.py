@@ -1645,8 +1645,9 @@ def main():
                     if res_ == "chars":
                         if menu_mod.pick_character(cfg, aud):
                             break
-                        savegame.new_character(sim, cfg["lik"])
-                        hud.set_banner(TXT("main.0038"), 3.0)
+                        if not menu_mod.pick_character.back:
+                            savegame.new_character(sim, cfg["lik"])
+                            hud.set_banner(TXT("main.0038"), 3.0)
                     elif res_.startswith("load"):
                         d_ = savegame.read(int(res_[4:]))
                         if d_:
@@ -1658,8 +1659,9 @@ def main():
                 want_chars = False
                 if menu_mod.pick_character(cfg, aud):
                     break
-                savegame.new_character(sim, cfg["lik"])
-                hud.set_banner(TXT("main.0040"), 3.0)
+                if not menu_mod.pick_character.back:
+                    savegame.new_character(sim, cfg["lik"])
+                    hud.set_banner(TXT("main.0040"), 3.0)
             if rl.is_key_pressed(rl.KEY_R) and sim.mode == "car":
                 p = world.nearest_drive_point(sim.car.x, sim.car.y)
                 if p:
