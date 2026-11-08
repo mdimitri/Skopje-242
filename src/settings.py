@@ -35,6 +35,8 @@ AGGRO = [TXT("settings.0007"), TXT("settings.0008"), TXT("settings.0009"), TXT("
 LANGUAGE = [TXT("settings.0011"), TXT("settings.0012"), TXT("settings.0013")]
 VOICES = [TXT("settings.0014"), TXT("settings.0015")]
 
+SESSION_ONLY = ("debug_chase", "debug")   # never saved: every launch starts in the top-down view
+
 MOUSE_MODE = ["Следење", "Управување", "Слободно гледање"]
 
 DEFAULTS = {
@@ -52,7 +54,7 @@ class Settings(dict):
         try:
             with open(PATH, "r", encoding="utf-8") as f:
                 for k, v in json.load(f).items():
-                    if k in DEFAULTS and type(v) is type(DEFAULTS[k]):
+                    if k in DEFAULTS and k not in SESSION_ONLY and type(v) is type(DEFAULTS[k]):
                         self[k] = v
         except Exception:  # noqa: BLE001 - first run or unreadable file: defaults
             pass
@@ -60,7 +62,7 @@ class Settings(dict):
     def save(self):
         try:
             with open(PATH + ".tmp", "w", encoding="utf-8") as f:
-                json.dump(dict(self), f, indent=1)
+                json.dump({k: v for k, v in self.items() if k not in SESSION_ONLY}, f, indent=1)
             os.replace(PATH + ".tmp", PATH)
         except Exception:  # noqa: BLE001
             pass
