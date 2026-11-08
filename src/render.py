@@ -20,6 +20,9 @@ WHITE = rl.WHITE
 V3 = rl.Vector3
 UP = V3(0, 1, 0)
 ONE = V3(1, 1, 1)
+_ZERO = V3(0, 0, 0)
+from raylib import rl as _RL
+_DM = _RL.DrawModel                                # straight to the C function: skips pyray's per-call wrapper (about a third of the cost of a draw call)
 LOD_PPM = 2.4
 
 
@@ -217,7 +220,7 @@ class Renderer:
                     for cy in range(y0, y1 + 1):
                         gm = st.get_ground_model((cx, cy))
                         if gm is not None:
-                            rl.draw_model(gm, V3(0, 0, 0), 1.0, WHITE)
+                            _DM(gm, _ZERO, 1.0, WHITE)
                             drawn += 1
                         else:
                             missing = True
@@ -232,7 +235,7 @@ class Renderer:
                     if bb is None or bb[2] < rect[0] or bb[0] > rect[2] or bb[3] < rect[1] or bb[1] > rect[3]:
                         continue
                     for m in models.values():
-                        rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                        _DM(m, _ZERO, 1.0, WHITE)
                     nm += 1
                     _last_touch = st.meshes[key]
                     _last_touch[1] = st.frame
@@ -391,7 +394,7 @@ class Renderer:
                     Mw = rl.matrix_multiply(Mw, rl.matrix_translate(x, gy0 + 1.0 + 0.15 * math.sin(t * 3 + x), z))
                     old_t = m.transform
                     m.transform = Mw
-                    rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+                    _DM(m, _ZERO, 1.0, WHITE)
                     m.transform = old_t
                 else:
                     rl.draw_model_ex(m, V3(x, gy0 + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
@@ -518,7 +521,7 @@ class Renderer:
                     Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
                     old_t = wm.transform
                     wm.transform = Mh
-                    rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
+                    _DM(wm, _ZERO, 1.0, WHITE)
                     wm.transform = old_t
             sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
         for kx, kz, kh in sim.kiosks:
@@ -533,7 +536,7 @@ class Renderer:
                                                       rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
             old = m.transform
             m.transform = M                                  # tilt with the slope: roll, pitch, heading, then move
-            rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
+            _DM(m, _ZERO, 1.0, tint)
             m.transform = old
             fw = self.front_wheels.get(kind)
             if fw is None:
@@ -544,7 +547,7 @@ class Renderer:
             old = wm.transform
             for sd in (-hz, hz):                             # front wheels turned about their own centres by the steering angle
                 wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_y(-ang), rl.matrix_translate(wx, wr, sd)), M)
-                rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
+                _DM(wm, _ZERO, 1.0, tint)
             wm.transform = old
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
@@ -561,7 +564,7 @@ class Renderer:
                                                                           rl.matrix_rotate_y(-b.h)), rl.matrix_translate(b.x, gy, b.y)))
             old = m.transform
             m.transform = M
-            rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+            _DM(m, _ZERO, 1.0, WHITE)
             m.transform = old
         for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
@@ -570,7 +573,7 @@ class Renderer:
                     M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
                     old = pm.transform
                     pm.transform = M
-                    rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
+                    _DM(pm, _ZERO, 1.0, WHITE)
                     pm.transform = old
                 else:
                     rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)

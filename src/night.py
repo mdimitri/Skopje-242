@@ -83,19 +83,19 @@ class Night:
 
     def _glow(self, cam, x, z, y, rad_px, col, a):
         gy = y + self.w.ground_y(x, z)
-        if not self._seen(cam, x, z, gy):
-            return
         sp = rl.get_world_to_screen(V3(x, gy, z), cam)
         if self.street:
             p, q = cam.position, cam.target
             if (x - p.x) * (q.x - p.x) + (gy - p.y) * (q.y - p.y) + (z - p.z) * (q.z - p.z) <= 0:
                 return                                         # behind the camera
             rad_px *= self.street / max(2.0, math.sqrt((x - p.x) ** 2 + (gy - p.y) ** 2 + (z - p.z) ** 2))
-        if -rad_px < sp.x < rl.get_screen_width() + rad_px and -rad_px < sp.y < rl.get_screen_height() + rad_px:
-            rl.draw_circle_gradient(rl.Vector2(sp.x, sp.y), rad_px, _col(col[0], col[1], col[2], a), _col(0, 0, 0, 0))
+        if -rad_px < sp.x < self.sw_ + rad_px and -rad_px < sp.y < self.sh_ + rad_px:
+            if self._seen(cam, x, z, gy):                      # the costly occlusion ray only for glows that are on screen
+                rl.draw_circle_gradient(rl.Vector2(sp.x, sp.y), rad_px, _col(col[0], col[1], col[2], a), _col(0, 0, 0, 0))
 
     def draw(self, cam, rect, ppm, sim, dark, t, sw, sh, street=False):
         cp = cam.position
+        self.sw_, self.sh_ = sw, sh
         self.occ = [(c.x, c.y, vehicles.DIMS[c.kind][1] / 2, self.w.ground_y(c.x, c.y) + vehicles.DIMS[c.kind][4])
                     for c in list(sim.traffic.cars) + [b for b in sim.bodies if b.alive and not b.exploded]
                     if (c.x - cp.x) ** 2 + (c.y - cp.z) ** 2 < 3600.0]
