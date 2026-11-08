@@ -1777,9 +1777,9 @@ def main():
         # ------------------------------------------------ camera
         speed = math.hypot(fvx, fvy)
         if sim.mode == "car":
-            tgt_ppm = (rl.get_screen_width() / 100.0) * (10.5 - 2.3 * min(speed / 32.0, 1.0)) / 10.5 * user_zoom * cfg["zoom_car"]   # zoom 1 = 100 m of ground across the screen, whatever its size
+            tgt_ppm = (sw / 100.0) * (10.5 - 2.3 * min(speed / 32.0, 1.0)) / 10.5 * user_zoom * cfg["zoom_car"]   # zoom 1 = 100 m of ground across the frame (sw = the frame buffer width, not the window)
         else:
-            tgt_ppm = (rl.get_screen_width() / 60.0) * user_zoom * cfg["zoom_walk"]                                                 # zoom 1 = 60 m across
+            tgt_ppm = (sw / 60.0) * user_zoom * cfg["zoom_walk"]                                                 # zoom 1 = 60 m across
         tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)
         sim.view_r = max(150.0, min(300.0, 1250.0 / max(ppm, 1.0) + 60.0))      # parked cars are placed this far round the camera

@@ -39,6 +39,9 @@ class Row:
 TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003"), "Дебаг"]   # Игра · Градот · Луѓето · Графика · Звук · Дебаг
 
 
+_cfg = None
+
+
 def _rows(in_game, slots=(), settings_only=False):
     """-> list of (tab, Row)."""
     pct = lambda v: f"{int(v * 100)}%"
@@ -46,7 +49,7 @@ def _rows(in_game, slots=(), settings_only=False):
     spd = [TXT("menu.0007"), "0,25x", "0,5x", "1x", "2x", "4x", "8x", "16x"]
     def mz(metres, floor):                     # "1,00x · 60×34 м": the ground the screen shows at this zoom (ppm as in main.py's camera, car standing still)
         def f(v):
-            w, h = rl.get_screen_width(), rl.get_screen_height()
+            w, h = S.RESOLUTIONS[_cfg["resolution"]] if _cfg is not None else (rl.get_screen_width(), rl.get_screen_height())   # the frame is drawn at the chosen resolution
             ppm = max(w / metres * v, floor)
             return f"{v:.2f}x · {w / ppm:.0f}×{h / ppm:.0f} м".replace(".", ",")
         return f
@@ -81,8 +84,8 @@ def _rows(in_game, slots=(), settings_only=False):
         (5, H("Дебаг")),
         (5, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
         (5, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
-        (3, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
-        (3, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
+        (5, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
+        (5, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
         (3, H("Ознаки")),
         (3, Row("toggle", TXT("menu.0014"), "labels")),
         (3, H("Смог")),
@@ -472,6 +475,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 return "play"
             break                               # L on the character screen: the load slots below
     slots = [savegame.summary(n) for n in range(1, savegame.SLOTS + 1)]
+    global _cfg
+    _cfg = cfg
     allrows = _rows(in_game, slots, settings_only)
     rows = [r for t, r in allrows if t == tab]
     sel = _first(rows)
