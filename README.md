@@ -20,11 +20,13 @@
 
 ## Како никнува градот
 
-Истото место (Јане Сандански), од голата земја до ноќен град, од лево на десно:
+Истото место (Јане Сандански), од голата земја до ноќен град, во седум чекори:
 
-| 1 · Терен | 2 · OSM мапа | 3 · Патишта | 4 · Згради | 5 · Луѓе и коли | 6 · Светла |
-|---|---|---|---|---|---|
-| ![Терен](docs/screenshots/build_1_terrain.jpg) | ![OSM мапа](docs/screenshots/build_2_osm.jpg) | ![Патишта и инфраструктура](docs/screenshots/build_3_roads.jpg) | ![Згради](docs/screenshots/build_4_buildings.jpg) | ![Актери](docs/screenshots/build_5_actors.jpg) | ![Осветлување](docs/screenshots/build_6_lighting.jpg) |
+<p align="center"><img src="docs/screenshots/build_up.gif" width="900" alt="Градот никнува: терен, OSM, патишта, згради, луѓе, светла"></p>
+
+| 1 · Терен | 2 · OSM мапа | 3 · Голи патишта | 4 · Патишта и инфраструктура | 5 · Згради | 6 · Луѓе и коли | 7 · Светла |
+|---|---|---|---|---|---|---|
+| ![Терен](docs/screenshots/build_1_terrain.jpg) | ![OSM мапа](docs/screenshots/build_2_osm.jpg) | ![Голи патишта](docs/screenshots/build_3_roads_bare.jpg) | ![Патишта и инфраструктура](docs/screenshots/build_4_roads_infra.jpg) | ![Згради](docs/screenshots/build_5_buildings.jpg) | ![Луѓе и коли](docs/screenshots/build_6_actors.jpg) | ![Светла](docs/screenshots/build_7_lighting.jpg) |
 
 ## Содржина
 
