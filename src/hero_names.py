@@ -1,0 +1,28 @@
+"""Full hero display names (with the personal name), taken from the text/ files of the other PC.  text/ in git still has
+the short names and must not be edited by code; characters.LIKOVI uses these first."""
+NAMES = {
+    "kumplung": "Чичко Кумплунг",
+    "maca": "Певаљка Маца",
+    "mile": "Таксист Миле",
+    "stojan": "Студент Стојан",
+    "influenser": "Инфлуенсер Давид",
+    "influenserka": "Инфлуенсерка Сара",
+    "tetkica": "Теткица Весна",
+    "baba": "Баба Велика",
+    "dedo": "Дедо Димче",
+    "pandur": "Пандур Бобан",
+    "doktor": "Доктор Владимир",
+    "mali": "Мали",
+    "radnik": "Работник Момчило",
+    "burek": "Бурек-мајстор Благоја",
+    "boza": "Боза-мајстор Љупчо",
+    "fitka": "Фит-женска Теа",
+    "bilder": "Билдер Дарко",
+    "shmizla": "Шмизла Кики",
+    "palavko": "Палавко",
+    "srednoskolec": "Средношколец Михаил",
+    "vojnik": "Војник Сашо",
+    "navivac": "Навивач Дуле",
+    "administratorka": "Административка Славица",
+    "nastavnica": "Наставничка Снежана",
+}

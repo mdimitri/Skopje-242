@@ -3,6 +3,7 @@
 from texts import TXT
 import os
 import hero_profiles
+import hero_names
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(ROOT, "assets", "likovi")
@@ -34,6 +35,9 @@ LIKOVI = [
     ("administratorka", TXT("characters.0045"), TXT("characters.0046"), 280),
     ("nastavnica", TXT("characters.0047"), TXT("characters.0048"), 260),
 ]
+
+
+LIKOVI = [(h, hero_names.NAMES.get(h, n), st, m) for h, n, st, m in LIKOVI]      # full names (Инфлуенсер Давид ...)
 
 
 def image_path(i):
