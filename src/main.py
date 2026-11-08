@@ -1592,10 +1592,22 @@ def main():
                     res_ = menu_mod.run(cfg, apply_cfg, True, save_fn=lambda n_: savegame.save(sim, cfg, n_))
                     if res_ == "quit":
                         break
-                    if res_ == "mainmenu":                 # relaunch: the fresh process opens on the title menu
-                        import updater
-                        updater.restart()
-                        break
+                    if res_ == "mainmenu":                 # title menu in-process: the loaded world stays
+                        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud)
+                        if res_ == "quit":
+                            break
+                        apply_cfg(cfg, True)
+                        if res_.startswith("load"):
+                            d_ = savegame.read(int(res_[4:]))
+                            if d_:
+                                savegame.restore(sim, cfg, d_)
+                                apply_cfg(cfg, True)
+                        else:                              # new game: the chosen character, fresh stats
+                            savegame.new_character(sim, cfg["lik"])
+                            sim.clock.hour = cfg["hour"] % 24.0
+                        snap = True
+                        hud.set_banner(TXT("main.0039"), 3.0)
+                        res_ = ""
                     if res_ == "chars":
                         if menu_mod.pick_character(cfg, aud):
                             break
