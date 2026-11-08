@@ -119,7 +119,9 @@ class Route:
 class Demo:
     VIEW_NEAR = 300.0          # full detail within this many metres of the helicopter, low quality (no facade/road detail) beyond
     VIEW_MID = 900.0           # beyond this: buildings only, no ground bake, no roads (the overview map shows them)
+    VIEW_REAL = 1500.0         # real (merged) building meshes out to here; plain-box skyline beyond, to VIEW_FAR
     VIEW_FAR = 2880.0          # 4x the first version
+    ACTORS = 380.0             # people and cars are drawn only this close to the helicopter
 
     def __init__(self, world, selfie):
         self.w = world

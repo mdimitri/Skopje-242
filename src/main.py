@@ -98,6 +98,7 @@ import fx as fx_mod   # noqa: E402
 from fx import Particles, Popups   # noqa: E402
 from night import Night   # noqa: E402
 from sunshadow import SunShadow   # noqa: E402
+from skyline import Skyline   # noqa: E402
 from places import Places   # noqa: E402
 from speech import SpeechWorker   # noqa: E402
 import smog   # noqa: E402
@@ -685,14 +686,17 @@ def main():
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
     selfie = selfie_mod.Selfie(ROOT)
     cine = demo_mod.Demo(world, selfie)
+    skyline = Skyline(world, streamer)
     cine_prev = None
     if a.cine:
         cine_vs = [int(v_) for v_ in a.cine.split(",")]
         if a.test:
             cine_prev = demo_mod.Preview(cine, cine_vs, dwell=int(os.environ.get("SK242_CINE_DWELL", "14")))
             cine.start(cine_vs[0], seed=3)
+            skyline.start()
         else:
             cine.start(cine_vs[0])
+            skyline.start()
     guard = Guard(lambda m: hud.set_banner(m, 5))
     apply_cfg(cfg, True)
 
@@ -750,6 +754,7 @@ def main():
     def cine_go():                                          # menu tab "Демо": the helicopter tour, any key or click ends it
         cine.home = sim.focus()[:2]
         cine.start(10)
+        skyline.start()
         sim.clock.hour = cine.v["hour"]
         rl.hide_cursor()
         while rl.get_key_pressed():
@@ -1346,6 +1351,19 @@ def main():
             return
         aud.listener(fx_, fy_)
         aud.update()
+        if cine.active:                                          # helicopter height: wind and the muffled city, nothing from the streets (no birds, no engines)
+            aud.set_zoom(0.0)
+            aud.cabin = False
+            keep = ("amb_wind_high", "amb_city_far", "wind", "city")
+            for nm_ in list(aud._cur):
+                if nm_ not in keep:
+                    aud.loop(nm_, 0.0)
+            tf_ = min(1.5, sim.clock.traffic) / 1.5
+            aud.loop("amb_wind_high", 0.9)
+            aud.loop("amb_city_far", 0.7 * (0.45 + 0.55 * tf_))
+            aud.loop("wind", 0.3)
+            aud.loop("city", 0.1 * tf_)
+            return
         aud.set_zoom(max(0.0, min(1.0, (math.log(max(ppm, 1.0)) - math.log(3.0)) / (math.log(40.0) - math.log(3.0)))))        # camera height -> how much street / how much city bed
         tf = min(1.5, sim.clock.traffic) / 1.5
         if sim.mode == "car":
@@ -1775,7 +1793,7 @@ def main():
         if song:
             hud.set_banner(TXT("main.0043") + song, 2.0)
         aud.cabin = sim.mode == "car"                            # inside a car: the world is muffled, your radio plays clearly
-        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted and sim.mode != "car", cfg["vol_radio"])
+        guard.run("cabin", cabin_music.update, dt, sim.traffic.cars, fx, fy, not aud.muted and sim.mode != "car" and not cine.active, cfg["vol_radio"])
         res = spk.poll()
         if res is not None:
             key, pcm, sr_ = res
@@ -1856,13 +1874,15 @@ def main():
             wanted, lite_, _f = ring_want(o_.x, o_.y, far_, near_)
             lod = True
         elif cn_on:                                 # the helicopter's surroundings: full detail near it, low quality further out
-            far_c, near_c = rect[2] - cine.hx, cine.VIEW_NEAR
+            far_c, near_c = min(rect[2] - cine.hx, cine.VIEW_REAL), cine.VIEW_NEAR
             wanted, lite_, far_c_set = ring_want(cine.hx, cine.hz, far_c, near_c, cine.VIEW_MID)
             streamer.max_mesh = max(streamer.max_mesh, 2400)          # the far ring keeps a lot of low-quality building meshes
             lod = True
         else:
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
         guard.run("stream", streamer.update, wanted, lod, 8.0, lite_, far_c_set if cn_on else ())
+        if cn_on:
+            guard.run("skyline", skyline.update)
         if lod:
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
@@ -1878,7 +1898,9 @@ def main():
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
                 if cn_on:
                     guard.run("cine_sky", cine.sky_layers, cam, sw, sh, sim.clock.dark, sim.clock.hour)
-                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1 if not cn_on else 3.0, True)
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1 if not cn_on else 3.0, True,
+                          (cine.hx - cine.ACTORS, cine.hz - cine.ACTORS, cine.hx + cine.ACTORS, cine.hz + cine.ACTORS) if cn_on else None,
+                          (skyline, (cine.hx, cine.hz), cine.VIEW_MID + 340.0) if cn_on else None)
                 if cn_on:
                     guard.run("heli", cine.draw_heli, cam, sim.clock.dark)
                 if cn_on:
