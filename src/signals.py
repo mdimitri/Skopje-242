@@ -165,8 +165,9 @@ class Signals:
                 out.append((it[4], it[5], (it[8] if len(it) > 8 else 2.95) + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), st))
         return out
 
-    def draw(self, rect, ground_y):
-        """The live lamp of every visible signal (the poles themselves are baked meshes)."""
+    def draw(self, rect, ground_y, seen=None):
+        """The live lamp of every visible signal (the poles themselves are baked meshes).
+        seen(x, y, z, r): False for a lamp outside the view or smaller than a pixel (street / demo views)."""
         x0, y0, x1, y1 = rect
         import bisect
         for i in self._order[bisect.bisect_right(self._xs, x0 - 5):bisect.bisect_left(self._xs, x1 + 5)]:
@@ -174,8 +175,10 @@ class Signals:
             lx, lz = it[4], it[5]
             hb = it[8] if len(it) > 8 else 2.95
             if y0 - 5 < lz < y1 + 5 and not self._smashed(lx, lz, hb):
-                st = self.state(i)
                 y = ground_y(lx, lz)
+                if seen is not None and not seen(lx, y + hb + 0.6, lz, 0.6):
+                    continue
+                st = self.state(i)
                 ax, ay = self._axis(i)                      # the head faces the approaching traffic, so its lamps sit on that side
                 ly = y + hb + 0.17 + 0.30 * (2 - (2, 1, 0)[st])
                 a = rl.Vector3(lx - ax * 0.135, ly, lz - ay * 0.135)

@@ -89,13 +89,37 @@ errors = {}
 def run(self, nm, fn, *x, **kw):
     t0 = time.perf_counter()
     e0 = self.errors.get(nm, 0)
+    c0 = calls["draw"]
     try:
         return orig_run(self, nm, fn, *x, **kw)
     finally:
         cur[nm] = cur.get(nm, 0.0) + (time.perf_counter() - t0) * 1000
+        if calls["draw"] != c0:
+            cur["calls_" + nm] = cur.get("calls_" + nm, 0) + calls["draw"] - c0
         if self.errors.get(nm, 0) != e0:
             errors[nm] = errors.get(nm, 0) + 1          # a subsystem raised: the numbers are not valid (see logs/game.log)
 M.Guard.run = run
+
+def _sub(modname, cls, meth):
+    """Time one method as its own row ('render._actors' ...), draw calls included."""
+    try:
+        C = getattr(__import__(modname), cls)
+        f0 = getattr(C, meth)
+    except Exception:  # noqa: BLE001 - an older tree without it
+        return
+    tagn = f"{modname}.{meth}"
+    def w(*x, **kw):
+        t0, c0 = time.perf_counter(), calls["draw"]
+        try:
+            return f0(*x, **kw)
+        finally:
+            cur[tagn] = cur.get(tagn, 0.0) + (time.perf_counter() - t0) * 1000
+            cur["calls_" + tagn] = cur.get("calls_" + tagn, 0) + calls["draw"] - c0
+    setattr(C, meth, w)
+for spec in (("render", "Renderer", "_actors"), ("render", "Renderer", "_decals"), ("render", "Renderer", "_overview"),
+             ("bake", "Streamer", "_load_meshes"), ("bake", "Streamer", "_load_block"), ("bake", "Streamer", "_bake"),
+             ("night", "Night", "draw"), ("sunshadow", "SunShadow", "_draw_depth")):
+    _sub(*spec)
 
 prof = cProfile.Profile() if a.prof else None
 state = {"n": 0, "t": None, "cpu": None, "w0": None, "c0": None}
@@ -139,7 +163,12 @@ out = dict(tag=tag, mode=a.mode, view=a.view, size=a.size or "settings",
                          p95=round(q[int(len(q) * 0.95) - 1], 2), worst=round(q[-1], 2)),
            fps=round(1000.0 / statistics.mean(ft), 1), cores_busy=round(cpu / wall, 2) if wall > 0 else None,
            cpu_count=os.cpu_count(), errors=errors, per_frame=sub)
+med = statistics.median(ft)
+out["hitches"] = [dict(frame=i, ms=round(f["frame"], 1), top=sorted(((k, round(v, 1)) for k, v in f.items() if k != "frame" and not k.startswith("calls")), key=lambda kv: -kv[1])[:4])
+                  for i, f in enumerate(F) if f["frame"] > max(2.5 * med, med + 25.0)][:40]
 if prof:
+    os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+    prof.dump_stats(os.path.join(ROOT, "logs", f"perf_{tag}.prof"))      # for pstats / snakeviz: callers, call graph
     st = pstats.Stats(prof)
     rows = sorted(st.stats.items(), key=lambda kv: -kv[1][2])[:45]
     out["top_tottime"] = [(f"{os.path.basename(k[0])}:{k[1]} {k[2]}", v[1], round(v[2] * 1000 / max(1, len(F)), 3), round(v[3] * 1000 / max(1, len(F)), 3)) for k, v in rows]
@@ -153,6 +182,8 @@ if prof:
     print("[perf] top functions (calls, own ms/frame, total ms/frame):")
     for r in out["top_tottime"][:30]:
         print(f"   {r[2]:8.3f} {r[3]:8.3f} {r[1]:8d}  {r[0]}")
+for h in out["hitches"][:8]:
+    print(f"[perf] hitch frame {h['frame']}: {h['ms']} ms  " + ", ".join(f"{k} {v}" for k, v in h["top"]))
 if errors:
     print(f"[perf] WARNING: subsystems failed during the run {errors} - see logs/game.log; these numbers are NOT valid")
 print("[perf] wrote", path)

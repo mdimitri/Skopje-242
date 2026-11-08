@@ -9,6 +9,7 @@ import actors
 import birdart
 import fx
 import gl3d
+import modelpool
 import weaponart
 import projectiles
 import vehicles
@@ -43,6 +44,15 @@ class Frustum:
         self.th = self.tv * aspect
         self.kv, self.kh = math.sqrt(1 + self.tv ** 2), math.sqrt(1 + self.th ** 2)
         self.far = far
+        self.fpx = (rl.get_render_height() / 2) / max(self.tv, 1e-6)       # pixels per metre at 1 m in front of the camera
+
+    def seen(self, x, y, z, r):
+        """In the frustum and at least about half a pixel big on screen."""
+        if not self.sphere(x, y, z, r):
+            return False
+        px, py, pz = self.p
+        d = math.sqrt((x - px) ** 2 + (y - py) ** 2 + (z - pz) ** 2)
+        return r * self.fpx > 0.5 * d
 
     def sphere(self, x, y, z, r):
         px, py, pz = self.p
@@ -104,6 +114,8 @@ class Renderer:
         self.t = 0.0
         self.drawn_chunks = 0
         self.drawn_meshes = 0
+        self.frustum = None
+        self.mb = modelpool.Builder()             # new car / person models made on other cores
 
     # ---------------------------------------------------------------- camera
     def camera(self, cx, cz, ppm, sw, sh, cy=0.0):
@@ -187,8 +199,11 @@ class Renderer:
         key = (kind, color)
         m = self.car_models.get(key)
         if m is None:
+            fb = self.car_models.get((kind, 0))
+            if fb is not None and self.mb.want(("car", kind, color), ("car", kind, color)):
+                return fb                                         # built on a worker; the plain-paint version until then
             if self._built >= self.BUILD_BUDGET:                 # over budget: show the plain-paint version for now
-                m = self.car_models.get((kind, 0))
+                m = fb
                 if m is not None:
                     return m                                      # (none yet: build it now, a car is never invisible)
             self._built += 1
@@ -207,8 +222,10 @@ class Renderer:
         key = (arch, tone, frame, skin)
         m = self.ped_models.get(key)
         if m is None:
+            fb = self.ped_models.get((arch, 0, frame, 0)) or self.ped_models.get((arch, 0, 0, 0))
+            if fb is not None and self.mb.want(("ped",) + key, ("ped",) + key):
+                return fb                                      # built on a worker; a similar pose until then
             if self._built >= self.BUILD_BUDGET:
-                fb = self.ped_models.get((arch, 0, frame, 0)) or self.ped_models.get((arch, 0, 0, 0))
                 if fb is not None:
                     return fb                                  # (none yet: build it now, a person is never just a shadow)
             self._built += 1
@@ -242,8 +259,16 @@ class Renderer:
         return m
 
     # ---------------------------------------------------------------- scene
+    def _collect_models(self):
+        """Upload the models the workers finished (arrays -> VRAM)."""
+        for key, arrs in self.mb.ready():
+            store, k = (self.ped_models, key[1:]) if key[0] == "ped" else (self.car_models, key[1:])
+            if store.get(k) is None:
+                store[k] = gl3d.make_model(*arrs)
+
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
+        self._collect_models()
         self._ppm = ppm
         w, st = self.w, self.st
         S = w.chunk
@@ -297,7 +322,7 @@ class Renderer:
                 self._shots(rect, sim)
                 self._balls(rect, sim)
                 if getattr(sim, "lights", None) is not None:
-                    sim.lights.draw(rect, w.ground_y)
+                    sim.lights.draw(rect, w.ground_y, fr.seen)
                 if getattr(sim, "trains", None) is not None:
                     sim.trains.draw(rect, w.ground_y)
                 particles.draw()
@@ -385,7 +410,10 @@ class Renderer:
         rl.rl_pop_matrix()
 
     def _in(self, x, z, rect, pad=6.0):
-        return rect[0] - pad < x < rect[2] + pad and rect[1] - pad < z < rect[3] + pad
+        if not (rect[0] - pad < x < rect[2] + pad and rect[1] - pad < z < rect[3] + pad):
+            return False
+        fr = self.frustum
+        return fr is None or fr.sphere(x, self.w.ground_y(x, z) + 2.0, z, pad + 4.0)      # behind / beside the camera (street views)
 
     def _shadow_batch(self, items):
         rl.rl_disable_depth_mask()

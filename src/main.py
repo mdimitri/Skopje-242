@@ -30,6 +30,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+import numpy as np   # noqa: E402
 import pyray as rl   # noqa: E402
 import fastrl   # noqa: E402,F401 - raw cffi functions behind the plain-argument pyray names (SK242_FASTRL=0 turns it off)
 import font   # noqa: E402
@@ -709,6 +710,29 @@ def main():
         ks.sort(key=lambda c: (c[0] * S + S / 2 - cx_) ** 2 + (c[1] * S + S / 2 - cz_) ** 2)
         return ks
 
+    def ring_want(x_, z_, far, near, mid=1e18):
+        """Chunks round (x_, z_) nearer than far (gap to the chunk's nearest point), nearest centre first, as
+        [want_list(x_, z_, 1.0, 2 far, 2 far, 0) filtered by gap < far], {gap >= near}, {gap >= mid} - in numpy (the demo
+        ring is ~2000 chunks: the per-key Python version cost ~5 ms a frame)."""
+        kk = 1.0 + (35.0 / (far / math.tan(math.radians(38.0 / 2))) if world.hilly else 0.0)
+        hw = 2 * far / 2 * kk
+        x0, x1 = math.floor((x_ - hw) / S), math.floor((x_ + hw) / S)
+        y0, y1 = math.floor((z_ - hw) / S), math.floor((z_ + hw) / S)
+        lx, ly = int(world.hx // S) + 1, int(world.hy // S) + 1
+        CX, CY = np.meshgrid(np.arange(max(x0, -lx), min(x1, lx - 1) + 1), np.arange(max(y0, -ly), min(y1, ly - 1) + 1), indexing="ij")
+        CX, CY = CX.ravel(), CY.ravel()
+        gx = np.maximum(np.maximum(CX * S - x_, 0), x_ - (CX + 1) * S)
+        gy = np.maximum(np.maximum(CY * S - z_, 0), z_ - (CY + 1) * S)
+        gap = np.hypot(gx, gy)
+        d2 = (CX * S + S / 2 - x_) ** 2 + (CY * S + S / 2 - z_) ** 2
+        o = np.flatnonzero(gap < far)
+        o = o[np.argsort(d2[o], kind="stable")]
+        ks = list(zip(CX[o].tolist(), CY[o].tolist()))
+        g = gap[o]
+        lite = {k for k, v in zip(ks, (g >= near).tolist()) if v}
+        farset = {k for k, v in zip(ks, (g >= mid).tolist()) if v}
+        return ks, lite, farset
+
     loader.begin("chunks")
     first = want_list(sx, sy, 7.0, W, H, 30)[:40]
     for i, key in enumerate(first):
@@ -718,6 +742,8 @@ def main():
     loader.finish()
     keep_window_alive(False)
     gc.collect()
+    import modelpool
+    modelpool.start()                              # car / person models on spare cores (SK242_MODELPOOL=0: in the frame)
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
@@ -1825,20 +1851,11 @@ def main():
         if ch_on:                                  # street view: chunks out to 2.25x the full-detail radius, the far ring at low quality
             o_ = sim.car if sim.mode == "car" else sim.walker
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
-            wanted = [k_ for k_ in want_list(o_.x, o_.y, 1.0, 2 * far_, 2 * far_, 0)]
-            def gap_(k_):                          # distance from the avatar to the nearest point of the chunk
-                return math.hypot(max(k_[0] * S - o_.x, 0, o_.x - (k_[0] + 1) * S), max(k_[1] * S - o_.y, 0, o_.y - (k_[1] + 1) * S))
-            wanted = [k_ for k_ in wanted if gap_(k_) < far_]
-            lite_ = {k_ for k_ in wanted if gap_(k_) >= near_}
+            wanted, lite_, _f = ring_want(o_.x, o_.y, far_, near_)
             lod = True
         elif cn_on:                                 # the helicopter's surroundings: full detail near it, low quality further out
             far_c, near_c = rect[2] - cine.hx, cine.VIEW_NEAR
-            wanted = [k_ for k_ in want_list(cine.hx, cine.hz, 1.0, 2 * far_c, 2 * far_c, 0)]
-            def gap_c(k_):
-                return math.hypot(max(k_[0] * S - cine.hx, 0, cine.hx - (k_[0] + 1) * S), max(k_[1] * S - cine.hz, 0, cine.hz - (k_[1] + 1) * S))
-            wanted = [k_ for k_ in wanted if gap_c(k_) < far_c]
-            lite_ = {k_ for k_ in wanted if gap_c(k_) >= near_c}
-            far_c_set = {k_ for k_ in lite_ if gap_c(k_) >= cine.VIEW_MID}
+            wanted, lite_, far_c_set = ring_want(cine.hx, cine.hz, far_c, near_c, cine.VIEW_MID)
             streamer.max_mesh = max(streamer.max_mesh, 2400)          # the far ring keeps a lot of low-quality building meshes
             lod = True
         else:
@@ -1989,6 +2006,7 @@ def main():
         import collections as _c
         print(f"[test] ped modes {dict(_c.Counter(p.mode for p in sim.peds.list))} queues {sum(len(q) for q in sim.transit.queue.values())} "
               f"buses {len(sim.transit.buses)} on/off {sim.transit.served} riding {sim.riding is not None} broken {len(getattr(world, 'broken', []))}")
+    modelpool.stop()
     rl.close_window()
 
 
