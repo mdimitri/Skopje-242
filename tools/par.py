@@ -21,7 +21,7 @@ def jobs():
         n = 0
     if n <= 0:
         n = os.cpu_count() or 1
-    return max(1, min(n, 61))             # 61: the Windows limit for pool workers
+    return max(1, min(n, 32 if "SK242_JOBS" not in os.environ else 61))     # default cap 32 (each worker holds a copy of numpy + its context); 61 = the Windows limit
 
 
 def _pool(init):
