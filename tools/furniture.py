@@ -681,7 +681,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     import junk
     nj = 0
     pieces = []
-    for e in span(edges, 0.8, 0.95, "junk and garbage"):
+    for e in span(edges, 0.8, 0.87, "junk and garbage"):
         cls, L, w = e["cls"], e["len"], e["w"]
         if e["bridge"] or L < 20 or cls in ("motorway", "trunk"):
             continue
@@ -703,7 +703,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                         posts.append((px, py, min(1.2, junk.footprint(i) * 0.8)))
             s += r.uniform(1.4, 2.6)
     counts["junk"] = nj
-    for (i, px, py, _y, _s), (pos, uv, col) in zip(pieces, par.pmap(junk.make_out, pieces, chunk=256)):
+    for (i, px, py, _y, _s), (pos, uv, col) in zip(pieces, par.pmap(junk.make_out, pieces, chunk=256, on=lambda d, t: frac(0.87 + 0.08 * d / t, "junk and garbage"))):
         if len(pos):
             add(chunk_of(px, py), MAT, pos, uv, col)
 

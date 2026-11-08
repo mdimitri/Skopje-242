@@ -160,9 +160,9 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
         return all(free(x + dx, z + dz) and area_ok(x + dx, z + dz) for dx, dz in ((0, 0), (r, 0), (-r, 0), (0, r), (0, -r)))
 
     jobs, ops_n = [], 0                                                     # in block order: ("add", key, mesh) | ("ops", key, [op, ...])
-    bar = Bar("fill: gardens, scrub, boulders", nb, unit=" rows")
+    bar = Bar("fill: gardens, scrub, boulders", 1000, unit="")      # 0-30 %: planning the blocks, 30-100 %: building them on the pool
     for by in range(nb):
-        bar.update(by)
+        bar.update(int(300 * by / nb))
         for bx in range(n):
             x0, z0 = -HX + bx * BLK, -HY + by * BLK
             r = random.Random(bx * 73856093 ^ by * 19349663)
@@ -216,7 +216,7 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
                     trees.append((cx + r.uniform(-4, 4), cz + r.uniform(-4, 4), r.uniform(2.4, 4.0), r.randint(0, 3)))
                     cnt["tree"] += 1
     todo = [j[2] for j in jobs if j[0] == "ops"]
-    built = iter(par.pmap(_build_ops, todo, chunk=64))
+    built = iter(par.pmap(_build_ops, todo, chunk=64, on=lambda d, t: bar.update(300 + 700 * d // t)))
     for kind, key, data in jobs:
         pos, uv, col = data if kind == "add" else next(built)
         if len(pos):

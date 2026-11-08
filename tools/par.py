@@ -42,20 +42,35 @@ def close():
         _POOL[1] = None
 
 
-def pmap(fn, items, init=None, chunk=None):
-    """[fn(x) for x in items] in item order.  `chunk`: items per task (default: about 8 tasks per worker)."""
+def _serial(fn, items, on):
+    res = []
+    for x in items:
+        res.append(fn(x))
+        if on:
+            on(len(res), len(items))
+    return res
+
+
+def pmap(fn, items, init=None, chunk=None, on=None):
+    """[fn(x) for x in items] in item order.  `chunk`: items per task (default: about 8 tasks per worker).
+    `on(done, total)` is called as results arrive, so the loading bars keep moving while the workers run."""
     items = list(items)
     n = jobs()
     if n <= 1 or len(items) < 2 or getattr(sys, "frozen", False) and not hasattr(sys, "_MEIPASS"):
         if init:
             init[0](*init[1])
-        return [fn(x) for x in items]
+        return _serial(fn, items, on)
     try:
         pool = _pool(init)
-        return pool.map(fn, items, chunksize=chunk or max(1, len(items) // (n * 8)))
+        res = []
+        for r in pool.imap(fn, items, chunksize=chunk or max(1, len(items) // (n * 8))):
+            res.append(r)
+            if on:
+                on(len(res), len(items))
+        return res
     except (OSError, ImportError, mp.ProcessError, EOFError) as e:       # no pool possible here: do it in this process
         print(f"[build] parallel pool unavailable ({e}); running serially")
         close()
         if init:
             init[0](*init[1])
-        return [fn(x) for x in items]
+        return _serial(fn, items, on)

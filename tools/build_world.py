@@ -1523,10 +1523,12 @@ def main():
                 ys_ = [p[1] for p in o2]
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
         jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop))
-    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16):         # the meshes: pure per-building work, on all cores
+    bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
+    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
         for m_, pos_, uv_, col_ in adds_:
             mesh.add(binf_[0], m_, pos_, uv_, col_)
+    bb_.done()
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
     print(f"[build] buildings clipped off roads/pavements: {n_clip} trimmed, {n_drop} dropped")
     if binfo:                                                  # TV / phone cables from block to block
@@ -2093,13 +2095,13 @@ def main():
 
     hg_arr = np.asarray(hg, dtype=np.uint8).copy()
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
-    posts = [p if len(p) >= 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 1.0, "collision posts")]
+    posts = [p if len(p) >= 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 0.7, "collision posts")]
 
     tj_ = [(x, y, r_, sh, i) for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]])))]
-    for (x, y, _r, _s, _i), g_ in zip(tj_, par.pmap(_tree_job, tj_, chunk=256)):                 # the meshes themselves on all cores
+    for (x, y, _r, _s, _i), g_ in zip(tj_, par.pmap(_tree_job, tj_, chunk=256, on=lambda d, t: frac(0.7 + 0.2 * d / t, "tree meshes"))):                 # the meshes themselves on all cores
         add_c(chunk_of(x, y), MAT_SOLID, *g_)
     lj_ = [(x, y) for x, y in each(lamps, "lamp meshes", feed=("props", None, lambda p: [p[0], p[1]]))]
-    for (x, y), g_ in zip(lj_, par.pmap(_lamp_job, lj_, chunk=256)):
+    for (x, y), g_ in zip(lj_, par.pmap(_lamp_job, lj_, chunk=256, on=lambda d, t: frac(0.9 + 0.1 * d / t, "lamp meshes"))):
         add_c(chunk_of(x, y), MAT_SOLID, *g_)
 
     # ---- chunk index (for ground baking) ---------------------------------------------------------
