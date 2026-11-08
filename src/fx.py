@@ -107,8 +107,7 @@ class Particles:
             tex = 0 if flat_quad(k, q[10]) else (_RING.id if k == "w" else _SOFT.id)
             buckets.setdefault((k in _GLOW, tex), []).append(q)
         for (add, tex), qs in sorted(buckets.items(), key=lambda kv: kv[0][0]):
-            if add:
-                rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+            rl.begin_blend_mode(rl.BLEND_ADDITIVE if add else rl.BLEND_ALPHA)   # explicit: never inherit the night passes' blend state
             rl.rl_set_texture(tex)
             rl.rl_begin(QUADS)
             for x, y, z, _vx, _vy, _vz, life, life0, size, col, _g, _gr, rot, k in qs:
@@ -144,8 +143,7 @@ class Particles:
                 rl.rl_tex_coord2f(0, 1)
                 rl.rl_vertex3f(x - c + s, y, z - s - c)
             rl.rl_end()
-            if add:
-                rl.end_blend_mode()
+            rl.end_blend_mode()
         rl.rl_set_texture(0)
         rl.rl_enable_depth_mask()
 
