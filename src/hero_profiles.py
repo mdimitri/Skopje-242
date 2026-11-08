@@ -7,6 +7,8 @@ STAT_HINT = "50 просек · 70 надпросечно · 85 специјал
 SUSP_REACT = ((20, "„Ај терај, пријатно.“"), (40, "„Добро бе, кај си тргнал?“"), (60, "„Нешто ми е сомнителен овој.“"),
               (80, "„Ајде, застани малце!“"), (100, "„Еве го бе, пак овој!“"))
 
+import hero_stories
+
 # id: (role, money, stats, quote, story, goal, ability_name, ability, weakness)
 _P = {
 "kumplung": ("Возач / Уличен ветеран", 250, (65, 35, 65, 95, 55, 65, 85, 70),
@@ -158,7 +160,8 @@ _P = {
 
 def profile(hid):
     r = _P[hid]
-    return dict(role=r[0], money=r[1], stats=dict(zip(STAT_KEYS, r[2])), quote=r[3], story=r[4], goal=r[5],
+    title, story, quote = hero_stories.S[hid]
+    return dict(title=title, role=r[0], money=r[1], stats=dict(zip(STAT_KEYS, r[2])), quote=quote, story=story, goal=r[5],
                 ability_name=r[6], ability=r[7], weakness=r[8])
 
 

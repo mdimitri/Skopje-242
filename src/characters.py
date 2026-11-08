@@ -46,10 +46,12 @@ def set_hero(i):
     import actors
     hid = LIKOVI[i % len(LIKOVI)][0]
     st = lambda k: hero_profiles.stat(hid, k)
-    actors.HERO["spd"] = 0.8 + 0.4 * st("brzina") / 100          # 10 -> 0.84, 50 -> 1.0, 100 -> 1.2
-    actors.HERO["str"] = 0.6 + 0.8 * st("sila") / 100            # punches and kicks hit harder / softer
-    actors.HERO["end"] = 1.3 - 0.6 * st("izdrzlivost") / 100     # damage taken in fights
+    actors.HERO["spd"] = 0.7 + 0.6 * st("brzina") / 100           # 10 -> 0.76, 50 -> 1.0, 100 -> 1.3
+    actors.HERO["str"] = 0.5 + 1.0 * st("sila") / 100            # punches and kicks hit harder / softer
+    actors.HERO["end"] = 1.4 - 0.8 * st("izdrzlivost") / 100     # damage taken in fights
     actors.HERO["drv"] = 0.6 + 0.8 * st("vozenje") / 100         # how fast the steering follows the keys
+    actors.HERO["top"] = 0.8 + 0.4 * st("vozenje") / 100         # car top speed: 0 -> 0.8x, 50 -> 1.0x, 100 -> 1.2x
+    actors.HERO["acc"] = 0.75 + 0.5 * st("vozenje") / 100        # car acceleration
 
 
 def apply(sim, i):

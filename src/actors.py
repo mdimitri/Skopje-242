@@ -128,6 +128,9 @@ TURN = 0.67                  # turning radius of every vehicle relative to the b
 
 def drive(p, throttle, steer_in, handbrake, dt, world):
     VMAX, ACC, STEER, GRIP, _M = vehicles.PERF[p.kind]
+    if p.player_car:                                   # the chosen hero's driving skill: top speed and pull-away
+        VMAX *= HERO["top"]
+        ACC *= HERO["acc"]
     if p.exploded or (p.health <= 0 and p.ctl is not None):   # a burnt-out wreck never drives again; a burning AI car stops
         throttle, steer_in, handbrake = 0.0, 0.0, True
     BRAKE, REV = 22.0 + ACC, 9.0
@@ -532,7 +535,7 @@ class Ped:
 
 
 # multipliers of the chosen hero (set by characters.set_hero from hero_profiles stats); 1.0 = average
-HERO = {"spd": 1.0, "str": 1.0, "end": 1.0, "drv": 1.0}
+HERO = {"spd": 1.0, "str": 1.0, "end": 1.0, "drv": 1.0, "top": 1.0, "acc": 1.0}
 
 
 class Walker:
