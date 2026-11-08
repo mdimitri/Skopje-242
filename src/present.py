@@ -141,6 +141,8 @@ class Present:
     def end(self, nearest, fxaa):
         """Close the buffer and draw it onto the window (call before end_drawing)."""
         rl.end_texture_mode()
+        if vw <= 0 or vh <= 0:   # window minimised: nothing to draw
+            return
         rl.set_texture_filter(self.rt.texture, rl.TEXTURE_FILTER_POINT if nearest else rl.TEXTURE_FILTER_BILINEAR)
         rl.clear_background(rl.BLACK)
         src = rl.Rectangle(0, 0, vw, -vh)
