@@ -1164,7 +1164,9 @@ def _read_list(path):
 
 def load_elements(src):
     elements, seen = [], set()
-    files = sorted(glob.glob(os.path.join(src, "*.json")))
+    # side files in data/osm that are not Overpass element dumps (read elsewhere with _read_list / main.py)
+    side = {"box.json", "bus_stops.json", "signals.json", "transit.json", "rail.json", "map_pois.json", "map_poi_kinds.json"}
+    files = [f for f in sorted(glob.glob(os.path.join(src, "*.json"))) if os.path.basename(f) not in side]
     for f in each(files, "read OSM files"):
         try:
             data = json.load(open(f, encoding="utf-8"))["elements"]
