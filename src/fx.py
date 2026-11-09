@@ -100,6 +100,8 @@ class Particles:
         if _SOFT is None:
             _SOFT = _soft_texture()
             _RING = _soft_texture(ring=True)
+        rl.rl_draw_render_batch_active()                                # flush whatever the 3D passes left queued
+        rl.rl_active_texture_slot(0)                                    # a shader pass may leave slot 3 active: the puff texture would then miss the default shader (solid squares)
         rl.rl_disable_depth_mask()
         buckets = {}
         for q in self.p:
