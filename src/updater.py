@@ -73,7 +73,10 @@ def install(sha, prog):
             for n in names:                                   # check everything before touching the game
                 if not n.startswith(top) or ".." in n.split("/"):
                     raise ValueError("unexpected path in zip: " + n)
+            prog["phase"], prog["n"] = "extract", 0
             for n in names:
+                prog["n"] += 1
+                prog["nn"] = len(names)
                 rel = n[len(top):]
                 if _keep(rel):
                     continue
@@ -130,7 +133,13 @@ def check():
     th.start()
     while not prog["finished"]:
         rl.poll_input_events()
-        _screen([("Се презема и ажурира ...", 30, white)], (prog["done"] / prog["total"]) if prog["total"] else 0.0)
+        if prog.get("phase") == "extract":                      # download = first 70 %, unpacking files = the rest
+            frac, what = 0.7 + 0.3 * prog["n"] / max(1, prog.get("nn", 1)), f"Се ажурира: {prog['n']} / {prog.get('nn', 0)} датотеки"
+        else:
+            mb = prog["done"] / 1048576
+            # codeload sends no Content-Length (chunked zip): fall back to a typical zip size so the bar still moves
+            frac, what = 0.7 * min(0.99, prog["done"] / (prog["total"] or 60 * 1048576)), f"Се презема: {mb:.1f} MB"
+        _screen([("Се презема и ажурира ...", 30, white), (what, 20, grey)], frac)
     if prog["err"]:
         t0 = rl.get_time()
         while rl.get_time() - t0 < 4 and not rl.window_should_close():
