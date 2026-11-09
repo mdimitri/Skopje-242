@@ -35,6 +35,52 @@ def gait_cycle(arch, run):
     return gl3d.ped_scale(arch) * (2.85 if run else 1.85)
 
 
+
+_GL = None
+_FLAT = False
+
+FLAT_VS = """#version 330
+in vec3 vertexPosition;
+uniform mat4 mvp;
+void main(){ gl_Position = mvp * vec4(vertexPosition, 1.0); }
+"""
+FLAT_FS = """#version 330
+uniform vec4 colDiffuse;
+out vec4 finalColor;
+void main(){
+  gl_FragDepth = floor(gl_FragCoord.z * 65535.0 + 0.5) / 65535.0;     // every layer of a flattened shadow gets the very same depth value
+  finalColor = colDiffuse;
+}
+"""
+
+
+def _gl():
+    """glDepthFunc, which raylib does not wrap, looked up once; {} when unavailable."""
+    global _GL
+    if _GL is None:
+        _GL = {}
+        try:
+            f = RL.ffi
+            p = RL.rlGetProcAddress(b"glDepthFunc")
+            if p != f.NULL:
+                _GL = {"depthfunc": f.cast("void(*)(unsigned)", p)}
+        except Exception:
+            _GL = {}
+    return _GL
+
+
+def _flat_shader():
+    """Flat-colour shader for projected shadows (None if it fails to compile: shadows then fall back to rectangles' absence, never a crash)."""
+    global _FLAT
+    if _FLAT is False:
+        try:
+            sh = rl.load_shader_from_memory(FLAT_VS, FLAT_FS)
+            _FLAT = sh if rl.is_shader_valid(sh) else None
+        except Exception:
+            _FLAT = None
+    return _FLAT
+
+
 class Frustum:
     """View frustum of a perspective Camera3D: sphere tests (one in Python, many at once in numpy)."""
 
@@ -195,10 +241,40 @@ class Renderer:
 
     trailer_m = None
 
+    def _near(self, x, z):
+        """Close to the view centre: its shadow is the projected mesh (see _proj_shadow), not a rectangle."""
+        return self.shadows and (x - self._sh_c[0]) ** 2 + (z - self._sh_c[1]) ** 2 < 45.0 ** 2
+
+    def _proj_shadow(self, m, M, gy, a):
+        """Shadow of the real mesh: every vertex slid along the sun direction down onto the ground plane (a shear), drawn flat dark.
+        Depth writes stay on, so where limbs / body / trailer overlap the shadow is not darkened twice."""
+        sx, sz, k = self._sh_k
+        a = int(a * (0.4 + 0.6 * k))
+        if a <= 0 or m is None:
+            return
+        S = rl.Matrix(1.0, sx, 0.0, -sx * gy,  0.0, 0.0, 0.0, gy + 0.3,  0.0, sz, 1.0, -sz * gy,  0.0, 0.0, 0.0, 1.0)
+        old = m.transform
+        m.transform = rl.matrix_multiply(M, S)
+        sh = _flat_shader()
+        gls = _gl()
+        if sh is None or not gls:
+            m.transform = old
+            return
+        mat = m.materials[0]
+        old_id, old_locs = mat.shader.id, mat.shader.locs        # (the struct is a view into the material: copy its fields)
+        mat.shader = sh
+        gls["depthfunc"](0x0201)                      # GL_LESS: the first layer at a pixel writes the (quantised, so identical) depth, the rest fail
+        rl.draw_model(m, V3(0, 0, 0), 1.0, rl.Color(10, 10, 20, a))
+        gls["depthfunc"](0x0203)
+        mat.shader.id, mat.shader.locs = old_id, old_locs
+        m.transform = old
+
     def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll):
         """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th."""
         hx, hy = x + math.cos(h) * vehicles.SEMI_HITCH, y + math.sin(h) * vehicles.SEMI_HITCH
         out.append((hx, hy, th, gy, pitch, roll))
+        if self._near(x, y):
+            return
         sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, 1.0, 70, gy))
         mid = vehicles.SEMI_TRAILER_L / 2 - 0.3
         sh.append((hx - math.cos(th) * mid, hy - math.sin(th) * mid, th, vehicles.SEMI_TRAILER_L / 2 + 0.2, 1.0, 70, gy))
@@ -513,6 +589,14 @@ class Renderer:
     def _actors(self, rect, sim, t):
         w = self.w
         self._frames += 1
+        self._sh_c = ((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5)
+        L = self.sun if self.sun is not None else gl3d.SUN
+        k = self.sun_k
+        sx, sz = (-L[0] / L[1], -L[2] / L[1]) if L[1] > 1e-6 else (0.0, 0.0)
+        n = math.hypot(sx, sz)
+        if n > 3.5:
+            sx, sz = sx * 3.5 / n, sz * 3.5 / n
+        self._sh_k = (sx * k, sz * k, k)                 # shadow slide per metre of height, no sun: straight down
         if self._frames % 240 == 0:
             self._free_orphans(sim.bodies)
         sh = []
@@ -548,7 +632,7 @@ class Renderer:
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color))
                 if c.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll)
-                else:
+                elif not self._near(c.x, c.y):
                     sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
         for b in sim.bodies:
             if self._in(b.x, b.y, rect):
@@ -567,7 +651,7 @@ class Renderer:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll)
-                else:
+                elif not self._near(b.x, b.y):
                     hl = vehicles.HALF_L[b.kind] + 0.1
                     sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
         # peds
@@ -598,8 +682,8 @@ class Renderer:
                 elif p.pose == "cpr":                              # medic kneeling over the patient, pumping
                     frame, lean, y = 4, -1.05 + 0.1 * math.sin(p.anim * 6.0), -0.3
                 pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)
-                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean))
-                if p.mode not in ("dead", "ko"):
+                peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean, pg))
+                if p.mode not in ("dead", "ko") and not self._near(p.x, p.y):
                     sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
         dogs = getattr(sim, "dogs", None)
         if dogs is not None:                                           # stray dogs: small, so culled early when zoomed out
@@ -625,13 +709,14 @@ class Renderer:
             gy = cb.az if cb.az is not None else w.ground_y(cb.x, cb.y)       # you, sitting on (or standing on) the two-wheeler
             seat = vehicles.EXTRA[cb.kind] != "kick"
             peds.append((cb.x - math.cos(cb.h) * (0.3 if seat else 0.0), gy + (0.0 if seat else 0.2), cb.y - math.sin(cb.h) * (0.3 if seat else 0.0),
-                         cb.h, 100 + getattr(sim, "lik", 0), 0, 13 if seat else 12, 3))
+                         cb.h, 100 + getattr(sim, "lik", 0), 0, 13 if seat else 12, 3, 0.0, gy))
         for rp in getattr(sim, "remote_foot", {}).values():            # other players on foot (multiplayer)
             if self._in(rp["x"], rp["y"], rect):
                 fr = rp["frame"] if rp["frame"] is not None else self._gait(100 + rp["lik"], rp["anim"], rp["run"])
                 gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
-                peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3))
-                sh.append((rp["x"], rp["y"], 0, 0.35, 0.35, 60, gy))
+                peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3, 0.0, gy))
+                if not self._near(rp["x"], rp["y"]):
+                    sh.append((rp["x"], rp["y"], 0, 0.35, 0.35, 60, gy))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0) if wk.moving else 12
@@ -646,7 +731,8 @@ class Renderer:
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
                 pass                                       # flicker while hurt
             else:
-                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3))
+                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, 0.0,
+                             (wk.az - wk.z) if wk.az is not None else w.ground_y(wk.x, wk.y)))
             if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
                 wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
                 if wm is not None:
@@ -664,7 +750,8 @@ class Renderer:
                     wm.transform = Mh
                     rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
                     wm.transform = old_t
-            sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
+            if not self._near(wk.x, wk.y):
+                sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
         for kx, kz, kh in sim.kiosks:
             if self._in(kx, kz, rect):
                 self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
@@ -680,12 +767,16 @@ class Renderer:
                 tm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
                                                                      rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
                 rl.draw_model(tm, V3(0, 0, 0), 1.0, WHITE)
+                if self._near(x, z):
+                    self._proj_shadow(tm, tm.transform, gy, 70)
             tm.transform = old
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col in cars:
             if m is None:
                 continue
             M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
                                                       rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+            if self._near(x, z):
+                self._proj_shadow(m, M, gy, 75)
             if col is not None and fr is not None and kind not in vehicles.BIKES:
                 px, py, pz = fr.p
                 if vehicles.DIMS[kind][0] * fr.fpx < self.LOD_PX * math.sqrt((x - px) ** 2 + (gy - py) ** 2 + (z - pz) ** 2):
@@ -731,6 +822,9 @@ class Renderer:
         for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
             if pm is not None:
+                if frame != 2 and len(ex) > 1 and self._near(x, z):
+                    Mp = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    self._proj_shadow(pm, Mp, ex[1], 60)
                 if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
                     M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
                     old = pm.transform
