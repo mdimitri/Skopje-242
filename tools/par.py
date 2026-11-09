@@ -14,13 +14,43 @@ import sys
 _POOL = [None, None]                      # the pool, the initializer it was started with
 
 
+def free_mb():
+    """Memory the system can still give out, in MB (None when unknown)."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class MS(ctypes.Structure):
+                _fields_ = [("len", ctypes.c_ulong), ("load", ctypes.c_ulong), ("total", ctypes.c_ulonglong), ("avail", ctypes.c_ulonglong),
+                            ("tpage", ctypes.c_ulonglong), ("apage", ctypes.c_ulonglong), ("tvirt", ctypes.c_ulonglong),
+                            ("avirt", ctypes.c_ulonglong), ("ext", ctypes.c_ulonglong)]
+            m = MS()
+            m.len = ctypes.sizeof(MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            return m.avail / 2 ** 20
+        with open("/proc/meminfo") as f:
+            for ln in f:
+                if ln.startswith("MemAvailable:"):
+                    return int(ln.split()[1]) / 1024
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+WORKER_MB = 700                           # rough peak of one pool worker on the real map (numpy + its copy of the job's context)
+
+
 def jobs():
+    """Workers to run: every core, but never more than the free memory holds (8 GB laptops) - 1.5 GB stays for the build itself."""
     try:
         n = int(os.environ.get("SK242_JOBS", "0"))
     except ValueError:
         n = 0
     if n <= 0:
         n = os.cpu_count() or 1
+        fm = free_mb()
+        if fm is not None:
+            n = min(n, max(1, int((fm - 1500) // int(os.environ.get("SK242_WORKER_MB", WORKER_MB)))))
     return max(1, min(n, 32 if "SK242_JOBS" not in os.environ else 61))     # default cap 32 (each worker holds a copy of numpy + its context); 61 = the Windows limit
 
 
