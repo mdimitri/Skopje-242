@@ -60,7 +60,9 @@ class LoadMusic:
         self.static = None
         self.job = None
         self.files = []
-        self.hist = []                # songs played, newest last (◀ goes back through them)
+        self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
+        self.pos = -1                 # index in hist of the song playing now
+        self.want = None              # index in hist being decoded after a ◀ / ▶ press (so quick double presses keep going)
         self.title = ""
         self.cur = None
         if mute or volume < 0.01:
@@ -130,27 +132,35 @@ class LoadMusic:
                 rl.play_sound(self.snd)
                 self.cur = job["path"]
                 self.title = os.path.splitext(os.path.basename(self.cur))[0].replace("_", " ")
-                if job.get("back"):
-                    self.hist.pop()
+                if job.get("idx") is not None:
+                    self.pos = job["idx"]
                 else:
                     self.hist.append(self.cur)
-                    del self.hist[:-30]
+                    if len(self.hist) > 30:
+                        del self.hist[0]
+                    self.pos = len(self.hist) - 1
+                self.want = None
                 self._next()                                     # decode the next song while this one plays
         except Exception as e:  # noqa: BLE001
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
     def skip(self, back=False):
-        """◀ / ▶: back to the previous song or on to the next one."""
+        """◀ / ▶: back to the previous song (and forward again through the ones already heard), else on to a new one."""
         if not self.ok:
             return
         try:
-            if back:
-                if len(self.hist) < 2:
-                    return
+            cur = self.want if self.want is not None else self.pos
+            idx = cur + (-1 if back else 1)
+            if back and idx < 0:
+                return
+            if idx < len(self.hist):                             # a song we already heard
                 self.job = None                                  # (a decode still running just finishes into its own file)
-                self._next(self.hist[-2])
-                self.job["back"] = True
+                self._next(self.hist[idx])
+                self.job["idx"] = idx
+                self.want = idx
+            elif self.want is not None:
+                return                                           # still fetching the earlier one
             self._drop()
             self.title = "…"
             rl.set_sound_volume(self.static, 0.2 * self.volume)

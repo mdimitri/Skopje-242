@@ -614,7 +614,7 @@ def title_menu(aud=None, music=None):
         sz = max(20, H // 28)
         rh = int(sz * 1.45)
         bw = max(font.measure_text(t, sz, "cond") for _k, t in TITLE_ITEMS) + 4 * sz
-        x0, y0 = (W - bw) // 2, int(H * 0.755)
+        x0, y0 = (W - bw) // 2, min(int(H * 0.755), H - len(TITLE_ITEMS) * rh - 14)      # (the last row stays on a small window)
         armed = time.time() - t_open > 0.3
         m = rl.get_mouse_position()
         moved = last_m is not None and (m.x, m.y) != last_m
@@ -928,5 +928,10 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if settings_only and music is not None and x0 - 24 - 110 > 60:      # beside the panel, if there is room
             music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 110))
         font.exit_button()
-        font.draw_version(W, H)
+        if x0 - 24 >= 80:
+            font.draw_version(W, H)
+        else:                                                   # the panel covers the corner: the label goes in its top right, under the exit button
+            from updater import GAME_VERSION
+            vt = "v" + GAME_VERSION
+            font.draw_text(vt, x0 + pw - font.measure_text(vt, 22, CD), 70, 22, _th["mu"], bold=CD)
         rl.end_drawing()

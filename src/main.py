@@ -56,7 +56,10 @@ def _early_splash():
         rl.init_window(W, H, TXT("main.0002"))
         if not rl.is_window_ready():
             return
+        rl.set_exit_key(rl.KEY_NULL)          # Esc must not close the window (the update question uses it for "no")
         font.load()
+        import menu as _menu
+        _menu.set_theme(cfg["theme"])         # the update screens wear the chosen menu theme
         rl.begin_drawing()
         import poster
         W, H = rl.get_screen_width(), rl.get_screen_height()

@@ -154,6 +154,7 @@ def _screen(lines, bar=None):
     menu._panel(px, py, pw, ph)
     y = py + 34
     for i, (text, size, _c) in enumerate(lines):
+        text = font.fit(text, size, pw - 60, "cond")
         col = th["fg"] if i == 0 else th["mu"]
         font.draw_text(text, px + (pw - font.measure_text(text, size, "cond")) // 2, y, size, col, bold="cond")
         y += size + 30
