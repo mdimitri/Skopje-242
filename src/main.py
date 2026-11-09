@@ -511,6 +511,7 @@ def main():
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
         import loadmusic
         music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
+    aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry)    # before the title menu: its tick / confirm sounds
     pre = ""                                                           # the title menu's answer, chosen before anything loads
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
     if need and not unbuilt:
@@ -519,7 +520,7 @@ def main():
         need["build"] = True
     elif not a.test and not a.nomenu:                                  # always the title menu first; the world builds only on request
         menu_mod.WORLD["built"] = not unbuilt
-        pre = menu_mod.run(cfg, lambda c: None, False, music=music)
+        pre = menu_mod.run(cfg, lambda c: None, False, aud=aud, music=music)
         menu_mod.WORLD["built"] = True
         if pre == "quit":
             rl.close_window()
@@ -610,7 +611,6 @@ def main():
     loader.tick(0.97, "traffic lights")
     print(f"[game] traffic lights: {len(lights.items)} signal heads")                     # test runs have nobody to press R
     loader.tick(0.99, "sound")
-    aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry)
     print(f"[sound] library: {len(aud.lib)} sounds found, {aud.req[0]} new request files in sound_requests/ ({aud.req[2]} of {aud.req[1]} sounds done)")
     car_radio = radio_mod.Radio(aud)
     cabin_music = radio_mod.CabinMusic(aud, car_radio)

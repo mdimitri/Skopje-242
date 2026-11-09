@@ -683,7 +683,9 @@ def title_menu(aud=None, music=None):
         blab = "ИЗГРАДИ ПОВТОРНО" if WORLD["built"] else "ИЗГРАДИ ГО СВЕТОТ"
         bsz = max(22, H // 32)
         bbw, bbh = font.measure_text(blab, bsz, "cond") + 3 * bsz, int(bsz * 2.0)
-        bbx, bby = W - bbw - 16, 56
+        bbx, bby = W - bbw - 16, H - bbh - 16                         # bottom right
+        if bbx < x0 + bw + 12:                                         # a narrow window: top right, clear of the list
+            bby = 56
         over_b = bbx <= m.x < bbx + bbw and bby <= m.y < bby + bbh
         if armed and ((over_b and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_B)):
             go = False
