@@ -101,10 +101,10 @@ def _tab(x, y, w, h, label, on, sz=22):
 
 def _head(x, y, w, label):
     t = _th
-    tw = font.measure_text(label, 20, CD) + 20
-    _skew(x + 3, y + 3, tw, 24, -6, t["shadow"])
-    _skew(x, y, tw, 24, -6, t["a1"])
-    font.draw_text(label, x + 10, y + 1, 20, WHITE, bold=CD)
+    tw = font.measure_text(label, 30, CD) + 30
+    _skew(x + 4, y + 4, tw, 36, -8, t["shadow"])
+    _skew(x, y, tw, 36, -8, t["a1"])
+    font.draw_text(label, x + 15, y + 2, 30, WHITE, bold=CD)
 
 
 def _rowhl(x, y, w, h):
@@ -114,20 +114,20 @@ def _rowhl(x, y, w, h):
 
 def _slider(x, y, w, f):
     t = _th
-    rl.draw_rectangle(x, y + 4, w, 12, t["ink"])
-    rl.draw_rectangle(x + 3, y + 7, int((w - 6) * f), 6, t["a1"])
-    for i in range(0, int((w - 6) * f), 8):
-        rl.draw_rectangle(x + 3 + i, y + 7, 2, 6, t["a2"])
-    rl.draw_circle(int(x + w * f), y + 10, 11, t["a2"])
-    rl.draw_circle_lines(int(x + w * f), y + 10, 11, t["fg"] if t["ink"].r < 60 else t["ink"])
+    rl.draw_rectangle(x, y + 6, w, 18, t["ink"])
+    rl.draw_rectangle(x + 4, y + 10, int((w - 8) * f), 10, t["a1"])
+    for i in range(0, int((w - 8) * f), 10):
+        rl.draw_rectangle(x + 4 + i, y + 10, 3, 10, t["a2"])
+    rl.draw_circle(int(x + w * f), y + 15, 16, t["a2"])
+    rl.draw_circle_lines(int(x + w * f), y + 15, 16, t["fg"] if t["ink"].r < 60 else t["ink"])
 
 
 def _toggle(x, y, on, labels):
     t = _th
-    _skew(x + 3, y + 3, 84, 24, -8, t["shadow"])
-    _skew(x, y, 84, 24, -8, t["a1"] if on else t["p2"])
+    _skew(x + 4, y + 4, 170, 36, -8, t["shadow"])
+    _skew(x, y, 170, 36, -8, t["a1"] if on else t["p2"])
     lab = labels[0] if on else labels[1]
-    font.draw_text(lab, x + 4 + (80 - font.measure_text(lab, 20, CD)) // 2, y + 2, 20, WHITE if on else t["mu"], bold=CD)
+    font.draw_text(lab, x + 4 + (166 - font.measure_text(lab, 28, CD)) // 2, y + 3, 28, WHITE if on else t["mu"], bold=CD)
 
 
 def _bar(x, y, w, h, n, col):
@@ -294,7 +294,7 @@ def _portrait(i):
 def _layout(n, W, H, aspect):
     """Columns / card size that make the portrait cards as big as the screen allows (cards keep the image aspect)."""
     best = None
-    top, bottom, label = 74, 62, 44
+    top, bottom, label = 90, 70, 62
     for cols in range(3, 13):
         rows = (n + cols - 1) // cols
         cw = (W - 40) / cols
@@ -325,40 +325,39 @@ def _grad(t):
 
 def _panel_rect(W, H):
     pw = int(W * 0.5)
-    return W - pw - 16, 102, pw, H - 102 - 34
+    return W - pw - 16, 124, pw, H - 124 - 46
 
 
-def _hero_panel(sel, W, H):
-    """Fixed window on the right for the chosen hero: large portrait, name, tagline, role / money / quote, 8 stat bars
-    (n/8 blocks), then story, goal, ability, weakness.  Every line is fitted or clipped to the panel, nothing overlaps."""
+_hero_scroll = {"sel": -1, "y": 0, "max": 0}
+
+
+def _hero_panel(sel, W, H, wheel=0):
+    """Fixed window on the right for the chosen hero: portrait, name, tagline, role, 8 stat bars (n/8 blocks); below them the
+    quote, story, goal, ability and weakness in a scrolling area (mouse wheel / PgUp PgDn) so the large text never clips."""
     import hero_profiles as HP
     hid, name = C.LIKOVI[sel][0], C.LIKOVI[sel][1]
     pr = HP.profile(hid)
     px, py, pw, ph = _panel_rect(W, H)
-    fs = max(13, min(19, H // 48))
+    fs = max(19, min(30, H // 32))
     gray, white = _th["mu"], _th["fg"]
     _panel(px, py, pw, ph)
-    tw = int(pw * 0.32)
+    tw = int(pw * 0.30)
     t = _portrait(sel)
-    pic_h = int(ph * 0.42)
+    pic_h = int(ph * 0.36)
     if t:
-        poster.draw_fit(t, px + 10, py + 10, tw - 10, pic_h)
+        poster.draw_fit(t, px + 10, py + 14, tw - 10, pic_h)
     x2, w2 = px + tw + 16, pw - tw - 30
-    y = py + 10
-    font.draw_text(font.fit(name, fs + 10, w2, CD), x2, y, fs + 10, _th["a1"], bold=CD)
+    y = py + 12
+    font.draw_text(font.fit(name, fs + 8, w2, CD), x2, y, fs + 8, _th["a1"], bold=CD)
     y += fs + 12
     tag = pr["title"].split(" — ", 1)[-1]
-    for ln in font.wrap(tag[:1].upper() + tag[1:], fs, w2)[:2]:
-        font.draw_text(ln, x2, y, fs, white)
+    for ln in font.wrap(tag[:1].upper() + tag[1:], fs, w2, CD)[:2]:
+        font.draw_text(ln, x2, y, fs, white, bold=CD)
         y += fs + 3
-    font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2), x2, y + 2, fs, gray)
-    y += fs + 8
-    for ln in font.wrap(f"„{pr['quote']}“", fs, w2)[:3]:
-        font.draw_text(ln, x2, y, fs, _th["a1"])
-        y += fs + 3
-    y += 6
+    font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2, CD), x2, y + 2, fs, gray, bold=CD)
+    y += fs + 12
     lw = max(font.measure_text(nm + (" *" if k in LOW_GOOD else ""), fs, CD) for k, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES)) + 12
-    bw = max(10, (w2 - lw - 44) // 8 - 3)
+    bw = max(8, (w2 - lw - 52) // 8 - 3)
     rowh = fs + 6
     for key, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES):
         v = pr["stats"][key]
@@ -367,22 +366,38 @@ def _hero_panel(sel, W, H):
         col = _grad(good)
         font.draw_text(nm + (" *" if key in LOW_GOOD else ""), x2, y, fs, white, bold=CD)
         _bar(x2 + lw, y + 2, 8 * (bw + 3), fs, n, col)
-        font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 6, y, fs, col, bold=CD)
+        font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 8, y, fs, white, bold=CD)
         y += rowh
-    font.draw_text("зелено = добро · црвено = лошо · * помалку е подобро", x2, y, max(11, fs - 3), gray, bold=CD)
-    y += fs
-    y = max(y, py + pic_h + 20) + 10
-    tx, tw2 = px + 14, pw - 28
-    for label, txt in (("Приказна", pr["story"]), ("Цел", pr["goal"]),
-                       (pr["ability_name"], pr["ability"]), ("Слабост", pr["weakness"])):
-        font.draw_text(label.upper() + ":", tx, y, fs, _th["a1"], bold=CD)
-        y += fs + 3
-        for ln in font.wrap(txt, fs, tw2):
-            if y > py + ph - fs - 4:
-                break
-            font.draw_text(ln, tx, y, fs, white)
-            y += fs + 2
-        y += 5
+    font.draw_text("зелено = добро · црвено = лошо · * помалку е подобро", x2, y, max(14, fs - 6), gray, bold=CD)
+    y = max(y + fs, py + pic_h + 24) + 8
+    # scrolling prose
+    tx, tw2 = px + 16, pw - 32
+    items = [("", f"„{pr['quote']}“")] + [(lb, tx_) for lb, tx_ in (("Приказна", pr["story"]), ("Цел", pr["goal"]),
+                                                                    (pr["ability_name"], pr["ability"]), ("Слабост", pr["weakness"]))]
+    lines = []
+    for label, txt in items:
+        if label:
+            lines.append((label.upper() + ":", _th["a1"]))
+        for ln in font.wrap(txt, fs, tw2 - 8):
+            lines.append((ln, _th["a1"] if not label else white))
+        lines.append(("", white))
+    lh = fs + 4
+    view = py + ph - 10 - y
+    hs = _hero_scroll
+    if hs["sel"] != sel:
+        hs.update(sel=sel, y=0)
+    hs["max"] = max(0, len(lines) * lh - view)
+    hs["y"] = max(0, min(hs["max"], hs["y"] - wheel * lh * 2))
+    rl.begin_scissor_mode(px + 4, y, pw - 8, view)
+    for i, (ln, col) in enumerate(lines):
+        yy = y + i * lh - hs["y"]
+        if ln and -lh < yy - y < view:
+            font.draw_text(ln, tx, yy, fs, col, bold=CD if ln.endswith(":") and ln.isupper() else False)
+    rl.end_scissor_mode()
+    if hs["max"] > 0:                         # scroll bar
+        bh = max(20, int(view * view / (view + hs["max"])))
+        rl.draw_rectangle(px + pw - 12, y, 6, view, _th["p2"])
+        rl.draw_rectangle(px + pw - 12, y + int((view - bh) * hs["y"] / hs["max"]), 6, bh, _th["a1"])
 
 
 def pick_character(cfg, aud=None, music=None):
@@ -452,10 +467,10 @@ def pick_character(cfg, aud=None, music=None):
             pick_character.load = True
             return done(sel)
         if armed and (rl.is_key_pressed(rl.KEY_BACKSPACE) or rl.is_key_pressed(rl.KEY_ESCAPE)
-                      or (rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 450 <= m.x < W - 240 and 56 <= m.y < 96)):
+                      or (rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 640 <= m.x < W - 340 and 56 <= m.y < 114)):
             pick_character.back = True                                  # back to the main menu: nothing is chosen or saved
             return False
-        if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 230 <= m.x < W - 20 and 56 <= m.y < 96:
+        if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and W - 330 <= m.x < W - 20 and 56 <= m.y < 114:
             pick_character.load = True
             return done(sel)
         if armed and (rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE)):
@@ -467,8 +482,8 @@ def pick_character(cfg, aud=None, music=None):
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
         _veil(W, H)
-        font.draw_text(TXT("menu.0051").upper(), 96, 10, 52, WHITE, bold=CD)
-        rl.draw_rectangle(96, 66, 120, 5, _th["a1"])
+        font.draw_text(TXT("menu.0051").upper(), 96, 8, 66, WHITE, bold=CD)
+        rl.draw_rectangle(96, 80, 140, 6, _th["a1"])
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
             cx, cy = pos(i)
             on = i == sel
@@ -477,25 +492,25 @@ def pick_character(cfg, aud=None, music=None):
             rl.draw_rectangle_lines_ex(rl.Rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g), 3 if on else 1,
                                        _th["a1"] if on else _th["ink"])
             t = _portrait(i)
-            ih = ch - 56
+            ih = ch - 74
             if t:
                 poster.draw_fit(t, cx + 6 - g, cy + 6 - g, cw - 12 + 2 * g, ih + 2 * g)
             else:
                 rl.draw_circle(cx + cw // 2, cy + ih // 2, min(cw, ih) // 4, rl.Color(90 + i * 12, 120, 160 - i * 9, 255))
                 ini = name[0]
                 font.draw_text(ini, cx + cw // 2 - font.measure_text(ini, 44, True) // 2, cy + ih // 2 - 26, 44, rl.WHITE, bold=True)
-            fs = max(11, min(19, cw // 6))
+            fs = max(13, min(28, cw // 4))
             lines = font.wrap(name, fs, cw - 6, CD)[:2]
             while fs > 9 and any(font.measure_text(ln, fs, CD) > cw - 6 for ln in lines):     # a long word shrinks the label, never overflows
                 fs -= 1
                 lines = font.wrap(name, fs, cw - 6, CD)[:2]
             for k, ln in enumerate(lines):
-                font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, CD)) // 2, cy + ch - 40 + g + k * (fs + 2), fs,
+                font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, CD)) // 2, cy + ch - 58 + g + k * (fs + 2), fs,
                                (_th["hlt"] or _th["fg"]) if on else _th["fg"], bold=CD)
-        _hero_panel(sel, W, H)
-        _btn(W - 450, 56, 210, 40, "< " + BACK, W - 450 <= m.x < W - 240 and 56 <= m.y < 96)
-        _btn(W - 230, 56, 210, 40, TXT("menu.0053"), W - 230 <= m.x < W - 20 and 56 <= m.y < 96)
-        font.draw_text(TXT("menu.0054"), 24, H - 26, 17, rl.Color(240, 232, 240, 255), bold=CD)
+        _hero_panel(sel, W, H, int(rl.get_mouse_wheel_move()) + (1 if rl.is_key_pressed(rl.KEY_PAGE_UP) else 0) - (1 if rl.is_key_pressed(rl.KEY_PAGE_DOWN) else 0))
+        _btn(W - 640, 56, 300, 58, "< " + BACK, W - 640 <= m.x < W - 340 and 56 <= m.y < 114, 30)
+        _btn(W - 330, 56, 310, 58, TXT("menu.0053"), W - 330 <= m.x < W - 20 and 56 <= m.y < 114, 30)
+        font.draw_text(TXT("menu.0054"), 24, H - 36, 25, rl.Color(240, 232, 240, 255), bold=CD)
         if music is not None:
             music.update()
             music.widget(x=W // 2 - 200, y=20, keys=False)
@@ -706,22 +721,24 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     rows = [r for t, r in allrows if t == tab]
     sel = _first(rows)
     drag = None
+    scr = 0
     frames = 0
     while True:
         frames += 1
         if rl.window_should_close():
             return "quit"
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        pw = min(760, W - 40)
+        pw = min(1140, W - 40)
         x0 = (W - pw) // 2
-        rh = max(24, min(34, (H - 220) // max(len(rows), 1)))
-        y0 = 130
+        rh = 50
+        y0 = 176
+        avail = H - 150 - y0                                   # rows scroll inside this window
         m = rl.get_mouse_position()
         changed = False
         # ---- tabs: click, Tab / Shift+Tab, PgUp / PgDn
         tw = pw // len(TABS)
         new_tab = tab
-        if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and 70 <= m.y < 108 and x0 <= m.x < x0 + tw * len(TABS):
+        if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and 100 <= m.y < 152 and x0 <= m.x < x0 + tw * len(TABS):
             new_tab = int((m.x - x0) // tw)
         shift = rl.is_key_down(rl.KEY_LEFT_SHIFT) or rl.is_key_down(rl.KEY_RIGHT_SHIFT)
         if rl.is_key_pressed(rl.KEY_PAGE_DOWN) or (rl.is_key_pressed(rl.KEY_TAB) and not shift):
@@ -731,19 +748,31 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if new_tab != tab:
             tab = new_tab
             rows = [r for t, r in allrows if t == tab]
-            sel, drag = _first(rows), None
+            sel, drag, scr = _first(rows), None, 0
             continue
+        # ---- scrolling: the rows are large, so the list moves inside its window (wheel, or keeps the selected row in view)
+        offs, yy = [], 0
+        for r in rows:
+            if r.kind == "head":
+                yy += 6
+            offs.append(yy)
+            yy += rh
+        scr -= int(rl.get_mouse_wheel_move()) * rh * 2
+        top_i = offs[sel] - (rh + 6 if sel > 0 and rows[sel - 1].kind == "head" else 0)
+        scr = min(scr, top_i) if top_i < scr else scr
+        scr = max(scr, offs[sel] + rh - avail)
+        scr = max(0, min(scr, max(0, yy - avail)))
         # ---- mouse hover / click
-        y = y0
         hover = None
         for i, r in enumerate(rows):
-            if r.kind != "head" and x0 <= m.x <= x0 + pw and y <= m.y < y + rh:
+            y = y0 - scr + offs[i]
+            if r.kind != "head" and x0 <= m.x <= x0 + pw and y <= m.y < y + rh and y0 <= m.y < y0 + avail:
                 hover = i
-            y += rh + (6 if r.kind == "head" else 0)
         if hover is not None and (m.x != getattr(run, "_mx", -1) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):
             sel = hover
         run._mx = m.x
-        bw = int(pw * 0.42)
+        bw = int(pw * 0.28)
+        vx = x0 + int(pw * 0.46)
         # ---- keys
         def step(d):
             r = rows[sel]
@@ -781,7 +810,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             drag = None
         if drag is not None:
             rr = rows[drag]
-            f = max(0.0, min(1.0, (m.x - (x0 + pw * 0.5)) / bw))
+            f = max(0.0, min(1.0, (m.x - vx) / bw))
             if rr.kind == "slider":
                 cfg[rr.key] = rr.lo + (rr.hi - rr.lo) * f
             else:
@@ -840,20 +869,21 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         else:
             rl.clear_background(rl.Color(16, 10, 24, 255))
         _panel(x0 - 24, 6, pw + 48, H - 12)
-        _logo(x0, 8, 40)
-        font.draw_text(TXT("menu.0059").upper(), x0 + 4, 52, 15, MUTED, bold=CD)
+        _logo(x0, 4, 60)
+        font.draw_text(TXT("menu.0059").upper(), x0 + 6, 70, 22, _th["mu"], bold=CD)
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab
             name = name.upper()
-            _tab(tx + 2, 72, tw, 34, name, on_t, 22 if font.measure_text(name, 22, CD) <= tw - 20 else 17)
-        y = y0
+            _tab(tx + 2, 100, tw, 48, name, on_t, 30 if font.measure_text(name, 30, CD) <= tw - 24 else 22)
+        rl.begin_scissor_mode(x0 - 20, y0, pw + 40, avail)
         for i, r in enumerate(rows):
+            y = y0 - scr + offs[i]
+            if y + rh < y0 or y > y0 + avail:
+                continue
             if r.kind == "head":
-                y += 6
                 if r.label:
-                    _head(x0, y + 2, pw, r.label.upper())
-                y += rh
+                    _head(x0, y, pw, r.label.upper())
                 continue
             on = i == sel
             if on:
@@ -861,32 +891,35 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             col = (_th["hlt"] or _th["fg"]) if on else _th["fg"]
             if r.kind == "action":
                 big = r.key in ("play", "chars", "quit")
-                font.draw_text(r.label.upper() if big else r.label, x0 + 4, y + 2, 24 if big else 22, _th["a1"] if (r.key == "play" and not on) else col, bold=CD)
+                font.draw_text(r.label.upper() if big else r.label, x0 + 6, y + 5, 36 if big else 33, _th["a1"] if (r.key == "play" and not on) else col, bold=CD)
             else:
-                font.draw_text(r.label, x0 + 4, y + 2, 22, col, bold=CD)
-                vx = x0 + int(pw * 0.5)
+                font.draw_text(r.label, x0 + 6, y + 5, 33, col, bold=CD)
                 if r.kind == "choice" and not r.bar:
-                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >" if on else r.options[cfg[r.key]], vx, y + 2, 22, _th["a1"] if on else _th["fg"], bold=CD)
+                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >" if on else r.options[cfg[r.key]], vx, y + 5, 33, _th["a1"] if on else _th["fg"], bold=CD)
                 elif r.kind == "toggle":
-                    _toggle(vx, y + 2, cfg[r.key], (TXT("menu.0060"), TXT("menu.0061")))
+                    _toggle(vx, y + 4, cfg[r.key], (TXT("menu.0060"), TXT("menu.0061")))
                 else:
                     if r.kind == "choice":
                         f, txt = cfg[r.key] / max(1, len(r.options) - 1), r.options[cfg[r.key]]
                     else:
                         f, txt = (cfg[r.key] - r.lo) / (r.hi - r.lo), r.fmt(cfg[r.key])
-                    _slider(vx, y + rh // 2 - 10, bw, f)
-                    font.draw_text(txt, vx + bw + 14, y + 3, 20, col, bold=CD)
-            y += rh
+                    _slider(vx, y + rh // 2 - 15, bw, f)
+                    font.draw_text(txt, vx + bw + 18, y + 6, 30, col, bold=CD)
+        rl.end_scissor_mode()
+        if yy > avail:                                          # scroll bar
+            bh = max(24, int(avail * avail / yy))
+            rl.draw_rectangle(x0 + pw + 8, y0, 6, avail, _th["p2"])
+            rl.draw_rectangle(x0 + pw + 8, y0 + int((avail - bh) * scr / max(1, yy - avail)), 6, bh, _th["a1"])
         if rows[sel].note:
-            font.draw_text(rows[sel].note, x0, H - 84, 18, _th["a1"], bold=CD)
+            font.draw_text(font.fit(rows[sel].note, 26, pw, CD), x0, H - 134, 26, _th["a1"], bold=CD)
         if flash and time.time() - flash_t < 2.5:
-            font.draw_text(flash, x0 + pw - font.measure_text(flash, 22, CD), 14, 22, _th["a1"], bold=CD)
-        font.draw_text(TXT("menu.0062"), x0, H - 30, 16, MUTED, bold=CD)
+            font.draw_text(flash, x0 + pw - font.measure_text(flash, 30, CD), 24, 30, _th["a1"], bold=CD)
+        font.draw_text(TXT("menu.0062"), x0, H - 38, 24, _th["mu"], bold=CD)
         label = ("Зачувај и затвори" if in_game else (BACK if settings_only else "Играј")).upper()
-        bwid = font.measure_text(label, 22, CD) + 48
-        bx, by = x0 + pw - bwid, H - 62
-        over = bx <= m.x < bx + bwid and by <= m.y < by + 34
-        _btn(bx, by, bwid, 34, label, over)
+        bwid = font.measure_text(label, 30, CD) + 64
+        bx, by = x0 + pw - bwid, H - 100
+        over = bx <= m.x < bx + bwid and by <= m.y < by + 52
+        _btn(bx, by, bwid, 52, label, over, 30)
         if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             cfg.save()
             return "play"
