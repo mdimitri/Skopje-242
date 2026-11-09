@@ -75,9 +75,5 @@ if not exist "%PY%" (
     exit /b 1
 )
 "%PY%" "src\main.py" %GAMEARGS% %1 %2 %3 %4 %5 %6 %7 %8 %9
-if errorlevel 1 (
-    echo.
-    echo The game exited with an error. See logs\crash.log and logs\install.log
-    pause
-)
+REM The window always closes with the game, even after a crash; errors are in logs\crash.log
 endlocal
