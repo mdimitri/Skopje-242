@@ -1968,6 +1968,13 @@ def main():
               f"buses {len(sim.transit.buses)} on/off {sim.transit.served} riding {sim.riding is not None} broken {len(getattr(world, 'broken', []))}")
     modelpool.stop()
     rl.close_window()
+    # normal exit: hard-exit so no lingering non-daemon thread or child process keeps python (and the console window) alive
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001
+        pass
+    os._exit(0)
 
 
 if __name__ == "__main__":
