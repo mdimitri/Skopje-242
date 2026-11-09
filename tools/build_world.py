@@ -1493,11 +1493,22 @@ def main():
                           "tunnel": tunnel})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
+    phase("roads")                                           # the bar above ended at 100 %: the slow steps after it keep it moving
+    frac(0.02, "bridges over tunnels")
     roads = lift_over_tunnels(roads)
+    frac(0.1, "rivers")
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
     T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
+    frac(0.2, "quays")
     import quays
-    T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY)
+    _qn = [0]
+
+    def _qlog(*a_, **k_):                                    # quays.build logs once per big step: each one moves the bar
+        _qn[0] += 1
+        frac(min(0.95, 0.2 + 0.25 * _qn[0]), "quays")
+        print(*a_, **k_)
+    T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY, log=_qlog)
+    frac(1.0, "quays")
     del lakes, ld
 
     # ---- building meshes, now that the ground under them is known ------------------------------

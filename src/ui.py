@@ -59,7 +59,7 @@ MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам
          (re.compile(r"^pedestrian models (\d+)/(\d+)$"), lambda m: f"Модели на пешаци {m[1]}/{m[2]}"),
          (re.compile(r"^chunk (\d+)/(\d+)\s+\((-?\d+),(-?\d+)\)$"), lambda m: f"Дел од градот {m[1]}/{m[2]} ({m[3]}, {m[4]})")]
 # what the running build step is making now (progress.span / Bar notes of the build tools)
-MK_SUB = {"roads joined": "спојувам улици", "junctions": "крстосници", "edges": "сообраќајни врски", "rounded corners": "заоблени агли",
+MK_SUB = {"bridges over tunnels": "мостови над тунели", "quays": "кеј покрај реките", "roads joined": "спојувам улици", "junctions": "крстосници", "edges": "сообраќајни врски", "rounded corners": "заоблени агли",
           "ways under bridges": "патишта под мостовите", "decks": "палуби на мостовите", "neighbourhoods": "населби",
           "trees and lamps from the map": "дрвја и светилки од мапата", "lane grid": "мрежа на лентите", "lamps": "светилки",
           "trees": "дрвја", "posts": "столбчиња", "pavements": "тротоари", "asphalt": "асфалт", "collision posts": "судири со столбчиња",
