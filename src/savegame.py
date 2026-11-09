@@ -97,11 +97,45 @@ def restore(sim, cfg, d):
 
 
 def new_character(sim, i):
-    """Back at the character screen: a fresh start for the chosen character, same place."""
+    """Back at the character screen: a fresh start for the chosen character at the spawn, new random seed, no leftovers."""
     import characters
+    import random
     characters.apply(sim, i)
+    reset_world(sim, random.SystemRandom().randrange(1 << 30))
     for k in sim.stats:
         sim.stats[k] = 0
     if sim.walker is not None:
         sim.walker.health, sim.walker.guns, sim.walker.weapon = 100.0, {}, "fist"
     sim.car.health = 100.0
+
+
+def reset_world(sim, seed):
+    """Forget the old run: emergency calls and their vehicles, traffic, pedestrians, player position; reseed everything."""
+    sv = sim.services
+    for j in list(sv.jobs):
+        sv._abort(j)
+    sv.jobs.clear()
+    sim.bodies[:] = [b for b in sim.bodies if b is sim.car or not (getattr(b, "siren", False) or getattr(b, "service", False) or b.ctl is not None)]
+    sim.events.clear()
+    sim.rng.seed(seed)
+    sv.rng.seed(seed + 1)
+    sx, sy, sh = sim.w.spawn
+    c = sim.car
+    c.x, c.y, c.h, c.vx, c.vy, c.w = sx, sy, sh, 0.0, 0.0, 0.0
+    c.az, c.burn, c.exploded, c.drown, c.skid, c.dirty = None, 0.0, False, 0.0, None, True
+    c.empty, c.player_car = False, True
+    for b in sim.bodies:
+        if b is not c:
+            b.player_car = False
+    sim.walker, sim.mode = None, "car"
+    sim.jack = sim.riding = sim.train_ride = None
+    sim.respawn_t = 0.0
+    sim.safe, sim.safe_z = (sx, sy, sh), None
+    sim.traffic.cars.clear()
+    sim.peds.list.clear()
+    for _ in range(sim.base_cars * 6):
+        if len(sim.traffic.cars) < sim.base_cars:
+            sim.traffic.spawn(sx, sy, 60, 330)
+    for _ in range(sim.base_peds * 6):
+        if len(sim.peds.list) < sim.base_peds:
+            sim.peds.spawn(sx, sy)

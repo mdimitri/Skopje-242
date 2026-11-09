@@ -1443,9 +1443,9 @@ def main():
             if b.kind in vehicles.SIREN_SOUND and getattr(b, "siren", False) and b.alive:
                 best[b.kind] = min(best.get(b.kind, 1e9), math.hypot(b.x - fx_, b.y - fy_))
                 near_v[b.kind] = b if math.hypot(b.x - fx_, b.y - fy_) <= best[b.kind] else near_v.get(b.kind, b)
-        hear_r = 1.5 * getattr(sim, "view_r", 150.0)             # sirens carry 150% of the viewing distance, no further
+        hear_r = 190.0                                          # sirens are heard only within the minimap (span 380 m -> radius 190 m)
         for k, nm in vehicles.SIREN_SOUND.items():
-            aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / hear_r) * 0.55, doppler(near_v[k], fx_, fy_) if k in near_v else 1.0, "sfx", pan_of(near_v[k].x, fx_, best[k]) if k in near_v else 0.5)
+            aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / hear_r) * 0.55 if best.get(k, 1e9) < hear_r else 0.0, doppler(near_v[k], fx_, fy_) if k in near_v else 1.0, "sfx", pan_of(near_v[k].x, fx_, best[k]) if k in near_v else 0.5)
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
         aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
