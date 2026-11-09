@@ -1389,7 +1389,7 @@ def main():
                 aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), engine_pitch(near_c, nm, fr_, 0.6) * dop_, "engine", pan_of(near_c.x, fx_, nd), car_seed(near_c))
             else:
                 aud.loop("ai_" + nm, 0.0, 1.0, "engine")
-        dn_ = max(0.0, min(1.0, (70.0 - near_c.health) / 70.0)) if near_c is not None else 0.0
+        dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)
         aud.loop("ai_engine_rattle", 0.5 * dn_ * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.9 + 0.2 * dn_, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
         best, near_v = {}, {}
         for c in sim.traffic.cars:
