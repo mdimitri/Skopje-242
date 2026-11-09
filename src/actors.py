@@ -2157,7 +2157,8 @@ class Sim:
         for i in range(90):
             e = rng.choice(drv)
             x, y, dx, dy = self.w.edge_point(e, rng.uniform(5, e["len"] - 5))
-            self.pickups.append([x, y, "ajvar" if i % 4 == 3 else "burek", True, 0.0])
+            if i % 4 != 3:                                       # (every 4th was an ajvar car repair: garages do that now)
+                self.pickups.append([x, y, "burek", True, 0.0])
         self._spawn_weapons(rng)
         for e in rng.sample(drv, min(45, len(drv))):           # jerry cans for the player's tank
             x, y, dx, dy = self.w.edge_point(e, rng.uniform(5, e["len"] - 5))
@@ -3123,14 +3124,6 @@ class Sim:
                 if pk[2] == "burek":
                     self.stats["burek"] += 1
                     ev("burek", x=pk[0], y=pk[1])
-                    pk[3], pk[4] = False, 180.0
-                elif self.mode == "car":
-                    self.car.health = 100.0
-                    self.car.dents = []
-                    self.car.burn = 0
-                    self.car.dirty = True
-                    self.stats["ajvar"] += 1
-                    ev("ajvar", x=pk[0], y=pk[1])
                     pk[3], pk[4] = False, 180.0
         for pk in taken:
             self.pickups.remove(pk)

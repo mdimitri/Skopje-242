@@ -159,6 +159,12 @@ def build():
     S["pick"] = ((np.sin(2 * np.pi * (330 + 500 * tw) * tw) + 0.6 * np.sin(2 * np.pi * (495 + 750 * tw) * tw))
                  * np.minimum(1, tw / 0.02) * np.exp(-tw / 0.22) * 0.4).astype(np.float32)
     S["cash"] = (np.sin(2 * np.pi * 1320 * t) + 0.5 * np.sin(2 * np.pi * 1980 * t)) * np.exp(-t / 0.07) * 0.4
+    tg = _t(0.5)                                             # weapon pickup: bright rising three-note jingle
+    gj = np.zeros_like(tg)
+    for i, f in enumerate((660, 880, 1320)):
+        u = np.clip(tg - 0.07 * i, 0, None)
+        gj += (np.sin(2 * np.pi * f * u) + 0.4 * np.sin(2 * np.pi * 2 * f * u)) * (tg >= 0.07 * i) * np.minimum(1, u / 0.005) * np.exp(-u / 0.12)
+    S["gun_jingle"] = (gj / np.abs(gj).max() * 0.45).astype(np.float32)
     # crunch (eating)
     t = _t(0.4)
     gate = (np.sin(2 * np.pi * 13 * t) > 0.2).astype(np.float32)
