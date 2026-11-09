@@ -5,12 +5,14 @@ player chooses: update (download the repo zip, overwrite game files, restart) or
 Offline / slow network / any error -> silently skip.  User data (settings, saves, built world, logs, music, .runtime)
 and the .bat files (cmd may be reading run.bat right now) are never touched; files are only overwritten, never deleted.
 """
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -53,8 +55,42 @@ def _keep(rel):
     return parts[0] in KEEP_DIRS or rel in KEEP_FILES or (len(parts) == 1 and rel.lower().endswith(".bat"))
 
 
+def install_delta(base, sha, prog):
+    """Fetch only the files that changed between commits `base` and `sha` (GitHub compare API + raw files).
+    Raises when that is not possible (unknown base, >= 300 changed files, network error) so the caller falls back to the zip."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/compare/{base}...{sha}", headers={"User-Agent": "skopje-242"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        cmp_ = json.loads(r.read().decode("utf-8"))
+    files = cmp_.get("files") or []
+    if cmp_.get("status") not in ("ahead",) or not files or len(files) >= 300:
+        raise ValueError("delta not usable")
+    todo = [f for f in files if f.get("status") != "removed" and not _keep(f["filename"])]   # deletions are never applied (see module doc)
+    prog["phase"], prog["n"], prog["nn"] = "extract", 0, len(todo)
+    for f in todo:
+        rel = f["filename"]
+        if ".." in rel.split("/"):
+            raise ValueError("unexpected path: " + rel)
+        url = f"https://raw.githubusercontent.com/{REPO}/{sha}/{urllib.parse.quote(rel)}"
+        dest = os.path.join(ROOT, *rel.split("/"))
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "skopje-242"}), timeout=30) as r, open(dest + ".new", "wb") as out:
+            shutil.copyfileobj(r, out)
+        os.replace(dest + ".new", dest)
+        prog["n"] += 1
+
+
 def install(sha, prog):
     """Download the zip of `sha` and overwrite game files. prog = dict(done, total, err)."""
+    base = local_version()
+    if len(base) == 40:
+        try:
+            install_delta(base, sha, prog)
+            with open(VERSION_FILE, "w", encoding="utf-8") as f:
+                f.write(sha)
+            prog["finished"] = True
+            return
+        except Exception:  # noqa: BLE001 - fall back to the full zip below
+            prog["phase"], prog["n"], prog["done"] = "", 0, 0
     tmp = tempfile.mkdtemp(prefix="sk242_upd_")
     try:
         zpath = os.path.join(tmp, "repo.zip")
