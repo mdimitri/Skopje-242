@@ -30,6 +30,7 @@ SIDEWALK = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassifi
 MARK = {"primary", "secondary", "tertiary", "trunk", "motorway", "unclassified", "residential"}
 FOOT = {"pedestrian", "footway", "path", "steps", "cycleway", "track"}
 SW_W, SW_H = 2.0, 0.16
+BRIDGE_SW = 2.4                                          # extra deck width per side on a driven bridge: a real pavement to walk on
 Y_BASE, Y_STEP = 0.05, 0.016
 PIECE = 24.0                                             # longest ribbon piece (also keeps pieces inside their chunk)
 SAG = 0.012                                              # allowed gap between a flat piece and the curved terrain (m)
@@ -759,6 +760,12 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
         for k in range(0, 12, 2):
             a, b, c2 = ring[k], ring[(k + 1) % 12], ring[(k + 2) % 12]
             out.quad((p[0], y + 0.003, p[1]), (a[0], y + 0.003, a[1]), (b[0], y + 0.003, b[1]), (c2[0], y + 0.003, c2[1]), col)
+    bsw = BRIDGE_SW if (e["bridge"] and e["drive"]) else 0.0
+    if bsw:                                                # bridge pavements: raised strips with a kerb face on both flanks of the carriageway
+        for side in (1, -1):
+            I_, O_ = offset(pts, fr, side * hw), offset(pts, fr, side * (hw + bsw))
+            _strip(out, I_, O_, SW_H, (178, 174, 166))
+            _wall(out, I_, SW_H, y, (150, 148, 142), 0.78)
     # pavements with a curb face, trimmed exactly where another road's asphalt starts (never drawn over it)
     if cls in SIDEWALK and not e["bridge"]:
         skip = partners.get(i, ())
@@ -830,7 +837,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
         _markings(out, cov, i, e, pts, fr, y + 0.025)
     if deck is not None:                                   # girders + piers under the deck
-        _slab(out, pts, fr, hw + 0.0, y)
+        _slab(out, pts, fr, hw + bsw, y)
         if do_piers:
             _piers(pout, piers, deck, T)
     out.deck = None

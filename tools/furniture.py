@@ -10,6 +10,7 @@ import random
 import numpy as np
 
 import par
+import roads3d
 from progress import frac, span
 
 SUN = np.array([-0.45, 0.80, -0.40])
@@ -639,7 +640,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             continue
         deck = (decks or {}).get(ri)
         pts, w = rd["pts"], rd["w"]
-        hw = w / 2 + 0.55
+        hw = w / 2 + 0.55 + (roads3d.BRIDGE_SW if rd["drive"] else 0.0)
         carried = False
         walked = 0.0
         for k in range(len(pts) - 1):

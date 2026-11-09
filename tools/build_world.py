@@ -1410,7 +1410,7 @@ def main():
                 rails.append({"pts": geom_pts(el), "bridge": t.get("bridge") not in (None, "no")})
                 continue
             kind = area_kind(t)
-            if not kind:
+            if not kind or el["id"] == 176160189:           # 176160189 = Macedonia Square fountain basin: no water under the statue
                 continue
             for outer, holes in polygons_of(el):
                 if len(outer) < 3:
@@ -1643,7 +1643,7 @@ def main():
     for ri, rd in enumerate(span(roads, 0.4, 1.0, "decks")):
         if rd["bridge"] and (rd["drive"] or rd["walk"]) and len(rd["pts"]) >= 2:
             try:
-                decks[ri] = terrain_mod.make_deck(T, {"pts": rd["pts"]}, lower, rd["w"] / 2 + 0.6)
+                decks[ri] = terrain_mod.make_deck(T, {"pts": rd["pts"]}, lower, rd["w"] / 2 + 0.6 + (roads3d.BRIDGE_SW if rd["drive"] else 0.0))
             except Exception as ex:  # noqa: BLE001 - a bad bridge stays flat
                 print(f"   deck for road {rd['id']} skipped: {ex}")
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
