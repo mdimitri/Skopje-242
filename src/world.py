@@ -373,13 +373,13 @@ class World:
             he = self._hedge
             if he is None:
                 he = self._hedge_mask()
-            if he[k]:                                           # a cell where asphalt / pavement / ground meet: the 2 m mask is too coarse
+            c = self.hgt[k] & 3
+            if c == 1 or he[k]:                                 # asphalt (its height depends on the road's rank) or a kerb / verge edge
                 sub = self._hsub.get(k)
                 if sub is None:
-                    sub = self._hsub_cell(ix, iy)
-                c = sub[min(3, int(((y + self.hy) / self.cell - iy) * 4)) * 4 + min(3, int(((x + self.hx) / self.cell - ix) * 4))]
-                return t + self.GROUND_Y[c]
-            return t + self.GROUND_Y[self.hgt[k] & 3]
+                    sub = self._hsub_cell(ix, iy, c)
+                return t + sub[min(3, int(((y + self.hy) / self.cell - iy) * 4)) * 4 + min(3, int(((x + self.hx) / self.cell - ix) * 4))]
+            return t + self.GROUND_Y[c]
         return t
 
     _hedge = None
@@ -399,8 +399,11 @@ class World:
         for ed in self.edges:                                   # the same edges / widths the build rasterised (tools/build_world.py)
             if ed.get("bridge"):
                 continue
-            sw = ed["cls"].replace("_link", "") in self.KERB_CLS
-            asp = ed.get("drive") or ed.get("walk")
+            base = ed["cls"].replace("_link", "")
+            sw = base in self.KERB_CLS
+            asp = None
+            if ed.get("drive") or ed.get("walk"):                # asphalt top as tools/roads3d.py y_of() lays it (without its <1 cm jitter)
+                asp = 0.04 if base in self.FOOT_CLS else 0.05 + 0.016 * self.ROAD_RANK.get(base, 0)
             if not (sw or asp):
                 continue
             hw = ed["w"] / 2
@@ -412,26 +415,31 @@ class World:
         self._hgrid = g
         return self._hedge
 
-    def _hsub_cell(self, ix, iy):
-        """Height class of the 4 x 4 sub-cells of one edge cell: asphalt within half the road width of an asphalt edge,
-        pavement up to KERB_W beyond a city street, else the cell's own class only if it is ground-level ground."""
-        out = []
+    FOOT_CLS = {"pedestrian", "footway", "path", "steps", "cycleway", "track"}           # = tools/roads3d.py FOOT / RANK
+    ROAD_RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1,
+                 "living_street": 0, "service": 0}
+
+    def _hsub_cell(self, ix, iy, cls):
+        """Surface build-up of the 4 x 4 sub-cells (0.5 m) of one cell, as the 3D roads draw it: the highest asphalt
+        ribbon within its half width, else pavement up to KERB_W beyond a city street, else bare ground. Where the road
+        geometry finds nothing (junction plates, areas) the 2 m mask's class decides."""
+        out = array.array("f")
         for j in range(4):
             for i in range(4):
                 x = (ix + (i + 0.5) / 4) * self.cell - self.hx
                 y = (iy + (j + 0.5) / 4) * self.cell - self.hy
-                c = 0
+                top, pav = None, False
                 for ax, ay, bx, by, hw, sw, asp in self._hgrid.get((int(x // 16), int(y // 16)), ()):
                     dx, dy = bx - ax, by - ay
                     l2 = dx * dx + dy * dy or 1e-9
                     tt = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
                     d = math.hypot(x - ax - dx * tt, y - ay - dy * tt)
-                    if asp and d < hw:
-                        c = 1
-                        break                                   # asphalt wins (it was drawn over the pavements)
-                    if sw and d < hw + self.KERB_W:
-                        c = 2
-                out.append(c)
+                    if asp is not None and d < hw:
+                        if top is None or asp > top:
+                            top = asp                           # asphalt wins over pavement; the higher-ranked road on top
+                    elif sw and d < hw + self.KERB_W:
+                        pav = True
+                out.append(top if top is not None else (self.GROUND_Y[2] if pav else (self.GROUND_Y[cls] if cls == 1 else 0.0)))
         self._hsub[iy * self.ncx + ix] = out
         return out
 

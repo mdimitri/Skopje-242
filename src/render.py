@@ -37,6 +37,22 @@ def gait_cycle(arch, run):
 
 
 
+def _hull(pts):
+    """Convex hull (monotone chain), counter-clockwise."""
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and (out[-1][0] - out[-2][0]) * (p[1] - out[-2][1]) - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0]) <= 0:
+                out.pop()
+            out.append(p)
+        return out[:-1]
+    return half(pts) + half(reversed(pts))
+
+
 def _keep(M):
     """An owned copy of a Model's transform (reading model.transform gives a view of the model's memory, so 'old = m.transform'
     would change along with it and the restore would keep the new matrix). Restore with m.transform = old[0]."""
@@ -56,7 +72,7 @@ FLAT_FS = """#version 330
 uniform vec4 colDiffuse;
 out vec4 finalColor;
 void main(){
-  gl_FragDepth = floor(gl_FragCoord.z * 65535.0 + 0.5) / 65535.0;     // every layer of a flattened shadow gets the very same depth value
+  gl_FragDepth = floor(gl_FragCoord.z * 65535.0) / 65535.0;     // every layer of a flattened shadow gets the very same depth value, rounded towards the camera (never behind the road it lies on)
   finalColor = colDiffuse;
 }
 """
@@ -304,8 +320,8 @@ class Renderer:
                   f"worst={[(round(a, 2), b) for a, b in bad]}", flush=True)
 
     def _near(self, x, z):
-        """Close to the view centre: its shadow is the projected mesh (see _proj_shadow), not a rectangle."""
-        return self.shadows and (x - self._sh_c[0]) ** 2 + (z - self._sh_c[1]) ** 2 < 45.0 ** 2
+        """On screen: its shadow is the projected mesh (see _proj_shadow), not the parallelogram."""
+        return self.shadows and (x - self._sh_c[0]) ** 2 + (z - self._sh_c[1]) ** 2 < self._sh_r2
 
     def _proj_shadow(self, m, M, gy, a):
         """Shadow of the real mesh: every vertex slid along the sun direction down onto the ground plane (a shear), drawn flat dark.
@@ -314,7 +330,7 @@ class Renderer:
         a = int(a * (0.4 + 0.6 * k))
         if a <= 0 or m is None:
             return
-        S = rl.Matrix(1.0, sx, 0.0, -sx * gy,  0.0, 0.0, 0.0, gy + 0.3,  0.0, sz, 1.0, -sz * gy,  0.0, 0.0, 0.0, 1.0)
+        S = rl.Matrix(1.0, sx, 0.0, -sx * gy,  0.0, 0.0, 0.0, gy + 0.04,  0.0, sz, 1.0, -sz * gy,  0.0, 0.0, 0.0, 1.0)
         old = _keep(m.transform)
         m.transform = rl.matrix_multiply(M, S)
         sh = _flat_shader()
@@ -337,9 +353,9 @@ class Renderer:
         out.append((hx, hy, th, gy, pitch, roll))
         if self._near(x, y):
             return
-        sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, 1.0, 70, gy))
+        sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, vehicles.DIMS[vehicles.SEMI][1] / 2, 70, gy, vehicles.DIMS[vehicles.SEMI][4]))
         mid = vehicles.SEMI_TRAILER_L / 2 - 0.3
-        sh.append((hx - math.cos(th) * mid, hy - math.sin(th) * mid, th, vehicles.SEMI_TRAILER_L / 2 + 0.2, 1.0, 70, gy))
+        sh.append((hx - math.cos(th) * mid, hy - math.sin(th) * mid, th, vehicles.SEMI_TRAILER_L / 2 + 0.2, vehicles.DIMS[vehicles.SEMI][1] / 2, 70, gy, 3.9))
 
     def _free_orphans(self, bodies):
         """Dented / burnt cars own a model; give its video memory back once the car is gone (never for a car still in play)."""
@@ -444,6 +460,11 @@ class Renderer:
         gl3d.ground_time(t)
         rl.rl_set_clip_planes(near, H * 4 + 400)
         self._cam, self._clip = cam, (near, H * 4 + 400)
+        # full-model shadows for everything on screen: the frame's half diagonal on the ground (resolution x zoom setting x
+        # the current zoom-out), the street view out to its full-detail distance; beyond that the parallelogram
+        r = 150.0 if far_overview else 0.5 * math.hypot(rl.get_render_width(), rl.get_render_height()) / max(ppm, 0.1) + 8.0
+        r = float(os.environ.get("SK242_SHADOW_R") or r)      # test harness: force the full-model range (0: all parallelograms)
+        self._sh_r2 = r * r
         rl.begin_mode_3d(cam)
         try:
             rl.rl_disable_backface_culling()
@@ -588,35 +609,28 @@ class Renderer:
         return fr is None or fr.sphere(x, self.w.ground_y(x, z) + 2.0, z, pad + 4.0)      # behind / beside the camera (street views)
 
     def _shadow_batch(self, items):
+        """Far-away shadows (off screen / beyond the full-model range): the footprint box swept along the sun direction by
+        its height, i.e. the convex hull of the footprint and the footprint slid by the shadow vector, from the base."""
+        sx, sz, k = self._sh_k
         rl.rl_disable_depth_mask()
-        rl.rl_begin(rl.RL_QUADS)
-        L = self.sun if self.sun is not None else gl3d.SUN
-        k = self.sun_k                                    # no sun: the contact shadow sits right under the body
-        sl = math.hypot(L[0], L[2]) / L[1] if L[1] > 1e-6 else 3.0         # shadow length per metre of height
-        dn = (-L[0] / (math.hypot(L[0], L[2]) or 1.0), -L[2] / (math.hypot(L[0], L[2]) or 1.0))
-        for x, z, h, hl, hw, a, gy in items:
-            if hl == hw and hl >= 0.3:                      # people: a shadow stretched from the feet away from the sun, as long as the body is tall
-                ln = min(6.0, 1.7 * sl * hl / 0.35)
-                x += dn[0] * ln / 2
-                z += dn[1] * ln / 2
-                h, hl, hw, a = math.atan2(dn[1], dn[0]), ln / 2 + 0.12, hw * 0.75, int(a * k)
-                if a <= 0:
-                    continue
-            else:
-                a = int(a * (0.4 + 0.6 * k))                # at night only a faint contact patch remains
-                ln = min(3.5, 1.4 * sl) * k                 # vehicle ~1.4 m tall: the shadow grows out of the footprint, away from the sun
-                if ln > 0.05:
-                    da = math.atan2(dn[1], dn[0]) - h
-                    c, s = abs(math.cos(da)), abs(math.sin(da))
-                    e, w = hl * c + hw * s, hl * s + hw * c          # footprint extent along / across the shadow direction
-                    x += dn[0] * ln / 2
-                    z += dn[1] * ln / 2
-                    h, hl, hw = math.atan2(dn[1], dn[0]), e + ln / 2, w
+        rl.rl_begin(rl.RL_TRIANGLES)
+        for x, z, h, hl, hw, a, gy, ht in items:
+            a = int(a * (0.4 + 0.6 * k))                    # at night only a faint contact patch remains
+            if a <= 0:
+                continue
             ca, sa = math.cos(h), math.sin(h)
+            vx, vz = sx * ht, sz * ht
+            fp = [(x + ca * lx - sa * lz, z + sa * lx + ca * lz) for lx, lz in ((-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw))]
+            hull = _hull(fp + [(px + vx, pz + vz) for px, pz in fp])
+            cx = sum(p[0] for p in hull) / len(hull)
+            cz = sum(p[1] for p in hull) / len(hull)
+            y = gy + 0.04
             rl.rl_color4ub(10, 10, 20, a)
-            for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-                lx, lz = sx * hl, sz * hw
-                rl.rl_vertex3f(x + ca * lx - sa * lz, gy + 0.18, z + sa * lx + ca * lz)
+            for i in range(len(hull)):
+                p0, p1 = hull[i], hull[(i + 1) % len(hull)]
+                rl.rl_vertex3f(cx, y, cz)
+                rl.rl_vertex3f(p1[0], y, p1[1])
+                rl.rl_vertex3f(p0[0], y, p0[1])
         rl.rl_end()
         rl.rl_enable_depth_mask()
 
@@ -696,7 +710,7 @@ class Renderer:
                 if c.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll)
                 elif not self._near(c.x, c.y):
-                    sh.append((c.x, c.y, c.h, vehicles.HALF_L[c.kind], 1.0, 70, c.gz))
+                    sh.append((c.x, c.y, c.h, vehicles.DIMS[c.kind][0] / 2, vehicles.DIMS[c.kind][1] / 2, 70, c.gz, vehicles.DIMS[c.kind][4]))
         for b in sim.bodies:
             if self._in(b.x, b.y, rect):
                 tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
@@ -715,8 +729,7 @@ class Renderer:
                 if b.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll)
                 elif not self._near(b.x, b.y):
-                    hl = vehicles.HALF_L[b.kind] + 0.1
-                    sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
+                    sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80, gy, vehicles.DIMS[b.kind][4]))
         # peds
         peds = []
         far2 = 90.0 ** 2 if self._ppm < 4.0 else 1e18                  # zoomed far out, people beyond 90 m from the view centre are 1-2 pixel dots: not worth a draw call each
@@ -747,7 +760,7 @@ class Renderer:
                 pg = p.gz if p.gz is not None else w.ground_y(p.x, p.y)
                 peds.append((p.x, y + pg, p.y, p.h + p.spin, p.arch, p.shirt, frame, p.skin, lean, pg))
                 if p.mode not in ("dead", "ko") and not self._near(p.x, p.y):
-                    sh.append((p.x, p.y, 0, 0.35, 0.35, 60, pg))
+                    sh.append((p.x, p.y, p.h, 0.14, 0.24, 60, pg, 1.75))
         dogs = getattr(sim, "dogs", None)
         if dogs is not None:                                           # stray dogs: small, so culled early when zoomed out
             for d in dogs.live:
@@ -756,7 +769,7 @@ class Renderer:
                     if dm is not None:
                         dg = d.gz if d.gz is not None else w.ground_y(d.x, d.y)
                         rl.draw_model_ex(dm, V3(d.x, dg, d.y), UP, -math.degrees(d.h), V3(1.3, 1.3, 1.3), WHITE)           # a bit bigger than life: cute and readable from above
-                        sh.append((d.x, d.y, d.h, 0.4 if d.pose != "sleep" else 0.32, 0.22, 55, dg))
+                        sh.append((d.x, d.y, d.h, 0.4 if d.pose != "sleep" else 0.32, 0.22, 55, dg, 0.55 if d.pose != "sleep" else 0.25))
         birds = getattr(sim, "birds", None)
         if birds is not None:                                          # ducks, pigeons, crows: tiny, culled early
             for b in birds.live:
@@ -766,7 +779,7 @@ class Renderer:
                         sc = 1.9 * birdart.SIZE[b.art]
                         rl.draw_model_ex(bm, V3(b.x, b.z, b.y), UP, -math.degrees(b.h), V3(sc, sc, sc), WHITE)
                         if b.state not in ("fly", "land"):
-                            sh.append((b.x, b.y, b.h, 0.25 * sc, 0.15 * sc, 50, b.z))
+                            sh.append((b.x, b.y, b.h, 0.25 * sc, 0.15 * sc, 50, b.z, 0.2 * sc))
         cb = sim.car
         if sim.mode == "car" and cb is not None and cb.kind in vehicles.BIKES and getattr(sim, "riding", None) is None:
             gy = cb.az if cb.az is not None else w.ground_y(cb.x, cb.y)       # you, sitting on (or standing on) the two-wheeler
@@ -779,7 +792,7 @@ class Renderer:
                 gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
                 peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3, 0.0, gy))
                 if not self._near(rp["x"], rp["y"]):
-                    sh.append((rp["x"], rp["y"], 0, 0.35, 0.35, 60, gy))
+                    sh.append((rp["x"], rp["y"], rp["h"], 0.14, 0.24, 60, gy, 1.75))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0) if wk.moving else 12
@@ -814,7 +827,7 @@ class Renderer:
                     rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
                     wm.transform = old_t[0]
             if not self._near(wk.x, wk.y):
-                sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
+                sh.append((wk.x, wk.y, wk.h, 0.14, 0.24, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0, 1.75 + wk.z))
         for kx, kz, kh in sim.kiosks:
             if self._in(kx, kz, rect):
                 self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
