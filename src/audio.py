@@ -11,6 +11,8 @@ import wave
 from collections import OrderedDict
 
 import numpy as np
+
+import engine_synth
 import pyray as rl
 
 import soundcat
@@ -72,11 +74,9 @@ def build():
         if noise:
             x = x + _lp(rng.standard_normal(n).astype(np.float32), 8) * noise
         return x / np.abs(x).max() * 0.55
-    S["engine_i4"] = eng(44.0, 14, 0.8, 8, 0.25)
-    S["engine_small"] = eng(70.0, 11, 0.55, 30, 0.45, 0.05)                 # buzzy two-cylinder: Fico, Trabant, Yugo
-    S["engine_v8"] = eng(28.0, 18, 0.95, 14, 0.4, 0.04)                     # burbling V8: Mafijash, Hummer, Bavarka
-    S["engine_diesel"] = eng(36.0, 16, 0.7, 6, 0.2, 0.03, 1.0)              # clattering diesel: vans, buses, Land Cruiser
-    S["engine_truck"] = eng(24.0, 20, 0.85, 4, 0.3, 0.05, 1.3)              # heavy truck / tractor
+    for i_, k_ in enumerate(engine_synth.PROFILES):                          # one low-rev and one high-rev layer per engine character (see engine_synth.py)
+        S["engine_" + k_] = engine_synth.loop(k_, False, 1.6, i_)
+        S["engine_" + k_ + "_hi"] = engine_synth.loop(k_, True, 1.6, i_ + 20)
     ev = np.sin(2 * np.pi * 400 * t) * 0.6 + np.sin(2 * np.pi * 800 * t) * 0.25 + np.sin(2 * np.pi * 1200 * t) * 0.1
     S["engine_ev"] = ev / np.abs(ev).max() * 0.35                           # electric whine: Tesla
     S["engine"] = S["engine_i4"]
@@ -90,6 +90,11 @@ def build():
             f = freqs[i % len(freqs)] * rng.uniform(0.9, 1.1)
             x[a:a + m] += (np.sin(2 * np.pi * f * tt) + 0.5 * np.sin(2 * np.pi * f * 2.76 * tt)) * np.exp(-tt * ring) * rng.uniform(0.5, 1.0)
         return x
+    S["engine_misfire"] = engine_synth.misfire_loop()
+    S["engine_knock"] = engine_synth.knock_loop()
+    S["engine_start"] = engine_synth.start("i4", 3.2)
+    S["engine_start_diesel"] = engine_synth.start("diesel", 4.2, 8, True)
+    S["engine_stall"] = engine_synth.stall("i4")
     S["engine_rattle"] = np.tanh(clank([1900, 2700, 1300, 3300], 26, 90) * 1.5) * 0.6
     gr = (((44.0 * 2 * t) % 1.0) * 2 - 1) * 0.5 + _lp(rng.standard_normal(n).astype(np.float32), 3) * 0.7
     S["engine_grind"] = np.tanh(gr * (1 + 0.8 * np.sin(2 * np.pi * 12 * t)) * 1.8) * 0.5
@@ -97,7 +102,7 @@ def build():
     bg = np.tanh((rng.standard_normal(len(tb)).astype(np.float32) * np.exp(-tb * 22) * 1.5 + np.sin(2 * np.pi * 95 * tb) * np.exp(-tb * 12) + np.sin(2 * np.pi * 1450 * tb) * np.exp(-tb * 9) * 0.6) * 2.2)
     S["engine_bang"] = bg / np.abs(bg).max() * 0.9
     S["ai_engine_rattle"] = S["engine_rattle"]
-    for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
+    for nm in [n_ for n_ in S if n_.startswith("engine_") and n_ not in ("engine_start", "engine_start_diesel", "engine_stall", "engine_bang")]:
         S["ai_" + nm] = S[nm]                                                # traffic engines: own sound instance so the player's engine is not shared
     # horn
     t = _t(0.55)
@@ -340,6 +345,31 @@ def build():
     nz = _lp(rng.standard_normal(len(t)).astype(np.float32), 4)
     x = nz * np.exp(-t / 0.06) + np.sin(2 * np.pi * (300 + 900 * t) * t) * np.exp(-t / 0.05) * 0.5
     S["puddle_step"] = (x / np.abs(x).max() * 0.6).astype(np.float32)
+    # jumping: push-off (cloth rustle + sole scuff + a soft thump), landing = both feet one after the other, heavier than a step,
+    # and hopping over a car (palm slap on sheet metal that rings, cloth scraping the paint) with a hollow landing on the roof/boot
+    for suf in ("", "_b", "_c"):
+        t = _t(0.28)
+        sw = _lp(rng.standard_normal(len(t)).astype(np.float32), 5) * np.minimum(1.0, t / 0.03) * np.exp(-t / 0.09)
+        pu = np.sin(2 * np.pi * rng.uniform(75, 95) * t) * np.exp(-t / 0.04) * np.minimum(1.0, t / 0.004)
+        S["jump_up" + suf] = ((sw * 2.2 + pu * 0.7) / 1.8 * 0.55).astype(np.float32)
+        j_ = rng.uniform(0.92, 1.1)
+        for sf_, f_, tl_ in (("asphalt", 70, 0.1), ("grass", 55, 0.14), ("dirt", 62, 0.12), ("wood", 100, 0.1)):
+            a_ = boot(f_ * j_, 0.42, tl_, 1.0)
+            b_ = np.zeros_like(a_)
+            sh = int(0.035 * SR)
+            b_[sh:] = boot(f_ * 1.25 * j_, 0.42, tl_, 0.7)[:len(a_) - sh]
+            x = a_ + b_
+            if sf_ == "grass":
+                x = _lp(x, 3)
+            S["land_" + sf_ + suf] = (x / np.abs(x).max() * 0.85).astype(np.float32)
+        t = _t(0.6)
+        slap = np.sin(2 * np.pi * 330 * t) * np.exp(-t / 0.07) + 0.6 * np.sin(2 * np.pi * 790 * t) * np.exp(-t / 0.05) + 0.3 * np.sin(2 * np.pi * 1450 * t) * np.exp(-t / 0.03)
+        slap = slap * np.minimum(1.0, t / 0.002) + _lp(rng.standard_normal(len(t)).astype(np.float32), 2) * np.exp(-t / 0.012) * 0.6
+        sc = _lp(rng.standard_normal(len(t)).astype(np.float32), 4) * np.exp(-((t - 0.18) / 0.09) ** 2) * 0.5
+        t2 = np.maximum(t - 0.3, 0)
+        lan = (np.sin(2 * np.pi * 150 * t2) * np.exp(-t2 / 0.05) + 0.5 * np.sin(2 * np.pi * 410 * t2) * np.exp(-t2 / 0.08)) * (t >= 0.3) * 0.9
+        x = slap + sc + lan
+        S["vault_car" + suf] = (x / np.abs(x).max() * 0.8).astype(np.float32)
     # crickets
     t = _t(4.0)
     carr = np.sin(2 * np.pi * 4300 * t)
@@ -357,7 +387,7 @@ def _loopify(x, fade=0.25):
 
 
 class Audio:
-    LOOPS = ("ai_engine_i4", "ai_engine_small", "ai_engine_v8", "ai_engine_diesel", "ai_engine_truck", "ai_engine_ev", "engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_rattle", "engine_grind", "ai_engine_rattle", "siren_police", "siren_amb",
+    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "engine_rattle", "engine_grind", "ai_engine_rattle", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind")
 
     CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)

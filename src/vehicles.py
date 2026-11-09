@@ -343,8 +343,14 @@ KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (T
 
 # ---------------------------------------------------------------- sound profiles (see audio.py)
 _ENGINE = {}
-for _i in (6, 8, 30, 33, 34, 37, 48, 52, 53, 54, 57, 58, MARITSA):
+for _i in (8, 30, 33, 34, 37, 48, 52, 53, 54, 58, MARITSA):
     _ENGINE[_i] = "engine_diesel"
+for _i in (6, 57, 87, 88):
+    _ENGINE[_i] = "engine_bus"
+for _i in (59, 66, 75, 84):
+    _ENGINE[_i] = "engine_tdi"                                               # light turbodiesel cars and vans: tighter, harder knock than the big diesels
+_ENGINE[90] = _ENGINE[91] = "engine_moto"
+_ENGINE[92] = "engine_ev"
 for _i in (49, 50, 51, 55, *HEAVY):
     _ENGINE[_i] = "engine_truck"
 for _i in (25, 26, 28, 29, 43, 45, 46):

@@ -1121,7 +1121,7 @@ def main():
                 popups.add(rng.choice(slang.EXPLODE), b.x, b.y, 4.5, 3.0, (255, 190, 80), 26)
             elif kind == "stolen":
                 b = d["body"]
-                aud.at("engine_start", b.x, b.y, 0.7)
+                aud.at("engine_start_diesel" if vehicles.ENGINE_SOUND[b.kind] in ("engine_diesel", "engine_bus", "engine_truck", "engine_tdi") else "engine_start", b.x, b.y, 0.7)
                 if rng.random() < 0.25:
                     aud.at("car_alarm", b.x, b.y, 0.6, 1.0, "sfx", 120.0, 12.0)
                 popups.add(TXT("main.0034"), b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
@@ -1132,7 +1132,7 @@ def main():
                 particles.emit("c", d["x"], d["y"], 0.3, 0, 0, 1.2, 8, 0.3, 0.6, (150, 140, 120), 1.0, 0.6, 0.5)
             elif kind == "enter":
                 b = d["body"]
-                aud.at("engine_start", b.x, b.y, 0.7)
+                aud.at("engine_start_diesel" if vehicles.ENGINE_SOUND[b.kind] in ("engine_diesel", "engine_bus", "engine_truck", "engine_tdi") else "engine_start", b.x, b.y, 0.7)
                 popups.add(b.name, b.x, b.y, 3.4, 1.8, (200, 240, 255), 20)
             elif kind == "walker_dead":
                 sim.stats["deaths"] += 1
@@ -1293,7 +1293,11 @@ def main():
             sx["stepn"] = n_
             air = wk.z > 0.05 or wk.duck_t > 0.0                    # no feet on the ground: jumping, or crawling under a vehicle
             landed = sx.get("air", False) and not air and wk.z < 0.3
+            jumped = air and not sx.get("air", False) and wk.duck_t <= 0.0 and wk.vz > 1.0
             sx["air"] = air
+            car_near = any((b_.x - wk.x) ** 2 + (b_.y - wk.y) ** 2 < 9.0 for b_ in sim.bodies)       # within ~3 m of a vehicle: hopping over / landing by it
+            if jumped:
+                aud.play(("vault_car" if car_near else "jump_up") + rng.choice(("", "_b", "_c")), 0.5, rng.uniform(0.92, 1.08), "sfx", rng.uniform(0.46, 0.54))
             if not air and (landed or (v > 0.6 and wk.moving and fresh)):    # a jump ends with one step
                 sf = world.surface(wk.x, wk.y)
                 if world.wet(wk.x, wk.y, wk.az):
@@ -1304,9 +1308,11 @@ def main():
                     k_ = "step_run_asphalt" if run_ else "step_asphalt"
                 else:
                     k_ = "step_grass" if sx["env"].get("park", 0) + sx["env"].get("tree", 0) > 0.5 else "step_dirt"
+                if landed and k_ != "puddle_step":
+                    k_ = k_.replace("step_run_", "land_").replace("step_", "land_")      # a landing is two feet, heavier than a step
                 if not aud.lib.get(k_):                      # synthesized fallback: three variants so no two steps in a row are identical
                     k_ += rng.choice(("", "_b", "_c"))
-                aud.play(k_, 0.45 if run_ else 0.3, rng.uniform(0.9, 1.1), "sfx", rng.uniform(0.46, 0.54))
+                aud.play(k_, 0.55 if landed else (0.45 if run_ else 0.3), rng.uniform(0.9, 1.1), "sfx", rng.uniform(0.46, 0.54))
             if v > 0.6 and world.wet(wk.x, wk.y, wk.az) and t_game > sx["swim"]:
                 sx["swim"] = t_game + 3.0
                 aud.play("swim_stroke", 0.5, 1.0, "sfx")
@@ -1355,6 +1361,23 @@ def main():
             eng_gear.clear()
         return st * base
 
+    ENG_KINDS = ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto")
+
+    def engine_layers(pre, prof, vol, st, pan, seed):
+        """Two recordings per engine, a low-rev and a high-rev one, crossfaded (equal power) as the revs climb; the high one is
+        pitched down so both agree where they meet.  Every other engine is silenced."""
+        w = max(0.0, min(1.0, (st - 0.85) / 0.7))
+        lo, hi = math.cos(w * 1.5708), math.sin(w * 1.5708)
+        for nm in ENG_KINDS:
+            if nm != prof:
+                aud.loop(pre + nm, 0.0, 1.0, "engine")
+                aud.loop(pre + nm + "_hi", 0.0, 1.0, "engine")
+            elif nm == "engine_ev":
+                aud.loop(pre + nm, vol, st, "engine", pan, seed)
+            else:
+                aud.loop(pre + nm, vol * lo, st, "engine", pan, seed)
+                aud.loop(pre + nm + "_hi", vol * hi, st / 1.6, "engine", pan, seed)
+
     def doppler(b, lx, ly):
         """Pitch shift of a moving source: higher while it comes towards you, lower once it passes."""
         dx, dy = b.x - lx, b.y - ly
@@ -1377,13 +1400,12 @@ def main():
             c = sim.car
             fr = min(1.0, c.speed / vehicles.PERF[c.kind][0])
             prof = vehicles.ENGINE_SOUND[c.kind]
-            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
-                if nm == prof:                                       # this very car always uses the same recording, however often you leave and re-enter it
-                    thr_ = abs(inp_last.get("throttle", 0))
-                    aud.loop(nm, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * max(0.0, min(1.0, (70.0 - c.health) / 70.0))), engine_pitch(c, nm, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * max(0.0, (70.0 - c.health) / 70.0)), "engine", 0.5, car_seed(c))
-                else:
-                    aud.loop(nm, 0.0, 1.0, "engine")
+            thr_ = abs(inp_last.get("throttle", 0))
+            hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
+            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
+            aud.loop("engine_misfire", 0.9 * max(0.0, dmg_ - 0.25) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # sputtering from about a third damaged
+            aud.loop("engine_knock", 0.8 * max(0.0, dmg_ - 0.55) * 2.2, 0.85 + 0.3 * fr, "engine", 0.5, 0)         # rod knock when it is bad
             if dmg_ > 0:
                 aud.loop("engine_rattle", 0.12 + 0.75 * dmg_ ** 1.2, 0.85 + 0.3 * fr + 0.2 * dmg_, "engine", 0.5, 0)
                 aud.loop("engine_grind", 0.55 * dmg_ ** 1.5, 0.8 + 0.5 * fr, "engine", 0.5, 0)
@@ -1401,7 +1423,7 @@ def main():
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_rattle", "engine_grind", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_rattle", "engine_grind", "engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:
@@ -1409,15 +1431,14 @@ def main():
                 d_ = math.hypot(c.x - fx_, c.y - fy_)
                 if d_ < nd:
                     near_c, nd = c, d_
-        for nm in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev"):
-            if near_c is not None and vehicles.ENGINE_SOUND[near_c.kind] == nm:
-                fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
-                k_ = (1.0 - nd / 45.0) ** 2
-                dop_ = doppler(near_c, fx_, fy_)
-                aud.loop("ai_" + nm, 0.32 * k_ * (0.5 + 0.5 * fr_), engine_pitch(near_c, nm, fr_, 0.6) * dop_, "engine", pan_of(near_c.x, fx_, nd), car_seed(near_c))
-            else:
-                aud.loop("ai_" + nm, 0.0, 1.0, "engine")
+        if near_c is not None:
+            prof_ = vehicles.ENGINE_SOUND[near_c.kind]
+            fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
+            engine_layers("ai_", prof_, 0.32 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c))
+        else:
+            engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)
+        aud.loop("ai_engine_misfire", 0.6 * max(0.0, dn_ - 0.25) * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.95, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
         aud.loop("ai_engine_rattle", 0.5 * dn_ * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.9 + 0.2 * dn_, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
         best, near_v = {}, {}
         for c in sim.traffic.cars:
