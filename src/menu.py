@@ -153,8 +153,10 @@ def _logo(x, y, sz):
 
 
 # title menu (v3); new labels live here until they can be added to text/ (human-edited)
-TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
+TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("rebuild", "ИЗГРАДИ ГО СВЕТОТ"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
 NO_SAVE = "Нема зачувана игра"
+NO_WORLD = "Прво изгради го светот (ИЗГРАДИ ГО СВЕТОТ)"
+WORLD = {"built": True}     # main sets False when there is no built world yet: play / continue / multiplayer wait for a build
 BACK = "Назад"
 _T = {}
 MP = {"session": None}     # set by the multiplayer lobby when the host pressed Start (the game itself joins in the next step)
@@ -597,12 +599,55 @@ def _slot_picker(aud=None, music=None, latest=0):
         rl.end_drawing()
 
 
+def _confirm_rebuild():
+    """Themed warning card before a rebuild of an existing world.  -> True to go on."""
+    t0 = time.time()
+    sel = 1
+    while not rl.window_should_close():
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        pw, ph = min(W - 40, 880), 330
+        px, py = (W - pw) // 2, (H - ph) // 2
+        bw, bh = (pw - 90) // 2, 56
+        by = py + ph - bh - 36
+        rects = [(px + 30, by), (px + 60 + bw, by)]
+        m = rl.get_mouse_position()
+        hit = next((i for i, (bx, byy) in enumerate(rects) if bx <= m.x < bx + bw and byy <= m.y < byy + bh), None)
+        if hit is not None:
+            sel = hit
+        if rl.is_key_pressed(rl.KEY_LEFT) or rl.is_key_pressed(rl.KEY_RIGHT) or rl.is_key_pressed(rl.KEY_TAB):
+            sel = 1 - sel
+        if time.time() - t0 > 0.3:
+            if rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_SPACE):
+                return sel == 0
+            if rl.is_key_pressed(rl.KEY_ESCAPE):
+                return False
+            if hit is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+                return hit == 0
+        rl.begin_drawing()
+        poster.draw_splash(W, H)
+        _veil(W, H)
+        _panel(px, py, pw, ph)
+        y = py + 30
+        for txt, sz, col in (("Повторно градење на светот", 36, _th["fg"]),
+                             ("Ова трае долго (од неколку минути до половина час).", 24, _th["mu"]),
+                             ("Играта ќе се рестартира и ќе го изгради светот од почеток.", 24, _th["mu"])):
+            txt = font.fit(txt, sz, pw - 60, "cond")
+            font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col, bold="cond")
+            y += sz + 22
+        for i, (lab, (bx, byy)) in enumerate(zip(("Изгради повторно", "Откажи"), rects)):
+            _btn(bx, byy, bw, bh, lab, sel == i, 26)
+        rl.end_drawing()
+    return False
+
+
 def title_menu(aud=None, music=None):
     """Нова игра / Продолжи / Поставки / Излез over the splash art.  -> 'new' | 'cont<N>' | 'settings' | 'quit'"""
     present.off()
     latest = _latest_save()
     sel = 0
-    flash_t = 0.0
+    flash_t, flash_msg = 0.0, NO_SAVE
+    if not WORLD["built"]:
+        sel = next(i for i, (k, _l) in enumerate(TITLE_ITEMS) if k == "rebuild")
     t_open = time.time()
     last_m = None
     while True:
@@ -640,14 +685,20 @@ def title_menu(aud=None, music=None):
             k = TITLE_ITEMS[sel][0]
             if aud is not None:
                 aud.play("ui_confirm", 0.6)
-            if k == "cont":
+            if k in ("new", "cont", "multi") and not WORLD["built"]:
+                flash_t, flash_msg = time.time(), NO_WORLD
+            elif k == "rebuild":
+                if not WORLD["built"] or _confirm_rebuild():
+                    return "rebuild"
+                t_open = time.time()
+            elif k == "cont":
                 if latest:
                     n = _slot_picker(aud, music, latest)
                     if n:
                         return f"cont{n}"
                     t_open = time.time()                 # the Enter / click that closed the picker must not act here
                 else:
-                    flash_t = time.time()
+                    flash_t, flash_msg = time.time(), NO_SAVE
             elif k == "quit":
                 if font.confirm_quit():
                     return "quit"
@@ -667,7 +718,7 @@ def title_menu(aud=None, music=None):
             tw = font.measure_text(label, sz, "cond")
             tx = x0 + (bw - tw) // 2
             ty = y + (rh - sz) // 2 - sz // 10
-            off = k == "cont" and not latest
+            off = (k == "cont" and not latest) or (k in ("new", "cont", "multi") and not WORLD["built"])
             if i == sel:
                 rl.draw_rectangle(x0, y + 2, bw, rh - 4, PINK)
                 font.draw_text(label, tx, ty, sz, rl.WHITE, bold="cond")
@@ -676,8 +727,8 @@ def title_menu(aud=None, music=None):
                 font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
         font.draw_version(W, H)
         if time.time() - flash_t < 2.0:
-            fw = font.measure_text(NO_SAVE, sz * 3 // 4, "cond")
-            font.draw_text(NO_SAVE, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
+            fw = font.measure_text(flash_msg, sz * 3 // 4, "cond")
+            font.draw_text(flash_msg, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
         if music is not None:
             music.widget()
         rl.end_drawing()
@@ -693,8 +744,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     if not in_game and not settings_only:     # start: the title menu over the splash art
         while True:
             ch = title_menu(aud, music)
-            if ch == "quit":
-                return "quit"
+            if ch in ("quit", "rebuild"):
+                return ch
             if ch.startswith("cont"):
                 cfg.save()
                 return "load" + ch[4:]

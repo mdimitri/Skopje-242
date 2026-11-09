@@ -474,6 +474,7 @@ def main():
     ap.add_argument("--sound-dry", action="store_true", help="run the sound logic without an audio device and print what would play (library vs fallback)")
     ap.add_argument("--demo", action="store_true", help="offline synthetic demo city")
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
+    ap.add_argument("--rebuild", action="store_true", help="rebuild the world from the downloaded data (the menu's ИЗГРАДИ ГО СВЕТОТ)")
     ap.add_argument("--nomenu", action="store_true", help="skip the start menu")
     ap.add_argument("--car", action="store_true", help="start inside the car (default: on foot next to it)")
     ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
@@ -506,13 +507,28 @@ def main():
     rl.set_target_fps(0 if a.test else 144)
 
     need = plan_needs(a)
+    music = None
+    if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
+        import loadmusic
+        music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
+    if need:                                                           # the real city (not --demo / --world)
+        unbuilt = need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world"))
+        if a.rebuild or a.refresh:
+            need["build"] = True
+        elif unbuilt and not a.test and not a.nomenu:                  # no world yet: the menu first, the build only on request
+            menu_mod.WORLD["built"] = False
+            if menu_mod.run(cfg, lambda c: None, False, music=music) == "quit":
+                rl.close_window()
+                return
+            menu_mod.WORLD["built"] = True
+            need["build"] = True
+        elif not unbuilt:
+            need["build"] = False                                      # out of date is fine: rebuilt only from the menu
     present = present_mod.Present()
     keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
                     ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
-    if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
-        import loadmusic
-        loader.music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
+    loader.music = music
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
     while True:
@@ -760,6 +776,13 @@ def main():
         if loader.music is not None:
             loader.music.close()
         if res_ == "quit":
+            rl.close_window()
+            return
+        if res_ == "rebuild":                                          # confirmed in the menu: start again and build
+            import updater
+            if "--rebuild" not in sys.argv:
+                sys.argv.append("--rebuild")
+            updater.restart()
             rl.close_window()
             return
         apply_cfg(cfg, True)
