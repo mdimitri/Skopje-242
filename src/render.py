@@ -322,11 +322,22 @@ class Renderer:
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
+                decals = []
                 for key, e in self._visible_meshes(st, fr, rect):
-                    for m in e[0].values():
-                        RL.DrawModel(m, ZERO, 1.0, WHITE)
+                    for mat, m in e[0].items():
+                        if mat == 6:
+                            decals.append(m)                 # graffiti: after every wall, without writing depth
+                        else:
+                            RL.DrawModel(m, ZERO, 1.0, WHITE)
                     nm += 1
                     e[1] = st.frame
+                if decals:
+                    rl.rl_draw_render_batch_active()
+                    rl.rl_disable_depth_mask()
+                    for m in decals:
+                        RL.DrawModel(m, ZERO, 1.0, WHITE)
+                    rl.rl_draw_render_batch_active()
+                    rl.rl_enable_depth_mask()
             self.drawn_meshes = nm
             if lod:
                 if getattr(w, "roads3d", False):
