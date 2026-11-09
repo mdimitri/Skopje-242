@@ -157,6 +157,48 @@ def _screen(lines, bar=None):
     rl.end_drawing()
 
 
+def _prompt(local, remote):
+    """Themed update question: comic panel + the menus' skewed buttons, mouse hover / click or Enter / Esc."""
+    import menu
+    t0 = rl.get_time()
+    sel = 0
+    last = None
+    while not rl.window_should_close():
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        th = menu._th
+        pw, ph = min(W - 40, 880), 300
+        px, py = (W - pw) // 2, (H - ph) // 2
+        bw, bh, gap = (pw - 90) // 2, 56, 30
+        by = py + ph - bh - 36
+        rects = [(px + 30, by), (px + 60 + bw, by)]
+        m = rl.get_mouse_position()
+        if last is not None and (m.x, m.y) != last:
+            for i, (bx, byy) in enumerate(rects):
+                if bx <= m.x < bx + bw and byy <= m.y < byy + bh:
+                    sel = i
+        last = (m.x, m.y)
+        hit = next((i for i, (bx, byy) in enumerate(rects) if bx <= m.x < bx + bw and byy <= m.y < byy + bh), None)
+        if rl.is_key_pressed(rl.KEY_LEFT) or rl.is_key_pressed(rl.KEY_RIGHT) or rl.is_key_pressed(rl.KEY_TAB):
+            sel = 1 - sel
+        if rl.get_time() - t0 > 0.3:
+            if rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_KP_ENTER) or rl.is_key_pressed(rl.KEY_SPACE):
+                return sel == 0
+            if rl.is_key_pressed(rl.KEY_ESCAPE):
+                return False
+            if hit is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+                return hit == 0
+        rl.begin_drawing()
+        rl.clear_background(th["paper"])
+        menu._panel(px, py, pw, ph)
+        for txt, sz, y, col in (("Достапна е нова верзија на Скопје 242", 36, py + 34, th["fg"]),
+                                (f"Тековна: {local[:7] or 'непозната'}   Нова: {remote[:7]}", 24, py + 100, th["mu"])):
+            font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col, bold="cond")
+        for i, (lab, (bx, byy)) in enumerate(zip(("Преземи и ажурирај", "Продолжи со тековната"), rects)):
+            menu._btn(bx, byy, bw, bh, lab, sel == i, 26)
+        rl.end_drawing()
+    return False
+
+
 def check():
     """Call once at launch with the window open. Returns True when the game was updated and must restart."""
     if not rl.is_window_ready():
@@ -166,15 +208,7 @@ def check():
     if not remote or remote == local:
         return False
     white, grey = rl.WHITE, rl.Color(170, 174, 184, 255)
-    while not rl.window_should_close():
-        _screen([("Достапна е нова верзија на Скопје 242", 34, white),
-                 (f"Тековна: {local[:7] or 'непозната'}   Нова: {remote[:7]}", 22, grey),
-                 ("[Enter] Преземи и ажурирај      [Esc] Продолжи со тековната", 24, white)])
-        if rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_KP_ENTER):
-            break
-        if rl.is_key_pressed(rl.KEY_ESCAPE):
-            return False
-    else:
+    if not _prompt(local, remote):
         return False
     prog = {"done": 0, "total": 0, "err": "", "finished": False}
     th = threading.Thread(target=install, args=(remote, prog), daemon=True)
