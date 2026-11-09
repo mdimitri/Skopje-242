@@ -74,15 +74,17 @@ def _panel(x, y, w, h):
     t = _th
     rl.draw_rectangle(x + 10, y + 10, w, h, t["shadow"])
     rl.draw_rectangle(x, y, w, h, t["paper"])
-    for yy in range(y + 6, y + h - 6, 12):
-        for xx in range(x + 6 + ((yy - y) // 12 % 2) * 6, x + w - 6, 12):
+    dc = t["dot"]
+    dc = rl.Color(dc.r, dc.g, dc.b, int(dc.a * 0.4))      # subtler: lower contrast
+    for yy in range(y + 8, y + h - 8, 18):
+        for xx in range(x + 8 + ((yy - y) // 18 % 2) * 9, x + w - 8, 18):
             if t["dm"] == "u":
-                r = 2
+                r = 1.5
             else:
                 d = ((xx - x) / w + (1 - (yy - y) / h)) / 2
-                r = max(0, min(5, int(6 * d * d * 1.4)))
+                r = max(0, min(3, int(4 * d * d * 1.4)))
             if r > 0:
-                rl.draw_circle(xx, yy, r, t["dot"])
+                rl.draw_circle(xx, yy, r, dc)
     rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 5, t["ink"])
     if t["frame"] == "d":
         rl.draw_rectangle_lines_ex(rl.Rectangle(x + 9, y + 9, w - 18, h - 18), 2, t["a1"])
