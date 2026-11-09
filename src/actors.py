@@ -105,6 +105,40 @@ def offsets(kind):
     return [-off + 2 * off * i / (n - 1) for i in range(n)]
 
 
+def parts(b):
+    """The car's collision boxes (cx, cy, heading, half length, half width): one, or for a semi the tractor and the trailer
+    hinged at its fifth wheel (a single straight 15.8 m box hit things the bent rig was nowhere near)."""
+    L, W = vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2
+    if b.kind != vehicles.SEMI:
+        return ((b.x, b.y, b.h, L, W),)
+    c, s = math.cos(b.h), math.sin(b.h)
+    th = b.trh if b.trh is not None else b.h
+    m = vehicles.SEMI_TRAILER_L / 2 - 0.3                        # trailer box: from 0.3 m ahead of the kingpin to its tail
+    hx, hy = b.x + c * vehicles.SEMI_HITCH, b.y + s * vehicles.SEMI_HITCH
+    return ((b.x + c * vehicles.SEMI_SHIFT, b.y + s * vehicles.SEMI_SHIFT, b.h, vehicles.SEMI_TRACTOR_L / 2, W),
+            (hx - math.cos(th) * m, hy - math.sin(th) * m, th, vehicles.SEMI_TRAILER_L / 2, W))
+
+
+def _line_pts(x, y, h, half, r):
+    """Circle centres along a box's axis, at most 0.9 r apart (as offsets())."""
+    off = max(0.0, half - r + 0.1)
+    n = max(3, int(math.ceil(2 * off / (r * 0.9))) + 1)
+    c, s = math.cos(h), math.sin(h)
+    return [(x + c * (-off + 2 * off * i / (n - 1)), y + s * (-off + 2 * off * i / (n - 1))) for i in range(n)]
+
+
+def static_pts(p):
+    """Collision circle centres for walls / posts: (x, y, lever along the heading for the knock-on spin, or None)."""
+    if p.kind != vehicles.SEMI:
+        fx, fy = math.cos(p.h), math.sin(p.h)
+        return [(p.x + fx * o, p.y + fy * o, o) for o in offsets(p.kind)]
+    r = CIRC[p.kind][1]
+    (ax, ay, ah, al, _w), (tx, ty, th, tl, _w2) = parts(p)
+    fx, fy = math.cos(p.h), math.sin(p.h)
+    cab = [(x, y, (x - p.x) * fx + (y - p.y) * fy) for x, y in _line_pts(ax, ay, ah, al, r)]
+    return cab + [(x, y, None) for x, y in _line_pts(tx, ty, th, tl, r)]     # the trailer shoves the rig, no cab spin
+
+
 def circles(b):
     off, r = CIRC[b.kind]
     fx, fy = math.cos(b.h), math.sin(b.h)
@@ -293,8 +327,10 @@ def collide_static(p, world):
     high = p.az is not None and p.az - world.ground_y(p.x, p.y) > 4.0          # on a deck high above the buildings
     top = az + 1.5
     for _ in range(2):
-        for o in offsets(p.kind):
-            cx, cy = p.x + fx * o, p.y + fy * o
+        x0, y0 = p.x, p.y
+        for cx, cy, o in static_pts(p):
+            cx, cy = cx + p.x - x0, cy + p.y - y0                 # earlier circles may have pushed the car already
+            o = o or 0.0
             for ax, ay, bx, by in (() if high else world.edges_near(cx, cy, R + 0.1)):
                 dx, dy = bx - ax, by - ay
                 l2 = dx * dx + dy * dy
@@ -360,6 +396,11 @@ def collide_static(p, world):
 
 def _rad(kind):
     L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
+    if kind == vehicles.SEMI:                                    # the trailer's tail corner, folded to the jackknife stop
+        j = vehicles.SEMI_JACK
+        tx = vehicles.SEMI_HITCH - math.cos(j) * vehicles.SEMI_TRAILER_L + math.sin(j) * W
+        ty = math.sin(j) * vehicles.SEMI_TRAILER_L + math.cos(j) * W
+        return max(math.hypot(L, W), math.hypot(tx, ty)) + 0.05
     return math.hypot(L, W) + 0.05
 
 
@@ -402,10 +443,10 @@ def _near(g, x, y):
 
 
 def body_pairs(bodies):
-    """Broadphase: every pair of cars whose bounding circles overlap, found with a 16 m grid (cars are < 12 m long)."""
+    """Broadphase: every pair of cars whose bounding circles overlap, found with a 20 m grid (bounding radii <= ~11 m)."""
     grid = {}
     for i, b in enumerate(bodies):
-        grid.setdefault((int(b.x // 16), int(b.y // 16)), []).append(i)
+        grid.setdefault((int(b.x // 20), int(b.y // 20)), []).append(i)
     out = []
     for (cx, cy), idx in grid.items():
         cand = []
@@ -425,10 +466,18 @@ def body_pairs(bodies):
 
 
 def push_from_box(b, px, py, r):
-    """A circle (px, py, r) against the oriented box of car b: (nx, ny, penetration) pushing the circle out, or None."""
-    L, W = vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2
-    c, s_ = math.cos(b.h), math.sin(b.h)
-    dx, dy = px - b.x, py - b.y
+    """A circle (px, py, r) against the oriented box(es) of car b: (nx, ny, penetration) pushing the circle out, or None."""
+    best = None
+    for bx, by, bh, L, W in parts(b):
+        hit = _push_box(bx, by, bh, L, W, px, py, r)
+        if hit is not None and (best is None or hit[2] > best[2]):
+            best = hit
+    return best
+
+
+def _push_box(bx, by, bh, L, W, px, py, r):
+    c, s_ = math.cos(bh), math.sin(bh)
+    dx, dy = px - bx, py - by
     u, v = dx * c + dy * s_, -dx * s_ + dy * c                        # circle centre in the car's frame
     qu, qv = max(-L, min(L, u)), max(-W, min(W, v))
     eu, ev_ = u - qu, v - qv
@@ -449,13 +498,27 @@ class _At:
     """The car as it was |dt| seconds ago (dt < 0), for the swept walker test: only the fields push_from_box reads."""
 
     def __init__(self, b, dt):
-        self.x, self.y, self.h, self.kind = b.x + b.vx * dt, b.y + b.vy * dt, b.h, b.kind
+        self.x, self.y, self.h, self.kind, self.trh = b.x + b.vx * dt, b.y + b.vy * dt, b.h, b.kind, b.trh
 
 
-def _corners(b):
-    L, W = vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2
-    fx, fy = math.cos(b.h), math.sin(b.h)
-    return [(b.x + fx * u - fy * v, b.y + fy * u + fx * v) for u, v in ((L, W), (L, -W), (-L, -W), (-L, W))]
+def _corners(x, y, h, L, W):
+    fx, fy = math.cos(h), math.sin(h)
+    return [(x + fx * u - fy * v, y + fy * u + fx * v) for u, v in ((L, W), (L, -W), (-L, -W), (-L, W))]
+
+
+def _sat(pa, ha, pb, hb):
+    """Separating axis test of two boxes (corner lists, headings): (penetration, axis) or None."""
+    best_pen, n_ = 1e9, None
+    for h in (ha, ha + math.pi / 2, hb, hb + math.pi / 2):
+        ax_, ay_ = math.cos(h), math.sin(h)
+        A = [x * ax_ + y * ay_ for x, y in pa]
+        B = [x * ax_ + y * ay_ for x, y in pb]
+        pen = min(max(A), max(B)) - max(min(A), min(B))
+        if pen <= 0:
+            return None
+        if pen < best_pen:
+            best_pen, n_ = pen, (ax_, ay_)
+    return best_pen, n_
 
 
 def collide_bodies(a, b, ma=1.0, mb=1.0):
@@ -465,23 +528,22 @@ def collide_bodies(a, b, ma=1.0, mb=1.0):
     r_ = _RAD[a.kind] + _RAD[b.kind]
     if (a.x - b.x) ** 2 + (a.y - b.y) ** 2 > r_ * r_:        # bounding circles apart: cannot touch at any angle
         return None
-    pa, pb = _corners(a), _corners(b)
-    best_pen, n_ = 1e9, None
-    for h in (a.h, a.h + math.pi / 2, b.h, b.h + math.pi / 2):
-        ax_, ay_ = math.cos(h), math.sin(h)
-        A = [x * ax_ + y * ay_ for x, y in pa]
-        B = [x * ax_ + y * ay_ for x, y in pb]
-        pen = min(max(A), max(B)) - max(min(A), min(B))
-        if pen <= 0:
-            return None
-        if pen < best_pen:
-            best_pen, n_ = pen, (ax_, ay_)
-    nx, ny = n_
-    if (b.x - a.x) * nx + (b.y - a.y) * ny < 0:
+    hit = None                                    # semis have two boxes (tractor, trailer): the deepest overlapping pair counts
+    for qa in parts(a):
+        pa = _corners(*qa)
+        for qb in parts(b):
+            pb = _corners(*qb)
+            r_ = _sat(pa, qa[2], pb, qb[2])
+            if r_ is not None and (hit is None or r_[0] > hit[0]):
+                hit = (r_[0], r_[1], pa, pb, qa, qb)
+    if hit is None:
+        return None
+    best_pen, (nx, ny), pa, pb, qa, qb = hit
+    if (qb[0] - qa[0]) * nx + (qb[1] - qa[1]) * ny < 0:
         nx, ny = -nx, -ny
     # contact: the corner of one box that sits deepest inside the other
-    da = max(pa, key=lambda c: (c[0] - a.x) * nx + (c[1] - a.y) * ny)
-    db = min(pb, key=lambda c: (c[0] - b.x) * nx + (c[1] - b.y) * ny)
+    da = max(pa, key=lambda c: (c[0] - qa[0]) * nx + (c[1] - qa[1]) * ny)
+    db = min(pb, key=lambda c: (c[0] - qb[0]) * nx + (c[1] - qb[1]) * ny)
     wx, wy = (da[0] + db[0]) / 2, (da[1] + db[1]) / 2
     tot = ma + mb
     pen = min(best_pen, 1.5)
@@ -1852,15 +1914,21 @@ class Traffic:
         w, rng = self.w, self.rng
         h = {}
         for c in self.cars:
+            if c.kind == vehicles.SEMI:                       # the tractor and the (bent) trailer as two boxes
+                for x_, y_, h_, l_, w_ in parts(c):
+                    h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, c, h_))
+                continue
             h.setdefault((int(c.x // 16), int(c.y // 16)), []).append((c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c, c.h))
         ph, ems = {}, []                                      # kerb-parked cars (for swerving) and emergency vehicles
         for b in bodies:
             if b.speed < 0.3 and not b.air:                     # standing cars (parked, wrecks, abandoned): drive round them
-                ph.setdefault((int(b.x // 16), int(b.y // 16)), []).append((b.x, b.y, vehicles.HALF_W[b.kind], vehicles.HALF_L[b.kind], b.h))
+                for x_, y_, h_, l_, w_ in parts(b):
+                    ph.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, h_))
                 continue
             if b.service and not b.out:
                 ems.append(b)
-            h.setdefault((int(b.x // 16), int(b.y // 16)), []).append((b.x, b.y, vehicles.HALF_W[b.kind], vehicles.HALF_L[b.kind], b, b.h))
+            for x_, y_, h_, l_, w_ in parts(b):
+                h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, b, h_))
         for p in peds:
             if p.mode in ("walk", "flee", "rage", "brawl"):
                 h.setdefault((int(p.x // 16), int(p.y // 16)), []).append((p.x, p.y, 1.7, 0.4, p, None))
@@ -3030,9 +3098,9 @@ class Sim:
         # ---------------- traffic <-> bodies (hits convert AI cars into drivable wrecks)
         bgrid = {}
         for b in self.bodies:
-            bgrid.setdefault((int(b.x // 16), int(b.y // 16)), []).append(b)
+            bgrid.setdefault((int(b.x // 20), int(b.y // 20)), []).append(b)
         for c in list(self.traffic.cars):
-            gx_, gy_ = int(c.x // 16), int(c.y // 16)
+            gx_, gy_ = int(c.x // 20), int(c.y // 20)
             near_ = [b for dx in (-1, 0, 1) for dy in (-1, 0, 1) for b in bgrid.get((gx_ + dx, gy_ + dy), ())]
             for b in near_:
                 rr_ = _RAD[b.kind] + _RAD[c.kind]
