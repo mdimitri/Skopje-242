@@ -377,6 +377,7 @@ class Loader:
         if self.music is not None:
             self.music.update()
         if not force and now - self.last_draw < 0.04:
+            font.poll_latch()                                        # keep clicks that land between two drawn frames
             return
         self.last_draw = now
         if rl.window_should_close():
@@ -433,6 +434,7 @@ class Loader:
         font.exit_button()
         font.draw_version(W, H)
         rl.end_drawing()
+        font.clear_latch()
 
     @staticmethod
     def _tbar(x, y, w, h, f, col, left, right):

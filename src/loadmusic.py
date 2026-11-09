@@ -229,7 +229,7 @@ class LoadMusic:
         w = lw + b + 4 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
         m = rl.get_mouse_position()
-        click = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)
+        click = font.clicked()
         tip = None
         for k, bx in ((0, x + 4), (1, x + 4 + b + 4), (2, x + 4 + 2 * (b + 4)), (3, x + w - b - 4)):
             by = y + 4
