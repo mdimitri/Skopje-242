@@ -341,8 +341,13 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         if lgrid is not None:
             ids = lgrid.near(float(x.min()), float(y.min()), float(x.max()), float(y.max()), 12.0)
             if len(ids):
-                d, _ = _seg_dist(x.ravel(), y.ravel(), LS[ids, :4])
-                w_ = w_ | (d - LS[ids, 4][None] < 0).any(1).reshape(x.shape)
+                xf, yf, S_ = x.ravel(), y.ravel(), LS[ids, :4]
+                hit = np.zeros(len(xf), bool)
+                step = max(1, 2_000_000 // len(ids))          # bound the (points x segments) matrix (was 2.7 GiB)
+                for i in range(0, len(xf), step):
+                    d, _ = _seg_dist(xf[i:i + step], yf[i:i + step], S_)
+                    hit[i:i + step] = (d - LS[ids, 4][None] < 0).any(1)
+                w_ = w_ | hit.reshape(x.shape)
         return w_
 
     # ---- bank chains: polygon rings (land on one side) and both sides of wide river lines
