@@ -13,9 +13,10 @@ on top of the 10 m terrain; the same tiles carry a class per post (for painting:
 """
 import heapq
 import math
-
 import numpy as np
 from PIL import Image, ImageDraw
+
+import par
 
 QSTEP = 1.0
 TILE = 32                       # posts per tile side (tiles store TILE + 1 posts so a lookup never leaves its tile)
@@ -288,12 +289,30 @@ def _extend_bridges(roads, nearest_bank, reach):
 
 
 # --------------------------------------------------------------------------------------------- the build
-def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, log=print):
+_W = {}                                                   # worker process: its tile function
+
+
+def _worker_init(args):
+    build(*args, log=lambda *a, **k: None, _worker=True)
+
+
+def _tile_job(t_):
+    return _W["tile"](t_)
+
+
+def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, log=print, _worker=False):
     """river_polys: [(outer, holes)]; river_lines: [(pts, width)] (width >= 8: painted as water);
     roads: build_world road dicts; buildings: dicts with 'ring'; bld_img: building mask at `cell` m.
     -> (Overlay or None, info dict for the meshes)."""
     if not river_polys and not river_lines:
         return None, {}
+    pinit = None
+    if not _worker and par.jobs() > 1:                  # start the workers now: they repeat the set-up below while this process does it
+        pinit = (_worker_init, ((T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy),))
+        try:
+            par._pool(pinit)
+        except (OSError, ImportError):
+            pinit = None
     W, H = int(round(2 * hx / QSTEP)), int(round(2 * hy / QSTEP))
     mask = Image.new("1", (W, H), 0)                    # river polygons at 1 m
     md = ImageDraw.Draw(mask)
@@ -653,12 +672,15 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
     idx = np.full((nty, ntx), -1, np.int32)
     Ds, Cs = [], []
     k1 = np.arange(TILE + 1) * QSTEP
-    for (tx_, ty_) in sorted(want):
+
+    def one_tile(t_):
+        """-> (delta, cls) of one tile or None; reads shared state only."""
+        tx_, ty_ = t_
         X, Y = np.meshgrid(tx_ * TILE * QSTEP - hx + k1, ty_ * TILE * QSTEP - hy + k1)
         x, y = X.ravel(), Y.ravel()
         h, base, inside, d, e, lim = profile(x, y)
         if (d > REACH).all() and not inside.any():
-            continue
+            return None
         wl = walk_lim(x, y, base)
         walled = (h < np.maximum(lim, wl) - 0.02) & ~inside
         # walls rounded off; the walkway ramps exact (a rounded max would put a hump at the foot of every ramp)
@@ -666,7 +688,7 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         fade = np.clip((REACH - d) / 8.0, 0.0, 1.0)
         delta = np.minimum(0.0, (h - base) * fade)
         if not (delta < -0.01).any():
-            continue
+            return None
         cls = np.full(len(x), C_NONE, np.uint8)
         cut = delta < -0.05
         cls[cut & (d <= e) & (d >= R_W)] = C_PROM
@@ -674,9 +696,32 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         cls[cut & (d < R_W)] = C_STONE
         cls[cut & walled] = C_WALL
         cls[inside] = C_WATER
-        idx[ty_, tx_] = len(Ds)
-        Ds.append(delta.reshape(TILE + 1, TILE + 1).astype(np.float32))
-        Cs.append(cls.reshape(TILE + 1, TILE + 1))
+        return delta.reshape(TILE + 1, TILE + 1).astype(np.float32), cls.reshape(TILE + 1, TILE + 1)
+
+    if _worker:                                         # a pool worker: the set-up above is rebuilt here, the tiles come as jobs
+        _W["tile"] = one_tile
+        return None, {}
+    tiles = sorted(want)
+    from progress import frac
+
+    def got(k_):
+        if k_ % 8 == 0:
+            frac(0.7 + 0.25 * k_ / max(1, len(tiles)), "quays")
+    if pinit is not None and len(tiles) > 300:          # the tiles are independent: all cores
+        res = par.pmap(_tile_job, tiles, init=pinit,
+                       chunk=max(4, len(tiles) // (par.jobs() * 8)), on=lambda d, t: got(d))
+    else:
+        if pinit is not None:
+            par.close()
+        res = []
+        for k_, t_ in enumerate(tiles):
+            got(k_)
+            res.append(one_tile(t_))
+    for t_, r_ in zip(tiles, res):                      # in tile order: the same overlay however many cores ran it
+        if r_ is not None:
+            idx[t_[1], t_[0]] = len(Ds)
+            Ds.append(r_[0])
+            Cs.append(r_[1])
     if not Ds:
         return None, {}
     ov = Overlay(hx, hy, idx, np.stack(Ds), np.stack(Cs))
