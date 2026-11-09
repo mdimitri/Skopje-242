@@ -566,7 +566,7 @@ def main():
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
     renderer.pick_model("cash")
-    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "knuckles", "chain", "zolja", "fuel"):
+    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "knuckles", "chain", "zolja", "machete", "revolver", "sniper", "smg", "fuel"):
         renderer.pick_model(_k)
     loader.tick(0.9, "pickups & weapons")
 
@@ -856,7 +856,7 @@ def main():
                 aud.play("body_fall", 0.8, 0.7)
                 popups.add(TXT("main.0004"), d["x"], d["y"], 2.6, 1.8, (255, 230, 90), 26)
             elif kind == "gunfire":
-                aud.at({"zolja": "rocket_launch", "pistol": "shot_pistol", "uzi": "shot_uzi", "shotgun": "shot_shotgun", "kalash": "shot_kalash"}.get(d["kind"], "shot")
+                aud.at({"zolja": "rocket_launch", "pistol": "shot_pistol", "uzi": "shot_uzi", "shotgun": "shot_shotgun", "kalash": "shot_kalash", "revolver": "shot_pistol", "smg": "shot_uzi", "sniper": "shot_shotgun"}.get(d["kind"], "shot")
                        if near(d["x"], d["y"], 70.0) else "shot_distant",
                        d["x"], d["y"], 0.6 if d["kind"] == "zolja" else 0.75, {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7}.get(d["kind"], 1.0), maxd=220.0)
             elif kind == "bullet_wall":                              # chips of plaster + dust puff
