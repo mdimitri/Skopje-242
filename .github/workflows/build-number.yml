@@ -1,0 +1,23 @@
+# Every push to main bumps the minor version shown in the game: src/build.txt = number of commits on main.
+name: build-number
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  bump:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          n=$(( $(git rev-list --count HEAD) + 1 ))      # +1: this bot commit itself
+          echo "$n" > src/build.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/build.txt
+          git commit -m "Build $n" || exit 0
+          git push
