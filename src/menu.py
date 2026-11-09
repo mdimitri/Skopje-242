@@ -11,40 +11,145 @@ import poster
 import present
 import settings as S
 
-# splash-art palette: hot pink + cream on dark plum, Oswald condensed (font bold="cond")
-PINK = rl.Color(226, 32, 104, 255)
-CREAM = rl.Color(246, 238, 220, 255)
-MUTED = rl.Color(176, 164, 182, 255)
-PLUM = rl.Color(16, 10, 24, 232)
-TRACK = rl.Color(58, 44, 66, 255)
-GOLD = CREAM                          # titles / highlights that used to be gold
+# ---- themes: comic-book UI (slanted tabs/buttons, offset shadows, halftone dots), 10 palettes chosen in Контроли > Дебаг
+def _c(*v):
+    return rl.Color(*v) if len(v) == 4 else rl.Color(v[0], v[1], v[2], 255)
+
+
+# name, paper, ink, accent1, accent2, dot, dotmode, text, muted, highlight, frame, shadow, paper2, text on highlight, active tab, veil
+THEMES = [
+    ("Поп светло", _c(255, 250, 235), _c(0, 0, 0), _c(255, 60, 110), _c(255, 224, 40), _c(255, 60, 110, 50), "u", _c(0, 0, 0), _c(60, 60, 70), _c(255, 224, 40), "s", _c(0, 0, 0), _c(255, 255, 255), None, None, 150),
+    ("Поп темно розова", _c(24, 14, 34), _c(246, 238, 220), _c(255, 60, 110), _c(255, 224, 40), _c(255, 60, 110, 70), "u", _c(246, 238, 220), _c(170, 150, 180), _c(120, 20, 64), "s", _c(226, 32, 104), _c(48, 30, 60), _c(246, 238, 220), _c(255, 60, 110), 150),
+    ("Среднок цијан", _c(10, 18, 40), _c(0, 230, 255), _c(0, 200, 255), _c(255, 224, 40), _c(0, 200, 255, 60), "u", _c(230, 248, 255), _c(130, 160, 200), _c(0, 90, 140), "d", _c(0, 120, 160), _c(22, 36, 70), _c(255, 255, 255), _c(0, 150, 200), 170),
+    ("Црн ноар црвено", _c(14, 12, 14), _c(255, 255, 255), _c(235, 40, 50), _c(255, 200, 60), _c(235, 40, 50, 200), "g", _c(255, 255, 255), _c(170, 160, 160), _c(120, 20, 28), "s", _c(120, 20, 28), _c(40, 34, 38), _c(255, 255, 255), _c(235, 40, 50), 190),
+    ("Токсично зелено", _c(8, 16, 12), _c(80, 255, 140), _c(40, 200, 100), _c(230, 255, 60), _c(60, 255, 130, 70), "u", _c(225, 255, 235), _c(140, 180, 155), _c(20, 100, 55), "d", _c(20, 90, 50), _c(22, 40, 30), _c(255, 255, 255), _c(40, 200, 100), 180),
+    ("Зајдисонце топло", _c(255, 236, 205), _c(50, 16, 40), _c(240, 60, 90), _c(255, 170, 40), _c(255, 90, 60, 90), "g", _c(50, 16, 40), _c(110, 70, 80), _c(255, 196, 100), "s", _c(50, 16, 40), _c(255, 255, 255), None, None, 110),
+    ("Темен прскан раб", _c(30, 12, 40), _c(255, 214, 60), _c(255, 60, 110), _c(255, 214, 60), _c(255, 214, 60, 60), "u", _c(250, 240, 255), _c(180, 150, 190), _c(130, 24, 90), "b", _c(0, 0, 0, 200), _c(52, 28, 66), _c(255, 255, 255), _c(255, 60, 110), 150),
+    ("Виолетово злато", _c(20, 12, 44), _c(255, 210, 90), _c(150, 70, 255), _c(255, 210, 90), _c(150, 70, 255, 190), "g", _c(250, 244, 255), _c(170, 155, 200), _c(80, 40, 150), "d", _c(10, 4, 30), _c(40, 28, 80), _c(255, 255, 255), _c(150, 70, 255), 175),
+    ("Мента мастило", _c(12, 24, 30), _c(110, 255, 220), _c(30, 200, 170), _c(255, 120, 160), _c(110, 255, 220, 55), "u", _c(235, 255, 250), _c(140, 180, 180), _c(20, 100, 100), "d", _c(0, 60, 60), _c(26, 50, 58), _c(255, 255, 255), _c(30, 200, 170), 175),
+    ("Јаглен со раб", _c(32, 32, 36), _c(255, 255, 255), _c(255, 150, 30), _c(255, 235, 120), _c(255, 150, 30, 60), "g", _c(245, 245, 245), _c(165, 165, 170), _c(110, 64, 10), "b", _c(0, 0, 0), _c(58, 58, 64), _c(255, 255, 255), _c(255, 150, 30), 190),
+]
+THEME_NAMES = [t[0] for t in THEMES]
+DEFAULT_THEME = 5                       # Зајдисонце топло
+INK_TXT = _c(20, 12, 28)
+WHITE = _c(255, 255, 255)
 CD = "cond"
+_th = {"i": -1}
+PINK = CREAM = MUTED = PLUM = TRACK = GOLD = None
 
 
-def _veil(W, H, a=170):
-    rl.draw_rectangle(0, 0, W, H, rl.Color(12, 6, 20, a))
+def set_theme(i):
+    """Pick the palette; the old PINK / CREAM / MUTED names (title menu, picker) follow the theme."""
+    global PINK, CREAM, MUTED, PLUM, TRACK, GOLD
+    i = max(0, min(len(THEMES) - 1, int(i)))
+    if _th["i"] == i:
+        return
+    _th["i"] = i
+    t = THEMES[i]
+    _th.update(zip(("name", "paper", "ink", "a1", "a2", "dot", "dm", "fg", "mu", "hl", "frame", "shadow", "p2", "hlt", "tabon", "veil"), t))
+    PINK, CREAM, MUTED, PLUM, TRACK = _th["a1"], _th["fg"], _th["mu"], _th["paper"], _th["p2"]
+    GOLD = CREAM
+
+
+set_theme(DEFAULT_THEME)
+
+
+def _q(pts, c):
+    v = [rl.Vector2(float(a), float(b)) for a, b in pts]
+    for tri in ((0, 1, 2), (0, 2, 3)):
+        rl.draw_triangle(v[tri[0]], v[tri[1]], v[tri[2]], c)
+        rl.draw_triangle(v[tri[0]], v[tri[2]], v[tri[1]], c)
+
+
+def _skew(x, y, w, h, k, c):
+    _q([(x + k, y), (x + w + k, y), (x + w, y + h), (x, y + h)], c)
+
+
+def _veil(W, H, a=None):
+    rl.draw_rectangle(0, 0, W, H, rl.Color(10, 6, 18, _th["veil"] if a is None else a))
 
 
 def _panel(x, y, w, h):
-    """Dark plum card with the pink top bar of the poster."""
-    rl.draw_rectangle(x, y, w, h, PLUM)
-    rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 2, rl.Color(226, 32, 104, 110))
-    rl.draw_rectangle(x, y, w, 5, PINK)
+    """Comic card: offset shadow, halftone dots (even or growing from a corner), heavy ink frame."""
+    t = _th
+    rl.draw_rectangle(x + 10, y + 10, w, h, t["shadow"])
+    rl.draw_rectangle(x, y, w, h, t["paper"])
+    for yy in range(y + 6, y + h - 6, 12):
+        for xx in range(x + 6 + ((yy - y) // 12 % 2) * 6, x + w - 6, 12):
+            if t["dm"] == "u":
+                r = 2
+            else:
+                d = ((xx - x) / w + (1 - (yy - y) / h)) / 2
+                r = max(0, min(5, int(6 * d * d * 1.4)))
+            if r > 0:
+                rl.draw_circle(xx, yy, r, t["dot"])
+    rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 5, t["ink"])
+    if t["frame"] == "d":
+        rl.draw_rectangle_lines_ex(rl.Rectangle(x + 9, y + 9, w - 18, h - 18), 2, t["a1"])
+    elif t["frame"] == "b":
+        for i in range(0, w - 40, 24):
+            _q([(x + 20 + i, y), (x + 32 + i, y - 12), (x + 44 + i, y), (x + 32 + i, y + 2)], t["a1"])
+
+
+def _tab(x, y, w, h, label, on, sz=22):
+    t = _th
+    _skew(x + 3, y + 3, w - 8, h, -10, t["shadow"] if t["frame"] != "d" else t["ink"])
+    _skew(x, y, w - 8, h, -10, (t["tabon"] or t["a2"]) if on else t["p2"])
+    col = (t["ink"] if t["tabon"] is None else t["fg"]) if on else (t["hlt"] or t["fg"])
+    font.draw_text(label, x + (w - 8 - font.measure_text(label, sz, CD)) // 2, y + 4, sz, col, bold=CD)
+
+
+def _head(x, y, w, label):
+    t = _th
+    tw = font.measure_text(label, 20, CD) + 20
+    _skew(x + 3, y + 3, tw, 24, -6, t["shadow"])
+    _skew(x, y, tw, 24, -6, t["a1"])
+    font.draw_text(label, x + 10, y + 1, 20, WHITE, bold=CD)
+
+
+def _rowhl(x, y, w, h):
+    _skew(x - 8 + 3, y + 3, w + 16, h, -8, _th["shadow"])
+    _skew(x - 8, y, w + 16, h, -8, _th["hl"])
+
+
+def _slider(x, y, w, f):
+    t = _th
+    rl.draw_rectangle(x, y + 4, w, 12, t["ink"])
+    rl.draw_rectangle(x + 3, y + 7, int((w - 6) * f), 6, t["a1"])
+    for i in range(0, int((w - 6) * f), 8):
+        rl.draw_rectangle(x + 3 + i, y + 7, 2, 6, t["a2"])
+    rl.draw_circle(int(x + w * f), y + 10, 11, t["a2"])
+    rl.draw_circle_lines(int(x + w * f), y + 10, 11, t["fg"] if t["ink"].r < 60 else t["ink"])
+
+
+def _toggle(x, y, on, labels):
+    t = _th
+    _skew(x + 3, y + 3, 84, 24, -8, t["shadow"])
+    _skew(x, y, 84, 24, -8, t["a1"] if on else t["p2"])
+    lab = labels[0] if on else labels[1]
+    font.draw_text(lab, x + 4 + (80 - font.measure_text(lab, 20, CD)) // 2, y + 2, 20, WHITE if on else t["mu"], bold=CD)
+
+
+def _bar(x, y, w, h, n, col):
+    for b in range(8):
+        _skew(x + b * (w // 8), y, w // 8 - 4, h, -4, col if b < n else _th["p2"])
 
 
 def _btn(x, y, w, h, label, hot, sz=22):
-    rl.draw_rectangle(x, y, w, h, PINK if hot else rl.Color(34, 22, 40, 235))
-    rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 2, PINK)
-    font.draw_text(label, x + (w - font.measure_text(label, sz, CD)) // 2, y + (h - sz) // 2 - sz // 10, sz, rl.WHITE if hot else CREAM, bold=CD)
+    t = _th
+    _skew(x + 4, y + 4, w, h, -8, t["shadow"])
+    _skew(x, y, w, h, -8, t["a1"] if hot else t["a2"])
+    font.draw_text(label, x + (w - font.measure_text(label, sz, CD)) // 2, y + (h - sz) // 2 - sz // 10, sz, WHITE if hot else INK_TXT, bold=CD)
 
 
 def _logo(x, y, sz):
-    """СКОПЈЕ in cream, 242 in pink: the wordmark of the splash."""
     font.draw_text("СКОПЈЕ", x + 2, y + 2, sz, rl.Color(0, 0, 0, 180), bold=CD)
-    font.draw_text("СКОПЈЕ", x, y, sz, CREAM, bold=CD)
+    font.draw_text("СКОПЈЕ", x, y, sz, _th["fg"], bold=CD)
     x2 = x + font.measure_text("СКОПЈЕ ", sz, CD)
     font.draw_text("242", x2 + 2, y + 2, sz, rl.Color(0, 0, 0, 180), bold=CD)
-    font.draw_text("242", x2, y, sz, PINK, bold=CD)
+    font.draw_text("242", x2, y, sz, _th["a1"], bold=CD)
+
+
 # title menu (v3); new labels live here until they can be added to text/ (human-edited)
 TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
 NO_SAVE = "Нема зачувана игра"
@@ -111,7 +216,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (3, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
         (3, H("Квалитет")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
-        (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
+        (3, Row("choice", "Измазнување на рабови", "aa", S.AA, note="се применува по рестарт на играта")),
         (3, H("Околина")),
         (3, Row("toggle", TXT("menu.0014"), "labels")),
         (3, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
@@ -125,6 +230,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
         (4, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
         (4, H("Дебаг")),
+        (4, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
         (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
         (5, H("Јачина")),
@@ -230,7 +336,7 @@ def _hero_panel(sel, W, H):
     pr = HP.profile(hid)
     px, py, pw, ph = _panel_rect(W, H)
     fs = max(13, min(19, H // 48))
-    gray, white = MUTED, CREAM
+    gray, white = _th["mu"], _th["fg"]
     _panel(px, py, pw, ph)
     tw = int(pw * 0.32)
     t = _portrait(sel)
@@ -239,16 +345,16 @@ def _hero_panel(sel, W, H):
         poster.draw_fit(t, px + 10, py + 10, tw - 10, pic_h)
     x2, w2 = px + tw + 16, pw - tw - 30
     y = py + 10
-    font.draw_text(font.fit(name, fs + 10, w2, CD), x2, y, fs + 10, PINK, bold=CD)
+    font.draw_text(font.fit(name, fs + 10, w2, CD), x2, y, fs + 10, _th["a1"], bold=CD)
     y += fs + 12
     tag = pr["title"].split(" — ", 1)[-1]
     for ln in font.wrap(tag[:1].upper() + tag[1:], fs, w2)[:2]:
-        font.draw_text(ln, x2, y, fs, CREAM)
+        font.draw_text(ln, x2, y, fs, white)
         y += fs + 3
     font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2), x2, y + 2, fs, gray)
     y += fs + 8
     for ln in font.wrap(f"„{pr['quote']}“", fs, w2)[:3]:
-        font.draw_text(ln, x2, y, fs, rl.Color(255, 160, 195, 255))
+        font.draw_text(ln, x2, y, fs, _th["a1"])
         y += fs + 3
     y += 6
     lw = max(font.measure_text(nm + (" *" if k in LOW_GOOD else ""), fs, CD) for k, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES)) + 12
@@ -260,8 +366,7 @@ def _hero_panel(sel, W, H):
         good = (8 - n) / 7.0 if key in LOW_GOOD else (n - 1) / 7.0        # colour = how GOOD it is, not how big: low Сомнителност is green
         col = _grad(good)
         font.draw_text(nm + (" *" if key in LOW_GOOD else ""), x2, y, fs, white, bold=CD)
-        for b in range(8):
-            rl.draw_rectangle(x2 + lw + b * (bw + 3), y + 2, bw, fs, col if b < n else rl.Color(52, 40, 60, 255))
+        _bar(x2 + lw, y + 2, 8 * (bw + 3), fs, n, col)
         font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 6, y, fs, col, bold=CD)
         y += rowh
     font.draw_text("зелено = добро · црвено = лошо · * помалку е подобро", x2, y, max(11, fs - 3), gray, bold=CD)
@@ -270,7 +375,7 @@ def _hero_panel(sel, W, H):
     tx, tw2 = px + 14, pw - 28
     for label, txt in (("Приказна", pr["story"]), ("Цел", pr["goal"]),
                        (pr["ability_name"], pr["ability"]), ("Слабост", pr["weakness"])):
-        font.draw_text(label.upper() + ":", tx, y, fs, PINK, bold=CD)
+        font.draw_text(label.upper() + ":", tx, y, fs, _th["a1"], bold=CD)
         y += fs + 3
         for ln in font.wrap(txt, fs, tw2):
             if y > py + ph - fs - 4:
@@ -282,6 +387,7 @@ def _hero_panel(sel, W, H):
 
 def pick_character(cfg, aud=None, music=None):
     present.off()                         # menus draw straight to the window
+    set_theme(cfg["theme"])
 
     """Избор на лик (стрелки / глушец, Enter). -> True ако е затворен прозорецот."""
     n = len(C.LIKOVI)
@@ -360,16 +466,16 @@ def pick_character(cfg, aud=None, music=None):
             poster.draw_fit(bg, 0, 0, W, H, 255, cover=True)
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
-        _veil(W, H, 205)
-        font.draw_text(TXT("menu.0051").upper(), 96, 10, 52, CREAM, bold=CD)
-        rl.draw_rectangle(96, 66, 120, 5, PINK)
+        _veil(W, H)
+        font.draw_text(TXT("menu.0051").upper(), 96, 10, 52, WHITE, bold=CD)
+        rl.draw_rectangle(96, 66, 120, 5, _th["a1"])
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
             cx, cy = pos(i)
             on = i == sel
             g = 4 if on else 0                                              # the chosen card grows a little
-            rl.draw_rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g, rl.Color(120, 20, 64, 255) if on else rl.Color(26, 16, 34, 235))
+            rl.draw_rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g, _th["hl"] if on else _th["paper"])
             rl.draw_rectangle_lines_ex(rl.Rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g), 3 if on else 1,
-                                       PINK if on else rl.Color(90, 60, 100, 255))
+                                       _th["a1"] if on else _th["ink"])
             t = _portrait(i)
             ih = ch - 56
             if t:
@@ -385,11 +491,11 @@ def pick_character(cfg, aud=None, music=None):
                 lines = font.wrap(name, fs, cw - 6, CD)[:2]
             for k, ln in enumerate(lines):
                 font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, CD)) // 2, cy + ch - 40 + g + k * (fs + 2), fs,
-                               rl.WHITE if on else CREAM, bold=CD)
+                               (_th["hlt"] or _th["fg"]) if on else _th["fg"], bold=CD)
         _hero_panel(sel, W, H)
         _btn(W - 450, 56, 210, 40, "< " + BACK, W - 450 <= m.x < W - 240 and 56 <= m.y < 96)
         _btn(W - 230, 56, 210, 40, TXT("menu.0053"), W - 230 <= m.x < W - 20 and 56 <= m.y < 96)
-        font.draw_text(TXT("menu.0054"), 24, H - 26, 17, MUTED, bold=CD)
+        font.draw_text(TXT("menu.0054"), 24, H - 26, 17, rl.Color(240, 232, 240, 255), bold=CD)
         if music is not None:
             music.update()
             music.widget(x=W // 2 - 200, y=20, keys=False)
@@ -595,6 +701,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     slots = [savegame.summary(n) for n in range(1, savegame.SLOTS + 1)]
     global _cfg
     _cfg = cfg
+    set_theme(cfg["theme"])
     allrows = _rows(in_game, slots, settings_only)
     rows = [r for t, r in allrows if t == tab]
     sel = _first(rows)
@@ -720,15 +827,16 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             cfg.save()
             return "play"
         if changed:
+            set_theme(cfg["theme"])
             apply(cfg)
         # ---- draw (splash style: plum card, pink accents, Oswald condensed)
         rl.begin_drawing()
         if draw_bg:
             draw_bg()
-            _veil(W, H, 150 if not in_game else 190)
+            _veil(W, H, None if not in_game else 190)
         elif not in_game and _title() is not None:
             poster.draw_fit(_title(), 0, 0, W, H, 255, cover=True)
-            _veil(W, H, 200)
+            _veil(W, H)
         else:
             rl.clear_background(rl.Color(16, 10, 24, 255))
         _panel(x0 - 24, 6, pw + 48, H - 12)
@@ -737,53 +845,42 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab
-            rl.draw_rectangle(tx + 2, 72, tw - 4, 34, PINK if on_t else rl.Color(34, 22, 40, 255))
             name = name.upper()
-            sz = 22 if font.measure_text(name, 22, CD) <= tw - 8 else 17
-            lw = font.measure_text(name, sz, CD)
-            font.draw_text(name, tx + (tw - lw) // 2, 76, sz, rl.WHITE if on_t else MUTED, bold=CD)
+            _tab(tx + 2, 72, tw, 34, name, on_t, 22 if font.measure_text(name, 22, CD) <= tw - 20 else 17)
         y = y0
         for i, r in enumerate(rows):
             if r.kind == "head":
                 y += 6
-                font.draw_text(r.label.upper(), x0, y + 3, 19, PINK, bold=CD)
                 if r.label:
-                    rl.draw_line(x0 + font.measure_text(r.label.upper(), 19, CD) + 12, y + rh // 2, x0 + pw, y + rh // 2, rl.Color(226, 32, 104, 90))
+                    _head(x0, y + 2, pw, r.label.upper())
                 y += rh
                 continue
             on = i == sel
             if on:
-                rl.draw_rectangle(x0 - 8, y, pw + 16, rh, rl.Color(226, 32, 104, 60))
-                rl.draw_rectangle(x0 - 8, y, 5, rh, PINK)
-            col = rl.WHITE if on else CREAM
+                _rowhl(x0, y, pw, rh)
+            col = (_th["hlt"] or _th["fg"]) if on else _th["fg"]
             if r.kind == "action":
                 big = r.key in ("play", "chars", "quit")
-                font.draw_text(r.label.upper() if big else r.label, x0 + 4, y + 2, 24 if big else 22, PINK if (r.key == "play" and not on) else col, bold=CD)
+                font.draw_text(r.label.upper() if big else r.label, x0 + 4, y + 2, 24 if big else 22, _th["a1"] if (r.key == "play" and not on) else col, bold=CD)
             else:
                 font.draw_text(r.label, x0 + 4, y + 2, 22, col, bold=CD)
                 vx = x0 + int(pw * 0.5)
                 if r.kind == "choice" and not r.bar:
-                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >" if on else r.options[cfg[r.key]], vx, y + 2, 22, PINK if on else CREAM, bold=CD)
+                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >" if on else r.options[cfg[r.key]], vx, y + 2, 22, _th["a1"] if on else _th["fg"], bold=CD)
                 elif r.kind == "toggle":
-                    v = cfg[r.key]
-                    pill = rl.Rectangle(vx, y + 4, 118, rh - 8)
-                    rl.draw_rectangle_rounded(pill, 0.5, 6, PINK if v else TRACK)
-                    t = TXT("menu.0060") if v else TXT("menu.0061")
-                    font.draw_text(t, vx + (118 - font.measure_text(t, 18, CD)) // 2, y + 5, 18, rl.WHITE if v else MUTED, bold=CD)
+                    _toggle(vx, y + 2, cfg[r.key], (TXT("menu.0060"), TXT("menu.0061")))
                 else:
                     if r.kind == "choice":
                         f, txt = cfg[r.key] / max(1, len(r.options) - 1), r.options[cfg[r.key]]
                     else:
                         f, txt = (cfg[r.key] - r.lo) / (r.hi - r.lo), r.fmt(cfg[r.key])
-                    rl.draw_rectangle(vx, y + rh // 2 - 4, bw, 8, TRACK)
-                    rl.draw_rectangle(vx, y + rh // 2 - 4, int(bw * f), 8, PINK if on else rl.Color(170, 40, 100, 255))
-                    rl.draw_rectangle(vx + int(bw * f) - 4, y + rh // 2 - 9, 8, 18, rl.WHITE if on else CREAM)
+                    _slider(vx, y + rh // 2 - 10, bw, f)
                     font.draw_text(txt, vx + bw + 14, y + 3, 20, col, bold=CD)
             y += rh
         if rows[sel].note:
-            font.draw_text(rows[sel].note, x0, H - 84, 18, rl.Color(255, 160, 195, 255), bold=CD)
+            font.draw_text(rows[sel].note, x0, H - 84, 18, _th["a1"], bold=CD)
         if flash and time.time() - flash_t < 2.5:
-            font.draw_text(flash, x0 + pw - font.measure_text(flash, 22, CD), 14, 22, PINK, bold=CD)
+            font.draw_text(flash, x0 + pw - font.measure_text(flash, 22, CD), 14, 22, _th["a1"], bold=CD)
         font.draw_text(TXT("menu.0062"), x0, H - 30, 16, MUTED, bold=CD)
         label = ("Зачувај и затвори" if in_game else (BACK if settings_only else "Играј")).upper()
         bwid = font.measure_text(label, 22, CD) + 48
