@@ -62,6 +62,7 @@ class LoadMusic:
         self.files = []
         self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
         self.pos = -1                 # index in hist of the song playing now
+        self.swap = False             # a ◀ / ▶ press is waiting for its song; the old one keeps playing until it is ready
         self.want = None              # index in hist being decoded after a ◀ / ▶ press (so quick double presses keep going)
         self.title = ""
         self.cur = None
@@ -111,7 +112,7 @@ class LoadMusic:
         if not self.ok:
             return
         try:
-            if self.snd is not None and rl.is_sound_playing(self.snd):
+            if self.snd is not None and rl.is_sound_playing(self.snd) and not self.swap:
                 return
             if self.job is None:
                 self._next()
@@ -119,6 +120,16 @@ class LoadMusic:
             if not self.job["done"]:
                 return
             job, self.job = self.job, None
+            if not job["ok"]:                                    # undecodable file: keep what plays now, try another one
+                self.swap = False
+                self.want = None
+                if job.get("idx") is not None and job["idx"] < len(self.hist):
+                    del self.hist[job["idx"]]                    # a song that will not decode leaves the history
+                    if job["idx"] <= self.pos:
+                        self.pos -= 1
+                self._next()
+                return
+            self.swap = False
             self._drop()
             if job["ok"]:
                 rl.set_sound_volume(self.static, 0.2 * self.volume)
@@ -146,7 +157,8 @@ class LoadMusic:
             self.ok = False
 
     def skip(self, back=False):
-        """◀ / ▶: back to the previous song (and forward again through the ones already heard), else on to a new one."""
+        """◀ / ▶: back to the previous song (and forward again through the ones already heard), else on to a new one.
+        The song playing now keeps going until the next one is decoded, so a press never leaves silence."""
         if not self.ok:
             return
         try:
@@ -161,8 +173,9 @@ class LoadMusic:
                 self.want = idx
             elif self.want is not None:
                 return                                           # still fetching the earlier one
-            self._drop()
-            self.title = "…"
+            elif self.job is None:
+                self._next()
+            self.swap = True
             rl.set_sound_volume(self.static, 0.2 * self.volume)
             rl.play_sound(self.static)                           # the dial turns while the song decodes
         except Exception as e:  # noqa: BLE001
