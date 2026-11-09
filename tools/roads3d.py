@@ -874,9 +874,7 @@ def _init_worker(edges, joints, plates, decks, T, chunk):
     _MICRO.clear()
     for i_, e_ in enumerate(edges):
         _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
-    prog(0.065, "junction plates")
     X = _prepare(edges, joints, plates, decks, T)
-    prog(0.07, "streets")
     X.cov = Cover(edges)
     X.cov.set_cores(edges, plates)
     X.chunk_of = lambda x, z: (math.floor(x / chunk), math.floor(z / chunk))      # = build_world.chunk_of
@@ -953,7 +951,9 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         if (e["drive"] or e["walk"]) and len(e["pts"]) >= 2 and e["road"] not in done_ and decks and e["bridge"] and decks.get(e["road"]) is not None:
             done_.add(e["road"])
             pier_edges.add(i)
+    prog(0.065, "junction plates")
     X = _prepare(edges, joints, plates, decks, T)
+    prog(0.07, "streets")
     X.cov, X.chunk_of = cov, chunk_of
     nj = par.jobs()
     if nj > 1 and len(order) > 400 and chunk_of(CHUNK * 3 + 1, -CHUNK * 2 - 1) == (3, -3):
