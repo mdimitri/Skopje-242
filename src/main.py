@@ -511,19 +511,21 @@ def main():
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
         import loadmusic
         music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
-    if need:                                                           # the real city (not --demo / --world)
-        unbuilt = need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world"))
-        if a.rebuild or a.refresh:
+    pre = ""                                                           # the title menu's answer, chosen before anything loads
+    unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
+    if need and not unbuilt:
+        need["build"] = False                                          # out of date is fine: rebuilt only from the menu
+    if a.rebuild or a.refresh:
+        need["build"] = True
+    elif not a.test and not a.nomenu:                                  # always the title menu first; the world builds only on request
+        menu_mod.WORLD["built"] = not unbuilt
+        pre = menu_mod.run(cfg, lambda c: None, False, music=music)
+        menu_mod.WORLD["built"] = True
+        if pre == "quit":
+            rl.close_window()
+            return
+        if pre == "rebuild":
             need["build"] = True
-        elif unbuilt and not a.test and not a.nomenu:                  # no world yet: the menu first, the build only on request
-            menu_mod.WORLD["built"] = False
-            if menu_mod.run(cfg, lambda c: None, False, music=music) == "quit":
-                rl.close_window()
-                return
-            menu_mod.WORLD["built"] = True
-            need["build"] = True
-        elif not unbuilt:
-            need["build"] = False                                      # out of date is fine: rebuilt only from the menu
     present = present_mod.Present()
     keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
@@ -772,7 +774,7 @@ def main():
     if a.nomenu and loader.music is not None:
         loader.music.close()
     if not a.test and not a.nomenu:
-        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud, music=loader.music)
+        res_ = pre if pre not in ("", "rebuild") else menu_mod.run(cfg, apply_cfg, False, aud=aud, music=loader.music)
         if loader.music is not None:
             loader.music.close()
         if res_ == "quit":

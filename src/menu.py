@@ -153,9 +153,9 @@ def _logo(x, y, sz):
 
 
 # title menu (v3); new labels live here until they can be added to text/ (human-edited)
-TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("rebuild", "ИЗГРАДИ ГО СВЕТОТ"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
+TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
 NO_SAVE = "Нема зачувана игра"
-NO_WORLD = "Прво изгради го светот (ИЗГРАДИ ГО СВЕТОТ)"
+NO_WORLD = "Прво изгради го светот (копчето горе десно)"
 WORLD = {"built": True}     # main sets False when there is no built world yet: play / continue / multiplayer wait for a build
 BACK = "Назад"
 _T = {}
@@ -605,9 +605,9 @@ def _confirm_rebuild():
     sel = 1
     while not rl.window_should_close():
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        pw, ph = min(W - 40, 880), 330
+        pw, ph = min(W - 40, 980), 400
         px, py = (W - pw) // 2, (H - ph) // 2
-        bw, bh = (pw - 90) // 2, 56
+        bw, bh = (pw - 90) // 2, 66
         by = py + ph - bh - 36
         rects = [(px + 30, by), (px + 60 + bw, by)]
         m = rl.get_mouse_position()
@@ -628,14 +628,14 @@ def _confirm_rebuild():
         _veil(W, H)
         _panel(px, py, pw, ph)
         y = py + 30
-        for txt, sz, col in (("Повторно градење на светот", 36, _th["fg"]),
-                             ("Ова трае долго (од неколку минути до половина час).", 24, _th["mu"]),
-                             ("Играта ќе се рестартира и ќе го изгради светот од почеток.", 24, _th["mu"])):
+        for txt, sz, col in (("Повторно градење на светот", 48, _th["fg"]),
+                             ("Ова трае долго (од неколку минути до половина час).", 32, _th["mu"]),
+                             ("Светот ќе се изгради од почеток, па играта продолжува.", 32, _th["mu"])):
             txt = font.fit(txt, sz, pw - 60, "cond")
             font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col, bold="cond")
             y += sz + 22
         for i, (lab, (bx, byy)) in enumerate(zip(("Изгради повторно", "Откажи"), rects)):
-            _btn(bx, byy, bw, bh, lab, sel == i, 26)
+            _btn(bx, byy, bw, bh, lab, sel == i, 32)
         rl.end_drawing()
     return False
 
@@ -646,8 +646,6 @@ def title_menu(aud=None, music=None):
     latest = _latest_save()
     sel = 0
     flash_t, flash_msg = 0.0, NO_SAVE
-    if not WORLD["built"]:
-        sel = next(i for i, (k, _l) in enumerate(TITLE_ITEMS) if k == "rebuild")
     t_open = time.time()
     last_m = None
     while True:
@@ -681,16 +679,23 @@ def title_menu(aud=None, music=None):
                         (hover is not None and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)))
         if armed and rl.is_key_pressed(rl.KEY_ESCAPE):
             sel, go = len(TITLE_ITEMS) - 1, True
+        # the world build: its own button top right, outside the list (B on the keyboard)
+        blab = "ИЗГРАДИ ПОВТОРНО" if WORLD["built"] else "ИЗГРАДИ ГО СВЕТОТ"
+        bsz = max(22, H // 32)
+        bbw, bbh = font.measure_text(blab, bsz, "cond") + 3 * bsz, int(bsz * 2.0)
+        bbx, bby = W - bbw - 16, 56
+        over_b = bbx <= m.x < bbx + bbw and bby <= m.y < bby + bbh
+        if armed and ((over_b and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_B)):
+            go = False
+            if not WORLD["built"] or _confirm_rebuild():
+                return "rebuild"
+            t_open = time.time()
         if go:
             k = TITLE_ITEMS[sel][0]
             if aud is not None:
                 aud.play("ui_confirm", 0.6)
             if k in ("new", "cont", "multi") and not WORLD["built"]:
                 flash_t, flash_msg = time.time(), NO_WORLD
-            elif k == "rebuild":
-                if not WORLD["built"] or _confirm_rebuild():
-                    return "rebuild"
-                t_open = time.time()
             elif k == "cont":
                 if latest:
                     n = _slot_picker(aud, music, latest)
@@ -725,6 +730,7 @@ def title_menu(aud=None, music=None):
             else:
                 font.draw_text(label, tx + 2, ty + 2, sz, rl.Color(0, 0, 0, 170), bold="cond")    # drop shadow over the art
                 font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
+        _btn(bbx, bby, bbw, bbh, blab, over_b or (not WORLD["built"] and int(time.time() * 2) % 2 == 0), bsz)   # blinks while there is no world
         font.draw_version(W, H)
         if time.time() - flash_t < 2.0:
             fw = font.measure_text(flash_msg, sz * 3 // 4, "cond")
