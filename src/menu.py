@@ -11,8 +11,40 @@ import poster
 import present
 import settings as S
 
-GOLD = rl.Color(240, 200, 60, 255)
+# splash-art palette: hot pink + cream on dark plum, Oswald condensed (font bold="cond")
 PINK = rl.Color(226, 32, 104, 255)
+CREAM = rl.Color(246, 238, 220, 255)
+MUTED = rl.Color(176, 164, 182, 255)
+PLUM = rl.Color(16, 10, 24, 232)
+TRACK = rl.Color(58, 44, 66, 255)
+GOLD = CREAM                          # titles / highlights that used to be gold
+CD = "cond"
+
+
+def _veil(W, H, a=170):
+    rl.draw_rectangle(0, 0, W, H, rl.Color(12, 6, 20, a))
+
+
+def _panel(x, y, w, h):
+    """Dark plum card with the pink top bar of the poster."""
+    rl.draw_rectangle(x, y, w, h, PLUM)
+    rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 2, rl.Color(226, 32, 104, 110))
+    rl.draw_rectangle(x, y, w, 5, PINK)
+
+
+def _btn(x, y, w, h, label, hot, sz=22):
+    rl.draw_rectangle(x, y, w, h, PINK if hot else rl.Color(34, 22, 40, 235))
+    rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, w, h), 2, PINK)
+    font.draw_text(label, x + (w - font.measure_text(label, sz, CD)) // 2, y + (h - sz) // 2 - sz // 10, sz, rl.WHITE if hot else CREAM, bold=CD)
+
+
+def _logo(x, y, sz):
+    """СКОПЈЕ in cream, 242 in pink: the wordmark of the splash."""
+    font.draw_text("СКОПЈЕ", x + 2, y + 2, sz, rl.Color(0, 0, 0, 180), bold=CD)
+    font.draw_text("СКОПЈЕ", x, y, sz, CREAM, bold=CD)
+    x2 = x + font.measure_text("СКОПЈЕ ", sz, CD)
+    font.draw_text("242", x2 + 2, y + 2, sz, rl.Color(0, 0, 0, 180), bold=CD)
+    font.draw_text("242", x2, y, sz, PINK, bold=CD)
 # title menu (v3); new labels live here until they can be added to text/ (human-edited)
 TITLE_ITEMS = [("new", "НОВА ИГРА"), ("cont", "ПРОДОЛЖИ"), ("multi", "МУЛТИПЛЕЈЕР"), ("settings", "ПОСТАВКИ"), ("quit", "ИЗЛЕЗ")]
 NO_SAVE = "Нема зачувана игра"
@@ -35,7 +67,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", TXT("menu.0003"), "Дебаг"]   # Игра · Градот · Луѓето · Графика · Звук · Дебаг
+TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", "Контроли", TXT("menu.0003")]   # Игра · Градот · Луѓето · Графика · Контроли · Звук
 
 
 _cfg = None
@@ -55,56 +87,59 @@ def _rows(in_game, slots=(), settings_only=False):
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     H = lambda t: Row("head", t)
     R = [
-        # tabs: 0 Игра · 1 Градот · 2 Луѓето · 3 Графика · 4 Звук  (new labels live here until they can be added to text/)
+        # tabs: 0 Игра · 1 Градот · 2 Луѓето · 3 Графика · 4 Контроли · 5 Звук  (new labels live here until they can be added to text/)
         (1, H("Време")),
         (1, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
         (1, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
-        (1, H("Улица")),
+        (1, H("Сообраќај и служби")),
         (1, Row("choice", TXT("menu.0030"), "traffic", dens, bar=True)),
-        (2, H("Луѓе")),
-        (2, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
-        (2, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
-        (2, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
-        (2, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, bar=True, note=TXT("menu.0037"))),
-        (1, H("Служби")),
         (1, Row("toggle", TXT("menu.0038"), "ambulance")),
         (1, Row("toggle", TXT("menu.0039"), "fire")),
+        (1, H("Податоци за мапата")),
+        (1, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041"))),
+        (2, H("Население")),
+        (2, Row("choice", TXT("menu.0031"), "peds", dens, bar=True)),
+        (2, H("Однесување")),
+        (2, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
+        (2, H("Разговори")),
+        (2, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
+        (2, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, note=TXT("menu.0037"))),
         (3, H("Екран")),
         (3, Row("choice", TXT("menu.0008"), "resolution", [S.res_label(w, h) for w, h in S.RESOLUTIONS])),
         (3, Row("toggle", TXT("menu.0009"), "fullscreen")),
         # new labels live here until they can be added to text/ (human-edited)
         (3, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
-        (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
+        (3, H("Квалитет")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
-        (3, H("Камера")),
-        (3, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=mz(60.0, 3.64 / 0.6), note=TXT("menu.0016"))),
-        (3, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=mz(100.0, 0.97 / 0.6))),
-        (3, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
-        (5, H("Дебаг")),
-        (5, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
-        (5, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
-        (5, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
-        (5, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
-        (3, H("Ознаки")),
+        (3, Row("choice", "Anti-aliasing", "aa", S.AA, note="се применува по рестарт на играта")),
+        (3, H("Околина")),
         (3, Row("toggle", TXT("menu.0014"), "labels")),
-        (3, H("Смог")),
         (3, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),
         (3, Row("slider", "Јачина на смог", "smog_level", lo=0.0, hi=3.0, fmt=pct, note="100% е нормално, над тоа е густ, тежок смог")),
         (3, Row("slider", "Загадување од возила", "pollution", lo=0.0, hi=3.0, fmt=pct, note="колку чадат автомобилите")),
-        (4, H("Јачина")),
-        (4, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
-        (4, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
-        (4, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
-        (4, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
-        (4, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
-        (4, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
-        (4, H("Говор")),
-        (4, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
-        (4, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (4, H("Камера")),
+        (4, Row("slider", TXT("menu.0015"), "zoom_walk", lo=0.4, hi=2.4, fmt=mz(60.0, 3.64 / 0.6), note=TXT("menu.0016"))),
+        (4, Row("slider", TXT("menu.0017"), "zoom_car", lo=0.4, hi=2.4, fmt=mz(100.0, 0.97 / 0.6))),
+        (4, Row("slider", TXT("menu.0018"), "shake", lo=0.0, hi=2.0, fmt=pct)),
+        (4, H("Глувче")),
+        (4, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
+        (4, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
+        (4, H("Дебаг")),
+        (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
+        (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
+        (5, H("Јачина")),
+        (5, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
+        (5, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
+        (5, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
+        (5, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
+        (5, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
+        (5, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),
+        (5, H("Говор")),
+        (5, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
+        (5, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
     ]
-    MAPROW = (0, Row("choice", TXT("menu.0040"), "osm_source", S.MAP_SOURCES, note=TXT("menu.0041")))   # was the Мапа tab
     if settings_only:                    # opened from the title menu: only the options, and a way back
-        return R + [MAPROW, (0, Row("action", BACK, "play"))]
+        return R + [(0, Row("action", BACK, "play"))]
     g = [Row("action", TXT("menu.0042") if in_game else TXT("menu.0043"), "play")]
     if in_game:
         g += [Row("head", TXT("menu.0044")), *[Row("action", (TXT("menu.0045") + f'{n}:  {slots[n - 1]}'), f"save{n}") for n in range(1, len(slots) + 1)]]
@@ -112,7 +147,7 @@ def _rows(in_game, slots=(), settings_only=False):
     if in_game:
         g += [Row("head", ""), Row("action", TXT("menu.0048"), "chars"), Row("action", "Назад на главното мени", "mainmenu")]
     g += [Row("action", TXT("menu.0049"), "quit")]
-    return R + [(0, r) for r in g] + [MAPROW]
+    return R + [(0, r) for r in g]
 
 
 def _title_card(seconds=6.0):
@@ -169,6 +204,9 @@ def _layout(n, W, H, aspect):
     return cols, rows, cw, ch, gx, gy, top
 
 
+LOW_GOOD = {"somnitelnost"}          # stats where a LOW value is the good one (less police attention)
+
+
 def _grad(t):
     """Red (t=0) -> orange -> yellow (0.5) -> green (1)."""
     stops = ((0.0, (214, 52, 48)), (0.25, (232, 128, 46)), (0.5, (238, 208, 56)), (0.75, (150, 205, 70)), (1.0, (62, 196, 104)))
@@ -192,9 +230,8 @@ def _hero_panel(sel, W, H):
     pr = HP.profile(hid)
     px, py, pw, ph = _panel_rect(W, H)
     fs = max(13, min(19, H // 48))
-    gray, white = rl.Color(200, 205, 215, 255), rl.Color(225, 225, 230, 255)
-    rl.draw_rectangle(px, py, pw, ph, rl.Color(14, 17, 25, 245))
-    rl.draw_rectangle_lines_ex(rl.Rectangle(px, py, pw, ph), 3, GOLD)
+    gray, white = MUTED, CREAM
+    _panel(px, py, pw, ph)
     tw = int(pw * 0.32)
     t = _portrait(sel)
     pic_h = int(ph * 0.42)
@@ -202,35 +239,38 @@ def _hero_panel(sel, W, H):
         poster.draw_fit(t, px + 10, py + 10, tw - 10, pic_h)
     x2, w2 = px + tw + 16, pw - tw - 30
     y = py + 10
-    font.draw_text(font.fit(name, fs + 8, w2, True), x2, y, fs + 8, GOLD, bold=True)
+    font.draw_text(font.fit(name, fs + 10, w2, CD), x2, y, fs + 10, PINK, bold=CD)
     y += fs + 12
     tag = pr["title"].split(" — ", 1)[-1]
     for ln in font.wrap(tag[:1].upper() + tag[1:], fs, w2)[:2]:
-        font.draw_text(ln, x2, y, fs, rl.Color(240, 225, 160, 255))
+        font.draw_text(ln, x2, y, fs, CREAM)
         y += fs + 3
     font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2), x2, y + 2, fs, gray)
     y += fs + 8
     for ln in font.wrap(f"„{pr['quote']}“", fs, w2)[:3]:
-        font.draw_text(ln, x2, y, fs, rl.Color(150, 190, 240, 255))
+        font.draw_text(ln, x2, y, fs, rl.Color(255, 160, 195, 255))
         y += fs + 3
     y += 6
-    lw = max(font.measure_text(nm, fs) for nm in HP.STAT_NAMES) + 12      # label column = widest label, bars start after it
+    lw = max(font.measure_text(nm + (" *" if k in LOW_GOOD else ""), fs, CD) for k, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES)) + 12
     bw = max(10, (w2 - lw - 44) // 8 - 3)
-    rowh = fs + 5
+    rowh = fs + 6
     for key, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES):
         v = pr["stats"][key]
         n = max(1, -(-v * 8 // 100))                                      # 0..100 -> 1..8 blocks (rounded up, never empty)
-        col = _grad((n - 1) / 7.0)                                        # 1 block red ... half yellow ... full green
-        font.draw_text(nm, x2, y, fs, white)
+        good = (8 - n) / 7.0 if key in LOW_GOOD else (n - 1) / 7.0        # colour = how GOOD it is, not how big: low Сомнителност is green
+        col = _grad(good)
+        font.draw_text(nm + (" *" if key in LOW_GOOD else ""), x2, y, fs, white, bold=CD)
         for b in range(8):
-            rl.draw_rectangle(x2 + lw + b * (bw + 3), y + 2, bw, fs, col if b < n else rl.Color(50, 55, 68, 255))
-        font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 6, y, fs, gray)
+            rl.draw_rectangle(x2 + lw + b * (bw + 3), y + 2, bw, fs, col if b < n else rl.Color(52, 40, 60, 255))
+        font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 6, y, fs, col, bold=CD)
         y += rowh
+    font.draw_text("зелено = добро · црвено = лошо · * помалку е подобро", x2, y, max(11, fs - 3), gray, bold=CD)
+    y += fs
     y = max(y, py + pic_h + 20) + 10
     tx, tw2 = px + 14, pw - 28
     for label, txt in (("Приказна", pr["story"]), ("Цел", pr["goal"]),
                        (pr["ability_name"], pr["ability"]), ("Слабост", pr["weakness"])):
-        font.draw_text(label + ":", tx, y, fs, GOLD, bold=True)
+        font.draw_text(label.upper() + ":", tx, y, fs, PINK, bold=CD)
         y += fs + 3
         for ln in font.wrap(txt, fs, tw2):
             if y > py + ph - fs - 4:
@@ -320,16 +360,16 @@ def pick_character(cfg, aud=None, music=None):
             poster.draw_fit(bg, 0, 0, W, H, 255, cover=True)
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
-        rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
-        font.seal(52, 40, 24)
-        font.draw_text(TXT("menu.0051"), 90, 20, 40, GOLD, bold=True)
+        _veil(W, H, 205)
+        font.draw_text(TXT("menu.0051").upper(), 96, 10, 52, CREAM, bold=CD)
+        rl.draw_rectangle(96, 66, 120, 5, PINK)
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
             cx, cy = pos(i)
             on = i == sel
             g = 4 if on else 0                                              # the chosen card grows a little
-            rl.draw_rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g, rl.Color(48, 54, 72, 255) if on else rl.Color(26, 30, 40, 255))
+            rl.draw_rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g, rl.Color(120, 20, 64, 255) if on else rl.Color(26, 16, 34, 235))
             rl.draw_rectangle_lines_ex(rl.Rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g), 3 if on else 1,
-                                       GOLD if on else rl.Color(70, 76, 90, 255))
+                                       PINK if on else rl.Color(90, 60, 100, 255))
             t = _portrait(i)
             ih = ch - 56
             if t:
@@ -338,20 +378,18 @@ def pick_character(cfg, aud=None, music=None):
                 rl.draw_circle(cx + cw // 2, cy + ih // 2, min(cw, ih) // 4, rl.Color(90 + i * 12, 120, 160 - i * 9, 255))
                 ini = name[0]
                 font.draw_text(ini, cx + cw // 2 - font.measure_text(ini, 44, True) // 2, cy + ih // 2 - 26, 44, rl.WHITE, bold=True)
-            fs = max(10, min(17, cw // 7))
-            lines = font.wrap(name, fs, cw - 6, True)[:2]
-            while fs > 9 and any(font.measure_text(ln, fs, True) > cw - 6 for ln in lines):     # a long word shrinks the label, never overflows
+            fs = max(11, min(19, cw // 6))
+            lines = font.wrap(name, fs, cw - 6, CD)[:2]
+            while fs > 9 and any(font.measure_text(ln, fs, CD) > cw - 6 for ln in lines):     # a long word shrinks the label, never overflows
                 fs -= 1
-                lines = font.wrap(name, fs, cw - 6, True)[:2]
+                lines = font.wrap(name, fs, cw - 6, CD)[:2]
             for k, ln in enumerate(lines):
-                font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, True)) // 2, cy + ch - 40 + g + k * (fs + 2), fs,
-                               GOLD if on else rl.Color(220, 220, 225, 255), bold=True)
+                font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, CD)) // 2, cy + ch - 40 + g + k * (fs + 2), fs,
+                               rl.WHITE if on else CREAM, bold=CD)
         _hero_panel(sel, W, H)
-        rl.draw_rectangle_rounded(rl.Rectangle(W - 450, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
-        font.draw_text("← " + BACK, W - 434, 64, 22, GOLD, bold=True)
-        rl.draw_rectangle_rounded(rl.Rectangle(W - 230, 56, 210, 40), 0.25, 6, rl.Color(48, 54, 72, 255))
-        font.draw_text(TXT("menu.0053"), W - 214, 64, 22, GOLD, bold=True)
-        font.draw_text(TXT("menu.0054"), 24, H - 26, 16, rl.Color(150, 150, 160, 255))
+        _btn(W - 450, 56, 210, 40, "< " + BACK, W - 450 <= m.x < W - 240 and 56 <= m.y < 96)
+        _btn(W - 230, 56, 210, 40, TXT("menu.0053"), W - 230 <= m.x < W - 20 and 56 <= m.y < 96)
+        font.draw_text(TXT("menu.0054"), 24, H - 26, 17, MUTED, bold=CD)
         if music is not None:
             music.update()
             music.widget(x=W // 2 - 200, y=20, keys=False)
@@ -528,7 +566,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     """Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game.
     -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'"""
     import savegame
-    tab, flash, flash_t = 0, "", 0.0
+    tab, flash, flash_t = getattr(run, "tab0", 0), "", 0.0
     if not in_game and not settings_only:     # start: the title menu over the splash art
         while True:
             ch = title_menu(aud, music)
@@ -683,73 +721,75 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             return "play"
         if changed:
             apply(cfg)
-        # ---- draw
+        # ---- draw (splash style: plum card, pink accents, Oswald condensed)
         rl.begin_drawing()
         if draw_bg:
             draw_bg()
-            rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 215))
+            _veil(W, H, 150 if not in_game else 190)
         elif not in_game and _title() is not None:
             poster.draw_fit(_title(), 0, 0, W, H, 255, cover=True)
-            rl.draw_rectangle(0, 0, W, H, rl.Color(10, 12, 18, 228))
+            _veil(W, H, 200)
         else:
-            rl.clear_background(rl.Color(22, 24, 28, 255))
-        rl.draw_rectangle_rounded(rl.Rectangle(x0 - 24, 6, pw + 48, H - 12), 0.02, 6, rl.Color(14, 16, 24, 235))
-        rl.draw_rectangle(x0 - 24, 6, pw + 48, 4, GOLD)
-        font.seal(x0 + 24, 40, 22)
-        font.draw_text(TXT("menu.0058"), x0 + 60, 14, 30, GOLD, bold=True)
-        font.draw_text(TXT("menu.0059"), x0 + 60, 48, 17, rl.Color(190, 190, 190, 255))
+            rl.clear_background(rl.Color(16, 10, 24, 255))
+        _panel(x0 - 24, 6, pw + 48, H - 12)
+        _logo(x0, 8, 40)
+        font.draw_text(TXT("menu.0059").upper(), x0 + 4, 52, 15, MUTED, bold=CD)
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab
-            rl.draw_rectangle(tx + 2, 72, tw - 4, 34, rl.Color(48, 54, 72, 255) if on_t else rl.Color(26, 30, 40, 255))
-            if on_t:
-                rl.draw_rectangle(tx + 2, 104, tw - 4, 3, GOLD)
-            sz = 20 if font.measure_text(name, 20, on_t) <= tw - 8 else 16
-            lw = font.measure_text(name, sz, on_t)
-            font.draw_text(name, tx + (tw - lw) // 2, 78, sz, GOLD if on_t else rl.Color(190, 190, 195, 255), bold=on_t)
+            rl.draw_rectangle(tx + 2, 72, tw - 4, 34, PINK if on_t else rl.Color(34, 22, 40, 255))
+            name = name.upper()
+            sz = 22 if font.measure_text(name, 22, CD) <= tw - 8 else 17
+            lw = font.measure_text(name, sz, CD)
+            font.draw_text(name, tx + (tw - lw) // 2, 76, sz, rl.WHITE if on_t else MUTED, bold=CD)
         y = y0
         for i, r in enumerate(rows):
             if r.kind == "head":
                 y += 6
-                font.draw_text(r.label.upper(), x0, y + 4, 16, rl.Color(130, 170, 220, 255))
+                font.draw_text(r.label.upper(), x0, y + 3, 19, PINK, bold=CD)
                 if r.label:
-                    rl.draw_line(x0 + 150, y + rh // 2, x0 + pw, y + rh // 2, rl.Color(60, 70, 90, 255))
+                    rl.draw_line(x0 + font.measure_text(r.label.upper(), 19, CD) + 12, y + rh // 2, x0 + pw, y + rh // 2, rl.Color(226, 32, 104, 90))
                 y += rh
                 continue
             on = i == sel
             if on:
-                rl.draw_rectangle(x0 - 8, y, pw + 16, rh, rl.Color(40, 46, 62, 255))
-            col = rl.Color(255, 255, 255, 255) if on else rl.Color(205, 205, 205, 255)
+                rl.draw_rectangle(x0 - 8, y, pw + 16, rh, rl.Color(226, 32, 104, 60))
+                rl.draw_rectangle(x0 - 8, y, 5, rh, PINK)
+            col = rl.WHITE if on else CREAM
             if r.kind == "action":
-                font.draw_text(("> " if on else "  ") + r.label, x0, y + 4, 22 if r.key in ("play", "chars", "quit") else 20,
-                               GOLD if r.key == "play" else col)
+                big = r.key in ("play", "chars", "quit")
+                font.draw_text(r.label.upper() if big else r.label, x0 + 4, y + 2, 24 if big else 22, PINK if (r.key == "play" and not on) else col, bold=CD)
             else:
-                font.draw_text(r.label, x0, y + 4, 20, col)
+                font.draw_text(r.label, x0 + 4, y + 2, 22, col, bold=CD)
                 vx = x0 + int(pw * 0.5)
                 if r.kind == "choice" and not r.bar:
-                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >", vx, y + 4, 20, GOLD if on else col)
+                    font.draw_text(f"<  {r.options[cfg[r.key]]}  >" if on else r.options[cfg[r.key]], vx, y + 2, 22, PINK if on else CREAM, bold=CD)
                 elif r.kind == "toggle":
-                    font.draw_text(TXT("menu.0060") if cfg[r.key] else TXT("menu.0061"), vx, y + 4, 20, rl.Color(120, 220, 120, 255) if cfg[r.key] else rl.Color(220, 120, 120, 255))
+                    v = cfg[r.key]
+                    pill = rl.Rectangle(vx, y + 4, 118, rh - 8)
+                    rl.draw_rectangle_rounded(pill, 0.5, 6, PINK if v else TRACK)
+                    t = TXT("menu.0060") if v else TXT("menu.0061")
+                    font.draw_text(t, vx + (118 - font.measure_text(t, 18, CD)) // 2, y + 5, 18, rl.WHITE if v else MUTED, bold=CD)
                 else:
                     if r.kind == "choice":
                         f, txt = cfg[r.key] / max(1, len(r.options) - 1), r.options[cfg[r.key]]
                     else:
                         f, txt = (cfg[r.key] - r.lo) / (r.hi - r.lo), r.fmt(cfg[r.key])
-                    rl.draw_rectangle(vx, y + 9, bw, 10, rl.Color(50, 52, 58, 255))
-                    rl.draw_rectangle(vx, y + 9, int(bw * f), 10, GOLD if on else rl.Color(170, 150, 70, 255))
-                    font.draw_text(txt, vx + bw + 10, y + 4, 18, col)
+                    rl.draw_rectangle(vx, y + rh // 2 - 4, bw, 8, TRACK)
+                    rl.draw_rectangle(vx, y + rh // 2 - 4, int(bw * f), 8, PINK if on else rl.Color(170, 40, 100, 255))
+                    rl.draw_rectangle(vx + int(bw * f) - 4, y + rh // 2 - 9, 8, 18, rl.WHITE if on else CREAM)
+                    font.draw_text(txt, vx + bw + 14, y + 3, 20, col, bold=CD)
             y += rh
         if rows[sel].note:
-            font.draw_text(rows[sel].note, x0, H - 84, 17, rl.Color(170, 190, 220, 255))
+            font.draw_text(rows[sel].note, x0, H - 84, 18, rl.Color(255, 160, 195, 255), bold=CD)
         if flash and time.time() - flash_t < 2.5:
-            font.draw_text(flash, x0 + pw - font.measure_text(flash, 20, True), 24, 20, rl.Color(120, 220, 120, 255), bold=True)
-        font.draw_text(TXT("menu.0062"),
-                     x0, H - 30, 15, rl.Color(150, 150, 160, 255))
-        label = "Зачувај и затвори" if in_game else (BACK if settings_only else "Играј")
-        bwid, bx, by = font.measure_text(label, 20, True) + 40, x0 + pw - font.measure_text(label, 20, True) - 40, H - 62
-        over = bx <= m.x < bx + bwid and by <= m.y < by + 30
-        rl.draw_rectangle(bx, by, bwid, 30, GOLD if over else rl.Color(170, 140, 40, 255))
-        font.draw_text(label, bx + 20, by + 4, 20, rl.Color(20, 20, 20, 255), bold=True)
+            font.draw_text(flash, x0 + pw - font.measure_text(flash, 22, CD), 14, 22, PINK, bold=CD)
+        font.draw_text(TXT("menu.0062"), x0, H - 30, 16, MUTED, bold=CD)
+        label = ("Зачувај и затвори" if in_game else (BACK if settings_only else "Играј")).upper()
+        bwid = font.measure_text(label, 22, CD) + 48
+        bx, by = x0 + pw - bwid, H - 62
+        over = bx <= m.x < bx + bwid and by <= m.y < by + 34
+        _btn(bx, by, bwid, 34, label, over)
         if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             cfg.save()
             return "play"
