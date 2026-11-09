@@ -161,6 +161,7 @@ class Loader:
         self.b_t0 = 0.0
         self.b_done = set()
         self.b_frac = 0.0
+        self.b_part = 0.0                                # the running build step alone, 0..1 (the upper bar)
         self.music = None                   # loadmusic.LoadMusic, set by main; kept going on every frame
         self.quip = random.choice(slang.LOADING_QUIPS)
         self.quip_t = time.time()
@@ -340,6 +341,7 @@ class Loader:
         part = (n / total) if total else 0.0
         if ev.get("done"):
             part = 1.0
+        self.b_part = min(1.0, part)
         bt = self.build_times
         den = sum(bt.values()) or 1.0
         num = sum(bt[k] for k in self.b_done if k in bt) + bt.get(lab, 3.0) * min(1.0, part)
@@ -418,7 +420,7 @@ class Loader:
                 y += 17
         # ---- the two bars
         if self.cur:
-            fr = self.f[self.cur]
+            fr = self.b_part if self.cur == "build" and self.b_label else self.f[self.cur]      # build: each step fills the bar by itself
             what = mk(T.STAGE.get(self.cur, self.cur)) + (f"  ·  {mk(self.note)}" if self.note else "")
             self._tbar(m, cy, W - 2 * m, ch, fr, CUR_BAR, what, f"{fr * 100:3.0f}%")
         ov = self.overall()
