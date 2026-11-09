@@ -440,50 +440,52 @@ class Hud:
                 if pk[3]:
                     qx, qy = to_mm(pk[0], pk[1])
                     if inside(qx, qy):
-                        rl.draw_circle(int(qx), int(qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
+                        rl.draw_circle_v(rl.Vector2(qx, qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
+                        if pk[2] in WEAPONS:                              # weapons carry their first letter
+                            font.draw_text(WEAPONS[pk[2]][0][:1], int(qx) + 4, int(qy) - 8, 12, rl.Color(150, 10, 10, 255))
             for x, y, cat, _nm in self._pois_near(fx, fy):
                 qx, qy = to_mm(x, y)
                 if inside(qx, qy):
-                    rl.draw_circle(int(qx), int(qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
+                    rl.draw_circle_v(rl.Vector2(qx, qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
             for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations, named
                 qx, qy = to_mm(x, y)
                 if inside(qx, qy):
-                    rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(150, 40, 40, 255))
+                    rl.draw_rectangle_v(rl.Vector2(qx - 3, qy - 3), rl.Vector2(6, 6), rl.Color(150, 40, 40, 255))
                     if name:
                         font.draw_text(name, int(qx) + 5, int(qy) - 7, 12, rl.Color(150, 40, 40, 255))
             for bd in sim.bodies:                                            # parked and standing vehicles (the player's own is the arrow)
                 if bd is not c and bd.alive:
                     qx, qy = to_mm(bd.x, bd.y)
                     if inside(qx, qy):
-                        rl.draw_rectangle(int(qx) - 1, int(qy) - 1, 3, 3, rl.Color(170, 175, 185, 230))
+                        rl.draw_rectangle_v(rl.Vector2(qx - 1, qy - 1), rl.Vector2(3, 3), rl.Color(170, 175, 185, 230))
             for bus in sim.transit.buses:
                 if bus.body is not None:
                     qx, qy = to_mm(bus.body.x, bus.body.y)
                     if inside(qx, qy):
-                        rl.draw_rectangle(int(qx) - 2, int(qy) - 2, 5, 5, rl.Color(250, 190, 40, 255))
+                        rl.draw_rectangle_v(rl.Vector2(qx - 2, qy - 2), rl.Vector2(5, 5), rl.Color(250, 190, 40, 255))
             for cc in sim.traffic.cars:
                 qx, qy = to_mm(cc.x, cc.y)
                 if inside(qx, qy):
-                    rl.draw_rectangle(int(qx) - 1, int(qy) - 1, 3, 3, rl.Color(250, 250, 250, 230))
+                    rl.draw_rectangle_v(rl.Vector2(qx - 1, qy - 1), rl.Vector2(3, 3), rl.Color(250, 250, 250, 230))
             for j in sim.services.jobs:
                 if j.body is not None:
                     qx, qy = to_mm(j.body.x, j.body.y)
                     if inside(qx, qy):
-                        rl.draw_circle(int(qx), int(qy), 4, rl.Color(60, 120, 255, 255) if int(rl.get_time() * 4) & 1 else rl.Color(255, 50, 50, 255))
+                        rl.draw_circle_v(rl.Vector2(qx, qy), 4, rl.Color(60, 120, 255, 255) if int(rl.get_time() * 4) & 1 else rl.Color(255, 50, 50, 255))
             for q in (getattr(sim, "mp_view", None) or {}).get("players", ()):          # the other players, in their colours
                 qx, qy = to_mm(q["x"], q["y"])
                 if not inside(qx, qy):                                                  # off the minimap: pinned to its rim
                     d = math.hypot(qx - mcx, qy - mcy) or 1.0
                     qx, qy = mcx + (qx - mcx) / d * (mr - 6), mcy + (qy - mcy) / d * (mr - 6)
-                rl.draw_circle(int(qx), int(qy), 6, rl.WHITE)
-                rl.draw_circle(int(qx), int(qy), 4.5, rl.Color(*q["color"], 255))
+                rl.draw_circle_v(rl.Vector2(qx, qy), 6, rl.WHITE)
+                rl.draw_circle_v(rl.Vector2(qx, qy), 4.5, rl.Color(*q["color"], 255))
             if self.wp:                                                                 # waypoint, pinned to the rim when off the minimap
                 qx, qy = to_mm(*self.wp)
                 if not inside(qx, qy):
                     d = math.hypot(qx - mcx, qy - mcy) or 1.0
                     qx, qy = mcx + (qx - mcx) / d * (mr - 6), mcy + (qy - mcy) / d * (mr - 6)
-                rl.draw_circle(int(qx), int(qy), 6, rl.WHITE)
-                rl.draw_circle(int(qx), int(qy), 4.5, rl.Color(40, 160, 255, 255))
+                rl.draw_circle_v(rl.Vector2(qx, qy), 6, rl.WHITE)
+                rl.draw_circle_v(rl.Vector2(qx, qy), 4.5, rl.Color(40, 160, 255, 255))
             qx, qy = to_mm(fx, fy)
             self._arrow(qx, qy, ang, 15)
         else:
