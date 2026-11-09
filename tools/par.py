@@ -14,8 +14,8 @@ import sys
 _POOL = [None, None]                      # the pool, the initializer it was started with
 
 
-def free_mb():
-    """Memory the system can still give out, in MB (None when unknown)."""
+def mem_mb():
+    """(available, total) system memory in MB, or None when unknown."""
     try:
         if sys.platform == "win32":
             import ctypes
@@ -27,11 +27,13 @@ def free_mb():
             m = MS()
             m.len = ctypes.sizeof(MS)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-            return m.avail / 2 ** 20
+            return m.avail / 2 ** 20, m.total / 2 ** 20
+        mi = {}
         with open("/proc/meminfo") as f:
             for ln in f:
-                if ln.startswith("MemAvailable:"):
-                    return int(ln.split()[1]) / 1024
+                k, v = ln.split(":", 1)
+                mi[k] = int(v.split()[0]) / 1024
+        return mi["MemAvailable"], mi["MemTotal"]
     except Exception:  # noqa: BLE001
         pass
     return None
@@ -41,16 +43,19 @@ WORKER_MB = 700                           # rough peak of one pool worker on the
 
 
 def jobs():
-    """Workers to run: every core, but never more than the free memory holds (8 GB laptops) - 1.5 GB stays for the build itself."""
+    """Workers to run: every core, but only as many as fit while the whole machine stays under 70 % of its RAM (an 8 GB laptop
+    gets few, a 32 GB PC more); 1 GB is kept back for the growing build itself."""
     try:
         n = int(os.environ.get("SK242_JOBS", "0"))
     except ValueError:
         n = 0
     if n <= 0:
         n = os.cpu_count() or 1
-        fm = free_mb()
-        if fm is not None:
-            n = min(n, max(1, int((fm - 1500) // int(os.environ.get("SK242_WORKER_MB", WORKER_MB)))))
+        m = mem_mb()
+        if m is not None:
+            avail, total = m
+            room = min(avail, 0.7 * total - (total - avail)) - 1000          # what workers may take before the machine passes 70 %
+            n = min(n, max(1, int(room // int(os.environ.get("SK242_WORKER_MB", WORKER_MB)))))
     return max(1, min(n, 32 if "SK242_JOBS" not in os.environ else 61))     # default cap 32 (each worker holds a copy of numpy + its context); 61 = the Windows limit
 
 
@@ -104,3 +109,23 @@ def pmap(fn, items, init=None, chunk=None, on=None):
         if init:
             init[0](*init[1])
         return _serial(fn, items, on)
+
+
+def pimap(fn, items, init=None, chunk=None, on=None):
+    """Like pmap, but yields the results in order as they arrive, so a caller that stores them right away never holds
+    them all twice (memory on 8 GB machines)."""
+    items = list(items)
+    n = jobs()
+    if n <= 1 or len(items) < 2 or getattr(sys, "frozen", False) and not hasattr(sys, "_MEIPASS"):
+        if init:
+            init[0](*init[1])
+        for k, x in enumerate(items):
+            yield fn(x)
+            if on:
+                on(k + 1, len(items))
+        return
+    pool = _pool(init)
+    for k, r in enumerate(pool.imap(fn, items, chunksize=chunk or max(1, len(items) // (n * 8)))):
+        yield r
+        if on:
+            on(k + 1, len(items))

@@ -216,10 +216,8 @@ def build(dense, free, area_ok, hs, add, chunk_of, HX, HY, log=print):
                     trees.append((cx + r.uniform(-4, 4), cz + r.uniform(-4, 4), r.uniform(2.4, 4.0), r.randint(0, 3)))
                     cnt["tree"] += 1
     todo = [j[2] for j in jobs if j[0] == "ops"]
-    built = iter(par.pmap(_build_ops, todo, chunk=64, on=lambda d, t: bar.update(300 + 400 * d // t)))
-    for ji_, (kind, key, data) in enumerate(jobs):
-        if ji_ % 256 == 0:
-            bar.update(700 + 300 * ji_ // max(1, len(jobs)), "meshes into the map")
+    built = par.pimap(_build_ops, todo, chunk=64, on=lambda d, t: bar.update(300 + 700 * d // t))      # streamed: each mesh goes into the map as it comes
+    for kind, key, data in jobs:
         pos, uv, col = data if kind == "add" else next(built)
         if len(pos):
             add(key, 3, pos, uv, col)
