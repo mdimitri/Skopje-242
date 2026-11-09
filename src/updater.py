@@ -20,7 +20,7 @@ import font
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_FILE = os.path.join(ROOT, ".version")       # commit sha of the installed copy (what the update check compares)
-GAME_VERSION = "3"                                  # the player-facing version number (title menu)
+GAME_VERSION = "3.1"                                # the player-facing major.minor version (splash and every menu)
 REPO = "mdimitri/skopje-242"
 API_URL = f"https://api.github.com/repos/{REPO}/commits/main"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/main"

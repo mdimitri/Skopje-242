@@ -60,6 +60,7 @@ def _early_splash():
         if poster.splash() is None:
             font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
         font.draw_text("Се вчитува ...", W // 2 - 80, H - 60, 24, rl.Color(230, 226, 232, 255), bold="cond")
+        font.draw_version(W, H)
         rl.end_drawing()
         rl.poll_input_events()
         if "--mute" not in sys.argv and cfg["vol_master"] >= 0.01:      # music from the very first frame

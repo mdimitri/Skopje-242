@@ -428,6 +428,7 @@ class Loader:
         if self.music is not None:
             self.music.widget()
         font.exit_button()
+        font.draw_version(W, H)
         rl.end_drawing()
 
     @staticmethod

@@ -10,7 +10,6 @@ import characters as C
 import poster
 import present
 import settings as S
-from updater import GAME_VERSION
 
 GOLD = rl.Color(240, 200, 60, 255)
 PINK = rl.Color(226, 32, 104, 255)
@@ -132,6 +131,7 @@ def _title_card(seconds=6.0):
             txt = TXT("menu.0050")
             font.draw_text(txt, (W - font.measure_text(txt, 22)) // 2, H - 48, 22, rl.Color(255, 245, 210, 235))
         font.exit_button()
+        font.draw_version(W, H)
         rl.end_drawing()
         if time.time() - t0 > 0.4 and (rl.get_key_pressed() or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):
             return False
@@ -356,6 +356,7 @@ def pick_character(cfg, aud=None, music=None):
             music.update()
             music.widget(x=W // 2 - 200, y=20, keys=False)
         font.exit_button()
+        font.draw_version(W, H)
         rl.end_drawing()
 
 
@@ -431,6 +432,7 @@ def _slot_picker(aud=None, music=None, latest=0):
             font.draw_text(txt, tx, ty, sz, col, bold="cond")
         if music is not None:
             music.widget()
+        font.draw_version(W, H)
         rl.end_drawing()
 
 
@@ -511,8 +513,7 @@ def title_menu(aud=None, music=None):
             else:
                 font.draw_text(label, tx + 2, ty + 2, sz, rl.Color(0, 0, 0, 170), bold="cond")    # drop shadow over the art
                 font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
-        vt = "v" + GAME_VERSION
-        font.draw_text(vt, W - font.measure_text(vt, 18, "cond") - 14, H - 30, 18, rl.Color(232, 226, 232, 200), bold="cond")
+        font.draw_version(W, H)
         if time.time() - flash_t < 2.0:
             fw = font.measure_text(NO_SAVE, sz * 3 // 4, "cond")
             font.draw_text(NO_SAVE, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
@@ -755,4 +756,5 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if settings_only and music is not None and x0 - 24 - 110 > 60:      # beside the panel, if there is room
             music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 110))
         font.exit_button()
+        font.draw_version(W, H)
         rl.end_drawing()
