@@ -1,4 +1,5 @@
 """Runtime world: loads the baked pickle, builds collision grid + routing graph."""
+import array
 import bisect
 import json
 import math
@@ -148,6 +149,7 @@ class World:
             self.tgrid = np.zeros((2, 2), np.float32)
             self.tl = [0.0] * 4
             self.hilly = False
+        self._load_quays(t)
         # bridge decks: 8 m hash of centreline segments (x1, y1, x2, y2, h1, h2, half width)
         self.dgrid = {}
         for d in getattr(self, "decks", ()):
@@ -216,6 +218,91 @@ class World:
             xj, yj = xi, yi
         return inside
 
+    def _load_quays(self, t):
+        # river quays (tools/quays.py): sparse 1 m tiles of height cuts on top of the 10 m grid, plus a class per post
+        q = t.get("quay") if t else None
+        self.qidx = None
+        self.tgrid_low = self.tgrid                     # the 10 m grid lowered under the quay cuts (far LOD model)
+        if q:
+            self.qstep, self.qtile = float(q["step"]), int(q["tile"])
+            self.qnty, self.qntx = int(q["nty"]), int(q["ntx"])
+            m = self.qtile + 1
+            self.qidx_a = np.frombuffer(q["idx"], np.int32).reshape(self.qnty, self.qntx)
+            self.qd = np.frombuffer(q["d"], np.float32).reshape(-1, m, m)
+            self.qcls = np.frombuffer(q["cls"], np.uint8).reshape(-1, m, m)
+            self.qidx = self.qidx_a.ravel().tolist()
+            self.ql = array.array("f", self.qd.tobytes())      # compact; indexing gives plain floats
+            self.hilly = True
+            low = self.tgrid.copy()
+            span = self.qtile * self.qstep
+            for ty, tx in zip(*np.nonzero(self.qidx_a >= 0)):
+                dmin = float(self.qd[self.qidx_a[ty, tx]].min())
+                j0 = max(0, int((tx * span) // self.tstep) - 1)
+                j1 = min(self.tnx - 1, int(((tx + 1) * span) // self.tstep) + 2)
+                i0 = max(0, int((ty * span) // self.tstep) - 1)
+                i1 = min(self.tny - 1, int(((ty + 1) * span) // self.tstep) + 2)
+                low[i0:i1 + 1, j0:j1 + 1] = np.minimum(low[i0:i1 + 1, j0:j1 + 1], self.tgrid[i0:i1 + 1, j0:j1 + 1] + dmin)
+            self.tgrid_low = low
+
+    def quay_cut(self, x, y):
+        """Height cut of the river quays at (x, y) (<= 0; 0 away from the rivers)."""
+        q = self.qidx
+        if q is None:
+            return 0.0
+        fx = (x + self.hx) / self.qstep
+        fy = (y + self.hy) / self.qstep
+        if fx < 0.0 or fy < 0.0:
+            return 0.0
+        T = self.qtile
+        tx, ty = int(fx) // T, int(fy) // T
+        if tx >= self.qntx or ty >= self.qnty:
+            return 0.0
+        k = q[ty * self.qntx + tx]
+        if k < 0:
+            return 0.0
+        lx, ly = fx - tx * T, fy - ty * T
+        ix, iy = int(lx), int(ly)
+        if ix >= T:
+            ix = T - 1
+        if iy >= T:
+            iy = T - 1
+        u, v = lx - ix, ly - iy
+        m = T + 1
+        i = (k * m + iy) * m + ix
+        g = self.ql
+        a = g[i] + (g[i + 1] - g[i]) * u
+        b = g[i + m] + (g[i + m + 1] - g[i + m]) * u
+        return a + (b - a) * v
+
+    def quay_cut_v(self, x, y):
+        """Vectorised quay_cut for numpy arrays."""
+        x = np.asarray(x, np.float64)
+        y = np.asarray(y, np.float64)
+        out = np.zeros(np.broadcast(x, y).shape, np.float64)
+        if self.qidx is None:
+            return out
+        T = self.qtile
+        fx = (x + self.hx) / self.qstep
+        fy = (y + self.hy) / self.qstep
+        tx = np.floor(fx / T).astype(np.int64)
+        ty = np.floor(fy / T).astype(np.int64)
+        ok = (tx >= 0) & (ty >= 0) & (tx < self.qntx) & (ty < self.qnty)
+        ti = np.full(out.shape, -1, np.int64)
+        ti[ok] = self.qidx_a[ty[ok], tx[ok]]
+        m = ti >= 0
+        if not m.any():
+            return out
+        lx = fx[m] - tx[m] * T
+        ly = fy[m] - ty[m] * T
+        ix = np.minimum(lx.astype(np.int64), T - 1)
+        iy = np.minimum(ly.astype(np.int64), T - 1)
+        u, v = lx - ix, ly - iy
+        D, k = self.qd, ti[m]
+        a = D[k, iy, ix] * (1 - u) + D[k, iy, ix + 1] * u
+        b = D[k, iy + 1, ix] * (1 - u) + D[k, iy + 1, ix + 1] * u
+        out[m] = a * (1 - v) + b * v
+        return out
+
     def th(self, x, y):
         """Terrain height (bilinear on the 10 m grid); metres above the city-centre elevation."""
         st = self.tstep
@@ -236,6 +323,8 @@ class World:
         i = iy * nx + ix
         a = g[i] + (g[i + 1] - g[i]) * tx
         b = g[i + nx] + (g[i + nx + 1] - g[i + nx]) * tx
+        if self.qidx is not None:
+            return a + (b - a) * ty + self.quay_cut(x, y)
         return a + (b - a) * ty
 
     def th_v(self, x, y):
@@ -248,6 +337,8 @@ class World:
         g = self.tgrid
         a = g[iy, ix] * (1 - tx) + g[iy, ix + 1] * tx
         b = g[iy + 1, ix] * (1 - tx) + g[iy + 1, ix + 1] * tx
+        if self.qidx is not None:
+            return (a * (1 - ty) + b * ty + self.quay_cut_v(x, y)).astype(np.float32)
         return (a * (1 - ty) + b * ty).astype(np.float32)
 
     def ground_y(self, x, y):
@@ -271,6 +362,8 @@ class World:
         a = g[i] + (g[i + 1] - g[i]) * tx
         b = g[i + nx] + (g[i + nx + 1] - g[i + nx]) * tx
         t = a + (b - a) * ty
+        if self.qidx is not None:
+            t += self.quay_cut(x, y)
         if self.hgt is None:
             return t
         ix = int((x + self.hx) / self.cell)

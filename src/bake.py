@@ -92,6 +92,125 @@ def _crosswalk(xw):
     seg(x + ax * 2.6, y + ay * 2.6, x + ax * 2.6 + rx * (w / 2 - 0.3), y + ay * 2.6 + ry * (w / 2 - 0.3), 0.14, white)   # stop line (right-hand lane)
 
 
+def _quay_cells(w, x0, z0, side, n, sub=4, tol=0.025):
+    """Ground mesh refinement along the river quays: the n x n cells of `side / n` m whose 1 m heights leave the bilinear
+    of their corners by more than `tol` (revetments, embankment edges) are split into sub x sub quads.  A refined cell's
+    border next to a coarse cell follows the coarse edge exactly (no cracks).  -> None, or (mask (n, n), triangle
+    positions (k, 3))."""
+    if getattr(w, "qidx", None) is None:
+        return None
+    c = side / n
+    if (w.quay_cut_v(np.array([x0, x0 + side, x0, x0 + side, x0 + side / 2]),
+                     np.array([z0, z0, z0 + side, z0 + side, z0 + side / 2])) == 0).all():
+        span = w.qtile * w.qstep                           # quick out: no quay tile under this chunk at all
+        tx0, tx1 = int((x0 - c + w.hx) // span), int((x0 + side + c + w.hx) // span)
+        ty0, ty1 = int((z0 - c + w.hy) // span), int((z0 + side + c + w.hy) // span)
+        a = w.qidx_a[max(0, ty0):max(0, ty1 + 1), max(0, tx0):max(0, tx1 + 1)]
+        if not (a >= 0).any():
+            return None
+    m = (n + 2) * sub + 1                                   # 1 m posts over the chunk plus one cell all round
+    g = x0 - c + np.arange(m) * (c / sub)
+    h = z0 - c + np.arange(m) * (c / sub)
+    GX, GZ = np.meshgrid(g, h)
+    F = w.th_v(GX, GZ).astype(np.float64)
+    C = F[::sub, ::sub]                                     # cell corners (n + 3) ^ 2
+    t = np.arange(sub + 1) / sub
+    B = np.lib.stride_tricks.sliding_window_view(F, (sub + 1, sub + 1))[::sub, ::sub]     # (n+2, n+2, sub+1, sub+1)
+    c00, c01, c10, c11 = C[:-1, :-1, None, None], C[:-1, 1:, None, None], C[1:, :-1, None, None], C[1:, 1:, None, None]
+    tv, tu = t[None, None, :, None], t[None, None, None, :]
+    L = (c00 * (1 - tu) + c01 * tu) * (1 - tv) + (c10 * (1 - tu) + c11 * tu) * tv
+    bent = np.abs(B - L).max(axis=(2, 3)) > tol             # (n+2, n+2), padded
+    fine = bent[1:-1, 1:-1]
+    if not fine.any():
+        return None
+    ci, cj = np.nonzero(fine)
+    blk = B[ci + 1, cj + 1].copy()                          # (k, sub+1, sub+1) heights; rows = z, cols = x
+    Lb = L[ci + 1, cj + 1]
+    for side_, nb in (("w", bent[ci + 1, cj]), ("e", bent[ci + 1, cj + 2]), ("n", bent[ci, cj + 1]), ("s", bent[ci + 2, cj + 1])):
+        k = ~nb                                             # coarse neighbour: follow its straight edge
+        if not k.any():
+            continue
+        if side_ == "w":
+            blk[k, :, 0] = Lb[k, :, 0]
+        elif side_ == "e":
+            blk[k, :, -1] = Lb[k, :, -1]
+        elif side_ == "n":
+            blk[k, 0, :] = Lb[k, 0, :]
+        else:
+            blk[k, -1, :] = Lb[k, -1, :]
+    xs = (x0 + cj * c)[:, None, None] + (t * c)[None, None, :] + np.zeros((1, sub + 1, 1))
+    zs = (z0 + ci * c)[:, None, None] + (t * c)[None, :, None] + np.zeros((1, 1, sub + 1))
+    V = np.stack([xs, blk, zs], -1).reshape(len(ci), -1, 3)
+    q = (np.arange(sub)[:, None] * (sub + 1) + np.arange(sub)[None, :]).ravel()
+    tri = np.stack([q, q + 1, q + sub + 2, q, q + sub + 2, q + sub + 1], 1).ravel()
+    return fine, V[:, tri, :].reshape(-1, 3).astype(np.float32)
+
+
+QUAY_STONE, QUAY_GRASS = (150, 144, 134), (118, 146, 86)
+
+
+def _paint_quays(world, ox, oy, span, res=0.5):
+    """Stone revetments / walls and grass embankments along the river quays: wherever the quay cut slopes, coloured by
+    the class of the 1 m posts around (tools/quays.py: 1 water, 2 stone, 3 promenade, 4 grass, 5 wall)."""
+    w = world
+    if getattr(w, "qidx", None) is None:
+        return
+    st, T = w.qstep, w.qtile
+    sp = T * st
+    a = w.qidx_a[max(0, int((oy + w.hy) // sp)):max(0, int((oy + span + w.hy) // sp) + 1),
+                 max(0, int((ox + w.hx) // sp)):max(0, int((ox + span + w.hx) // sp) + 1)]
+    if not (a >= 0).any():
+        return
+    N = int(round(span / res))
+    c = ox + (np.arange(N) + 0.5) * res
+    r = oy + (np.arange(N) + 0.5) * res
+    X, Y = np.meshgrid(c, r)
+    cut = w.quay_cut_v(X, Y)
+    if not (cut < -0.05).any():
+        return
+    H = w.th_v(X, Y).astype(np.float64)
+    gy, gx = np.gradient(H, res)
+    slope = np.hypot(gx, gy)
+    fx, fy = (X + w.hx) / st, (Y + w.hy) / st
+    tx, ty = np.floor(fx / T).astype(np.int64), np.floor(fy / T).astype(np.int64)
+    ok = (tx >= 0) & (ty >= 0) & (tx < w.qntx) & (ty < w.qnty)
+    ti = np.full(X.shape, -1, np.int64)
+    ti[ok] = w.qidx_a[ty[ok], tx[ok]]
+    m = ti >= 0
+    ix = np.zeros(X.shape, np.int64)
+    iy = np.zeros(X.shape, np.int64)
+    ix[m] = np.minimum((fx[m] - tx[m] * T).astype(np.int64), T - 1)
+    iy[m] = np.minimum((fy[m] - ty[m] * T).astype(np.int64), T - 1)
+    k = np.where(m, ti, 0)
+    u, v = fx - np.floor(fx), fy - np.floor(fy)
+    wg = np.zeros(X.shape)                                 # bilinear share of grass posts / of stone and water posts
+    wh = np.zeros(X.shape)
+    for cc, wt in ((w.qcls[k, iy, ix], (1 - u) * (1 - v)), (w.qcls[k, iy, ix + 1], u * (1 - v)),
+                   (w.qcls[k, iy + 1, ix], (1 - u) * v), (w.qcls[k, iy + 1, ix + 1], u * v)):
+        wg += wt * (cc == 4)
+        wh += wt * ((cc == 1) | (cc == 2) | (cc == 5))
+    t_ = np.clip((slope - 0.12) / 0.2, 0.0, 1.0)
+    alpha = np.where(m & (cut < -0.05), t_ * t_ * (3 - 2 * t_), 0.0)
+    g = np.clip(wg / np.maximum(wg + wh, 1e-6) * 1.6 - 0.3, 0.0, 1.0)
+    g = np.where(wg + wh < 1e-6, 1.0, g)
+    rng = np.random.default_rng(int(ox * 7 + oy * 13) & 0xFFFF)
+    tint = rng.integers(-9, 10, X.shape)
+    courses = ((np.floor(X / 0.9) + np.floor(Y / 0.9)) % 2 == 0) * (1 - g) * 10      # a hint of stone courses
+    rgba = np.zeros(X.shape + (4,), np.uint8)
+    for ch in range(3):
+        rgba[..., ch] = np.clip(QUAY_STONE[ch] * (1 - g) + QUAY_GRASS[ch] * g + tint - courses, 0, 255)
+    rgba[..., 3] = (alpha * 255).astype(np.uint8)
+    if not rgba[..., 3].any():
+        return
+    rgba = np.ascontiguousarray(rgba)
+    img = rl.Image(gl3d.ffi.from_buffer(rgba), N, N, 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+    tex = rl.load_texture_from_image(img)
+    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_BILINEAR)
+    rl.draw_texture_pro(tex, rl.Rectangle(0, 0, N, N), rl.Rectangle(ox, oy, span, span), rl.Vector2(0, 0), 0.0, rl.WHITE)
+    rl.rl_draw_render_batch_active()                    # draw now: the texture is freed right after
+    rl.unload_texture(tex)
+
+
 def bake_chunk(world, cx, cy, rt, decals=()):
     """Ground only: land use, water, roads, markings, building footprints, decals.
     Buildings / trees / lamps are real 3D meshes (see Streamer)."""
@@ -126,6 +245,7 @@ def bake_chunk(world, cx, cy, rt, decals=()):
                 (x1, y1), (x2, y2) = w["pts"][k], w["pts"][k + 1]
                 seg(x1, y1, x2, y2, w["w"] / 2, (86, 146, 198))
                 disc(x1, y1, w["w"] / 2, (86, 146, 198), 8)
+            _paint_quays(world, ox, oy, span)
             for ri, k in ch["rail"]:
                 pts = world.rails[ri]["pts"]
                 (x1, y1), (x2, y2) = pts[k], pts[k + 1]
@@ -214,9 +334,18 @@ class Streamer:
         P = np.stack([X, Y, Z], -1).astype(np.float32)
         U = np.stack([(X - x0) / side, 1.0 - (Z - z0) / side], -1).astype(np.float32)
         i00 = (np.arange(n)[:, None] * (n + 1) + np.arange(n)[None, :]).ravel()
+        fine = _quay_cells(w, x0, z0, side, n) if n > 1 else None
+        if fine is not None:
+            i00 = i00[~fine[0].ravel()]                     # 4 m cells the river quays bend are drawn at 1 m instead
         idx = np.stack([i00, i00 + 1, i00 + n + 2, i00, i00 + n + 2, i00 + n + 1], 1).ravel()
         pos = P.reshape(-1, 3)[idx]
         uv = U.reshape(-1, 2)[idx]
+        if fine is not None:
+            fp = fine[1]
+            pos = np.concatenate([pos, fp])
+            uv = np.concatenate([uv, np.stack([(fp[:, 0] - x0) / side, 1.0 - (fp[:, 2] - z0) / side], -1).astype(np.float32)])
+            Y = np.concatenate([Y.ravel(), fp[:, 1]])
+            idx = np.arange(len(pos))
         col = np.full((len(idx), 4), 255, np.uint8)
         self.gsph[key] = _sphere(x0, z0, x0 + side, z0 + side, float(Y.min()), float(Y.max()))
         m = gl3d.make_model(pos, uv, col)

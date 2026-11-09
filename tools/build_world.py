@@ -24,7 +24,7 @@ import par
 import terrain as terrain_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 65
+VERSION = 66
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1390,6 +1390,9 @@ def main():
 
     # ---- areas / water / rails ---------------------------------------------------------------
     areas, wlines, rails = [], [], []
+    river_polys = []
+    lakes = Image.new("L", (NCX, NCY), 0)                     # standing water: lakes, ponds, basins
+    ld = ImageDraw.Draw(lakes)
     for el in each(elements, "areas / water / rails", feed=("areas", areas, lambda a: flat(a["v"]))):
         t = el.get("tags", {})
         if not t or "building" in t:
@@ -1429,6 +1432,12 @@ def main():
                     sd.polygon(cells(outer), fill=1)
                     for h_ in holes:
                         sd.polygon(cells(h_), fill=0)
+                    if t.get("water") in ("river", "canal", "stream", "riverbank") or t.get("waterway") == "riverbank":
+                        river_polys.append((outer, holes))       # gets quays (tools/quays.py), not the plain carve
+                    else:
+                        ld.polygon(cells(outer), fill=1)
+                        for h_ in holes:
+                            ld.polygon(cells(h_), fill=0)
         except Exception as e:  # noqa: BLE001
             print(f"   skipped area {el.get('id')}: {e}")
     areas.sort(key=lambda q: (AREA_STYLE[q["kind"]][0], -q["area"]))
@@ -1486,8 +1495,10 @@ def main():
             print(f"   skipped road {el.get('id')}: {e}")
     roads = lift_over_tunnels(roads)
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
-    if real_terrain or True:
-        T = terrain_mod.carve_water(T, water_a, CELL)
+    T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
+    import quays
+    T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY)
+    del lakes, ld
 
     # ---- building meshes, now that the ground under them is known ------------------------------
     import roads3d as _r3
@@ -1646,6 +1657,10 @@ def main():
                 decks[ri] = terrain_mod.make_deck(T, {"pts": rd["pts"]}, lower, rd["w"] / 2 + 0.6 + (roads3d.BRIDGE_SW if rd["drive"] else 0.0))
             except Exception as ex:  # noqa: BLE001 - a bad bridge stays flat
                 print(f"   deck for road {rd['id']} skipped: {ex}")
+    if T.q is not None:
+        nj, nl, nskip = __import__('quays').fix_decks(decks, T, roads)
+        print(f"[build] river quays: {nj} bridge joints lifted, {nl} decks lifted over the walkways below or smoothed "
+              f"({nskip} crossings too close to an end)")
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
@@ -2076,6 +2091,8 @@ def main():
         posts = list(posts) + piers
         roads3d_ok = True
         print(f"[build] 3D roads: {nv / 1e6:.2f} M vertices")
+        if T.q is not None:
+            __import__("quays").furnish(T, edges, quay_info, mesh.add, chunk_of, MAT_SOLID)
     except Exception as e:  # noqa: BLE001 - fall back to the flat 2D roads in the ground texture
         import traceback
         traceback.print_exc()
@@ -2229,7 +2246,7 @@ def main():
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},
         "terrain": {"terrain": {"grid": np.asarray(T.g, np.float32).tobytes(), "nx": T.nx, "ny": T.ny, "step": terrain_mod.STEP,
-                                "real": bool(real_terrain)},
+                                "real": bool(real_terrain), "quay": T.q.pack() if T.q is not None else None},
                     "decks": [d.pack() for d in decks.values()], "plats": plats, "esc": esc_info},
     }
     sizes = {"meshes.bin": os.path.getsize(os.path.join(tmp, "meshes.bin"))}

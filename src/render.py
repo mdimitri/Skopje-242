@@ -149,7 +149,7 @@ class Renderer:
             w = self.w
             if w.hilly:
                 step = 4                                           # every 40 m; minimum of the 5x5 posts around: never pokes through
-                g = w.tgrid
+                g = getattr(w, "tgrid_low", w.tgrid)                # (lowered under the river quays)
                 ny, nx = g.shape
                 gi = np.arange(0, ny, step)
                 gj = np.arange(0, nx, step)

@@ -20,10 +20,11 @@ def grid_shape(hx, hy):
 
 
 class Terrain:
-    def __init__(self, grid, hx, hy):
+    def __init__(self, grid, hx, hy, q=None):
         self.g = np.asarray(grid, np.float32)
         self.hx, self.hy = hx, hy
         self.ny, self.nx = self.g.shape
+        self.q = q                               # quays.Overlay: fine (1 m) cuts along the rivers, or None
 
     def h(self, x, y):
         """Bilinear height at world (x, y); accepts scalars or numpy arrays."""
@@ -34,7 +35,10 @@ class Terrain:
         g = self.g
         a = g[iy, ix] * (1 - tx) + g[iy, ix + 1] * tx
         b = g[iy + 1, ix] * (1 - tx) + g[iy + 1, ix + 1] * tx
-        return (a * (1 - ty) + b * ty).astype(np.float32)
+        r = a * (1 - ty) + b * ty
+        if self.q is not None:
+            r = r + self.q.at(x, y)
+        return r.astype(np.float32)
 
     def hs(self, x, y):
         """Scalar height: the same arithmetic as h() (float64 bilinear, rounded to float32 at the end) without the numpy overhead."""
@@ -46,7 +50,10 @@ class Terrain:
         item = self.g.item
         a = item(iy, ix) * (1 - tx) + item(iy, ix + 1) * tx
         b = item(iy + 1, ix) * (1 - tx) + item(iy + 1, ix + 1) * tx
-        return float(np.float32(a * (1 - ty) + b * ty))
+        r = a * (1 - ty) + b * ty
+        if self.q is not None:
+            r += self.q.at_s(x, y)
+        return float(np.float32(r))
 
 
 def flat(hx, hy):

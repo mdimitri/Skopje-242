@@ -47,6 +47,9 @@ def _pieces(ln, ax, ay, bx, by, base=PIECE):
         for t in (0.25, 0.5, 0.75):
             sag = max(sag, abs(_T.hs(ax + (bx - ax) * t, ay + (by - ay) * t) - (h0 + (h1 - h0) * t)))
         n = max(n, int(math.ceil(math.sqrt(sag / SAG))))
+        q = getattr(_T, "q", None)
+        if q is not None and min(q.at_s(ax + (bx - ax) * t, ay + (by - ay) * t) for t in (0.0, 0.25, 0.5, 0.75, 1.0)) < -0.01:
+            return min(max(n, int(math.ceil(ln / 1.5))), int(math.ceil(ln)))     # river quays: 1 m ground detail, follow it
     return min(n, max(1, int(math.ceil(ln / 3.0))))
 SLAB = 0.9                                               # bridge deck thickness
 
