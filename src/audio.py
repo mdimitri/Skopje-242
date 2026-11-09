@@ -80,28 +80,15 @@ def build():
     ev = np.sin(2 * np.pi * 400 * t) * 0.6 + np.sin(2 * np.pi * 800 * t) * 0.25 + np.sin(2 * np.pi * 1200 * t) * 0.1
     S["engine_ev"] = ev / np.abs(ev).max() * 0.35                           # electric whine: Tesla
     S["engine"] = S["engine_i4"]
-    # damaged engine: loose metal rattling (ringing clanks, 26 per second) and a grinding rasp, plus one-shot bangs
-    def clank(freqs, hz, ring):
-        x = np.zeros(n, np.float32)
-        for i in range(int(hz * 0.5)):
-            a = int(i * SR / hz + rng.integers(0, int(SR / hz * 0.3)))
-            m = min(n - a, int(SR * 0.05))
-            tt = np.arange(m, dtype=np.float32) / SR
-            f = freqs[i % len(freqs)] * rng.uniform(0.9, 1.1)
-            x[a:a + m] += (np.sin(2 * np.pi * f * tt) + 0.5 * np.sin(2 * np.pi * f * 2.76 * tt)) * np.exp(-tt * ring) * rng.uniform(0.5, 1.0)
-        return x
+    # damaged engine: rough chugging and heavy clunking built from the real recordings' spectra and pulse spacing (engine_synth.py), plus one-shot bangs
     S["engine_misfire"] = engine_synth.misfire_loop()
     S["engine_knock"] = engine_synth.knock_loop()
     S["engine_start"] = engine_synth.start("i4", 3.2)
     S["engine_start_diesel"] = engine_synth.start("diesel", 4.2, 8, True)
     S["engine_stall"] = engine_synth.stall("i4")
-    S["engine_rattle"] = np.tanh(clank([1900, 2700, 1300, 3300], 26, 90) * 1.5) * 0.6
-    gr = (((44.0 * 2 * t) % 1.0) * 2 - 1) * 0.5 + _lp(rng.standard_normal(n).astype(np.float32), 3) * 0.7
-    S["engine_grind"] = np.tanh(gr * (1 + 0.8 * np.sin(2 * np.pi * 12 * t)) * 1.8) * 0.5
     tb = _t(0.45)
-    bg = np.tanh((rng.standard_normal(len(tb)).astype(np.float32) * np.exp(-tb * 22) * 1.5 + np.sin(2 * np.pi * 95 * tb) * np.exp(-tb * 12) + np.sin(2 * np.pi * 1450 * tb) * np.exp(-tb * 9) * 0.6) * 2.2)
+    bg = np.tanh((rng.standard_normal(len(tb)).astype(np.float32) * np.exp(-tb * 22) * 1.5 + np.sin(2 * np.pi * 95 * tb) * np.exp(-tb * 12) ) * 2.2)
     S["engine_bang"] = bg / np.abs(bg).max() * 0.9
-    S["ai_engine_rattle"] = S["engine_rattle"]
     for nm in [n_ for n_ in S if n_.startswith("engine_") and n_ not in ("engine_start", "engine_start_diesel", "engine_stall", "engine_bang")]:
         S["ai_" + nm] = S[nm]                                                # traffic engines: own sound instance so the player's engine is not shared
     # horn
@@ -387,7 +374,7 @@ def _loopify(x, fade=0.25):
 
 
 class Audio:
-    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "engine_rattle", "engine_grind", "ai_engine_rattle", "siren_police", "siren_amb",
+    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind")
 
     CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)

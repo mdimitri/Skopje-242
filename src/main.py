@@ -1361,22 +1361,22 @@ def main():
             eng_gear.clear()
         return st * base
 
+    LIGHT_ENGINES = ("engine_i4", "engine_small", "engine_v8", "engine_tdi", "engine_moto")
     ENG_KINDS = ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto")
 
-    def engine_layers(pre, prof, vol, st, pan, seed):
+    def engine_layers(pre, prof, vol, st, pan, seed, alt=None, mix=0.0):
         """Two recordings per engine, a low-rev and a high-rev one, crossfaded (equal power) as the revs climb; the high one is
-        pitched down so both agree where they meet.  Every other engine is silenced."""
+        pitched down so both agree where they meet.  Every other engine is silenced; a damaged light car blends in a lower, heavier
+        "alt" engine (mix 0..1) so it sounds more like a truck."""
         w = max(0.0, min(1.0, (st - 0.85) / 0.7))
         lo, hi = math.cos(w * 1.5708), math.sin(w * 1.5708)
         for nm in ENG_KINDS:
-            if nm != prof:
-                aud.loop(pre + nm, 0.0, 1.0, "engine")
-                aud.loop(pre + nm + "_hi", 0.0, 1.0, "engine")
-            elif nm == "engine_ev":
-                aud.loop(pre + nm, vol, st, "engine", pan, seed)
+            v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
+            if nm == "engine_ev":
+                aud.loop(pre + nm, v_, p_, "engine", pan, seed)
             else:
-                aud.loop(pre + nm, vol * lo, st, "engine", pan, seed)
-                aud.loop(pre + nm + "_hi", vol * hi, st / 1.6, "engine", pan, seed)
+                aud.loop(pre + nm, v_ * lo, p_, "engine", pan, seed)
+                aud.loop(pre + nm + "_hi", v_ * hi, p_ / 1.6, "engine", pan, seed)
 
     def doppler(b, lx, ly):
         """Pitch shift of a moving source: higher while it comes towards you, lower once it passes."""
@@ -1402,20 +1402,15 @@ def main():
             prof = vehicles.ENGINE_SOUND[c.kind]
             thr_ = abs(inp_last.get("throttle", 0))
             hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
-            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c))
+            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
-            aud.loop("engine_misfire", 0.9 * max(0.0, dmg_ - 0.25) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # sputtering from about a third damaged
-            aud.loop("engine_knock", 0.8 * max(0.0, dmg_ - 0.55) * 2.2, 0.85 + 0.3 * fr, "engine", 0.5, 0)         # rod knock when it is bad
+            aud.loop("engine_misfire", 0.9 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
+            aud.loop("engine_knock", 0.9 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
             if dmg_ > 0:
-                aud.loop("engine_rattle", 0.12 + 0.75 * dmg_ ** 1.2, 0.85 + 0.3 * fr + 0.2 * dmg_, "engine", 0.5, 0)
-                aud.loop("engine_grind", 0.55 * dmg_ ** 1.5, 0.8 + 0.5 * fr, "engine", 0.5, 0)
                 bang_t[0] -= 1 / 60
                 if bang_t[0] <= 0:
                     aud.play("engine_bang", 0.35 + 0.65 * dmg_, 0.8 + random.random() * 0.4, "engine")
                     bang_t[0] = random.uniform(2.5, 6.0) * (1.05 - dmg_) ** 2 + 0.25
-            else:
-                aud.loop("engine_rattle", 0.0, 1.0, "engine")
-                aud.loop("engine_grind", 0.0, 1.0, "engine")
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
             hard_brake = inp_last.get("throttle", 0) < -0.5 and c.speed > 6
             aud.loop("screech", 0.12 if hard_brake else 0.0, 1.3, "sfx") if not (c.slip > 3.0 and c.speed > 4) else None   # brake squeal
@@ -1423,7 +1418,7 @@ def main():
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_rattle", "engine_grind", "engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:
@@ -1434,12 +1429,11 @@ def main():
         if near_c is not None:
             prof_ = vehicles.ENGINE_SOUND[near_c.kind]
             fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
-            engine_layers("ai_", prof_, 0.32 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c))
+            engine_layers("ai_", prof_, 0.32 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
         else:
             engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)
-        aud.loop("ai_engine_misfire", 0.6 * max(0.0, dn_ - 0.25) * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.95, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
-        aud.loop("ai_engine_rattle", 0.5 * dn_ * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.9 + 0.2 * dn_, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
+        aud.loop("ai_engine_misfire", 0.6 * max(0.0, dn_ - 0.1) * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.95, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
         best, near_v = {}, {}
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:

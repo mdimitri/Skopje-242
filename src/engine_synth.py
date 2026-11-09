@@ -11,14 +11,14 @@ SR = 22050
 
 # profile: ncyl pattern strengths, timing jitter, strength jitter, body Hz, pop decay, noise level, knock level, roar, tick, tone peaks (Hz, gain)
 PROFILES = {
-    "i4":     dict(pat=(1.0, 0.92, 0.96, 0.9), tj=0.04, aj=0.08, body=95, dec=55, nz=0.5, knock=0.0, roar=0.35, tick=0.12, peaks=((320, 1.0), (900, 0.6)), tilt=1.1),
-    "small":  dict(pat=(1.0, 0.7, 0.9), tj=0.10, aj=0.18, body=130, dec=70, nz=0.7, knock=0.15, roar=0.3, tick=0.25, peaks=((600, 1.0), (1500, 0.7)), tilt=0.9),
-    "v8":     dict(pat=(1.0, 0.8, 0.95, 0.7, 1.0, 0.75, 0.9, 0.85), tj=0.07, aj=0.15, body=70, dec=38, nz=0.55, knock=0.0, roar=0.3, tick=0.08, peaks=((180, 1.0), (500, 0.7)), tilt=1.3),
-    "diesel": dict(pat=(1.0, 0.95, 0.9, 0.97), tj=0.05, aj=0.10, body=85, dec=45, nz=0.4, knock=1.0, roar=0.3, tick=0.3, peaks=((400, 0.8), (1800, 0.8), (3200, 0.5)), tilt=0.9),
-    "tdi":    dict(pat=(1.0, 0.93, 0.95, 0.9), tj=0.05, aj=0.10, body=100, dec=50, nz=0.4, knock=0.8, roar=0.3, tick=0.3, peaks=((450, 0.8), (2200, 0.9)), tilt=0.9),
-    "bus":    dict(pat=(1.0, 0.9, 0.95, 0.85, 0.97, 0.92), tj=0.06, aj=0.14, body=65, dec=35, nz=0.45, knock=0.9, roar=0.45, tick=0.22, peaks=((250, 1.0), (1200, 0.7)), tilt=1.2),
-    "truck":  dict(pat=(1.0, 0.85, 0.95, 0.9, 0.8, 0.97), tj=0.07, aj=0.16, body=55, dec=30, nz=0.5, knock=0.8, roar=0.5, tick=0.2, peaks=((200, 1.0), (900, 0.8), (2500, 0.5)), tilt=1.3),
-    "moto":   dict(pat=(1.0, 0.6), tj=0.09, aj=0.2, body=180, dec=80, nz=0.8, knock=0.2, roar=0.4, tick=0.35, peaks=((900, 1.0), (2500, 0.9)), tilt=0.7),
+    "i4":     dict(pat=(1.0, 0.92, 0.96, 0.9), tj=0.03, aj=0.072, body=77.9, dec=55, nz=0.198, knock=0.0, roar=0.267, tick=0.08, peaks=((320, 1.0), (900, 0.6)), tilt=1.465),
+    "small":  dict(pat=(1.0, 0.7, 0.9), tj=0.10, aj=0.18, body=130, dec=70, nz=0.42, knock=0.15, roar=0.18, tick=0.15, peaks=((600, 1.0), (1500, 0.7)), tilt=0.9),
+    "v8":     dict(pat=(1.0, 0.8, 0.95, 0.7, 1.0, 0.75, 0.9, 0.85), tj=0.07, aj=0.15, body=70, dec=38, nz=0.33, knock=0.0, roar=0.18, tick=0.05, peaks=((180, 1.0), (500, 0.7)), tilt=1.3),
+    "diesel": dict(pat=(1.0, 0.95, 0.9, 0.97), tj=0.07, aj=0.089, body=91.3, dec=45, nz=0.195, knock=1.269, roar=0.12, tick=0.257, peaks=((400, 0.8), (1800, 0.8), (3200, 0.5)), tilt=0.94),
+    "tdi":    dict(pat=(1.0, 0.93, 0.95, 0.9), tj=0.079, aj=0.135, body=119.0, dec=50, nz=0.258, knock=0.846, roar=0.245, tick=0.28, peaks=((450, 0.8), (2200, 0.9)), tilt=0.991),
+    "bus":    dict(pat=(1.0, 0.9, 0.95, 0.85, 0.97, 0.92), tj=0.094, aj=0.181, body=75.3, dec=35, nz=0.387, knock=0.826, roar=0.236, tick=0.076, peaks=((250, 1.0), (1200, 0.7)), tilt=1.193),
+    "truck":  dict(pat=(1.0, 0.85, 0.95, 0.9, 0.8, 0.97), tj=0.1, aj=0.135, body=56.5, dec=30, nz=0.32, knock=0.608, roar=0.204, tick=0.15, peaks=((200, 1.0), (900, 0.8), (2500, 0.5)), tilt=1.112),
+    "moto":   dict(pat=(1.0, 0.6), tj=0.09, aj=0.2, body=180, dec=80, nz=0.48, knock=0.2, roar=0.24, tick=0.21, peaks=((900, 1.0), (2500, 0.9)), tilt=0.7),
 }
 FIRE = {"i4": 44.0, "small": 62.0, "v8": 28.0, "diesel": 36.0, "tdi": 40.0, "bus": 30.0, "truck": 24.0, "moto": 52.0}
 
@@ -107,38 +107,43 @@ def loop(kind, hi=False, dur=1.6, seed=0):
     return (x / np.abs(x).max() * 0.55).astype(np.float32)
 
 
-def misfire_loop(seed=3, dur=1.6):
-    """Sputtering damaged engine: uneven lumpy thumps (about 7-13 per second), random dropouts and the odd backfire pop."""
+# long-term spectra (dB per band, 24 log-spaced bands 50 Hz..9 kHz) measured from two real damaged-engine recordings
+_EDGES = np.geomspace(50, 9000, 25)
+_DMG_SPEC = {
+    "rough": [-18, -18, -19, 0, -4, -11, -9, -11, -16, -22, -18, -18, -22, -29, -30, -30, -32, -33, -38, -38, -44, -47, -52, -49],       # chugging, uneven firing
+    "clunk": [-13, -8, -4, 0, -6, -10, -10, -12, -15, -9, -12, -13, -10, -13, -15, -17, -15, -14, -19, -18, -25, -30, -31, -35],         # heavy loose-metal clunks
+}
+
+
+def _damage(kind, mean_iv, sd_iv, thump, seed, dur=1.6):
+    """Irregular heavy pulses (spacing mean/sd as measured on the recordings); each is noise shaped by the measured spectrum plus a low thump."""
     n = int(SR * dur)
     rng = np.random.default_rng(seed)
-    t = np.arange(n) / SR
-    rate = 10.0 * (1 + 0.25 * np.sin(2 * np.pi * 0.625 * t) + 0.12 * np.sin(2 * np.pi * 1.875 * t + 1))
-    drop = np.full(n, 0.28)
-    x = render("diesel", rate, n, seed, False, True, drop)
-    for _ in range(2):                                   # backfire pops
-        s = int(rng.integers(0, n))
-        m = int(0.12 * SR)
-        tp = np.arange(m) / SR
-        pop = (rng.standard_normal(m) * np.exp(-tp * 45) + np.sin(2 * np.pi * 110 * tp) * np.exp(-tp * 25)) * 1.2
-        x[(np.arange(m) + s) % n] += pop * np.abs(x).max() * 0.6
-    return (np.tanh(x / np.abs(x).max() * 1.6) * 0.8).astype(np.float32)
+    f = np.fft.rfftfreq(n, 1.0 / SR)
+    db = np.interp(np.log(np.maximum(f, 1.0)), np.log(np.sqrt(_EDGES[:-1] * _EDGES[1:])), _DMG_SPEC[kind])
+    h = 10 ** (db / 20.0) * (1 - np.exp(-f / 60.0))
+    m = int(0.09 * SR)
+    tt = np.arange(m) / SR
+    x = np.zeros(n)
+    t = rng.uniform(0, mean_iv)
+    while t < dur:
+        s = int(t * SR)
+        a = rng.gamma(3.0, 1 / 3.0)
+        burst = np.fft.irfft(np.fft.rfft(rng.standard_normal(m)) * np.interp(np.fft.rfftfreq(m, 1.0 / SR), f, h), m)
+        pulse = (burst / (np.abs(burst).max() + 1e-9) + np.sin(2 * np.pi * thump * rng.uniform(0.9, 1.1) * tt) * 0.8) * np.exp(-tt * 40) * a
+        x[(np.arange(m) + s) % n] += pulse
+        t += max(0.02, rng.normal(mean_iv, sd_iv))
+    return (np.tanh(x / np.abs(x).max() * 1.5) * 0.7).astype(np.float32)
+
+
+def misfire_loop(seed=3, dur=1.6):
+    """Rough chugging (reference: pulses about every 67 ms, +-20 %)."""
+    return _damage("rough", 0.067, 0.014, 115, seed, dur)
 
 
 def knock_loop(seed=5, dur=1.6):
-    """Rod knock / clunky bearings: heavy metallic thuds (100 Hz body + 410 Hz ring) with a loose rhythm."""
-    n = int(SR * dur)
-    rng = np.random.default_rng(seed)
-    x = np.zeros(n)
-    k = int(round(12.0 * dur))
-    m = int(0.12 * SR)
-    tt = np.arange(m) / SR
-    for i in range(k):
-        s = int(i * n / k + rng.normal(0, 0.12 * n / k))
-        a = rng.uniform(0.6, 1.0)
-        th = (np.sin(2 * np.pi * 100 * tt) * np.exp(-tt * 38) + 0.6 * np.sin(2 * np.pi * 410 * tt) * np.exp(-tt * 60) + 0.25 * np.sin(2 * np.pi * 1130 * tt) * np.exp(-tt * 110)) * a
-        x[(np.arange(m) + s) % n] += th
-    x += _noise_band(rng, n, 200, 3000) * 0.05
-    return (np.tanh(x / np.abs(x).max() * 1.4) * 0.6).astype(np.float32)
+    """Heavy loose-metal clunking (reference: pulses about every 50 ms, +-44 %)."""
+    return _damage("clunk", 0.050, 0.022, 100, seed, dur)
 
 
 def _env_ramp(n, pts):
