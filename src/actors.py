@@ -202,10 +202,17 @@ def settle(b, w, dt, ev=None):
     """Put a car on the surface under it (terrain or bridge deck); drops it when that surface ends.  Sets pitch/roll."""
     if b.az is not None and (b.x - b.lx) ** 2 + (b.y - b.ly) ** 2 > 400.0:      # teleported
         b.az, b.vz = None, 0.0
-    b.lx, b.ly = b.x, b.y
+    plat = b.kind in vehicles.BIKES and w.pg2                # bikes and scooters may ride fire escapes, roofs and jump ramps
     if b.az is None:
         b.az = w.ground_y(b.x, b.y)
-    tgt = w.level(b.x, b.y, b.az)
+    if plat and b.az - w.ground_y(b.x, b.y) > 0.5 and w.plat_wall(b.x, b.y, b.az):      # a taller roof is a wall
+        b.x, b.y = b.lx, b.ly
+        b.vx *= -0.2
+        b.vy *= -0.2
+    b.lx, b.ly = b.x, b.y
+    tgt = w.level(b.x, b.y, b.az, plat)
+    if plat and not b.air and b.vz <= 0.0 and b.az > tgt + getattr(b, "lift", 0.0) + 0.12:   # left a ramp lip: keep its upward speed
+        b.vz = max(0.0, min(7.0, getattr(b, "vzg", 0.0)))
     if b.air or b.az > tgt + getattr(b, "lift", 0.0) + 0.12 or b.vz > 0.0:   # off the edge of a deck: falling
         b.air = True
         b.vz -= w.G * dt
@@ -223,13 +230,15 @@ def settle(b, w, dt, ev=None):
         b.pitch *= 0.9
         b.roll *= 0.9
         return
+    if plat:
+        b.vzg = (tgt - b.az) / max(dt, 1e-3) if b.az < 1e8 else 0.0
     b.az = tgt
     b.vz = 0.0
     wb = vehicles.DIMS[b.kind][0] * 0.31
     fx, fy = math.cos(b.h), math.sin(b.h)
     rx, ry = -fy, fx
-    pt = math.atan2(w.level(b.x + fx * wb, b.y + fy * wb, tgt) - w.level(b.x - fx * wb, b.y - fy * wb, tgt), 2 * wb)
-    rl_ = math.atan2(w.level(b.x - rx * 0.85, b.y - ry * 0.85, tgt) - w.level(b.x + rx * 0.85, b.y + ry * 0.85, tgt), 1.7)
+    pt = math.atan2(w.level(b.x + fx * wb, b.y + fy * wb, tgt, plat) - w.level(b.x - fx * wb, b.y - fy * wb, tgt, plat), 2 * wb)
+    rl_ = math.atan2(w.level(b.x - rx * 0.85, b.y - ry * 0.85, tgt, plat) - w.level(b.x + rx * 0.85, b.y + ry * 0.85, tgt, plat), 1.7)
     lift = 0.0
     if math.hypot(b.vx, b.vy) > 0.8 and hasattr(w, "kerb"):    # wheels up on the pavement: bumpy, slower, tilted
         W2 = vehicles.DIMS[b.kind][1] * 0.42
@@ -638,7 +647,7 @@ class Walker:
         sp = (9.5 if run else 5.75) * HERO["spd"]
         self.h += turn * (3.4 if not run else 3.0) * dt
         k = min(1.0, 12 * dt)
-        if world.hilly and self.z <= 0.001:                      # Tobler's hiking function: slow uphill, a little faster gently downhill
+        if world.hilly and self.z <= 0.001 and not (world.pg2 and self.az - world.ground_y(self.x, self.y) > 0.3):   # Tobler's (not on stairs / roofs) hiking function: slow uphill, a little faster gently downhill
             gr = world.slope_at(self.x, self.y, math.cos(self.h) * (1 if fwd >= 0 else -1), math.sin(self.h) * (1 if fwd >= 0 else -1), self.az, 1.0)
             self.grade = gr
             sp *= max(0.15, min(1.25, math.exp(-3.5 * (abs(gr + 0.05) - 0.05))))
@@ -650,9 +659,12 @@ class Walker:
             self.anim += self.speed * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
+        if world.pg2 and self.az - world.ground_y(self.x, self.y) > 0.5 and world.plat_wall(self.x, self.y, self.az):    # a taller roof is a wall
+            self.x, self.y = self.lx, self.ly
+            self.vx = self.vy = 0.0
         self.push_out(world)
         # ---- vertical: stand on the terrain / deck under the feet, fall when it ends
-        sup = world.level(self.x, self.y, self.az)
+        sup = world.level(self.x, self.y, self.az, True)
         if self.az > sup + 0.05 or self.vz > 0.0:
             self.vz -= 16.0 * dt
             self.az += self.vz * dt

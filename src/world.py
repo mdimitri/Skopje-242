@@ -160,6 +160,62 @@ class World:
                     for cy in range(int((min(ay, by) - m) // 8), int((max(ay, by) + m) // 8) + 1):
                         self.dgrid.setdefault((cx, cy), []).append(seg)
 
+        # fire escapes / roofs / jump ramps: 8 m hash of walkable surfaces for foot and bike riders (see tools/escapes.py)
+        self.pg2 = {}
+        for pl in getattr(self, "plats", ()):
+            if pl[0] == 0:
+                r = math.hypot(pl[5], pl[6])
+                x0, x1, y0, y1 = pl[1] - r, pl[1] + r, pl[2] - r, pl[2] + r
+            else:
+                xs, ys = [q[0] for q in pl[1]], [q[1] for q in pl[1]]
+                x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+                pl = (1, pl[1], pl[2], (x0, y0, x1, y1))
+            for cx in range(int(x0 // 8), int(x1 // 8) + 1):
+                for cy in range(int(y0 // 8), int(y1 // 8) + 1):
+                    self.pg2.setdefault((cx, cy), []).append(pl)
+
+    def plat_h(self, x, y, wy):
+        """Highest escape stair / landing / ramp / roof surface at (x, y) that something with its feet at wy can step onto, or None."""
+        best = None
+        lim = wy + 0.7
+        for p in self.pg2.get((int(x // 8), int(y // 8)), ()):
+            if p[0] == 0:
+                dx, dy = x - p[1], y - p[2]
+                s = dx * p[3] + dy * p[4]
+                if abs(s) > p[5] or abs(-dx * p[4] + dy * p[3]) > p[6]:
+                    continue
+                h = p[7] + (p[8] - p[7]) * (s + p[5]) / (2 * p[5])
+            else:
+                if p[2] > lim or (best is not None and p[2] <= best):
+                    continue
+                b = p[3]
+                if x < b[0] or x > b[2] or y < b[1] or y > b[3] or not self._in_ring(x, y, p[1]):
+                    continue
+                h = p[2]
+            if h <= lim and (best is None or h > best):
+                best = h
+        return best
+
+    def plat_wall(self, x, y, wy):
+        """A roof taller than the rider's feet is here: its wall blocks (an elevated rider must not walk into a building)."""
+        lim = wy + 0.7
+        for p in self.pg2.get((int(x // 8), int(y // 8)), ()):
+            if p[0] == 1 and p[2] > lim:
+                b = p[3]
+                if b[0] <= x <= b[2] and b[1] <= y <= b[3] and self._in_ring(x, y, p[1]):
+                    return True
+        return False
+
+    @staticmethod
+    def _in_ring(x, y, ring):
+        inside = False
+        xj, yj = ring[-1]
+        for xi, yi in ring:
+            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                inside = not inside
+            xj, yj = xi, yi
+        return inside
+
     def th(self, x, y):
         """Terrain height (bilinear on the 10 m grid); metres above the city-centre elevation."""
         st = self.tstep
@@ -244,12 +300,16 @@ class World:
                 best = ha + (hb - ha) * t
         return best
 
-    def level(self, x, y, wy):
-        """Surface that something whose feet are at absolute height `wy` stands on: deck if on / above it, else ground."""
+    def level(self, x, y, wy, plat=False):
+        """Surface that something whose feet are at absolute height `wy` stands on: deck if on / above it, else ground.
+        plat=True (people and bikes): fire escapes, roofs and jump ramps count too."""
         d = self.deck_h(x, y) if self.dgrid else None
-        if d is not None and wy >= d - 0.7:
-            return d
-        return self.ground_y(x, y)
+        g = d if (d is not None and wy >= d - 0.7) else self.ground_y(x, y)
+        if plat and self.pg2:
+            h = self.plat_h(x, y, wy)
+            if h is not None and h > g:
+                return h
+        return g
 
     def wet(self, x, y, wy):
         """In ground-level water (river / lake), also under a bridge, unless standing on a deck or a road."""

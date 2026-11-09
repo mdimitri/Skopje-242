@@ -2104,6 +2104,18 @@ def main():
     for (x, y), g_ in zip(lj_, par.pmap(_lamp_job, lj_, chunk=256, on=lambda d, t: frac(0.9 + 0.1 * d / t, "lamp meshes"))):
         add_c(chunk_of(x, y), MAT_SOLID, *g_)
 
+    # ---- fire escapes up to the flat roofs, launch ramps between roofs ------------------------------
+    stage("escapes")
+    phase("fire escapes and roof jumps")
+    plats, esc_info = [], {}
+    try:
+        import escapes
+        plats, esc_info = escapes.build(buildings, T, bld_a, occ_a, surf_a, hg_arr, CELL, HX, HY, mesh.add, chunk_of, MAT_SOLID)
+    except Exception as e:  # noqa: BLE001 - decoration
+        import traceback
+        traceback.print_exc()
+        print(f"[build] fire escapes skipped: {e}")
+
     # ---- chunk index (for ground baking) ---------------------------------------------------------
     stage("index")
     chunks = {}
@@ -2218,7 +2230,7 @@ def main():
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},
         "terrain": {"terrain": {"grid": np.asarray(T.g, np.float32).tobytes(), "nx": T.nx, "ny": T.ny, "step": terrain_mod.STEP,
                                 "real": bool(real_terrain)},
-                    "decks": [d.pack() for d in decks.values()]},
+                    "decks": [d.pack() for d in decks.values()], "plats": plats, "esc": esc_info},
     }
     sizes = {"meshes.bin": os.path.getsize(os.path.join(tmp, "meshes.bin"))}
     phase("write world parts")
