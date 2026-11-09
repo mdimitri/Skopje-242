@@ -22,6 +22,8 @@ import sys
 import time
 import types
 
+from progress import frac, phase
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FORMAT = 2                                    # layout of the cache itself
@@ -211,34 +213,59 @@ def _skip(v):
     return isinstance(v, (types.ModuleType, types.FunctionType, types.BuiltinFunctionType, types.MethodType, type, types.GeneratorType))
 
 
+class _Ticker:
+    """A file-like sink for pickle: hashes and/or writes what it gets and moves the loading bar from lo to hi as the bytes
+    come (est = the expected size), so pickling a big variable never freezes the bar."""
+
+    def __init__(self, lo, hi, est, f=None, sub="saving"):
+        self.h, self.f, self.n = hashlib.md5(), f, 0
+        self.lo, self.hi, self.est, self.sub = lo, hi, max(1, est), sub
+
+    def write(self, b):
+        self.n += memoryview(b).nbytes                    # (protocol 5 hands big buffers over as PickleBuffer)
+        if self.f is None:
+            self.h.update(b)
+        else:
+            self.f.write(b)
+        frac(self.lo + (self.hi - self.lo) * min(1.0, self.n / self.est), self.sub)
+        return memoryview(b).nbytes
+
+
 class _State:
     """Digest of every picklable variable, so a stage's changes (also in-place ones) can be found."""
 
     def __init__(self):
         self.known = {}
+        self.size = {}                                    # pickled bytes of each variable last time (progress estimates)
         self.unpicklable = set()
 
-    def diff(self, ns, skip=()):
+    def diff(self, ns, skip=(), lo=0.0, hi=1.0):
         changed, gone = {}, [n for n in self.known if n not in ns]
         for n in gone:
             del self.known[n]
-        for n, v in list(ns.items()):
-            if n.startswith("__") or n in skip or _skip(v):
-                continue
+        todo = [(n, v) for n, v in list(ns.items()) if not (n.startswith("__") or n in skip or _skip(v))]
+        tot = sum(self.size.get(n, 1 << 20) for n, _ in todo) or 1
+        done = 0
+        for n, v in todo:
+            w = self.size.get(n, 1 << 20)
+            t = _Ticker(lo + (hi - lo) * done / tot, lo + (hi - lo) * (done + w) / tot, w, sub="checking what changed")
+            done += w
             try:
-                d = _md5(pickle.dumps(v, protocol=pickle.HIGHEST_PROTOCOL))
+                pickle.dump(v, t, protocol=pickle.HIGHEST_PROTOCOL)
             except Exception:  # noqa: BLE001 - e.g. an ImageDraw: the build re-creates those (rebind)
                 self.unpicklable.add(n)
                 continue
+            self.size[n] = t.n
+            d = t.h.hexdigest()
             if self.known.get(n) != d:
                 self.known[n] = d
                 changed[n] = v
         return changed, gone
 
 
-def _dump(obj, path):
+def _dump(obj, path, lo=None, hi=None, est=1):
     with open(path + ".tmp", "wb") as f:
-        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(obj, f if lo is None else _Ticker(lo, hi, est, f), protocol=pickle.HIGHEST_PROTOCOL)
     os.replace(path + ".tmp", path)
 
 
@@ -295,8 +322,11 @@ def run(argv=None):
     print(f"[stages] reusing {first} of {len(fps) - 1}: {', '.join(names[:first]) or 'nothing'}; running: {', '.join(names[first:-1]) or 'nothing'}")
 
     layers = []                                           # mesh layers in stage order: dicts (chunk, material) -> (pos, uv, col)
+    if first:
+        phase("loading saved stages")
     for i in range(first):                                # restore the cached stages
         n = names[i]
+        frac(i / first, n)
         d = pickle.load(open(os.path.join(cache, n + ".state.pkl"), "rb"))
         ns.update(d["vars"])
         for k, m in d["imports"].items():                 # "import roads3d" inside a stage that is not run again
@@ -320,19 +350,24 @@ def run(argv=None):
         ns["mesh"] = ns["MeshAcc"]()
         go(stmts)
         t1 = time.time()
+        phase("saving the stage")                         # snapshot of the stage for the next launch: big, so it reports too
         layer = {}
-        for k, (P, U, C) in ns["mesh"].d.items():
+        items_ = list(ns["mesh"].d.items())
+        for j_, (k, (P, U, C)) in enumerate(items_):
+            if j_ % 64 == 0:
+                frac(0.1 * j_ / max(1, len(items_)), "geometry")
             layer[k] = (P[0] if len(P) == 1 else __import__("numpy").concatenate(P),
                         U[0] if len(U) == 1 else __import__("numpy").concatenate(U),
                         C[0] if len(C) == 1 else __import__("numpy").concatenate(C))
-        changed, gone = state.diff(ns, skip=("mesh",))
+        changed, gone = state.diff(ns, skip=("mesh",), lo=0.1, hi=0.5)
         mods = {}
         for m, attr in MODSTATE:
             if m in sys.modules:
                 mods[(m, attr)] = getattr(sys.modules[m], attr, None)
         imports = {k: v.__name__ for k, v in ns.items() if isinstance(v, types.ModuleType) and not k.startswith("__")}
-        _dump({"vars": changed, "gone": gone, "mods": mods, "imports": imports}, os.path.join(cache, n + ".state.pkl"))
-        _dump(layer, os.path.join(cache, n + ".mesh.pkl"))
+        _dump({"vars": changed, "gone": gone, "mods": mods, "imports": imports}, os.path.join(cache, n + ".state.pkl"),
+              0.5, 0.7, sum(state.size.get(k, 1) for k in changed))
+        _dump(layer, os.path.join(cache, n + ".mesh.pkl"), 0.7, 1.0, sum(a.nbytes for t_ in layer.values() for a in t_ if hasattr(a, "nbytes")))
         layers.append(layer)
         keep[n] = fp
         save_index()

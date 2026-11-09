@@ -7,7 +7,35 @@ import time
 EVENTS = os.environ.get("SK242_EVENTS") == "1"      # set by the game: also print machine-readable `@@{json}` lines
 
 
+_last_ev = [time.time()]
+
+
+def _watch():
+    """SK242_WATCH=<seconds>: prints where the build is stuck when no progress event came for that long (finds the steps that need more ticks)."""
+    import threading
+    import traceback
+    lim = float(os.environ["SK242_WATCH"])
+    main = threading.main_thread().ident
+
+    def run():
+        shown = 0.0
+        while True:
+            time.sleep(0.25)
+            if time.time() - _last_ev[0] > lim and _last_ev[0] != shown:
+                shown = _last_ev[0]
+                fr = sys._current_frames().get(main)
+                st = traceback.extract_stack(fr)[-4:] if fr else []
+                sys.stderr.write("[watch] silent %.1fs in %s: %s\n" % (time.time() - _last_ev[0], _cur["label"], " <- ".join(f"{os.path.basename(f.filename)}:{f.lineno}" for f in reversed(st))))
+                sys.stderr.flush()
+    threading.Thread(target=run, daemon=True).start()
+
+
+if os.environ.get("SK242_WATCH") and __import__("multiprocessing").parent_process() is None:      # (not in pool workers)
+    _watch()
+
+
 def _ev(**kw):
+    _last_ev[0] = time.time()
     if EVENTS:
         sys.stdout.write("@@" + json.dumps({"t": "prog", **kw}) + "\n")
         sys.stdout.flush()

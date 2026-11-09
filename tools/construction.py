@@ -253,7 +253,7 @@ def build(density, bright, free_mask, cell, hx, hy, add, chunk_of, th, trees, lo
     placed, posts, works, parked = [], [], [], []
     per_km_n = {}                                                       # sites per 1 km square: every built-up square gets a few
     pg = {}                                                          # placed sites on a 100 m grid (spacing test)
-    for x, y in span(cands, 0.45, 1.0, "building sites"):
+    for x, y in span(cands, 0.45, 0.85, "building sites"):
         if len(works) >= max_sites:
             break
         km = (int((x + hx) // 1000), int((y + hy) // 1000))

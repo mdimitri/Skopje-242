@@ -14,6 +14,8 @@ import random
 import numpy as np
 from PIL import Image, ImageDraw
 
+from progress import frac
+
 SAMPLE = 14.0              # spacing of join candidates along the walkable roads (m)
 FRESH = -50_000_000        # node ids for the new junctions / path vertices (connect_roads uses small negatives)
 
@@ -55,10 +57,13 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         return bool(m[j, i]) if 0 <= i < nx and 0 <= j < ny else True
 
     # ---- join candidates: resampled walkable roads, linked into a graph ----------------------------------
+    frac(0.11, "worn paths")
     S = []                                       # (x, y, road, seg, t)
     adj = []
     by_node = {}
     for ri, rd in enumerate(roads):
+        if ri % 256 == 0:
+            frac(0.11 + 0.03 * ri / max(1, len(roads)), "worn paths")
         if not _walkable(rd):
             continue
         pts, nodes = rd["pts"], rd["nodes"]
@@ -214,7 +219,9 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
     order = list(range(len(S)))
     rnd.shuffle(order)
     nc = 0
-    for a in order:
+    for oi_, a in enumerate(order):
+        if oi_ % 512 == 0:
+            frac(0.14 + 0.04 * oi_ / max(1, len(order)), "worn paths")
         if a in used:
             continue
         ax, ay, ra = S[a][0], S[a][1], S[a][2]
@@ -237,7 +244,10 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
 
     # ---- 2: door spurs from buildings ---------------------------------------------------------------------------
     nd = 0
-    for b in buildings:
+    frac(0.18, "worn paths")
+    for bi_, b in enumerate(buildings):
+        if bi_ % 512 == 0:
+            frac(0.18 + 0.01 * bi_ / max(1, len(buildings)), "worn paths")
         if b["area"] < 120 or rnd.random() > 0.12:
             continue
         ring = b["ring"]

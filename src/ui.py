@@ -38,7 +38,7 @@ BUILD_DEFAULT = {
     "tree meshes": 10, "lamp meshes": 5, "chunk index: areas": 10, "spawn point": 1, "write world": 2,
     "write mesh blob": 10, "write world parts": 10,
     "furniture": 30, "leisure": 5, "construction sites": 20, "fill: gardens, scrub, boulders": 260,
-    "carriageway cleanup": 10, "railway": 3,
+    "carriageway cleanup": 10, "railway": 3, "parked cars": 5, "cables and ground": 5, "saving the stage": 20, "loading saved stages": 20,
 }
 MK_LOG = "Тек на работата"
 MK_LEG = {"roads": "Патишта", "buildings": "Згради", "areas": "Зеленило", "water": "Води", "pois": "Знаменитости", "places": "Населби",
@@ -59,7 +59,7 @@ MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам
          (re.compile(r"^pedestrian models (\d+)/(\d+)$"), lambda m: f"Модели на пешаци {m[1]}/{m[2]}"),
          (re.compile(r"^chunk (\d+)/(\d+)\s+\((-?\d+),(-?\d+)\)$"), lambda m: f"Дел од градот {m[1]}/{m[2]} ({m[3]}, {m[4]})")]
 # what the running build step is making now (progress.span / Bar notes of the build tools)
-MK_SUB = {"tree meshes": "модели на дрвја", "lamp meshes": "модели на улични светилки", "rivers": "реки", "fire escapes": "пожарни скали",
+MK_SUB = {"geometry": "геометрија", "checking what changed": "проверувам што е сменето", "saving": "запишувам на диск", "cables": "кабли меѓу згради", "road paint": "боење на патиштата", "reading the map": "ја читам мапата", "monument": "споменик", "statues": "статуи", "meshes into the map": "ги ставам моделите во градот", "car parks": "паркинзи", "parked cars": "паркирани коли", "worn paths": "утрвени пешачки патеки", "tree meshes": "модели на дрвја", "lamp meshes": "модели на улични светилки", "rivers": "реки", "fire escapes": "пожарни скали",
           "roof jumps": "скокови меѓу покриви", "bridges over tunnels": "мостови над тунели", "quays": "кеј покрај реките", "roads joined": "спојувам улици", "junctions": "крстосници", "edges": "сообраќајни врски", "rounded corners": "заоблени агли",
           "ways under bridges": "патишта под мостовите", "decks": "палуби на мостовите", "neighbourhoods": "населби",
           "trees and lamps from the map": "дрвја и светилки од мапата", "lane grid": "мрежа на лентите", "lamps": "светилки",

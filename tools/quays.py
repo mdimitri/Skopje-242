@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 import par
+from progress import frac
 
 QSTEP = 1.0
 TILE = 32                       # posts per tile side (tiles store TILE + 1 posts so a lookup never leaves its tile)
@@ -48,6 +49,16 @@ def _seg_dist(px, py, S):
     l2 = np.maximum(dx * dx + dy * dy, 1e-9)
     t = np.clip(((px[:, None] - ax) * dx + (py[:, None] - ay) * dy) / l2, 0.0, 1.0)
     return np.hypot(px[:, None] - ax - dx * t, py[:, None] - ay - dy * t), t
+
+
+def _pieces(fn, x, y, n=128):
+    """fn(x, y) over a long run of points in pieces of n: each piece has a small bounding box, so few segments to test."""
+    if len(x) <= n:
+        return fn(x, y)
+    parts = [fn(x[i:i + n], y[i:i + n]) for i in range(0, len(x), n)]
+    if isinstance(parts[0], tuple):
+        return tuple(np.concatenate(c) for c in zip(*parts))
+    return np.concatenate(parts)
 
 
 def _softplus(x, k):
@@ -306,6 +317,7 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
     -> (Overlay or None, info dict for the meshes)."""
     if not river_polys and not river_lines:
         return None, {}
+    tick = (lambda f, sub='quays': None) if _worker else (lambda f, sub='quays': frac(f, sub))      # (workers stay silent)
     pinit = None
     if not _worker and par.jobs() > 1:                  # start the workers now: they repeat the set-up below while this process does it
         pinit = (_worker_init, ((T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy),))
@@ -371,7 +383,11 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         nx_, ny_ = -(B - A)[:, 1] / np.maximum(L, 1e-6), (B - A)[:, 0] / np.maximum(L, 1e-6)
         mx, my = (A[:, 0] + B[:, 0]) / 2, (A[:, 1] + B[:, 1]) / 2
         o = hw + 1.5
-        both = wet(mx + nx_ * o, my + ny_ * o) & wet(mx - nx_ * o, my - ny_ * o)
+        both = np.zeros(len(mx), bool)
+        for q0 in range(0, len(mx), 256):              # in pieces along the bank: small boxes, few segments each, and the bar moves
+            tick(0.2 + 0.02 * (ci + q0 / max(1, len(mx))) / max(1, len(chains)), 'rivers')
+            sl = slice(q0, q0 + 256)
+            both[sl] = wet(mx[sl] + nx_[sl] * o, my[sl] + ny_[sl] * o) & wet(mx[sl] - nx_[sl] * o, my[sl] - ny_[sl] * o)
         for k in np.nonzero(ok & ~both)[0]:
             E.append((A[k, 0], A[k, 1], B[k, 0], B[k, 1], hw, ci, k))
     if not E:
@@ -399,7 +415,12 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
 
     # ---- water level along the centrelines
     def half_w(x, y):
-        return np.concatenate([np.abs(nearest_bank(x[i:i + 64], y[i:i + 64])[0]) for i in range(0, len(x), 64)])
+        out_ = []
+        for i in range(0, len(x), 64):
+            if (i // 64) % 16 == 0:
+                tick(0.22 + 0.03 * i / max(1, len(x)))
+            out_.append(np.abs(nearest_bank(x[i:i + 64], y[i:i + 64])[0]))
+        return np.concatenate(out_)
     lev = _levels([pts for pts, w in river_lines if len(pts) > 1], T, half_w)
     if lev:
         CS = np.concatenate([np.stack([p[:-1, 0], p[:-1, 1], p[1:, 0], p[1:, 1]], 1) for p, _ in lev])
@@ -459,11 +480,15 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         return np.where(BLD[by_, bx_], 0.0, dp)
 
     # ---- lower promenade: paths running along the water, with room for the bank above them
+    PB = [0.25, 0.1]                                    # progress range of the running promenade() pass
+
     def promenade():
         for ch in chains:
             ch["E"] = {1: np.zeros(len(ch["P"])), -1: np.zeros(len(ch["P"]))}
         nlow = 0
-        for rd in roads:
+        for ri_, rd in enumerate(roads):
+            if ri_ % 32 == 0:
+                tick(PB[0] + PB[1] * ri_ / max(1, len(roads)))
             if rd["cls"] not in FOOTISH or rd.get("bridge") or rd.get("tunnel") or rd.get("worn"):
                 continue
             P = np.array(_subdiv(rd["pts"], 2.0), np.float64)
@@ -473,13 +498,13 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
             x1, y1 = P.max(0)
             if not len(egrid.near(x0, y0, x1, y1, LOW_D + 2)):
                 continue
-            d, j, t, side = nearest_bank(P[:, 0], P[:, 1])
+            d, j, t, side = _pieces(nearest_bank, P[:, 0], P[:, 1])
             gd = np.abs(np.gradient(d, 2.0)) if len(d) > 2 else np.zeros_like(d)
             use = (d >= -0.5) & (d <= LOW_D) & (gd < 0.45)
             hw_ = max(rd["w"], 2.0) / 2
             if use.any():                   # the bank between the path and protected ground (a street, its pavement,
-                drop = np.maximum(T.h(P[:, 0], P[:, 1]) - level(P[:, 0], P[:, 1]) - RISE, 0.0)      # a building) must fit
-                use &= prot_dist(P[:, 0], P[:, 1]) >= drop / KP + hw_ + MARGIN
+                drop = np.maximum(T.h(P[:, 0], P[:, 1]) - _pieces(level, P[:, 0], P[:, 1]) - RISE, 0.0)      # a building) must fit
+                use &= _pieces(prot_dist, P[:, 0], P[:, 1]) >= drop / KP + hw_ + MARGIN
             if not use.any():
                 continue
             nlow += 1
@@ -527,10 +552,15 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
 
     # promenade -> bridges carried on over it -> streets / bridge ends that stay -> promenade again with them
     build_prot()
+    tick(0.22, 'rivers')
     promenade()
+    tick(0.36)
     nx_b, stuck = _extend_bridges(roads, nearest_bank, reach)
+    tick(0.44)
+    PB[:] = [0.44, 0.1]
     build_prot([(x_, y_, x_, y_, 4.0) for x_, y_ in stuck])
     nlow = promenade()
+    tick(0.55)
     log(f"[quays] {len(chains)} bank lines, {len(E)} bank segments, {nlow} riverside paths on the lower promenade, "
         f"{nx_b} bridge ends carried on over it, {len(stuck)} bridge ends kept up on the bank")
 
@@ -569,6 +599,7 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
     # gently, wherever it joins.  Under a bridge near its end (the deck still at the ground there) a walkway is not
     # cut at all: it crosses the deck at grade instead of passing under it with no headroom (further out the deck is
     # lifted over it instead, in fix_decks).
+    tick(0.6)
     bri = []
     for rd in roads:
         if rd.get("bridge") and len(rd["pts"]) >= 2:
@@ -656,6 +687,7 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         need = S[:, 2][None] + np.maximum(S[:, 4][None] * dd, KP * (dd - S[:, 3][None] - 0.4))
         return base - need.min(1)
 
+    tick(0.68)
     # ---- tiles near the banks
     ntx, nty = int(math.ceil(W / TILE)), int(math.ceil(H / TILE))
     want = set()
@@ -707,11 +739,10 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         _W["tile"] = one_tile
         return None, {}
     tiles = sorted(want)
-    from progress import frac
 
     def got(k_):
         if k_ % 8 == 0:
-            frac(0.7 + 0.25 * k_ / max(1, len(tiles)), "quays")
+            tick(0.7 + 0.27 * k_ / max(1, len(tiles)))
     if pinit is not None and len(tiles) > 300:          # the tiles are independent: all cores
         res = par.pmap(_tile_job, tiles, init=pinit,
                        chunk=max(4, len(tiles) // (par.jobs() * 8)), on=lambda d, t: got(d))

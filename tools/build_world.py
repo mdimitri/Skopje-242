@@ -132,6 +132,8 @@ def connect_roads(roads, radius=7.0, drive_radius=12.0):
     cs = 16.0
     grid = {}
     for ri, rd in enumerate(roads):
+        if ri % 256 == 0:
+            frac(0.06 * ri / max(1, len(roads)), "roads joined")      # (graph phase: 0 .. 0.2 is this and the worn paths)
         if not (rd["drive"] or rd["walk"]) or rd["bridge"] or rd["cls"] == "motorway" or len(rd["nodes"]) != len(rd["pts"]):
             continue
         pts = rd["pts"]
@@ -145,6 +147,8 @@ def connect_roads(roads, radius=7.0, drive_radius=12.0):
     fresh = -1
     snapped = merged = 0
     for ri, rd in enumerate(roads):
+        if ri % 256 == 0:
+            frac(0.06 + 0.04 * ri / max(1, len(roads)), "roads joined")
         if not (rd["drive"] or rd["walk"]) or rd["bridge"] or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
             continue
         for end in (0, -1):
@@ -1503,13 +1507,7 @@ def main():
     T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
     frac(0.2, "quays")
     import quays
-    _qn = [0]
-
-    def _qlog(*a_, **k_):                                    # quays.build logs once per big step: each one moves the bar
-        _qn[0] += 1
-        frac(min(0.95, 0.2 + 0.25 * _qn[0]), "quays")
-        print(*a_, **k_)
-    T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY, log=_qlog)
+    T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY)
     frac(1.0, "quays")
     del lakes, ld
 
@@ -1553,6 +1551,7 @@ def main():
         for m_, pos_, uv_, col_ in adds_:
             mesh.add(binf_[0], m_, pos_, uv_, col_)
     bb_.done()
+    phase("cables and ground")
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
     print(f"[build] buildings clipped off roads/pavements: {n_clip} trimmed, {n_drop} dropped")
     if binfo:                                                  # TV / phone cables from block to block
@@ -1561,7 +1560,7 @@ def main():
         for b in tall:
             gx.setdefault((int(b[1] // 40), int(b[2] // 40)), []).append(b)
         rc = random.Random(5)
-        for b in tall:
+        for b in span(tall, 0.0, 0.5, "cables"):
             if rc.random() > 0.45:
                 continue
             cands = [o for dx in (-1, 0, 1) for dz in (-1, 0, 1) for o in gx.get((int(b[1] // 40) + dx, int(b[2] // 40) + dz), ())
@@ -1578,7 +1577,7 @@ def main():
                 p1 = (o[1] - ux * (o[5] + 0.4) - uz * off, o[3] + ho, o[2] - uz * (o[5] + 0.4) + ux * off)
                 mesh.add(b[0], MAT_SOLID, *_cable(p0, p1, 0.02 * dist + 0.4))
     del pending
-    for rd in sorted(roads, key=lambda q: (q["bridge"], q["layer"])):
+    for rd in span(sorted(roads, key=lambda q: (q["bridge"], q["layer"])), 0.5, 1.0, "road paint"):
         val = 2 if rd["bridge"] else 3
         wpx = max(1, int(round((rd["w"] + 3) / CELL)))
         sd.line(cells(rd["pts"]), fill=val, width=wpx)
@@ -1865,9 +1864,11 @@ def main():
                                     hd += r.choice((0.72, 0.8, 0.88))             # ~45 deg, nose towards the kerb (kerb is at +90 deg of travel)
                                 parked.append((px, py, hd, r.randint(0, 15), r.choice((0, 0, 1, 1, 1, 2, 3, 4, 4, 7, 7, 8))))
                     s += r.uniform(2.6, 3.1) if diag else r.uniform(5.2, 6.0) if dense else r.uniform(6.0, 9.0)
+    phase("parked cars")
     lot_cars = _fill_lots(areas, bld_a, to_cell, NCX, NCY, HX, HY)
+    frac(0.1, "car parks")
     asph = {}                                                   # round 26: nobody parks on asphalt: not on any road (parking-lot aisles and service lanes included)
-    for rd_ in roads:
+    for rd_ in span(roads, 0.1, 0.3, "road grid"):
         if rd_["bridge"] or rd_["cls"] in ("footway", "path", "steps", "cycleway", "track", "pedestrian"):
             continue
         for (ax_, ay_), (bx_, by_) in zip(rd_["pts"], rd_["pts"][1:]):
@@ -1888,9 +1889,9 @@ def main():
         c_, s_ = math.cos(q[2]), math.sin(q[2])
         return not any(_on_asphalt(q[0] + c_ * u_ - s_ * v_, q[1] + s_ * u_ + c_ * v_)
                        for u_ in (-2.1 - pad, 0.0, 2.1 + pad) for v_ in (-0.85 - pad, 0.0, 0.85 + pad))
-    parked = [q for q in parked if _clear_of_asphalt(q)] + [q for q in lot_cars if _clear_of_asphalt(q, 0.5)]     # car-park bays leave aisles and access lanes open
+    parked = [q for q in span(parked, 0.3, 0.6, "parked cars") if _clear_of_asphalt(q)] + [q for q in span(lot_cars, 0.6, 0.7, "car parks") if _clear_of_asphalt(q, 0.5)]     # car-park bays leave aisles and access lanes open
     kept, taken = [], {}                                        # round 23: cars of crossing streets must not overlap
-    for q in parked:
+    for q in span(parked, 0.7, 0.95, "parked cars"):
         gx_, gy_ = int(q[0] // 4), int(q[1] // 4)
         if any((q[0] - o[0]) ** 2 + (q[1] - o[1]) ** 2 < 2.4 ** 2 for i_ in (-1, 0, 1) for j_ in (-1, 0, 1) for o in taken.get((gx_ + i_, gy_ + j_), ())):
             continue
@@ -1951,9 +1952,11 @@ def main():
 
     stage("monument")
     phase("monument")
+    frac(0.05, "monument")
     try:                                                        # round 32: Warrior on a Horse in the Macedonia Square fountain
         import monument
         posts = list(posts) + monument.build(add_c, chunk_of, lambda x, y: T.hs(x, y))
+        frac(0.5, "statues")
         import statues
         _sp, _placed = statues.build(add_c, chunk_of, lambda x, y: _not_building(x, y) and not _is_water(x, y), lambda x, y: T.hs(x, y))
         posts = list(posts) + _sp
@@ -1990,7 +1993,7 @@ def main():
         if lots and trees:                                      # a site clears its lot of trees
             ta = np.array([(t[0], t[1]) for t in trees])
             keep = np.ones(len(trees), bool)
-            for a_, b_, c_, d_ in lots:
+            for a_, b_, c_, d_ in span(lots, 0.85, 1.0, "trees on the lots"):
                 keep &= ~((ta[:, 0] >= a_) & (ta[:, 0] <= c_) & (ta[:, 1] >= b_) & (ta[:, 1] <= d_))
             trees = [t for t, k in zip(trees, keep) if k]
         parked = list(parked) + cparked
@@ -2001,6 +2004,7 @@ def main():
 
     stage("stations", data=("map_pois.json", "buildings.json"))
     phase("petrol stations and car washes")
+    frac(0.01, "reading the map")
     fsites = []
     def clear_of_bld(x, y):                                     # no building and no water (paved forecourts are fine)
         if abs(x) >= HX - 5 or abs(y) >= HY - 5:

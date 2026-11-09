@@ -709,11 +709,11 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             add(chunk_of(px, py), MAT, pos, uv, col)
 
     n0 = len(posts)
-    posts = [p for p in span(posts, 0.95, 0.97, "kept off the roadway") if len(p) > 3 or p[2] >= 0.5 or not on_road(p[0], p[1])]
+    posts = [p for p in span(posts, 0.95, 0.965, "kept off the roadway") if len(p) > 3 or p[2] >= 0.5 or not on_road(p[0], p[1])]
     log(f"[build] junk and garbage: {nj} pieces; furniture kept off the roadway: {skipped[0]} props, {n0 - len(posts)} posts")
     if bus_stops:                                          # real bus stops from the map, on the kerb of the nearest road
         grid = {}
-        for e in edges:
+        for e in span(edges, 0.965, 0.97, "bus stops"):
             if e["drive"] and not e["bridge"] and e["cls"] not in ("service", "track"):
                 for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
                     for gx in range(int(min(ax, bx) // 40) - 1, int(max(ax, bx) // 40) + 2):
