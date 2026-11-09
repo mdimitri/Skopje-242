@@ -163,7 +163,7 @@ class LoadMusic:
         """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
         if not self.ok:
             return
-        sz = 18
+        sz = 27
         b = 30
         name = font.fit(self.title or "…", sz, max(40, room), "cond")
         tw = font.measure_text(name, sz, "cond")
