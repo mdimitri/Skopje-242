@@ -778,6 +778,8 @@ def main():
     cam_x, cam_y, ppm = sx, sy, 9.0
     cam_h = world.ground_y(sx, sy)
     user_zoom = a.zoom
+    if a.test and os.environ.get("SK242_TEST_CHASE"):          # test harness: street-level chase camera (3D placement checks)
+        cfg["debug_chase"] = True
     show_map = False
     mouse_grab = False
     mouse_steer = 0.0

@@ -369,8 +369,71 @@ class World:
         ix = int((x + self.hx) / self.cell)
         iy = int((y + self.hy) / self.cell)
         if 0 <= ix < self.ncx and 0 <= iy < self.ncy:
-            return t + self.GROUND_Y[self.hgt[iy * self.ncx + ix] & 3]
+            k = iy * self.ncx + ix
+            he = self._hedge
+            if he is None:
+                he = self._hedge_mask()
+            if he[k]:                                           # a cell where asphalt / pavement / ground meet: the 2 m mask is too coarse
+                sub = self._hsub.get(k)
+                if sub is None:
+                    sub = self._hsub_cell(ix, iy)
+                c = sub[min(3, int(((y + self.hy) / self.cell - iy) * 4)) * 4 + min(3, int(((x + self.hx) / self.cell - ix) * 4))]
+                return t + self.GROUND_Y[c]
+            return t + self.GROUND_Y[self.hgt[k] & 3]
         return t
+
+    _hedge = None
+
+    def _hedge_mask(self):
+        """Cells of the 2 m height-class mask (0 ground, 1 asphalt, 2 pavement) next to a cell of another class. There the
+        rendered kerb edge can be anywhere inside the cell, so ground_y looks the class up at 0.5 m from the road geometry."""
+        h = (np.frombuffer(self.hgt, np.uint8).reshape(self.ncy, self.ncx) & 3)
+        e = np.zeros_like(h, dtype=bool)
+        e[:, 1:] |= h[:, 1:] != h[:, :-1]
+        e[:, :-1] |= h[:, :-1] != h[:, 1:]
+        e[1:, :] |= h[1:, :] != h[:-1, :]
+        e[:-1, :] |= h[:-1, :] != h[1:, :]
+        self._hedge = e.ravel().tobytes()
+        self._hsub = {}
+        g = {}
+        for ed in self.edges:                                   # the same edges / widths the build rasterised (tools/build_world.py)
+            if ed.get("bridge"):
+                continue
+            sw = ed["cls"].replace("_link", "") in self.KERB_CLS
+            asp = ed.get("drive") or ed.get("walk")
+            if not (sw or asp):
+                continue
+            hw = ed["w"] / 2
+            rr = hw + (self.KERB_W if sw else 0.0) + 1.0
+            for (ax, ay), (bx, by) in zip(ed["pts"], ed["pts"][1:]):
+                for cx in range(int((min(ax, bx) - rr) // 16), int((max(ax, bx) + rr) // 16) + 1):
+                    for cy in range(int((min(ay, by) - rr) // 16), int((max(ay, by) + rr) // 16) + 1):
+                        g.setdefault((cx, cy), []).append((ax, ay, bx, by, hw, sw, asp))
+        self._hgrid = g
+        return self._hedge
+
+    def _hsub_cell(self, ix, iy):
+        """Height class of the 4 x 4 sub-cells of one edge cell: asphalt within half the road width of an asphalt edge,
+        pavement up to KERB_W beyond a city street, else the cell's own class only if it is ground-level ground."""
+        out = []
+        for j in range(4):
+            for i in range(4):
+                x = (ix + (i + 0.5) / 4) * self.cell - self.hx
+                y = (iy + (j + 0.5) / 4) * self.cell - self.hy
+                c = 0
+                for ax, ay, bx, by, hw, sw, asp in self._hgrid.get((int(x // 16), int(y // 16)), ()):
+                    dx, dy = bx - ax, by - ay
+                    l2 = dx * dx + dy * dy or 1e-9
+                    tt = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
+                    d = math.hypot(x - ax - dx * tt, y - ay - dy * tt)
+                    if asp and d < hw:
+                        c = 1
+                        break                                   # asphalt wins (it was drawn over the pavements)
+                    if sw and d < hw + self.KERB_W:
+                        c = 2
+                out.append(c)
+        self._hsub[iy * self.ncx + ix] = out
+        return out
 
     def deck_h(self, x, y):
         """Height of the bridge deck above (x, y), or None."""

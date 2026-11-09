@@ -1,5 +1,6 @@
 """3D drawing: ground chunk quads, streamed building/tree meshes, cars with dents, pedestrians, pickups, shadows."""
 import math
+import os
 
 import numpy as np
 import pyray as rl
@@ -36,6 +37,13 @@ def gait_cycle(arch, run):
 
 
 
+def _keep(M):
+    """An owned copy of a Model's transform (reading model.transform gives a view of the model's memory, so 'old = m.transform'
+    would change along with it and the restore would keep the new matrix). Restore with m.transform = old[0]."""
+    return RL.ffi.new("Matrix *", M)
+
+
+AUDIT3D = bool(os.environ.get("SK242_AUDIT3D"))
 _GL = None
 _FLAT = False
 
@@ -241,6 +249,60 @@ class Renderer:
 
     trailer_m = None
 
+    def _audit3d(self, cars, trailers, peds):
+        """SK242_AUDIT3D=1 test harness: read the depth buffer (world drawn, people and cars not yet) and measure how far each
+        actor's base floats above (+) or sinks into (-) the surface actually rendered under it; also checks that every
+        person's shadow plane is their feet. Prints one [audit3d] line per category."""
+        rl.rl_draw_render_batch_active()
+        rw, rh = rl.get_render_width(), rl.get_render_height()
+        f = RL.ffi
+        rp = getattr(self, "_rp", None)
+        if rp is None:
+            p = RL.rlGetProcAddress(b"glReadPixels")
+            rp = self._rp = f.cast("void(*)(int,int,int,int,unsigned,unsigned,void*)", p)
+        buf = np.empty((rh, rw), np.float32)
+        rp(0, 0, rw, rh, 0x1902, 0x1406, f.from_buffer(buf))
+        cam, (n, fa) = self._cam, self._clip
+        c = np.array([cam.position.x, cam.position.y, cam.position.z])
+        fw = np.array([cam.target.x, cam.target.y, cam.target.z]) - c
+        fw /= np.linalg.norm(fw)
+
+        def err(x, y, z):
+            q = rl.get_world_to_screen_ex(V3(x, y, z), cam, rw, rh)
+            ix, iy = int(q.x), int(q.y)
+            if not (2 <= ix < rw - 2 and 2 <= iy < rh - 2):
+                return None
+            d = float(buf[rh - 1 - iy, ix])
+            if d >= 1.0:
+                return None
+            zb = n * fa / (fa - d * (fa - n))                     # eye depth of the rendered surface on that pixel
+            P = np.array([x, y, z])
+            zp = float(np.dot(P - c, fw))
+            if zp <= n or zb < zp - 1.5:                          # behind the camera / hidden under a roof, tree, bridge
+                return None
+            Q = c + (P - c) * (zb / zp)
+            return y - Q[1]
+
+        rows = {}
+        for x, z, h, m, tint, gy, pitch, roll, kind, *_ in cars:
+            rows.setdefault("car", []).append((err(x, gy, z), (round(x, 1), round(z, 1), kind)))
+        for x, z, th, gy, *_ in trailers:
+            rows.setdefault("trailer", []).append((err(x, gy, z), (round(x, 1), round(z, 1))))
+        for x, y, z, h, arch, tone, frame, skin, *ex in peds:
+            if frame == 2:
+                continue
+            rows.setdefault("ped", []).append((err(x, y, z), (round(x, 1), round(z, 1), frame, round(self.w.ground_y(x, z), 2), self.w.kerb(x, z))))
+            if len(ex) > 1 and abs(y - ex[1]) > 0.05:
+                rows.setdefault("ped_shadow_off_feet", []).append((y - ex[1], (round(x, 1), round(z, 1), frame)))
+        for k, v in rows.items():
+            e = [(a, b) for a, b in v if a is not None]
+            if not e:
+                continue
+            ar = np.array([a for a, _ in e])
+            bad = sorted(e, key=lambda r: -abs(r[0]))[:3]
+            print(f"[audit3d] {k}: n={len(e)} median={np.median(ar):+.3f} float>8cm={int((ar > 0.08).sum())} sink>8cm={int((ar < -0.08).sum())} "
+                  f"worst={[(round(a, 2), b) for a, b in bad]}", flush=True)
+
     def _near(self, x, z):
         """Close to the view centre: its shadow is the projected mesh (see _proj_shadow), not a rectangle."""
         return self.shadows and (x - self._sh_c[0]) ** 2 + (z - self._sh_c[1]) ** 2 < 45.0 ** 2
@@ -253,12 +315,12 @@ class Renderer:
         if a <= 0 or m is None:
             return
         S = rl.Matrix(1.0, sx, 0.0, -sx * gy,  0.0, 0.0, 0.0, gy + 0.3,  0.0, sz, 1.0, -sz * gy,  0.0, 0.0, 0.0, 1.0)
-        old = m.transform
+        old = _keep(m.transform)
         m.transform = rl.matrix_multiply(M, S)
         sh = _flat_shader()
         gls = _gl()
         if sh is None or not gls:
-            m.transform = old
+            m.transform = old[0]
             return
         mat = m.materials[0]
         old_id, old_locs = mat.shader.id, mat.shader.locs        # (the struct is a view into the material: copy its fields)
@@ -267,7 +329,7 @@ class Renderer:
         rl.draw_model(m, V3(0, 0, 0), 1.0, rl.Color(10, 10, 20, a))
         gls["depthfunc"](0x0203)
         mat.shader.id, mat.shader.locs = old_id, old_locs
-        m.transform = old
+        m.transform = old[0]
 
     def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll):
         """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th."""
@@ -381,6 +443,7 @@ class Renderer:
         self.t = t
         gl3d.ground_time(t)
         rl.rl_set_clip_planes(near, H * 4 + 400)
+        self._cam, self._clip = cam, (near, H * 4 + 400)
         rl.begin_mode_3d(cam)
         try:
             rl.rl_disable_backface_culling()
@@ -610,10 +673,10 @@ class Renderer:
                     Mw = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(2.4, 2.4, 2.4), rl.matrix_rotate_x(1.45)),   # side face up, so the top view shows the shape
                                             rl.matrix_rotate_y(math.radians((t * 70 + x * 13) % 360)))
                     Mw = rl.matrix_multiply(Mw, rl.matrix_translate(x, gy0 + 1.0 + 0.15 * math.sin(t * 3 + x), z))
-                    old_t = m.transform
+                    old_t = _keep(m.transform)
                     m.transform = Mw
                     rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
-                    m.transform = old_t
+                    m.transform = old_t[0]
                 else:
                     rl.draw_model_ex(m, V3(x, gy0 + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
         # what is left of broken trees / posts / props (stump, bent pole, rubble): they stay, they just stop being solid
@@ -746,15 +809,17 @@ class Renderer:
                                             rl.matrix_multiply(rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(yaw)),
                                                                rl.matrix_rotate_y(-wk.h)))
                     Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
-                    old_t = wm.transform
+                    old_t = _keep(wm.transform)
                     wm.transform = Mh
                     rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
-                    wm.transform = old_t
+                    wm.transform = old_t[0]
             if not self._near(wk.x, wk.y):
                 sh.append((wk.x, wk.y, 0, 0.35, 0.35, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0))
         for kx, kz, kh in sim.kiosks:
             if self._in(kx, kz, rect):
                 self._kiosk(kx, w.ground_y(kx, kz), kz, kh)
+        if AUDIT3D and self._frames % 30 == 0:
+            self._audit3d(cars, trailers, peds)
         if self.shadows:
             self._shadow_batch(sh)
         fr = self.frustum
@@ -762,14 +827,14 @@ class Renderer:
             if self.trailer_m is None:
                 self.trailer_m = gl3d.trailer_model()
             tm = self.trailer_m
-            old = tm.transform
+            old = _keep(tm.transform)
             for x, z, h, gy, pitch, roll in trailers:
                 tm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
                                                                      rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
                 rl.draw_model(tm, V3(0, 0, 0), 1.0, WHITE)
                 if self._near(x, z):
                     self._proj_shadow(tm, tm.transform, gy, 70)
-            tm.transform = old
+            tm.transform = old[0]
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col in cars:
             if m is None:
                 continue
@@ -782,26 +847,26 @@ class Renderer:
                 if vehicles.DIMS[kind][0] * fr.fpx < self.LOD_PX * math.sqrt((x - px) ** 2 + (gy - py) ** 2 + (z - pz) ** 2):
                     ml = self.car_lod(kind, col)
                     if ml is not None:                       # small on screen: one model, front wheels straight
-                        old = ml.transform
+                        old = _keep(ml.transform)
                         ml.transform = M
                         rl.draw_model(ml, ZERO, 1.0, tint)
-                        ml.transform = old
+                        ml.transform = old[0]
                         continue
-            old = m.transform
+            old = _keep(m.transform)
             m.transform = M                                  # tilt with the slope: roll, pitch, heading, then move
             rl.draw_model(m, V3(0, 0, 0), 1.0, tint)
-            m.transform = old
+            m.transform = old[0]
             fw = self.front_wheels.get(kind)
             if fw is None:
                 fw = self.front_wheels[kind] = gl3d.front_wheel(kind) if kind not in vehicles.BIKES else (0, 0, 0, None)
             wx, wr, hz, wm = fw
             if wm is None:
                 continue
-            old = wm.transform
+            old = _keep(wm.transform)
             for sd in (-hz, hz):                             # front wheels turned about their own centres by the steering angle
                 wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_y(-ang), rl.matrix_translate(wx, wr, sd)), M)
                 rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
-            wm.transform = old
+            wm.transform = old[0]
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
             m = self.car_models.get(key)
@@ -815,10 +880,10 @@ class Renderer:
             M = rl.matrix_multiply(rl.matrix_rotate_y(ang), rl.matrix_translate(hx, 0.0, -(W / 2 + 0.03)))
             M = rl.matrix_multiply(M, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(b.roll), rl.matrix_rotate_z(b.pitch)),
                                                                           rl.matrix_rotate_y(-b.h)), rl.matrix_translate(b.x, gy, b.y)))
-            old = m.transform
+            old = _keep(m.transform)
             m.transform = M
             rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
-            m.transform = old
+            m.transform = old[0]
         for x, y, z, h, arch, tone, frame, skin, *ex in peds:
             pm = self.ped_model(arch, tone, frame, skin)
             if pm is not None:
@@ -827,10 +892,10 @@ class Renderer:
                     self._proj_shadow(pm, Mp, ex[1], 60)
                 if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
                     M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
-                    old = pm.transform
+                    old = _keep(pm.transform)
                     pm.transform = M
                     rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
-                    pm.transform = old
+                    pm.transform = old[0]
                 else:
                     rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
         for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
