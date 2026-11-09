@@ -23,6 +23,10 @@ sys.path.insert(0, HERE)
 import faulthandler   # noqa: E402 - a native crash (GPU / raylib) leaves a Python stack in logs/crash.log
 try:
     os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+    for _ln in ("game", "crash"):                    # fresh logs every run; the previous run's stay as *.prev.log
+        _lp = os.path.join(ROOT, "logs", _ln + ".log")
+        if os.path.exists(_lp):
+            os.replace(_lp, os.path.join(ROOT, "logs", _ln + ".prev.log"))
     _crash_f = open(os.path.join(ROOT, "logs", "crash.log"), "a")
     _crash_f.write(time.strftime("--- start %Y-%m-%d %H:%M:%S\n"))
     _crash_f.flush()
