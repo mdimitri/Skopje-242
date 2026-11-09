@@ -51,6 +51,7 @@ class Body:
         self.vx = self.vy = self.w = 0.0
         self.steer = 0.0
         self.wheel = 0.0             # front-wheel angle drawn (rad)
+        self.trh = None              # semi: trailer heading (None: straight behind the tractor)
         self.kind, self.color = kind, color
         self.health = 100.0
         self.dents = []              # (lx, lz, nx, nz, mag) in local space
@@ -187,6 +188,12 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     p.vx, p.vy = fx * vf + rx * vl, fy * vf + ry * vl
     p.x += p.vx * dt
     p.y += p.vy * dt
+    if p.kind == vehicles.SEMI:                       # kingpin trailer: yaws towards the tractor at v / axle-distance; jackknifes up to ~80 deg
+        dh = (p.h - p.trh + math.pi) % math.tau - math.pi if p.trh is not None else 0.0
+        if p.trh is None or abs(dh) > 1.4:
+            p.trh = p.h
+        else:
+            p.trh += abs(vf) * dt / vehicles.SEMI_AXLE * math.sin(dh) * (1.0 if vf >= 0 else -1.0)
 
 
 def settle(b, w, dt, ev=None):

@@ -556,7 +556,7 @@ class Renderer:
                 if b.door > 0.01:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
-                    self._trailer(trailers, sh, b.x, b.y, b.h, b.h, gy, b.pitch, b.roll)
+                    self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll)
                 else:
                     hl = vehicles.HALF_L[b.kind] + 0.1
                     sh.append((b.x, b.y, b.h, hl, 1.0, 80, gy))
