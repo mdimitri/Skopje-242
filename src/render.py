@@ -26,6 +26,15 @@ LOD_PPM = 2.4
 ZERO = V3(0, 0, 0)
 
 
+def gait_cycle(arch, run):
+    """Ground covered by one stride cycle (two steps) of a person model, matched to how far its legs reach (gl3d.WALK_AMP):
+    ~1.85 m walking, ~2.85 m running at full size. The player moves at game speed (5.75 / 9.5 m/s), faster than real
+    legs could keep up with, so its cycle is longer (a little foot slide instead of a frantic shuffle)."""
+    if arch >= 100:
+        return gl3d.ped_scale(arch) * (4.4 if run else 2.6)
+    return gl3d.ped_scale(arch) * (2.85 if run else 1.85)
+
+
 class Frustum:
     """View frustum of a perspective Camera3D: sphere tests (one in Python, many at once in numpy)."""
 
@@ -236,8 +245,8 @@ class Renderer:
         """Frame of the walk / run cycle: four poses per stride for people, two for riders and carts."""
         if 10 <= arch < 100 and vehicles.PED_IDS[arch] in vehicles.RIDERS:
             return int(anim * 2.2) & 1
-        # one stride cycle (two steps) per ~1.5 m walking, ~2.6 m running: eight phases each
-        return (30 if run else 20) + (int(anim * (8 / 5.2 if run else 8 / 3.0)) & 7)
+        # eight phases per stride cycle (two steps); anim is the ground covered, so feet stay planted
+        return (30 if run else 20) + (int(anim * 8 / gait_cycle(arch, run)) & 7)
 
     def ped_model(self, arch, tone, frame, skin):
         key = (arch, tone, frame, skin)
@@ -619,13 +628,13 @@ class Renderer:
                          cb.h, 100 + getattr(sim, "lik", 0), 0, 13 if seat else 12, 3))
         for rp in getattr(sim, "remote_foot", {}).values():            # other players on foot (multiplayer)
             if self._in(rp["x"], rp["y"], rect):
-                fr = rp["frame"] if rp["frame"] is not None else self._gait(100, rp["anim"], rp["run"])
+                fr = rp["frame"] if rp["frame"] is not None else self._gait(100 + rp["lik"], rp["anim"], rp["run"])
                 gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
                 peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3))
                 sh.append((rp["x"], rp["y"], 0, 0.35, 0.35, 60, gy))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
-            frame = self._gait(100, wk.anim, wk.speed > 6.0) if wk.moving else 12
+            frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0) if wk.moving else 12
             if wk.atk_t > 0:
                 frame = wk.atk_kind
             if wk.z > 0.35 or getattr(wk, "vz", 0.0) > 1.0:   # a real jump / fall, not a step off a kerb or a slope

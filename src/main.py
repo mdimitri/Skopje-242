@@ -112,7 +112,7 @@ import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint   # noqa: E402
-from render import LOD_PPM, Renderer   # noqa: E402
+from render import LOD_PPM, Renderer, gait_cycle   # noqa: E402
 from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
 
@@ -1253,7 +1253,7 @@ def main():
         if sim.mode != "car":
             v = math.hypot(wk.vx, wk.vy)
             run_ = wk.speed > 6.0                                   # the same switch render.py uses for the run cycle
-            n_ = int(wk.anim * 2.0 / (5.2 if run_ else 3.0))        # a foot lands every 4 of the 8 gait phases (render._gait)
+            n_ = int(wk.anim * 2.0 / gait_cycle(100 + getattr(sim, "lik", 0), run_))   # a foot lands twice per stride cycle (render._gait)
             fresh = n_ != sx.get("stepn", n_)
             sx["stepn"] = n_
             air = wk.z > 0.05 or wk.duck_t > 0.0                    # no feet on the ground: jumping, or crawling under a vehicle
