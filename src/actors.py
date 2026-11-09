@@ -54,6 +54,7 @@ class Body:
         self.steer = 0.0
         self.wheel = 0.0             # front-wheel angle drawn (rad)
         self.trh = None              # semi: trailer heading (None: straight behind the tractor)
+        self.tra = None              # semi: where the trailer's axle group is (x, y)
         self.kind, self.color = kind, color
         self.health = 100.0
         self.dents = []              # (lx, lz, nx, nz, mag) in local space
@@ -129,6 +130,28 @@ def bump(b, impact, wx, wy, nx, ny):
 TURN = 0.67                  # turning radius of every vehicle relative to the bicycle model: 33 % tighter
 
 
+def tow(b):
+    """Semi trailer: its axle group is dragged along the path of the kingpin (on the tractor's fifth wheel) at a fixed
+    distance -- the exact no-side-slip kinematics of a real trailer, forwards and reversing.  Folding stops at SEMI_JACK."""
+    c, s = math.cos(b.h), math.sin(b.h)
+    hx, hy = b.x + c * vehicles.SEMI_HITCH, b.y + s * vehicles.SEMI_HITCH
+    La = vehicles.SEMI_AXLE
+    if b.tra is None:
+        th = b.trh if b.trh is not None else b.h
+        b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
+    dx, dy = hx - b.tra[0], hy - b.tra[1]
+    d = math.hypot(dx, dy)
+    if d < 1e-6 or abs(d - La) > 6.0:                # spawned / teleported / put back on its lane: start straight
+        th = b.h
+    else:
+        th = math.atan2(dy, dx)
+        dh = (b.h - th + math.pi) % math.tau - math.pi
+        if abs(dh) > vehicles.SEMI_JACK:
+            th = b.h - math.copysign(vehicles.SEMI_JACK, dh)
+    b.trh = th
+    b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
+
+
 def drive(p, throttle, steer_in, handbrake, dt, world):
     VMAX, ACC, STEER, GRIP, _M = vehicles.PERF[p.kind]
     if p.player_car:                                   # the chosen hero's driving skill: top speed and pull-away
@@ -138,7 +161,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         throttle, steer_in, handbrake = 0.0, 0.0, True
     BRAKE, REV = 22.0 + ACC, 9.0
     L_ = vehicles.DIMS[p.kind][0]
-    wb = L_ * 0.62 if L_ < 6 else 3.7 + (L_ - 6) * 0.35   # long vehicles: wheelbase, not length (articulated / rear-axle steer)
+    semi = p.kind == vehicles.SEMI
+    wb = vehicles.SEMI_WB if semi else L_ * 0.62 if L_ < 6 else 3.7 + (L_ - 6) * 0.35   # long vehicles: wheelbase, not length; a semi: the tractor's own
     dmg = 1.0 if p.health > 35 else 0.7           # a wrecked engine is slower
     fx, fy = math.cos(p.h), math.sin(p.h)
     vf = p.vx * fx + p.vy * fy
@@ -153,7 +177,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         p.h += om * dt
     # the car turns about its rear axle (the front wheels steer): its middle, a little ahead of that, moves sideways into
     # the turn as it yaws -- without this it pivoted about its middle and the tail swung out as if the rear wheels steered
-    vk = 0.0 if handbrake else om * L_ * (0.31 if L_ < 11 else 0.33)
+    vk = 0.0 if handbrake else -om * vehicles.SEMI_REAR if semi else om * L_ * (0.31 if L_ < 11 else 0.33)   # semi: the rig centre is behind the tractor's rear tandem
     fx, fy = math.cos(p.h), math.sin(p.h)
     rx, ry = -fy, fx
     vf = p.vx * fx + p.vy * fy
@@ -190,12 +214,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     p.vx, p.vy = fx * vf + rx * vl, fy * vf + ry * vl
     p.x += p.vx * dt
     p.y += p.vy * dt
-    if p.kind == vehicles.SEMI:                       # kingpin trailer: yaws towards the tractor at v / axle-distance; jackknifes up to ~80 deg
-        dh = (p.h - p.trh + math.pi) % math.tau - math.pi if p.trh is not None else 0.0
-        if p.trh is None or abs(dh) > 1.4:
-            p.trh = p.h
-        else:
-            p.trh += abs(vf) * dt / vehicles.SEMI_AXLE * math.sin(dh) * (1.0 if vf >= 0 else -1.0)
+    if semi:
+        tow(p)
 
 
 def settle(b, w, dt, ev=None):
@@ -1213,7 +1233,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
@@ -1242,6 +1262,7 @@ class Car:
         self.dwell = None          # seconds left standing at it (None: not there yet)
         self.stn_t = 0.0           # give up on the visit after this long
         self.trh = None            # semi: heading of the trailer, which follows the tractor round bends (None: straight behind)
+        self.tra = None            # semi: the trailer's axle group (x, y), see tow()
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -1824,6 +1845,7 @@ class Traffic:
         b = Body(c.x, c.y, c.h, c.kind, c.color)
         b.vx, b.vy = math.cos(c.h) * c.v, math.sin(c.h) * c.v
         b.az = c.gz
+        b.trh, b.tra = c.trh, c.tra                    # a hijacked semi keeps its trailer's angle
         return b
 
     def update(self, dt, fx, fy, bodies, peds, walker=None):
@@ -1914,7 +1936,7 @@ class Traffic:
             red_rem = self._red_rem(c, L, sg)
             if red_rem is not None and -2.5 < red_rem < 45.0:
                 vlim = min(vlim, math.sqrt(2 * 2.6 * max(red_rem - 1.0, 0.0)))     # eases off early and stops a metre short of the line
-            wb = vehicles.DIMS[c.kind][0] * 0.6
+            wb = vehicles.SEMI_WB if c.kind == vehicles.SEMI else vehicles.DIMS[c.kind][0] * 0.6
             la = 3.0 + c.v * 0.55
             tx, ty, _th = self._target(c, e, la)
             err = (math.atan2(ty - c.y, tx - c.x) - c.h + math.pi) % (2 * math.pi) - math.pi
@@ -2055,12 +2077,8 @@ class Traffic:
                 kk = min(1.0, dt * 8) if dt != dt0 else min(1.0, dt * 16)
                 c.pitch += (pt - c.pitch) * kk
                 c.roll += (rl_ - c.roll) * kk
-            if c.kind == vehicles.SEMI:                           # kingpin trailer: yaws towards the tractor's heading at v / axle-distance
-                dh = (c.h - c.trh + math.pi) % math.tau - math.pi if c.trh is not None else 0.0
-                if c.trh is None or abs(dh) > 1.2:
-                    c.trh = c.h
-                else:
-                    c.trh += abs(c.v) * dt / vehicles.SEMI_AXLE * math.sin(dh)
+            if c.kind == vehicles.SEMI:                           # kingpin trailer dragged along the fifth wheel's path
+                tow(c)
             keep.append(c)
         self.cars = [c for c in keep if self._d2(c.x, c.y, fx, fy) < 460 ** 2]
         dt = dt0

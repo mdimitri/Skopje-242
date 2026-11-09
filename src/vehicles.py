@@ -126,6 +126,9 @@ SEMI_SHIFT = DIMS[SEMI][0] / 2 - SEMI_TRACTOR_L / 2           # tractor model ce
 SEMI_HITCH = SEMI_SHIFT - 1.8                                 # fifth wheel / kingpin, ahead of the rig centre (m)
 SEMI_TRAILER_L = DIMS[SEMI][0] / 2 + SEMI_HITCH               # kingpin to the trailer's tail
 SEMI_AXLE = SEMI_TRAILER_L - 2.6                              # kingpin to the trailer's axle group
+SEMI_REAR = SEMI_SHIFT - SEMI_TRACTOR_L * 0.29                # the tractor's rear tandem (its pivot), ahead of the rig centre (m)
+SEMI_WB = SEMI_SHIFT + SEMI_TRACTOR_L * 0.36 - SEMI_REAR      # the tractor's own wheelbase, front axle to rear tandem (~4.2 m)
+SEMI_JACK = 1.45                                              # articulation stop: the trailer's nose hits the cab at ~83 deg
 HEAVY_W = [5, 3, 2]                                                                       # share of the heavy traffic
 LARGE = [d[0] >= 6.4 for d in DIMS]                           # need a wide road
 _SPEED = {"truck": 0.75, "tractor": 0.45, "bus": 0.8, "limo": 0.7}
@@ -313,7 +316,7 @@ _PERF_NAME = {
     "Range Rover Ortak": (46, 12), "Policiska Skoda": (48, 16, 0.66, 10.5), "Brza Pomosh": (40, 11), "Smart Sitnichka": (27, 7, 0.9),
     "Moped Tomos": (17, 7.5, 0.90, 8.5, 0.3), "Glovo Skuter": (21, 9, 0.90, 9.0, 0.35), "E-Trotinet": (11, 6, 0.95, 8.0, 0.2),
     "Lada Niva": (32, 9, 0.6, 10), "Land Cruiser Lovec": (40, 10), "Pajak Vlechna Sluzhba": (34, 9),
-    "Maritsa": (38, 8.5, 0.54, 9.0, 2.0), "Tir Rinfuz": (24, 4.0, 0.52, 8.0, 7.0), "Cisterna Gorivo": (24, 4.5, 0.55, 8.0, 6.0),
+    "Maritsa": (38, 8.5, 0.54, 9.0, 2.0), "Tir Rinfuz": (24, 4.0, 0.62, 8.0, 7.0), "Cisterna Gorivo": (24, 4.5, 0.55, 8.0, 6.0),
 }
 PERF = []
 for _i, _v in enumerate(_V):
