@@ -925,8 +925,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             cfg.save()
             return "play"
-        if settings_only and music is not None and x0 - 24 - 110 > 60:      # beside the panel, if there is room
-            music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 110))
+        if settings_only and music is not None and x0 - 24 - 150 > 60:      # beside the panel, if there is room
+            music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 150))
         font.exit_button()
         if x0 - 24 >= 80:
             font.draw_version(W, H)

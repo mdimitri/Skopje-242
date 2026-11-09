@@ -62,6 +62,8 @@ class LoadMusic:
         self.files = []
         self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
         self.pos = -1                 # index in hist of the song playing now
+        self.paused = False
+        self.stopped = False          # ■ pressed: silence until ▶ / the play button
         self.swap = False             # a ◀ / ▶ press is waiting for its song; the old one keeps playing until it is ready
         self.want = None              # index in hist being decoded after a ◀ / ▶ press (so quick double presses keep going)
         self.title = ""
@@ -112,6 +114,8 @@ class LoadMusic:
         if not self.ok:
             return
         try:
+            if self.stopped or (self.paused and not self.swap):
+                return
             if self.snd is not None and rl.is_sound_playing(self.snd) and not self.swap:
                 return
             if self.job is None:
@@ -130,6 +134,7 @@ class LoadMusic:
                 self._next()
                 return
             self.swap = False
+            self.paused = False
             self._drop()
             if job["ok"]:
                 rl.set_sound_volume(self.static, 0.2 * self.volume)
@@ -162,6 +167,8 @@ class LoadMusic:
         if not self.ok:
             return
         try:
+            if self.stopped:
+                self.stopped = False                             # ◀ / ▶ after ■ starts music again
             cur = self.want if self.want is not None else self.pos
             idx = cur + (-1 if back else 1)
             if back and idx < 0:
@@ -182,30 +189,74 @@ class LoadMusic:
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
+    def toggle(self):
+        """Pause / resume (after ■ it starts a new song)."""
+        if not self.ok:
+            return
+        try:
+            if self.stopped:
+                self.stopped = False
+                if self.job is None:
+                    self._next()
+            elif self.paused:
+                self.paused = False
+                if self.snd is not None:
+                    rl.resume_sound(self.snd)
+            elif self.snd is not None:
+                self.paused = True
+                rl.pause_sound(self.snd)
+        except Exception as e:  # noqa: BLE001
+            print(f"[loadmusic] off: {e}", flush=True)
+            self.ok = False
+
+    def stop(self):
+        """■: kill the music until the player asks for it again."""
+        if not self.ok:
+            return
+        self.stopped, self.paused, self.swap, self.want = True, False, False, None
+        self._drop()
+        self.title = ""
+
     def widget(self, x=12, y=10, keys=True, room=360):
         """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
         if not self.ok:
             return
         sz = 27
         b = 30
-        name = font.fit(self.title or "…", sz, max(40, room), "cond")
+        name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, room - 2 * (b + 4)), "cond")
         tw = font.measure_text(name, sz, "cond")
-        w = b * 2 + tw + 30
+        lw = 3 * (b + 4)                                         # ◀  ❚❚  ■ on the left, ▶ on the right
+        w = lw + b + 4 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
         m = rl.get_mouse_position()
         click = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)
-        for k, bx in ((0, x + 4), (1, x + w - b - 4)):
+        tip = None
+        for k, bx in ((0, x + 4), (1, x + 4 + b + 4), (2, x + 4 + 2 * (b + 4)), (3, x + w - b - 4)):
             by = y + 4
             over = bx <= m.x < bx + b and by <= m.y < by + b
             rl.draw_rectangle(bx, by, b, b, PINK if over else rl.Color(60, 40, 70, 230))
             cx, cy, r = bx + b / 2, by + b / 2, b * 0.28
             if k == 0:
                 rl.draw_triangle(rl.Vector2(cx + r, cy - r), rl.Vector2(cx - r, cy), rl.Vector2(cx + r, cy + r), rl.WHITE)
+            elif k == 1:
+                if self.paused or self.stopped:                  # shows what a click does: resume
+                    rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
+                else:
+                    rl.draw_rectangle(int(cx - r), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
+                    rl.draw_rectangle(int(cx + r * 0.3), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
+            elif k == 2:
+                rl.draw_rectangle(int(cx - r), int(cy - r), int(2 * r), int(2 * r), rl.WHITE)
             else:
                 rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
-            if over and click:
-                self.skip(back=k == 0)
-        font.draw_text(name, x + b + 15, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
+            if over:
+                tip = (bx, ("Претходна", "Продолжи" if (self.paused or self.stopped) else "Пауза", "Стоп", "Следна")[k])
+                if click:
+                    (lambda: self.skip(back=True), self.toggle, self.stop, self.skip)[k]()
+        if tip:
+            tx = font.measure_text(tip[1], 20, "cond")
+            rl.draw_rectangle(tip[0], y + b + 10, tx + 12, 26, rl.Color(10, 8, 16, 220))
+            font.draw_text(tip[1], tip[0] + 6, y + b + 12, 20, rl.WHITE, bold="cond")
+        font.draw_text(name, x + lw + 12, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
         if not keys:                                             # (screens where the arrows already move the selection)
             return
         if rl.is_key_pressed(rl.KEY_LEFT):
