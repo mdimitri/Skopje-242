@@ -443,12 +443,7 @@ class Renderer:
         rl.rl_disable_depth_mask()
         rl.rl_begin(rl.RL_QUADS)
         L = self.sun if self.sun is not None else gl3d.SUN
-        ox, oz = -0.8 * L[0] / L[1], -0.8 * L[2] / L[1]                # the contact shadow of a ~0.8 m body falls away from the sun
-        n = math.hypot(ox, oz)
-        if n > 2.5:
-            ox, oz = ox * 2.5 / n, oz * 2.5 / n
-        k = self.sun_k
-        ox, oz = ox * k, oz * k                           # no sun: the contact shadow sits right under the body
+        k = self.sun_k                                    # no sun: the contact shadow sits right under the body
         sl = math.hypot(L[0], L[2]) / L[1] if L[1] > 1e-6 else 3.0         # shadow length per metre of height
         dn = (-L[0] / (math.hypot(L[0], L[2]) or 1.0), -L[2] / (math.hypot(L[0], L[2]) or 1.0))
         for x, z, h, hl, hw, a, gy in items:
@@ -460,9 +455,15 @@ class Renderer:
                 if a <= 0:
                     continue
             else:
-                x += ox
-                z += oz
                 a = int(a * (0.4 + 0.6 * k))                # at night only a faint contact patch remains
+                ln = min(3.5, 1.4 * sl) * k                 # vehicle ~1.4 m tall: the shadow grows out of the footprint, away from the sun
+                if ln > 0.05:
+                    da = math.atan2(dn[1], dn[0]) - h
+                    c, s = abs(math.cos(da)), abs(math.sin(da))
+                    e, w = hl * c + hw * s, hl * s + hw * c          # footprint extent along / across the shadow direction
+                    x += dn[0] * ln / 2
+                    z += dn[1] * ln / 2
+                    h, hl, hw = math.atan2(dn[1], dn[0]), e + ln / 2, w
             ca, sa = math.cos(h), math.sin(h)
             rl.rl_color4ub(10, 10, 20, a)
             for sx, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
