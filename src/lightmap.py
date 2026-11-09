@@ -15,7 +15,7 @@ GRID = 28                        # the overlay is a GRID x GRID mesh draped over
 LIFT = 0.28                      # metres above the ground: above the 0.16 m pavements
 WIN_R = 90.0                     # windows glow within this distance of the view centre (top-down); STREET_WIN_R in street view
 STREET_WIN_R = 190.0             # the street view sees far down the street: all those facades get lit windows too
-SKIP_MATS = (3,)                 # road surface meshes have no windows
+SKIP_MATS = (3, 6)               # road surface meshes and graffiti decals have no windows (the decal's transparent texels would glow as a lit pane)
 
 WIN_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
