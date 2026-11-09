@@ -202,7 +202,7 @@ def exit_button(x=None, y=10):
 
 
 def draw_version(W, H):
-    """Small major.minor version label in the top centre (splash and menus)."""
+    """Small major.minor version label, top left right under the music selector (splash and menus)."""
     from updater import GAME_VERSION
     vt = "v" + GAME_VERSION
-    draw_text(vt, (W - measure_text(vt, 18, "cond")) // 2, 4, 18, rl.Color(232, 226, 232, 200), bold="cond")
+    draw_text(vt, 14, 52, 18, rl.Color(232, 226, 232, 200), bold="cond")
