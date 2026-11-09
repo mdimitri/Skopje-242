@@ -143,17 +143,26 @@ def install(sha, prog):
 
 
 def _screen(lines, bar=None):
+    """Progress / error screen in the same comic panel as the update question."""
+    import menu
+    th = menu._th
     w, h = rl.get_screen_width(), rl.get_screen_height()
+    pw, ph = min(w - 40, 880), 300
+    px, py = (w - pw) // 2, (h - ph) // 2
     rl.begin_drawing()
-    rl.clear_background(rl.Color(18, 20, 26, 255))
-    y = h // 2 - 70
-    for text, size, col in lines:
-        font.draw_text(text, w // 2 - int(len(text) * size * 0.28), y, size, col)
-        y += size + 22
+    rl.clear_background(th["paper"])
+    menu._panel(px, py, pw, ph)
+    y = py + 34
+    for i, (text, size, _c) in enumerate(lines):
+        col = th["fg"] if i == 0 else th["mu"]
+        font.draw_text(text, px + (pw - font.measure_text(text, size, "cond")) // 2, y, size, col, bold="cond")
+        y += size + 30
     if bar is not None:
-        bw = min(480, w - 80)
-        rl.draw_rectangle(w // 2 - bw // 2, y + 10, bw, 10, rl.Color(50, 54, 64, 255))
-        rl.draw_rectangle(w // 2 - bw // 2, y + 10, int(bw * bar), 10, rl.Color(120, 200, 120, 255))
+        bw = pw - 80
+        bx, by = px + 40, py + ph - 70
+        rl.draw_rectangle(bx, by, bw, 28, th["p2"])
+        menu._skew(bx, by, max(2, int(bw * bar)), 28, -8, th["a1"])
+        rl.draw_rectangle_lines_ex(rl.Rectangle(bx, by, bw, 28), 3, th["ink"])
     rl.end_drawing()
 
 
