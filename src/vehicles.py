@@ -141,8 +141,8 @@ def _circ(L, W):
 
 
 CIRC = {i: _circ(d[0], d[1]) for i, d in enumerate(DIMS)}
-HALF_L = [d[0] / 2 + 0.25 for d in DIMS]                       # following distance / shadows
-HALF_W = [d[1] / 2 + 0.1 for d in DIMS]
+HALF_L = [d[0] / 2 for d in DIMS]                              # the body itself, no padding: what fits physically may pass
+HALF_W = [d[1] / 2 for d in DIMS]
 TRAFFIC_W = [v[5] for v in _V]
 PARKED_KINDS = [i for i in range(N) if not LARGE[i] and STYLE[i] != "tractor" for _ in range(_V[i][5])]
 N_COLORS = 16

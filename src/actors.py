@@ -1295,11 +1295,12 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
         self.stuck = 0.0
+        self.sqz = 0.0             # > 0: squeezing past whatever held it up (seconds left)
         self.ghost = 0.0
         self.braking = False
         self.gz = 0.0
@@ -1542,6 +1543,10 @@ class Traffic:
         self._set_lane(c, self.w.edges[c.e])
         return True
 
+    SQUEEZE = 0.10                   # a car held up for a while may slip past another with their bodies overlapping by up to this share of the narrower one's width
+    SQUEEZE_T = 5.0                  # seconds it keeps squeezing once it gets going (at walking pace, SQUEEZE_V)
+    SQUEEZE_V = 3.0
+
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2):
         """Gap to the nearest thing in front of car c (or, moved by (ox, oy) / turned round, where it could go); the thing
         itself is left in self.lead."""
@@ -1555,6 +1560,7 @@ class Traffic:
         bx_, by_ = cx + hx * min(back, 0.0), cy + hy * min(back, 0.0)
         ch_ = c.h
         hwc, hlc = vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind]
+        sq = c.sqz > 0                                            # held up for a while: may brush past another car (see SQUEEZE)
         cos, sin = math.cos, math.sin
         hash_get = self.hash.get
         for ix in range(int((min(bx_, ex) - 8.0) // 16), int((max(bx_, ex) + 8.0) // 16) + 1):
@@ -1571,10 +1577,11 @@ class Traffic:
                             continue
                         hl = o[3]
                     else:                                             # the other car's box, seen from this car's heading:
-                        if fwd < back or lat > (o[2] + o[3] + hwc) * 1.1:     # (cheap rejects before the trig: the box is never wider)
+                        if fwd < back or lat > o[2] + o[3] + hwc:             # (cheap rejects before the trig: the box is never wider)
                             continue
                         ca, sa = abs(cos(oh - ch_)), abs(sin(oh - ch_))
-                        if lat > (ca * o[2] + sa * o[3] + hwc) * 1.1:     # both widths + 10 % spare: no grazing (a car crossing sideways is wide)
+                        tol = self.SQUEEZE * 2.0 * min(hwc, o[2]) if sq and ca > 0.94 and type(o[4]) is Car else 0.0     # only alongside (within 20 degrees), not across
+                        if lat > ca * o[2] + sa * o[3] + hwc - tol:       # the bodies themselves, no spare: what fits may pass (a car crossing sideways is wide)
                             continue
                         hl = ca * o[3] + sa * o[2]
                     gap = fwd - hlc - hl
@@ -1602,7 +1609,7 @@ class Traffic:
 
     def _cross(self, c, horizon=3.5):
         """Look along the line of motion of everything moving nearby: if a crossing vehicle and car c would meet (their
-        boxes, widths + 10 %, overlapping at the moment of closest approach within `horizon` s), the distance c may still
+        boxes overlapping at the moment of closest approach within `horizon` s), the distance c may still
         drive before that point, else None.  Priority to the right; the player, sirens and buses are always let by."""
         v = c.v
         hx, hy = math.cos(c.h), math.sin(c.h)
@@ -1640,7 +1647,7 @@ class Traffic:
                     sa = abs(math.sin(o[5] - c.h))
                     hw = abs(ch) * o[2] + sa * o[3]
                     hl = abs(ch) * o[3] + sa * o[2]
-                    if abs(-px * hy + py * hx) < (hwc + hw) * 1.1 and abs(px * hx + py * hy) < (hlc + hl) * 1.1 + 0.5:
+                    if abs(-px * hy + py * hx) < hwc + hw and abs(px * hx + py * hy) < hlc + hl + 0.5:
                         g = v * t - hlc
                         if best is None or g < best:
                             best = g
@@ -1747,14 +1754,17 @@ class Traffic:
                     tmin = -e["w"] / 4 if self._free(c, -e["w"] / 4 - base, 30.0) else hwc - 0.6
                     tmax = e["w"] / 2 - hwc - 0.1 + ext
                 dlo, dhi = tmin - base, tmax - base               # sideways moves that stay on the road (or its kerb)
-                need = [(lat, hwc + wid + m) for lat, wid, _g in obs]
-                cands = [0.0, dlo, dhi]
-                for lat, r in need:
-                    cands += [lat - r - 0.02, lat + r + 0.02]
-                best = None
-                for d_ in cands:
-                    if dlo - 1e-6 <= d_ <= dhi + 1e-6 and all(abs(lat - d_) >= r - 0.01 for lat, r in need) and (best is None or abs(d_) < abs(best)):
-                        best = d_
+                for m in (m, 0.0):                                # with some spare room if there is any, else body to body: what fits may pass
+                    need = [(lat, hwc + wid + m) for lat, wid, _g in obs]
+                    cands = [0.0, dlo, dhi]
+                    for lat, r in need:
+                        cands += [lat - r - 0.02, lat + r + 0.02]
+                    best = None
+                    for d_ in cands:
+                        if dlo - 1e-6 <= d_ <= dhi + 1e-6 and all(abs(lat - d_) >= r - 0.01 for lat, r in need) and (best is None or abs(d_) < abs(best)):
+                            best = d_
+                    if best is not None:
+                        break
                 block = [g for lat, wid, g in obs if abs(lat) < hwc + wid + m]
                 gap0 = min(block) if block else min(g for _l, _w, g in obs)
                 if best is None:                                  # no room to get round it: stop short
@@ -1764,7 +1774,7 @@ class Traffic:
                     tgt = c.avoid + best
                     if abs(best) > 0.25:                          # the swerve has not caught up yet: don't drive at the obstacle meanwhile
                         vlim = min(vlim, max(0.0, (gap0 - 1.5) * 0.7))
-                vlim = min(vlim, 3.0 if tight else 7.0)
+                vlim = min(vlim, 3.0 if tight or m == 0.0 else 7.0)
         c.avoid += max(-1.5 * dt, min(1.5 * dt, tgt - c.avoid))
         ytgt = 0.0
         for b in ems:
@@ -1916,19 +1926,19 @@ class Traffic:
         for c in self.cars:
             if c.kind == vehicles.SEMI:                       # the tractor and the (bent) trailer as two boxes
                 for x_, y_, h_, l_, w_ in parts(c):
-                    h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, c, h_))
+                    h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_, l_, c, h_))
                 continue
             h.setdefault((int(c.x // 16), int(c.y // 16)), []).append((c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c, c.h))
         ph, ems = {}, []                                      # kerb-parked cars (for swerving) and emergency vehicles
         for b in bodies:
             if b.speed < 0.3 and not b.air:                     # standing cars (parked, wrecks, abandoned): drive round them
                 for x_, y_, h_, l_, w_ in parts(b):
-                    ph.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, h_))
+                    ph.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_, l_, h_))
                 continue
             if b.service and not b.out:
                 ems.append(b)
             for x_, y_, h_, l_, w_ in parts(b):
-                h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_ + 0.1, l_ + 0.25, b, h_))
+                h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_, l_, b, h_))
         for p in peds:
             if p.mode in ("walk", "flee", "rage", "brawl"):
                 h.setdefault((int(p.x // 16), int(p.y // 16)), []).append((p.x, p.y, 1.7, 0.4, p, None))
@@ -2040,6 +2050,9 @@ class Traffic:
             if bgap is not None and (gap is None or bgap < gap):
                 gap, lead = bgap, None                           # a standing car it can't get round counts as a blocker
             c.blk = lead if gap is not None and gap < 3.0 else None
+            if c.sqz > 0:                                        # squeezing past: slowly, the bodies may brush
+                c.sqz -= dt
+                vlim = min(vlim, self.SQUEEZE_V)
             if c.stn is not None and self.stn is not None:
                 vlim, waiting = self.stn.drive(c, e, vlim, dt)
                 if waiting:
@@ -2075,6 +2088,8 @@ class Traffic:
                 c.stuck += dt
             elif c.v > 1.0:                                       # creeping a metre at a time is still being stuck
                 c.stuck = 0.0
+            if c.stuck > self.WAIT[ag] and not at_red:
+                c.sqz = self.SQUEEZE_T                            # held up long enough: from now on it squeezes through what it can
             if c.stuck > 3.0 and c.ghost <= 0 and gap is not None and gap < 0.0 and isinstance(lead, Car) and lead.v < 0.3 and not at_red:
                 c.ghost, c.stuck = 4.0, 0.0                       # two standing cars sit inside each other: neither can ever back out, so slip apart now
             if c.stuck > 5.0 and c.v < 0.5 and not at_red:
