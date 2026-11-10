@@ -91,7 +91,7 @@ class Net:
                 self.send_rel(a, obj)
 
     def broadcast_unrel(self, data):
-        for a, p in self.peers.items():
+        for a, p in list(self.peers.items()):      # list(): the notice-board thread adds peers (mp.Session._on_mqtt)
             if p.up:
                 self.send_unrel(a, data)
 
