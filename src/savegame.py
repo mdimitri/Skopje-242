@@ -41,7 +41,7 @@ def read(n):
     try:
         with open(_path(n), "r", encoding="utf-8") as f:
             d = json.load(f)
-        return d if d.get("v") == VERSION else None
+        return d if d.get("v") == VERSION and all(k in d for k in ("t", "lik", "money", "hour", "mode", "car")) else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -70,6 +70,8 @@ def restore(sim, cfg, d):
         sim.pickups = [list(p) for p in d["pickups"]]
     for b in sim.bodies:
         b.player_car = False
+    sim.jack = sim.riding = sim.train_ride = None          # a load in the middle of a carjack or a bus / train ride
+    sim.respawn_t = 0.0
     c = sim.car
     s = d["car"]
     c.x, c.y, c.h, c.vx, c.vy, c.w = s["x"], s["y"], s["h"], 0.0, 0.0, 0.0
