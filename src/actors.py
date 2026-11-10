@@ -2927,7 +2927,9 @@ class Sim:
                     wk.update(dt, inp["move"][0], inp["move"][1] * 0.5, False, w, False)      # crawling: half speed, no running or jumping
                     wk.anim += abs(inp["move"][1]) * dt * 1.2
                 else:
-                    wk.update(dt, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
+                    n_ = 2 if dt > 0.03 else 1                 # under ~33 fps a running step is longer than the body is wide:
+                    for _ in range(n_):                        # two half steps, or the walker passes straight through walls
+                        wk.update(dt / n_, inp["move"][0], inp["move"][1], inp["run"], w, inp.get("jump", False))
                 if inp.get("attack"):
                     self.attack()
                 if inp.get("buy") is not None:
