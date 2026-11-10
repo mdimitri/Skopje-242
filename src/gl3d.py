@@ -935,6 +935,7 @@ def _finish_arrays(parts, dents, burnt, belt):
     pos = np.concatenate([p[0] for p in parts])
     col = np.concatenate([p[1] for p in parts]).astype(np.float32)
     deform = np.concatenate([np.full(len(p[0]), p[2]) for p in parts])
+    pos0 = pos.copy() if dents else pos
     for (lx, lz, nx, nz, mag) in dents:
         d = np.hypot(pos[:, 0] - lx, pos[:, 2] - lz)
         rad = 0.9 + mag * 1.6
@@ -945,6 +946,10 @@ def _finish_arrays(parts, dents, burnt, belt):
         pos[:, 1] -= 0.10 * mag * f * (pos[:, 1] > belt - 0.2)
         col *= (1 - 0.45 * np.clip(f * mag * 2.2, 0, 1))[:, None]
         col[(f > 0.35), 0] += 18
+    if dents:                                         # many hits on one spot (a wreck traffic keeps running into) pushed a panel
+        for ax, k in ((0, 0.22), (2, 0.30)):          # through the cabin and out the far side: crumple at most this share of the car
+            lim = k * (pos0[:, ax].max() - pos0[:, ax].min())
+            np.clip(pos[:, ax], pos0[:, ax] - lim, pos0[:, ax] + lim, out=pos[:, ax])
     if burnt > 0:
         col = col * (1 - 0.8 * burnt) + 14 * burnt
     col = np.clip(col, 0, 255)
