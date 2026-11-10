@@ -1243,7 +1243,6 @@ def main():
         if night:
             o = [(1.5 * tre, "bird_owl", "tree"), (0.8 * tre, "bird_owl_little", "tree"), (1.2 * par, "bird_nightingale", "park"), (1.5 * wat, "frog_croak", "water"),
                  (0.6 * town, "dog_pack_distant", None), (0.5 * town, "cat_fight", None), (0.6 * town, "cat_meow", None), (0.4, "dog_howl", None),
-                 (0.5 * open_, "siren_distant", None),
                  (0.3 * town, "tv_apartment", None), (0.3 * town, "window_open", None), (0.3 * town, "door_slam", None), (0.2 * town, "rat_squeak", None),
                  (0.15, "fireworks_distant", None), (0.15 * open_, "wind_gust", None)]
         else:
@@ -1539,8 +1538,6 @@ def main():
                 aud.play("horn", 0.12, rng.uniform(0.8, 1.1), "ambient")
             elif r_ < 0.65:
                 aud.play("bell", 0.25, rng.uniform(0.9, 1.1), "ambient")
-            elif r_ < 0.68 and sim.clock.dark < 0.5:                # a distant siren now and then, not every minute
-                aud.play("siren_police", 0.1, 1.0, "ambient")
 
     inp_last = {}
 
