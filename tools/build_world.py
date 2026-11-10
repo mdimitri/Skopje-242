@@ -1292,6 +1292,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(ROOT, "data", "osm"))
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "cache", "world"))
+    ap.add_argument("--allow-flat", action="store_true", help="build a flat city when terrain.npy is missing or for another box")
     a = ap.parse_args()
 
     if os.path.exists(os.path.join(a.src, "pbf", "country.osm.pbf")) and not os.path.exists(os.path.join(a.src, "bus_stops.json")):
@@ -1313,7 +1314,7 @@ def main():
         print(f"[build] terrain: {tfile} (range {float(T.g.min()):+.0f} .. {float(T.g.max()):+.0f} m)")
         real_terrain = True
     except Exception as ex:  # noqa: BLE001
-        if "--allow-flat" not in sys.argv:
+        if not a.allow_flat:
             raise SystemExit(f"[build] terrain missing or for another box ({ex}); run tools/fetch_terrain.py --force")
         print(f"[build] terrain: none ({ex}) - FLAT city (--allow-flat)")
         T = terrain_mod.flat(HX, HY)
