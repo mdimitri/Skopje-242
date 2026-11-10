@@ -1121,7 +1121,6 @@ def main():
                 popups.add(rng.choice(slang.EXPLODE), b.x, b.y, 4.5, 3.0, (255, 190, 80), 26)
             elif kind == "stolen":
                 b = d["body"]
-                aud.at("engine_start_diesel" if vehicles.ENGINE_SOUND[b.kind] in ("engine_diesel", "engine_bus", "engine_truck", "engine_tdi") else "engine_start", b.x, b.y, 0.7)
                 if rng.random() < 0.25:
                     aud.at("car_alarm", b.x, b.y, 0.6, 1.0, "sfx", 120.0, 12.0)
                 popups.add(TXT("main.0034"), b.x, b.y, 3.4, 2.0, (255, 255, 120), 22)
@@ -1132,7 +1131,6 @@ def main():
                 particles.emit("c", d["x"], d["y"], 0.3, 0, 0, 1.2, 8, 0.3, 0.6, (150, 140, 120), 1.0, 0.6, 0.5)
             elif kind == "enter":
                 b = d["body"]
-                aud.at("engine_start_diesel" if vehicles.ENGINE_SOUND[b.kind] in ("engine_diesel", "engine_bus", "engine_truck", "engine_tdi") else "engine_start", b.x, b.y, 0.7)
                 popups.add(b.name, b.x, b.y, 3.4, 1.8, (200, 240, 255), 20)
             elif kind == "walker_dead":
                 sim.stats["deaths"] += 1
@@ -1326,6 +1324,7 @@ def main():
     seeds = {"n": 0}
     eng_state = {}
     eng_gear = {}
+    eng_shift = {}
 
     def car_seed(b):
         """A number that stays with this one car (the same object, so also after you leave it and get back in): picks its engine recording and pitch."""
@@ -1334,8 +1333,6 @@ def main():
             seeds["n"] += 1
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
-
-    bang_t = [3.0]
 
     def engine_pitch(b, nm, fr, thr):
         """Revs follow the speed through five gears (rising, drop at each shift), a little higher under throttle, smoothed so shifts glide;
@@ -1350,14 +1347,19 @@ def main():
             if fr < 0.03:
                 tgt = 0.55 + 0.02 * math.sin(time.time() * 54) + 0.015 * math.sin(time.time() * 138)           # uneven idle
             if g != eng_gear.get(id(b), g):
-                tgt -= 0.15                                                                           # revs fall at each gear change
+                eng_shift[id(b)] = 0.3                                                                # clutch in: the revs fall for a moment at each gear change
+            sh_ = eng_shift.get(id(b), 0.0)
+            if sh_ > 0.0:
+                tgt = max(0.55, tgt - 0.5)
+                eng_shift[id(b)] = sh_ - 1 / 60
             eng_gear[id(b)] = g
         st = eng_state.get(id(b), tgt)
-        st += (tgt - st) * (0.25 if tgt > st else 0.08)                                              # revs climb faster than they fall
+        st += (tgt - st) * (0.12 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
         if len(eng_state) > 200:
             eng_state.clear()
             eng_gear.clear()
+            eng_shift.clear()
         return st * base
 
     LIGHT_ENGINES = ("engine_i4", "engine_small", "engine_v8", "engine_tdi", "engine_moto")
@@ -1401,15 +1403,10 @@ def main():
             prof = vehicles.ENGINE_SOUND[c.kind]
             thr_ = abs(inp_last.get("throttle", 0))
             hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
-            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 0.8 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
+            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
-            aud.loop("engine_misfire", 0.9 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
-            aud.loop("engine_knock", 0.9 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
-            if dmg_ > 0:
-                bang_t[0] -= 1 / 60
-                if bang_t[0] <= 0:
-                    aud.play("engine_bang", 0.35 + 0.65 * dmg_, 0.8 + random.random() * 0.4, "engine")
-                    bang_t[0] = random.uniform(2.5, 6.0) * (1.05 - dmg_) ** 2 + 0.25
+            aud.loop("engine_misfire", 1.3 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
+            aud.loop("engine_knock", 1.3 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
             aud.loop("screech", 0.35 if (c.slip > 3.0 and c.speed > 4) else 0.0, 0.9 + min(0.3, c.slip * 0.03), "sfx")
             hard_brake = inp_last.get("throttle", 0) < -0.5 and c.speed > 6
             aud.loop("screech", 0.12 if hard_brake else 0.0, 1.3, "sfx") if not (c.slip > 3.0 and c.speed > 4) else None   # brake squeal

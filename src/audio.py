@@ -83,13 +83,8 @@ def build():
     # damaged engine: rough chugging and heavy clunking built from the real recordings' spectra and pulse spacing (engine_synth.py), plus one-shot bangs
     S["engine_misfire"] = engine_synth.misfire_loop()
     S["engine_knock"] = engine_synth.knock_loop()
-    S["engine_start"] = engine_synth.start("i4", 3.2)
-    S["engine_start_diesel"] = engine_synth.start("diesel", 4.2, 8, True)
     S["engine_stall"] = engine_synth.stall("i4")
-    tb = _t(0.45)
-    bg = np.tanh((rng.standard_normal(len(tb)).astype(np.float32) * np.exp(-tb * 22) * 1.5 + np.sin(2 * np.pi * 95 * tb) * np.exp(-tb * 12) ) * 2.2)
-    S["engine_bang"] = bg / np.abs(bg).max() * 0.9
-    for nm in [n_ for n_ in S if n_.startswith("engine_") and n_ not in ("engine_start", "engine_start_diesel", "engine_stall", "engine_bang")]:
+    for nm in [n_ for n_ in S if n_.startswith("engine_") and n_ not in ("engine_stall",)]:
         S["ai_" + nm] = S[nm]                                                # traffic engines: own sound instance so the player's engine is not shared
     # horn
     t = _t(0.55)

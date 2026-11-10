@@ -152,27 +152,6 @@ def _env_ramp(n, pts):
     return np.interp(np.arange(n), xs, ys)
 
 
-def start(kind="i4", dur=3.2, seed=7, diesel=False):
-    """Starter cranking (ratcheting compression strokes, motor whirr), then the engine catches, overshoots and settles to idle."""
-    n = int(SR * dur)
-    rng = np.random.default_rng(seed)
-    t = np.arange(n) / SR
-    catch = 1.1 if not diesel else 1.9
-    crank_hz = 6.5 if not diesel else 4.2
-    rate = np.where(t < catch, crank_hz * 2.0, 0.0)
-    r_run = _env_ramp(n, [(0, 0), (catch, 0), (catch + 0.08, 1.0), (catch + 0.45, 1.65), (catch + 1.0, 1.0), (dur, 0.97)])
-    rate = rate + FIRE[kind] * r_run
-    eng = render(kind, np.maximum(rate, 1.0), n, seed, False, False)
-    eng *= _env_ramp(n, [(0, 0.5), (catch, 0.55), (catch + 0.06, 1.0), (dur, 1.0)])
-    # starter motor: buzzy whirr at ~130 Hz with brush noise, labouring on each compression stroke
-    ph = np.cumsum(np.full(n, 120.0) * (1 + 0.25 * np.sin(2 * np.pi * crank_hz * t))) / SR
-    whirr = (np.sin(2 * np.pi * ph) + 0.5 * np.sign(np.sin(2 * np.pi * ph * 3))) * 0.18
-    whirr += _noise_band(rng, n, 800, 4500) * 0.06
-    whirr *= (t < catch + 0.25) * np.minimum(1, t / 0.03) * np.where(t > catch, np.exp(-(t - catch) * 12), 1.0)
-    x = eng / (np.abs(eng).max() + 1e-9) * 0.75 + whirr
-    return (x / np.abs(x).max() * 0.6).astype(np.float32)
-
-
 def stall(kind="i4", dur=2.4, seed=11):
     """Cough and stall: lumpy slowing pulses with dropouts, a last half-hearted pop and silence."""
     n = int(SR * dur)
