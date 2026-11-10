@@ -518,7 +518,7 @@ def main():
         need["build"] = False                                          # out of date is fine: rebuilt only from the menu
     if a.rebuild or a.refresh:
         need["build"] = True
-    elif not a.test and not a.nomenu:                                  # always the title menu first; the world builds only on request
+    elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)
         menu_mod.WORLD["built"] = not unbuilt
         pre = menu_mod.run(cfg, lambda c: None, False, aud=aud, music=music)
         menu_mod.WORLD["built"] = True
