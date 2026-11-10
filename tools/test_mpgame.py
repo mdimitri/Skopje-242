@@ -157,5 +157,29 @@ assert gs.riding is not None and gs.mode == "car" and gs.car in gs.bodies
 assert hg.remote[1].get("body") is None and 1 not in hs.remote_foot
 gs.exit_car(); frames(10)
 assert gs.mode == "foot"
+# ---- 7. wire ids of cars / pedestrians that left the world are forgotten
+frames(int(11 / dt))
+live = {id(o) for o in hs.traffic.cars} | {id(o) for o in hs.peds.list} | {id(o) for o in hs.bodies}
+print("7 wire ids kept: %d, all alive: %s" % (len(hg.byid), all(id(o) in live for o in hg.byid.values())))
+frames(1)
+# ---- 8. a message from one guest for another guest is passed on by the host
+sent = []
+_route = hg._route; hg._route = lambda to, m: sent.append((to, m["t"]))
+for t in ("take", "claim", "dmg", "kill"):
+    hg._rel({"t": t, "to": 2}, addr=("127.0.0.1", 1))
+hg._route = _route
+print("8 host passes on:", sent); assert sent == [(2, "take"), (2, "claim"), (2, "dmg"), (2, "kill")]
 print("bytes: host tx %d rx %d" % (host.net.bytes_tx, host.net.bytes_rx))
+# ---- 9. the host leaves: the guest carries on alone with real traffic, nothing frozen
+assert gs.client
+nc = len(gs.traffic.cars)
+host.leave()
+for _ in range(60):
+    gs.update(dt, IDLE, 2); gg.update(dt); time.sleep(0.003)
+c0 = [(c.x, c.y) for c in gs.traffic.cars]
+for _ in range(90):
+    gs.update(dt, IDLE, 2); gg.update(dt)
+moved = sum(1 for c, q in zip(gs.traffic.cars, c0) if math.hypot(c.x - q[0], c.y - q[1]) > 0.5)
+print("9 host left: guest state %s, client %s, cars %d -> %d (%d moving), other players %d" % (g.state, gs.client, nc, len(gs.traffic.cars), moved, len(gg.remote)))
+assert g.state == "closed" and not gs.client and len(gs.traffic.cars) > 0 and moved > 0 and not gg.remote
 print("OK mpgame groups")

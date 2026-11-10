@@ -879,6 +879,8 @@ def main():
                 if d["hit"]:
                     particles.sparks(d["x"], d["y"], 5, 1.1)
                     shake = max(shake, 0.25)
+            elif kind == "mp_closed":
+                hud.set_banner(d["why"] or "Врската се прекина", 6.0)
             elif kind == "dog_bark":
                 aud.at("bark_" + "abcd"[d["voice"]], d["x"], d["y"], 1.0, d["pitch"], maxd=110.0, ref=16.0)
                 if d.get("text") and near(d["x"], d["y"], 30.0):

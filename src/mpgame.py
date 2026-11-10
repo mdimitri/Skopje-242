@@ -72,6 +72,8 @@ class Game:
         self.byid = {}                                    # authority: wire id -> object (to drop a car a follower stole)
         self.drop_body = None                             # the car I left standing (shared as a dropped car)
         self._gone_seen = set(sim.gone)
+        self.over = False                                 # the session closed under us (handled once in update)
+        self.t_ids = 0.0
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
@@ -94,7 +96,16 @@ class Game:
             i = self.ids[k] = self.next_id
             self.byid[i] = obj
             self.next_id = self.next_id % 65000 + 1
+            while self.next_id in self.byid:               # after the counter wraps: never hand out an id still in use
+                self.next_id = self.next_id % 65000 + 1
         return i
+
+    def _prune_ids(self):
+        """Forget the wire ids of cars / pedestrians / bodies that left the world (they were kept, and kept alive, for ever)."""
+        s = self.sim
+        live = {id(o) for o in s.traffic.cars} | {id(o) for o in s.peds.list} | {id(o) for o in s.bodies}
+        self.byid = {i: o for i, o in self.byid.items() if id(o) in live}
+        self.ids = {id(o): i for i, o in self.byid.items()}
 
     def _chunks(self, kind, entries, size, dst):
         per = (MAX_PKT - HDR.size) // size
@@ -148,6 +159,15 @@ class Game:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
                         self._drop_remote(pid)
+        if ses.state == "closed" and not self.over:                 # the host left / the line dropped: carry on alone, nothing frozen
+            self.over = True
+            for pid in list(self.remote):
+                self._drop_remote(pid)
+            if s.client:
+                self._to_authority()
+            s.traffic.extra = s.peds.extra = []
+            self._view()
+            s.ev("mp_closed", why=ses.error)
         if ses.state != "playing" and not (self.host and ses.state == "lobby"):
             return
         if not self.auth:
@@ -174,6 +194,9 @@ class Game:
                     self._send_to(f, pk)
             if self.host:
                 ses.net.broadcast_unrel(HDR.pack(K_WORLD, self.tick, 1, 0, ALL) + WORLD.pack(s.clock.hour))
+        if self.now - self.t_ids >= 10.0:
+            self.t_ids = self.now
+            self._prune_ids()
         self._apply_remote(dt)
         self._view()
         if s.client:
@@ -271,6 +294,11 @@ class Game:
         t = m.get("t")
         if m.get("all") and self.host and addr is not None:
             self.ses.net.broadcast_rel(m, skip=addr)                 # for everybody: pass it on
+        to = m.get("to")
+        if to is not None and to != self.pid:                        # for another player (take / claim / dmg / kill): the host passes it on
+            if self.host and addr is not None:
+                self._route(to, m)
+            return
         s = self.sim
         if t == "gone":
             i = m.get("i")
