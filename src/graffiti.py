@@ -209,6 +209,26 @@ def _clean(img):
 
 def build_atlas():
     """-> the atlas Texture2D (transparent background, trilinear, clamped)."""
+    cache = None
+    try:                                              # painting + cleaning takes ~2 s: keep the finished atlas, keyed by the texts and this file
+        import hashlib
+        import os
+        h = hashlib.md5(open(os.path.abspath(__file__), "rb").read())
+        for i in range(min(N_PIECES, COLS * ROWS)):
+            try:
+                h.update(TXT(f"graffiti.{i + 1:04d}").encode("utf-8"))
+            except Exception:  # noqa: BLE001
+                h.update(b"-")
+        d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache")
+        if os.path.isdir(d):
+            cache = os.path.join(d, "graffiti_" + h.hexdigest()[:16] + ".png")
+            if os.path.exists(cache):
+                img = rl.load_image(cache)
+                if img.width == CELL_W * COLS and img.height == CELL_H * ROWS:
+                    return _upload(img)
+                rl.unload_image(img)
+    except Exception:  # noqa: BLE001 - no cache: paint it
+        cache = None
     rng = random.Random(242)
     rt = rl.load_render_texture(CELL_W * COLS, CELL_H * ROWS)
     rl.begin_texture_mode(rt)
@@ -228,9 +248,22 @@ def build_atlas():
     img = rl.load_image_from_texture(rt.texture)
     rl.image_flip_vertical(img)
     img = _clean(img)
+    rl.unload_render_texture(rt)
+    if cache:
+        rl.export_image(img, cache + ".tmp.png")
+        try:
+            os.replace(cache + ".tmp.png", cache)
+            for f in os.listdir(os.path.dirname(cache)):               # atlases of older texts
+                if f.startswith("graffiti_") and f.endswith(".png") and f != os.path.basename(cache):
+                    os.remove(os.path.join(os.path.dirname(cache), f))
+        except OSError:
+            pass
+    return _upload(img)
+
+
+def _upload(img):
     tex = rl.load_texture_from_image(img)
     rl.unload_image(img)
-    rl.unload_render_texture(rt)
     rl.gen_texture_mipmaps(tex)
     rl.set_texture_filter(tex, rl.TEXTURE_FILTER_TRILINEAR)
     rl.set_texture_wrap(tex, rl.TEXTURE_WRAP_CLAMP)

@@ -111,12 +111,11 @@ class World:
         self.cgrid = g
         pg = {}
         th = self.th
-        nt = len(self.trees)
-        for k_, (x, y, r, _s) in enumerate(self.trees):
-            if k_ % 20000 == 0:
-                P(0.8 + 0.15 * k_ / max(nt, 1), "trees")
-            t = th(x, y)
-            pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.5 if r < 3.5 else 0.65, t - 1.0, t + 9.0))
+        P(0.8, "trees")
+        ta = np.array(self.trees, np.float64).reshape(-1, 4)
+        tt = self.th_v(ta[:, 0], ta[:, 1]).tolist()                       # all heights at once: th() per tree was most of this function's time
+        for (x, y, r, _s), t, cx, cy in zip(self.trees, tt, (ta[:, 0] // cg).astype(np.int64).tolist(), (ta[:, 1] // cg).astype(np.int64).tolist()):
+            pg.setdefault((cx, cy), []).append((x, y, 0.5 if r < 3.5 else 0.65, t - 1.0, t + 9.0))
         for x, y in self.lamps:
             t = th(x, y)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.22, t - 1.0, t + 6.5))
@@ -128,7 +127,7 @@ class World:
             lo, hi = (p[3], p[4]) if len(p) >= 5 else (th(x, y) - 1.0, th(x, y) + 2.4)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, r, lo, hi))
         self.pgrid = pg
-        self.trees = np.array(self.trees, np.float64).reshape(-1, 4)     # (x, y, radius, kind): half a million Python tuples become one 15 MB block
+        self.trees = ta                                                  # (x, y, radius, kind): half a million Python tuples become one 15 MB block
         self.broken, self.broken_ver = [], 0
         P(1.0, "collision ready")
 
