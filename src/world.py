@@ -40,7 +40,7 @@ def _read_with_progress(fn, progress, label, base, span):
             buf += b
             progress(base + span * 0.6 * len(buf) / max(size, 1), f"{label}: reading {len(buf) / 1e6:.0f}/{size / 1e6:.0f} MB")
     progress(base + span * 0.6, f"{label}: unpacking")
-    return pickle.loads(bytes(buf))
+    return pickle.loads(buf)                           # (bytes(buf) copied the whole file once more)
 
 
 class World:

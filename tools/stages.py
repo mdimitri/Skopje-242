@@ -352,13 +352,16 @@ def run(argv=None):
         t1 = time.time()
         phase("saving the stage")                         # snapshot of the stage for the next launch: big, so it reports too
         layer = {}
-        items_ = list(ns["mesh"].d.items())
-        for j_, (k, (P, U, C)) in enumerate(items_):
+        d_ = ns["mesh"].d
+        items_ = list(d_)
+        for j_, k in enumerate(items_):
             if j_ % 64 == 0:
                 frac(0.1 * j_ / max(1, len(items_)), "geometry")
+            P, U, C = d_.pop(k)                           # pop: the joined copy replaces the pieces instead of doubling the stage's geometry in memory
             layer[k] = (P[0] if len(P) == 1 else __import__("numpy").concatenate(P),
                         U[0] if len(U) == 1 else __import__("numpy").concatenate(U),
                         C[0] if len(C) == 1 else __import__("numpy").concatenate(C))
+            del P, U, C
         changed, gone = state.diff(ns, skip=("mesh",), lo=0.1, hi=0.5)
         mods = {}
         for m, attr in MODSTATE:
