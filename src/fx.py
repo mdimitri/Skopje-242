@@ -220,6 +220,7 @@ class Popups:
     def draw(self, cam, hide=None):
         """hide: (x, z) of the player's car in the street view: no bubbles on or right round it."""
         p, q = cam.position, cam.target
+        used = []                                     # boxes drawn this frame: a bubble that would cover one moves up above it
         for text, x, y, z, ttl, ttl0, col, size, _o, _h in self.items:
             if (x - p.x) * (q.x - p.x) + (y - p.y) * (q.y - p.y) + (z - p.z) * (q.z - p.z) <= 0:
                 continue                          # behind the camera
@@ -229,6 +230,12 @@ class Popups:
             a = int(255 * min(1.0, ttl / 0.5, (ttl0 - ttl) / 0.12 + 0.2))
             w = font.measure_text(text, size)
             px, py = int(sp.x - w / 2), int(sp.y)
+            for _ in range(4):
+                hit = next((u for u in used if px < u[0] + u[2] and u[0] < px + w + 16 and py < u[1] + u[3] and u[1] < py + size + 10), None)
+                if hit is None:
+                    break
+                py = hit[1] - size - 14
+            used.append((px, py, w + 16, size + 10))
             rl.draw_rectangle_rounded(rl.Rectangle(px - 8, py - 5, w + 16, size + 10), 0.4, 6, rl.Color(20, 20, 24, int(a * 0.72)))
             font.draw_text(text, px, py, size, rl.Color(col[0], col[1], col[2], a))
 

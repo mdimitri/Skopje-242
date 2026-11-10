@@ -220,6 +220,7 @@ class Hud:
 
     def set_place(self, name, line, secs=5.0):
         self.place = (name, line, max(secs * 1.3, 1.6 + len(line or name) * 0.075))
+        self.place_t0 = self.place[2]
 
     def update(self, dt):
         t, s = self.banner
@@ -359,7 +360,8 @@ class Hud:
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
                 self._big((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 138, 26, rl.Color(255, 255, 255, 245))
-                self._big(font.fit(gun, 24, 250), sw - 260, sh - 232, 24, rl.Color(255, 230, 140, 255))
+                gsz = 24 if font.measure_text(gun, 24) <= 250 else 19      # the long names + key hint were cut off ("[T...")
+                self._big(font.fit(gun, gsz, 250), sw - 260, sh - 232 + (24 - gsz), gsz, rl.Color(255, 230, 140, 255))
                 self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
@@ -387,7 +389,7 @@ class Hud:
             font.draw_text(t, sw // 2 - wpx // 2, int(sh * 0.2), bs, rl.Color(255, 230, 90, a))
         pn, pl, ps = self.place
         if ps > 0:
-            a = int(255 * min(1.0, ps / 0.6, (5.0 - ps) / 0.4 + 0.01))
+            a = int(255 * min(1.0, ps / 0.6, (self.place_t0 - ps) / 0.4 + 0.01))    # (was 5.0 - ps: invisible while more than 5 s were left)
             a = max(0, min(255, a))
             wn, wl = font.measure_text(pn, 34), font.measure_text(pl, 20)
             bw = max(wn, wl) + 40
