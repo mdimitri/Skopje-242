@@ -1,0 +1,3411 @@
+{
+ "area": "Novo Lisice, Skopje",
+ "center": {
+  "lat": 41.9843691,
+  "lon": 21.4768374
+ },
+ "radius_m": 1100.0,
+ "heading_note": "degrees clockwise from north, camera looks at facade_mid",
+ "points": [
+  {
+   "idx": 0,
+   "lat": 41.980762,
+   "lon": 21.476535,
+   "heading": 32.0,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127317976,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 2121,
+   "facade_edge": [
+    {
+     "lat": 41.9811709,
+     "lon": 21.4761012
+    },
+    {
+     "lat": 41.980613,
+     "lon": 21.477186
+    }
+   ],
+   "facade_length_m": 108.9,
+   "facade_mid": {
+    "lat": 41.980892,
+    "lon": 21.4766436
+   },
+   "building_centroid": {
+    "lat": 41.9809642,
+    "lon": 21.4767109
+   },
+   "camera_to_facade_m": 16.9,
+   "osm_road_id": 1289706939,
+   "road_name": ""
+  },
+  {
+   "idx": 1,
+   "lat": 41.9801749,
+   "lon": 21.4778076,
+   "heading": 31.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127317977,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 1889,
+   "facade_edge": [
+    {
+     "lat": 41.9805541,
+     "lon": 21.477385
+    },
+    {
+     "lat": 41.980084,
+     "lon": 21.4784684
+    }
+   ],
+   "facade_length_m": 103.6,
+   "facade_mid": {
+    "lat": 41.980319,
+    "lon": 21.4779267
+   },
+   "building_centroid": {
+    "lat": 41.9803901,
+    "lon": 21.4779825
+   },
+   "camera_to_facade_m": 18.7,
+   "osm_road_id": 1289706936,
+   "road_name": ""
+  },
+  {
+   "idx": 2,
+   "lat": 41.9883628,
+   "lon": 21.4667946,
+   "heading": 217.4,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004409,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 2222,
+   "facade_edge": [
+    {
+     "lat": 41.988527,
+     "lon": 21.4661431
+    },
+    {
+     "lat": 41.9879288,
+     "lon": 21.4671699
+    }
+   ],
+   "facade_length_m": 107.7,
+   "facade_mid": {
+    "lat": 41.9882279,
+    "lon": 21.4666565
+   },
+   "building_centroid": {
+    "lat": 41.9882903,
+    "lon": 21.4663823
+   },
+   "camera_to_facade_m": 18.8,
+   "osm_road_id": 29231790,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 3,
+   "lat": 41.9862143,
+   "lon": 21.4661384,
+   "heading": 139.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 279717410,
+   "building_type": "retail",
+   "est_height_m": 24.0,
+   "footprint_m2": 4092,
+   "facade_edge": [
+    {
+     "lat": 41.9863388,
+     "lon": 21.466428
+    },
+    {
+     "lat": 41.9859286,
+     "lon": 21.4660313
+    }
+   ],
+   "facade_length_m": 56.0,
+   "facade_mid": {
+    "lat": 41.9861337,
+    "lon": 21.4662297
+   },
+   "building_centroid": {
+    "lat": 41.9859825,
+    "lon": 21.4666263
+   },
+   "camera_to_facade_m": 11.7,
+   "osm_road_id": 29231790,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 4,
+   "lat": 41.9878996,
+   "lon": 21.4727734,
+   "heading": 305.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004411,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 2665,
+   "facade_edge": [
+    {
+     "lat": 41.9877234,
+     "lon": 21.4723387
+    },
+    {
+     "lat": 41.9882481,
+     "lon": 21.4728804
+    }
+   ],
+   "facade_length_m": 73.3,
+   "facade_mid": {
+    "lat": 41.9879857,
+    "lon": 21.4726096
+   },
+   "building_centroid": {
+    "lat": 41.9882945,
+    "lon": 21.4726425
+   },
+   "camera_to_facade_m": 16.6,
+   "osm_road_id": 1289707218,
+   "road_name": ""
+  },
+  {
+   "idx": 5,
+   "lat": 41.9874077,
+   "lon": 21.4743288,
+   "heading": 104.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127325230,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 1772,
+   "facade_edge": [
+    {
+     "lat": 41.9870004,
+     "lon": 21.4743319
+    },
+    {
+     "lat": 41.9877142,
+     "lon": 21.4748383
+    }
+   ],
+   "facade_length_m": 89.4,
+   "facade_mid": {
+    "lat": 41.9873573,
+    "lon": 21.4745851
+   },
+   "building_centroid": {
+    "lat": 41.9873157,
+    "lon": 21.4746912
+   },
+   "camera_to_facade_m": 21.9,
+   "osm_road_id": 173694063,
+   "road_name": ""
+  },
+  {
+   "idx": 6,
+   "lat": 41.9881531,
+   "lon": 21.4766826,
+   "heading": 208.0,
+   "pitch": 24.4,
+   "fov": 90,
+   "osm_building_id": 37997017,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 1633,
+   "facade_edge": [
+    {
+     "lat": 41.987758,
+     "lon": 21.4770321
+    },
+    {
+     "lat": 41.988161,
+     "lon": 21.4760582
+    }
+   ],
+   "facade_length_m": 92.1,
+   "facade_mid": {
+    "lat": 41.9879595,
+    "lon": 21.4765451
+   },
+   "building_centroid": {
+    "lat": 41.9878895,
+    "lon": 21.4764927
+   },
+   "camera_to_facade_m": 24.2,
+   "osm_road_id": 173694063,
+   "road_name": ""
+  },
+  {
+   "idx": 7,
+   "lat": 41.9813442,
+   "lon": 21.4798814,
+   "heading": 303.9,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127318046,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1709,
+   "facade_edge": [
+    {
+     "lat": 41.9817261,
+     "lon": 21.4799628
+    },
+    {
+     "lat": 41.9811166,
+     "lon": 21.4794933
+    }
+   ],
+   "facade_length_m": 77.8,
+   "facade_mid": {
+    "lat": 41.9814214,
+    "lon": 21.479728
+   },
+   "building_centroid": {
+    "lat": 41.9814705,
+    "lon": 21.4796126
+   },
+   "camera_to_facade_m": 15.3,
+   "osm_road_id": 1289706868,
+   "road_name": ""
+  },
+  {
+   "idx": 8,
+   "lat": 41.9805682,
+   "lon": 21.4792397,
+   "heading": 301.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127317975,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1753,
+   "facade_edge": [
+    {
+     "lat": 41.9809758,
+     "lon": 21.4793063
+    },
+    {
+     "lat": 41.9803328,
+     "lon": 21.4787993
+    }
+   ],
+   "facade_length_m": 82.5,
+   "facade_mid": {
+    "lat": 41.9806543,
+    "lon": 21.4790528
+   },
+   "building_centroid": {
+    "lat": 41.9807026,
+    "lon": 21.4789419
+   },
+   "camera_to_facade_m": 18.2,
+   "osm_road_id": 1289706936,
+   "road_name": ""
+  },
+  {
+   "idx": 9,
+   "lat": 41.9877118,
+   "lon": 21.4777117,
+   "heading": 210.2,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 127325222,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 1583,
+   "facade_edge": [
+    {
+     "lat": 41.9873772,
+     "lon": 21.4779558
+    },
+    {
+     "lat": 41.9877203,
+     "lon": 21.4772142
+    }
+   ],
+   "facade_length_m": 72.1,
+   "facade_mid": {
+    "lat": 41.9875488,
+    "lon": 21.477585
+   },
+   "building_centroid": {
+    "lat": 41.9874646,
+    "lon": 21.4775146
+   },
+   "camera_to_facade_m": 20.9,
+   "osm_road_id": 1289706565,
+   "road_name": ""
+  },
+  {
+   "idx": 10,
+   "lat": 41.9859229,
+   "lon": 21.463907,
+   "heading": 220.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 136172526,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 1457,
+   "facade_edge": [
+    {
+     "lat": 41.9856245,
+     "lon": 21.4641261
+    },
+    {
+     "lat": 41.9860094,
+     "lon": 21.4634494
+    }
+   ],
+   "facade_length_m": 70.3,
+   "facade_mid": {
+    "lat": 41.985817,
+    "lon": 21.4637878
+   },
+   "building_centroid": {
+    "lat": 41.9857428,
+    "lon": 21.4637114
+   },
+   "camera_to_facade_m": 15.3,
+   "osm_road_id": 174467377,
+   "road_name": ""
+  },
+  {
+   "idx": 11,
+   "lat": 41.9894878,
+   "lon": 21.4727699,
+   "heading": 213.6,
+   "pitch": 14.6,
+   "fov": 90,
+   "osm_building_id": 40012372,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 2743,
+   "facade_edge": [
+    {
+     "lat": 41.9890644,
+     "lon": 21.4730737
+    },
+    {
+     "lat": 41.9895365,
+     "lon": 21.4721329
+    }
+   ],
+   "facade_length_m": 93.7,
+   "facade_mid": {
+    "lat": 41.9893005,
+    "lon": 21.4726033
+   },
+   "building_centroid": {
+    "lat": 41.9890998,
+    "lon": 21.4727384
+   },
+   "camera_to_facade_m": 24.9,
+   "osm_road_id": 1289708184,
+   "road_name": ""
+  },
+  {
+   "idx": 12,
+   "lat": 41.984776,
+   "lon": 21.4732967,
+   "heading": 120.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 76449655,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1451,
+   "facade_edge": [
+    {
+     "lat": 41.9849847,
+     "lon": 21.473655
+    },
+    {
+     "lat": 41.984441,
+     "lon": 21.4732294
+    }
+   ],
+   "facade_length_m": 69.7,
+   "facade_mid": {
+    "lat": 41.9847128,
+    "lon": 21.4734422
+   },
+   "building_centroid": {
+    "lat": 41.9846657,
+    "lon": 21.4735512
+   },
+   "camera_to_facade_m": 13.9,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 13,
+   "lat": 41.9854217,
+   "lon": 21.4647023,
+   "heading": 220.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 136172518,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 1669,
+   "facade_edge": [
+    {
+     "lat": 41.9851255,
+     "lon": 21.4648682
+    },
+    {
+     "lat": 41.9854811,
+     "lon": 21.4642697
+    }
+   ],
+   "facade_length_m": 63.2,
+   "facade_mid": {
+    "lat": 41.9853033,
+    "lon": 21.464569
+   },
+   "building_centroid": {
+    "lat": 41.9852103,
+    "lon": 21.464469
+   },
+   "camera_to_facade_m": 17.1,
+   "osm_road_id": 174467377,
+   "road_name": ""
+  },
+  {
+   "idx": 14,
+   "lat": 41.9810016,
+   "lon": 21.4709948,
+   "heading": 31.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 120636364,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1301,
+   "facade_edge": [
+    {
+     "lat": 41.9809294,
+     "lon": 21.4714448
+    },
+    {
+     "lat": 41.981282,
+     "lon": 21.4707165
+    }
+   ],
+   "facade_length_m": 71.8,
+   "facade_mid": {
+    "lat": 41.9811057,
+    "lon": 21.4710807
+   },
+   "building_centroid": {
+    "lat": 41.9811743,
+    "lon": 21.4711407
+   },
+   "camera_to_facade_m": 13.5,
+   "osm_road_id": 179451395,
+   "road_name": "Гоце Стојчевски Амбарче"
+  },
+  {
+   "idx": 15,
+   "lat": 41.9805117,
+   "lon": 21.4720575,
+   "heading": 31.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 664637427,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1377,
+   "facade_edge": [
+    {
+     "lat": 41.9804439,
+     "lon": 21.4724443
+    },
+    {
+     "lat": 41.9807552,
+     "lon": 21.4718154
+    }
+   ],
+   "facade_length_m": 62.4,
+   "facade_mid": {
+    "lat": 41.9805995,
+    "lon": 21.4721299
+   },
+   "building_centroid": {
+    "lat": 41.9806963,
+    "lon": 21.4721259
+   },
+   "camera_to_facade_m": 11.4,
+   "osm_road_id": 179451395,
+   "road_name": "Гоце Стојчевски Амбарче"
+  },
+  {
+   "idx": 16,
+   "lat": 41.9794078,
+   "lon": 21.4655761,
+   "heading": 17.9,
+   "pitch": 2.2,
+   "fov": 90,
+   "osm_building_id": 1289766262,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 7094,
+   "facade_edge": [
+    {
+     "lat": 41.9796791,
+     "lon": 21.464965
+    },
+    {
+     "lat": 41.9793597,
+     "lon": 21.4662835
+    }
+   ],
+   "facade_length_m": 114.7,
+   "facade_mid": {
+    "lat": 41.9795194,
+    "lon": 21.4656242
+   },
+   "building_centroid": {
+    "lat": 41.9796398,
+    "lon": 21.4662521
+   },
+   "camera_to_facade_m": 13.0,
+   "osm_road_id": 1496142864,
+   "road_name": ""
+  },
+  {
+   "idx": 17,
+   "lat": 41.9900608,
+   "lon": 21.4700175,
+   "heading": 306.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 45421428,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1505,
+   "facade_edge": [
+    {
+     "lat": 41.9904214,
+     "lon": 21.4701516
+    },
+    {
+     "lat": 41.9898446,
+     "lon": 21.4696239
+    }
+   ],
+   "facade_length_m": 77.3,
+   "facade_mid": {
+    "lat": 41.990133,
+    "lon": 21.4698877
+   },
+   "building_centroid": {
+    "lat": 41.9901826,
+    "lon": 21.4697898
+   },
+   "camera_to_facade_m": 13.4,
+   "osm_road_id": 79989354,
+   "road_name": ""
+  },
+  {
+   "idx": 18,
+   "lat": 41.9843751,
+   "lon": 21.4823831,
+   "heading": 303.6,
+   "pitch": 19.9,
+   "fov": 90,
+   "osm_building_id": 38004441,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1472,
+   "facade_edge": [
+    {
+     "lat": 41.9842196,
+     "lon": 21.4818766
+    },
+    {
+     "lat": 41.9847932,
+     "lon": 21.4823606
+    }
+   ],
+   "facade_length_m": 75.0,
+   "facade_mid": {
+    "lat": 41.9845064,
+    "lon": 21.4821186
+   },
+   "building_centroid": {
+    "lat": 41.9845533,
+    "lon": 21.4820179
+   },
+   "camera_to_facade_m": 26.3,
+   "osm_road_id": 956411831,
+   "road_name": ""
+  },
+  {
+   "idx": 19,
+   "lat": 41.9846093,
+   "lon": 21.4645139,
+   "heading": 127.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 136173510,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1519,
+   "facade_edge": [
+    {
+     "lat": 41.9843033,
+     "lon": 21.4643839
+    },
+    {
+     "lat": 41.9847786,
+     "lon": 21.4648851
+    }
+   ],
+   "facade_length_m": 66.9,
+   "facade_mid": {
+    "lat": 41.984541,
+    "lon": 21.4646345
+   },
+   "building_centroid": {
+    "lat": 41.9844779,
+    "lon": 21.4647427
+   },
+   "camera_to_facade_m": 12.5,
+   "osm_road_id": 174467377,
+   "road_name": ""
+  },
+  {
+   "idx": 20,
+   "lat": 41.9829204,
+   "lon": 21.4754498,
+   "heading": 299.6,
+   "pitch": 20.9,
+   "fov": 90,
+   "osm_building_id": 38004470,
+   "building_type": "apartments",
+   "est_height_m": 15.0,
+   "footprint_m2": 1491,
+   "facade_edge": [
+    {
+     "lat": 41.9832658,
+     "lon": 21.4755502
+    },
+    {
+     "lat": 41.982692,
+     "lon": 21.4750746
+    }
+   ],
+   "facade_length_m": 74.7,
+   "facade_mid": {
+    "lat": 41.9829789,
+    "lon": 21.4753124
+   },
+   "building_centroid": {
+    "lat": 41.9830252,
+    "lon": 21.4752085
+   },
+   "camera_to_facade_m": 13.1,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 21,
+   "lat": 41.9863906,
+   "lon": 21.4678542,
+   "heading": 307.4,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 79989330,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 1075,
+   "facade_edge": [
+    {
+     "lat": 41.9862409,
+     "lon": 21.4675487
+    },
+    {
+     "lat": 41.9866523,
+     "lon": 21.4679641
+    }
+   ],
+   "facade_length_m": 57.0,
+   "facade_mid": {
+    "lat": 41.9864466,
+    "lon": 21.4677564
+   },
+   "building_centroid": {
+    "lat": 41.986497,
+    "lon": 21.4676645
+   },
+   "camera_to_facade_m": 10.2,
+   "osm_road_id": 664123143,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 22,
+   "lat": 41.984955,
+   "lon": 21.4788451,
+   "heading": 119.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004425,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 2051,
+   "facade_edge": [
+    {
+     "lat": 41.9850959,
+     "lon": 21.4791201
+    },
+    {
+     "lat": 41.9847109,
+     "lon": 21.4788119
+    }
+   ],
+   "facade_length_m": 49.6,
+   "facade_mid": {
+    "lat": 41.9849034,
+    "lon": 21.478966
+   },
+   "building_centroid": {
+    "lat": 41.9850386,
+    "lon": 21.4792746
+   },
+   "camera_to_facade_m": 11.5,
+   "osm_road_id": 1289706606,
+   "road_name": ""
+  },
+  {
+   "idx": 23,
+   "lat": 41.9835354,
+   "lon": 21.4817145,
+   "heading": 300.8,
+   "pitch": 21.0,
+   "fov": 90,
+   "osm_building_id": 38004443,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1532,
+   "facade_edge": [
+    {
+     "lat": 41.9838712,
+     "lon": 21.4816433
+    },
+    {
+     "lat": 41.9834296,
+     "lon": 21.4812707
+    }
+   ],
+   "facade_length_m": 57.7,
+   "facade_mid": {
+    "lat": 41.9836504,
+    "lon": 21.481457
+   },
+   "building_centroid": {
+    "lat": 41.9838533,
+    "lon": 21.4814221
+   },
+   "camera_to_facade_m": 24.8,
+   "osm_road_id": 1289706790,
+   "road_name": ""
+  },
+  {
+   "idx": 24,
+   "lat": 41.9802782,
+   "lon": 21.4662486,
+   "heading": 5.4,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 604418674,
+   "building_type": "residential",
+   "est_height_m": 30.0,
+   "footprint_m2": 989,
+   "facade_edge": [
+    {
+     "lat": 41.9805154,
+     "lon": 21.4659459
+    },
+    {
+     "lat": 41.9804602,
+     "lon": 21.4666046
+    }
+   ],
+   "facade_length_m": 54.8,
+   "facade_mid": {
+    "lat": 41.9804878,
+    "lon": 21.4662753
+   },
+   "building_centroid": {
+    "lat": 41.9806139,
+    "lon": 21.4662944
+   },
+   "camera_to_facade_m": 23.3,
+   "osm_road_id": 1314780326,
+   "road_name": ""
+  },
+  {
+   "idx": 25,
+   "lat": 41.9882102,
+   "lon": 21.4695833,
+   "heading": 37.4,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 53724741,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1572,
+   "facade_edge": [
+    {
+     "lat": 41.9884779,
+     "lon": 21.4694904
+    },
+    {
+     "lat": 41.9882215,
+     "lon": 21.4699608
+    }
+   ],
+   "facade_length_m": 48.1,
+   "facade_mid": {
+    "lat": 41.9883497,
+    "lon": 21.4697256
+   },
+   "building_centroid": {
+    "lat": 41.9883882,
+    "lon": 21.4699728
+   },
+   "camera_to_facade_m": 19.4,
+   "osm_road_id": 179454987,
+   "road_name": "Булевар АСНОМ"
+  },
+  {
+   "idx": 26,
+   "lat": 41.9822359,
+   "lon": 21.4765855,
+   "heading": 121.5,
+   "pitch": 17.3,
+   "fov": 90,
+   "osm_building_id": 127318302,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1471,
+   "facade_edge": [
+    {
+     "lat": 41.9818771,
+     "lon": 21.4765804
+    },
+    {
+     "lat": 41.982398,
+     "lon": 21.4770204
+    }
+   ],
+   "facade_length_m": 68.1,
+   "facade_mid": {
+    "lat": 41.9821376,
+    "lon": 21.4768004
+   },
+   "building_centroid": {
+    "lat": 41.9820858,
+    "lon": 21.4769111
+   },
+   "camera_to_facade_m": 20.8,
+   "osm_road_id": 248452882,
+   "road_name": ""
+  },
+  {
+   "idx": 27,
+   "lat": 41.9891162,
+   "lon": 21.466982,
+   "heading": 36.9,
+   "pitch": 18.8,
+   "fov": 90,
+   "osm_building_id": 79989357,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1167,
+   "facade_edge": [
+    {
+     "lat": 41.9894952,
+     "lon": 21.4668724
+    },
+    {
+     "lat": 41.98914,
+     "lon": 21.4674963
+    }
+   ],
+   "facade_length_m": 64.9,
+   "facade_mid": {
+    "lat": 41.9893176,
+    "lon": 21.4671844
+   },
+   "building_centroid": {
+    "lat": 41.989382,
+    "lon": 21.4672507
+   },
+   "camera_to_facade_m": 27.9,
+   "osm_road_id": 247820810,
+   "road_name": ""
+  },
+  {
+   "idx": 28,
+   "lat": 41.9828855,
+   "lon": 21.4771257,
+   "heading": 122.0,
+   "pitch": 18.5,
+   "fov": 90,
+   "osm_building_id": 127318305,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1026,
+   "facade_edge": [
+    {
+     "lat": 41.9825058,
+     "lon": 21.4772176
+    },
+    {
+     "lat": 41.9829933,
+     "lon": 21.4776149
+    }
+   ],
+   "facade_length_m": 63.1,
+   "facade_mid": {
+    "lat": 41.9827496,
+    "lon": 21.4774162
+   },
+   "building_centroid": {
+    "lat": 41.9827085,
+    "lon": 21.4774963
+   },
+   "camera_to_facade_m": 28.3,
+   "osm_road_id": 248452882,
+   "road_name": ""
+  },
+  {
+   "idx": 29,
+   "lat": 41.9885134,
+   "lon": 21.4757208,
+   "heading": 206.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 37997016,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 1136,
+   "facade_edge": [
+    {
+     "lat": 41.9881974,
+     "lon": 21.4758156
+    },
+    {
+     "lat": 41.9884131,
+     "lon": 21.4753533
+    }
+   ],
+   "facade_length_m": 45.1,
+   "facade_mid": {
+    "lat": 41.9883052,
+    "lon": 21.4755844
+   },
+   "building_centroid": {
+    "lat": 41.988256,
+    "lon": 21.475454
+   },
+   "camera_to_facade_m": 25.6,
+   "osm_road_id": 173694063,
+   "road_name": ""
+  },
+  {
+   "idx": 30,
+   "lat": 41.9896189,
+   "lon": 21.4680908,
+   "heading": 306.0,
+   "pitch": 15.7,
+   "fov": 90,
+   "osm_building_id": 79989375,
+   "building_type": "apartments",
+   "est_height_m": 15.0,
+   "footprint_m2": 1582,
+   "facade_edge": [
+    {
+     "lat": 41.9894911,
+     "lon": 21.4676816
+    },
+    {
+     "lat": 41.9899356,
+     "lon": 21.4681526
+    }
+   ],
+   "facade_length_m": 62.7,
+   "facade_mid": {
+    "lat": 41.9897134,
+    "lon": 21.4679171
+   },
+   "building_centroid": {
+    "lat": 41.9897836,
+    "lon": 21.4677971
+   },
+   "camera_to_facade_m": 17.8,
+   "osm_road_id": 247820810,
+   "road_name": ""
+  },
+  {
+   "idx": 31,
+   "lat": 41.9856275,
+   "lon": 21.4777186,
+   "heading": 301.6,
+   "pitch": 18.8,
+   "fov": 90,
+   "osm_building_id": 127324913,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1638,
+   "facade_edge": [
+    {
+     "lat": 41.9855202,
+     "lon": 21.4773556
+    },
+    {
+     "lat": 41.9859153,
+     "lon": 21.4776894
+    }
+   ],
+   "facade_length_m": 51.7,
+   "facade_mid": {
+    "lat": 41.9857178,
+    "lon": 21.4775225
+   },
+   "building_centroid": {
+    "lat": 41.9858856,
+    "lon": 21.4775487
+   },
+   "camera_to_facade_m": 19.1,
+   "osm_road_id": 1289706543,
+   "road_name": ""
+  },
+  {
+   "idx": 32,
+   "lat": 41.9798815,
+   "lon": 21.4709252,
+   "heading": 31.7,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 284497942,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 851,
+   "facade_edge": [
+    {
+     "lat": 41.9798673,
+     "lon": 21.4712277
+    },
+    {
+     "lat": 41.9800923,
+     "lon": 21.470785
+    }
+   ],
+   "facade_length_m": 44.3,
+   "facade_mid": {
+    "lat": 41.9799798,
+    "lon": 21.4710063
+   },
+   "building_centroid": {
+    "lat": 41.9800514,
+    "lon": 21.4710721
+   },
+   "camera_to_facade_m": 12.8,
+   "osm_road_id": 179467930,
+   "road_name": "Благој Попов"
+  },
+  {
+   "idx": 33,
+   "lat": 41.9857862,
+   "lon": 21.4819271,
+   "heading": 211.0,
+   "pitch": 22.8,
+   "fov": 84,
+   "osm_building_id": 38004429,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 1130,
+   "facade_edge": [
+    {
+     "lat": 41.9854447,
+     "lon": 21.4819703
+    },
+    {
+     "lat": 41.9856657,
+     "lon": 21.4815134
+    }
+   ],
+   "facade_length_m": 45.0,
+   "facade_mid": {
+    "lat": 41.9855552,
+    "lon": 21.4817418
+   },
+   "building_centroid": {
+    "lat": 41.9854603,
+    "lon": 21.4816587
+   },
+   "camera_to_facade_m": 29.8,
+   "osm_road_id": 956411831,
+   "road_name": ""
+  },
+  {
+   "idx": 34,
+   "lat": 41.9844166,
+   "lon": 21.4715515,
+   "heading": 299.7,
+   "pitch": 20.8,
+   "fov": 90,
+   "osm_building_id": 127328377,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1076,
+   "facade_edge": [
+    {
+     "lat": 41.9843421,
+     "lon": 21.4711015
+    },
+    {
+     "lat": 41.9847151,
+     "lon": 21.4714761
+    }
+   ],
+   "facade_length_m": 51.6,
+   "facade_mid": {
+    "lat": 41.9845286,
+    "lon": 21.4712888
+   },
+   "building_centroid": {
+    "lat": 41.9845848,
+    "lon": 21.4711875
+   },
+   "camera_to_facade_m": 25.0,
+   "osm_road_id": 1289707248,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 35,
+   "lat": 41.9839835,
+   "lon": 21.4638728,
+   "heading": 308.4,
+   "pitch": 13.7,
+   "fov": 90,
+   "osm_building_id": 136172516,
+   "building_type": "apartments",
+   "est_height_m": 15.0,
+   "footprint_m2": 1318,
+   "facade_edge": [
+    {
+     "lat": 41.983864,
+     "lon": 21.4634445
+    },
+    {
+     "lat": 41.9843344,
+     "lon": 21.4639115
+    }
+   ],
+   "facade_length_m": 64.8,
+   "facade_mid": {
+    "lat": 41.9840992,
+    "lon": 21.463678
+   },
+   "building_centroid": {
+    "lat": 41.9841536,
+    "lon": 21.4635789
+   },
+   "camera_to_facade_m": 20.6,
+   "osm_road_id": 174467377,
+   "road_name": ""
+  },
+  {
+   "idx": 36,
+   "lat": 41.9870244,
+   "lon": 21.4684917,
+   "heading": 126.3,
+   "pitch": 22.6,
+   "fov": 90,
+   "osm_building_id": 127328384,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 1054,
+   "facade_edge": [
+    {
+     "lat": 41.987094,
+     "lon": 21.4688721
+    },
+    {
+     "lat": 41.9867488,
+     "lon": 21.4684867
+    }
+   ],
+   "facade_length_m": 49.7,
+   "facade_mid": {
+    "lat": 41.9869214,
+    "lon": 21.4686794
+   },
+   "building_centroid": {
+    "lat": 41.9868604,
+    "lon": 21.4687782
+   },
+   "camera_to_facade_m": 19.3,
+   "osm_road_id": 664123143,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 37,
+   "lat": 41.9861027,
+   "lon": 21.4812521,
+   "heading": 213.0,
+   "pitch": 23.0,
+   "fov": 84,
+   "osm_building_id": 38004428,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 981,
+   "facade_edge": [
+    {
+     "lat": 41.9857693,
+     "lon": 21.4812818
+    },
+    {
+     "lat": 41.9859886,
+     "lon": 21.4808341
+    }
+   ],
+   "facade_length_m": 44.3,
+   "facade_mid": {
+    "lat": 41.985879,
+    "lon": 21.481058
+   },
+   "building_centroid": {
+    "lat": 41.9857954,
+    "lon": 21.4809839
+   },
+   "camera_to_facade_m": 29.5,
+   "osm_road_id": 956411831,
+   "road_name": ""
+  },
+  {
+   "idx": 38,
+   "lat": 41.986395,
+   "lon": 21.4805944,
+   "heading": 211.2,
+   "pitch": 18.7,
+   "fov": 86,
+   "osm_building_id": 38004427,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 990,
+   "facade_edge": [
+    {
+     "lat": 41.9860265,
+     "lon": 21.4806555
+    },
+    {
+     "lat": 41.9862593,
+     "lon": 21.4801253
+    }
+   ],
+   "facade_length_m": 50.9,
+   "facade_mid": {
+    "lat": 41.9861429,
+    "lon": 21.4803904
+   },
+   "building_centroid": {
+    "lat": 41.9860673,
+    "lon": 21.4803303
+   },
+   "camera_to_facade_m": 32.6,
+   "osm_road_id": 1289706606,
+   "road_name": ""
+  },
+  {
+   "idx": 39,
+   "lat": 41.9794144,
+   "lon": 21.4753926,
+   "heading": 124.5,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 120635010,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 838,
+   "facade_edge": [
+    {
+     "lat": 41.9791469,
+     "lon": 21.4753571
+    },
+    {
+     "lat": 41.9795483,
+     "lon": 21.4756877
+    }
+   ],
+   "facade_length_m": 52.1,
+   "facade_mid": {
+    "lat": 41.9793476,
+    "lon": 21.4755224
+   },
+   "building_centroid": {
+    "lat": 41.9793098,
+    "lon": 21.4756054
+   },
+   "camera_to_facade_m": 13.0,
+   "osm_road_id": 179451422,
+   "road_name": "Булевар Февруарски поход"
+  },
+  {
+   "idx": 40,
+   "lat": 41.9873722,
+   "lon": 21.4673407,
+   "heading": 308.1,
+   "pitch": 18.1,
+   "fov": 90,
+   "osm_building_id": 127328365,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1143,
+   "facade_edge": [
+    {
+     "lat": 41.9876786,
+     "lon": 21.4673406
+    },
+    {
+     "lat": 41.9872883,
+     "lon": 21.4669617
+    }
+   ],
+   "facade_length_m": 53.3,
+   "facade_mid": {
+    "lat": 41.9874834,
+    "lon": 21.4671511
+   },
+   "building_centroid": {
+    "lat": 41.9875399,
+    "lon": 21.4670459
+   },
+   "camera_to_facade_m": 19.9,
+   "osm_road_id": 29231790,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 41,
+   "lat": 41.9832963,
+   "lon": 21.4691367,
+   "heading": 218.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 136174326,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 990,
+   "facade_edge": [
+    {
+     "lat": 41.9830455,
+     "lon": 21.4691983
+    },
+    {
+     "lat": 41.9832688,
+     "lon": 21.4687833
+    }
+   ],
+   "facade_length_m": 42.3,
+   "facade_mid": {
+    "lat": 41.9831571,
+    "lon": 21.4689908
+   },
+   "building_centroid": {
+    "lat": 41.9830716,
+    "lon": 21.4689075
+   },
+   "camera_to_facade_m": 19.6,
+   "osm_road_id": 179454973,
+   "road_name": ""
+  },
+  {
+   "idx": 42,
+   "lat": 41.9847172,
+   "lon": 21.4691192,
+   "heading": 35.8,
+   "pitch": 1.3,
+   "fov": 90,
+   "osm_building_id": 488866604,
+   "building_type": "apartments",
+   "est_height_m": 6.0,
+   "footprint_m2": 2203,
+   "facade_edge": [
+    {
+     "lat": 41.9845558,
+     "lon": 21.4698419
+    },
+    {
+     "lat": 41.9851916,
+     "lon": 21.4686985
+    }
+   ],
+   "facade_length_m": 117.9,
+   "facade_mid": {
+    "lat": 41.9848737,
+    "lon": 21.4692702
+   },
+   "building_centroid": {
+    "lat": 41.9849412,
+    "lon": 21.4693381
+   },
+   "camera_to_facade_m": 21.3,
+   "osm_road_id": 173694071,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 43,
+   "lat": 41.9787476,
+   "lon": 21.4777677,
+   "heading": 302.3,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 120635012,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 881,
+   "facade_edge": [
+    {
+     "lat": 41.9789528,
+     "lon": 21.477744
+    },
+    {
+     "lat": 41.978669,
+     "lon": 21.4775242
+    }
+   ],
+   "facade_length_m": 36.3,
+   "facade_mid": {
+    "lat": 41.9788109,
+    "lon": 21.4776341
+   },
+   "building_centroid": {
+    "lat": 41.9788654,
+    "lon": 21.4775067
+   },
+   "camera_to_facade_m": 13.1,
+   "osm_road_id": 1038234738,
+   "road_name": ""
+  },
+  {
+   "idx": 44,
+   "lat": 41.9872189,
+   "lon": 21.4641385,
+   "heading": 38.2,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38003197,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 808,
+   "facade_edge": [
+    {
+     "lat": 41.9874758,
+     "lon": 21.464064
+    },
+    {
+     "lat": 41.9872392,
+     "lon": 21.4645046
+    }
+   ],
+   "facade_length_m": 44.9,
+   "facade_mid": {
+    "lat": 41.9873575,
+    "lon": 21.4642843
+   },
+   "building_centroid": {
+    "lat": 41.9874234,
+    "lon": 21.4643484
+   },
+   "camera_to_facade_m": 19.5,
+   "osm_road_id": 1289707398,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 45,
+   "lat": 41.9837703,
+   "lon": 21.4726718,
+   "heading": 112.4,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 76449228,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 800,
+   "facade_edge": [
+    {
+     "lat": 41.9835332,
+     "lon": 21.4727453
+    },
+    {
+     "lat": 41.983879,
+     "lon": 21.4730157
+    }
+   ],
+   "facade_length_m": 44.3,
+   "facade_mid": {
+    "lat": 41.9837061,
+    "lon": 21.4728805
+   },
+   "building_centroid": {
+    "lat": 41.9836653,
+    "lon": 21.472975
+   },
+   "camera_to_facade_m": 18.7,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 46,
+   "lat": 41.9796191,
+   "lon": 21.4739921,
+   "heading": 31.7,
+   "pitch": 23.7,
+   "fov": 90,
+   "osm_building_id": 284468244,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 974,
+   "facade_edge": [
+    {
+     "lat": 41.9796241,
+     "lon": 21.474331
+    },
+    {
+     "lat": 41.9798416,
+     "lon": 21.4738409
+    }
+   ],
+   "facade_length_m": 47.1,
+   "facade_mid": {
+    "lat": 41.9797329,
+    "lon": 21.4740859
+   },
+   "building_centroid": {
+    "lat": 41.9798129,
+    "lon": 21.4741503
+   },
+   "camera_to_facade_m": 14.8,
+   "osm_road_id": 179451395,
+   "road_name": "Гоце Стојчевски Амбарче"
+  },
+  {
+   "idx": 47,
+   "lat": 41.9855107,
+   "lon": 21.4825408,
+   "heading": 211.0,
+   "pitch": 19.4,
+   "fov": 84,
+   "osm_building_id": 38004430,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 947,
+   "facade_edge": [
+    {
+     "lat": 41.9851592,
+     "lon": 21.4825888
+    },
+    {
+     "lat": 41.9853772,
+     "lon": 21.482104
+    }
+   ],
+   "facade_length_m": 46.8,
+   "facade_mid": {
+    "lat": 41.9852682,
+    "lon": 21.4823464
+   },
+   "building_centroid": {
+    "lat": 41.98519,
+    "lon": 21.4822828
+   },
+   "camera_to_facade_m": 31.3,
+   "osm_road_id": 956411831,
+   "road_name": ""
+  },
+  {
+   "idx": 48,
+   "lat": 41.9807683,
+   "lon": 21.4672453,
+   "heading": 5.8,
+   "pitch": 3.5,
+   "fov": 90,
+   "osm_building_id": 284497916,
+   "building_type": "office",
+   "est_height_m": 9.0,
+   "footprint_m2": 2900,
+   "facade_edge": [
+    {
+     "lat": 41.9810189,
+     "lon": 21.4677743
+    },
+    {
+     "lat": 41.9811078,
+     "lon": 21.4667967
+    }
+   ],
+   "facade_length_m": 81.5,
+   "facade_mid": {
+    "lat": 41.9810633,
+    "lon": 21.4672855
+   },
+   "building_centroid": {
+    "lat": 41.9812231,
+    "lon": 21.4673118
+   },
+   "camera_to_facade_m": 32.8,
+   "osm_road_id": 284497915,
+   "road_name": "Матеја Матевски"
+  },
+  {
+   "idx": 49,
+   "lat": 41.992679,
+   "lon": 21.4747064,
+   "heading": 275.8,
+   "pitch": 2.3,
+   "fov": 90,
+   "osm_building_id": 179091100,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 4229,
+   "facade_edge": [
+    {
+     "lat": 41.9924133,
+     "lon": 21.4744958
+    },
+    {
+     "lat": 41.9929675,
+     "lon": 21.4746178
+    }
+   ],
+   "facade_length_m": 62.1,
+   "facade_mid": {
+    "lat": 41.9926904,
+    "lon": 21.4745568
+   },
+   "building_centroid": {
+    "lat": 41.9929318,
+    "lon": 21.4742272
+   },
+   "camera_to_facade_m": 12.4,
+   "osm_road_id": 1446026085,
+   "road_name": ""
+  },
+  {
+   "idx": 50,
+   "lat": 41.9829781,
+   "lon": 21.4731476,
+   "heading": 211.3,
+   "pitch": 17.9,
+   "fov": 90,
+   "osm_building_id": 76449638,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 865,
+   "facade_edge": [
+    {
+     "lat": 41.9829116,
+     "lon": 21.4727156
+    },
+    {
+     "lat": 41.9826624,
+     "lon": 21.473269
+    }
+   ],
+   "facade_length_m": 53.4,
+   "facade_mid": {
+    "lat": 41.982787,
+    "lon": 21.4729923
+   },
+   "building_centroid": {
+    "lat": 41.9827245,
+    "lon": 21.4729414
+   },
+   "camera_to_facade_m": 24.7,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 51,
+   "lat": 41.9866525,
+   "lon": 21.4785639,
+   "heading": 121.7,
+   "pitch": 23.2,
+   "fov": 90,
+   "osm_building_id": 38004424,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 890,
+   "facade_edge": [
+    {
+     "lat": 41.9864014,
+     "lon": 21.4785703
+    },
+    {
+     "lat": 41.9867594,
+     "lon": 21.4788689
+    }
+   ],
+   "facade_length_m": 46.7,
+   "facade_mid": {
+    "lat": 41.9865804,
+    "lon": 21.4787196
+   },
+   "building_centroid": {
+    "lat": 41.9865351,
+    "lon": 21.4788177
+   },
+   "camera_to_facade_m": 15.2,
+   "osm_road_id": 1289706543,
+   "road_name": ""
+  },
+  {
+   "idx": 52,
+   "lat": 41.9826675,
+   "lon": 21.4738324,
+   "heading": 212.1,
+   "pitch": 17.4,
+   "fov": 90,
+   "osm_building_id": 76449657,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 843,
+   "facade_edge": [
+    {
+     "lat": 41.9825998,
+     "lon": 21.4733976
+    },
+    {
+     "lat": 41.9823441,
+     "lon": 21.4739394
+    }
+   ],
+   "facade_length_m": 53.0,
+   "facade_mid": {
+    "lat": 41.982472,
+    "lon": 21.4736685
+   },
+   "building_centroid": {
+    "lat": 41.9824113,
+    "lon": 21.4736167
+   },
+   "camera_to_facade_m": 25.5,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 53,
+   "lat": 41.9915329,
+   "lon": 21.4854016,
+   "heading": 225.0,
+   "pitch": 2.5,
+   "fov": 90,
+   "osm_building_id": 1464176646,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 3128,
+   "facade_edge": [
+    {
+     "lat": 41.9912711,
+     "lon": 21.4855885
+    },
+    {
+     "lat": 41.9916473,
+     "lon": 21.4850179
+    }
+   ],
+   "facade_length_m": 62.9,
+   "facade_mid": {
+    "lat": 41.9914592,
+    "lon": 21.4853032
+   },
+   "building_centroid": {
+    "lat": 41.9912388,
+    "lon": 21.4850343
+   },
+   "camera_to_facade_m": 11.5,
+   "osm_road_id": 349512051,
+   "road_name": ""
+  },
+  {
+   "idx": 54,
+   "lat": 41.9869246,
+   "lon": 21.4701402,
+   "heading": 217.4,
+   "pitch": 23.6,
+   "fov": 70,
+   "osm_building_id": 127328386,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 1464,
+   "facade_edge": [
+    {
+     "lat": 41.9866662,
+     "lon": 21.4700988
+    },
+    {
+     "lat": 41.9868207,
+     "lon": 21.4698119
+    }
+   ],
+   "facade_length_m": 29.2,
+   "facade_mid": {
+    "lat": 41.9867435,
+    "lon": 21.4699553
+   },
+   "building_centroid": {
+    "lat": 41.9865097,
+    "lon": 21.4701101
+   },
+   "camera_to_facade_m": 25.2,
+   "osm_road_id": 1268379365,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 55,
+   "lat": 41.9783929,
+   "lon": 21.4774675,
+   "heading": 302.3,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 120635005,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 762,
+   "facade_edge": [
+    {
+     "lat": 41.9785767,
+     "lon": 21.4774434
+    },
+    {
+     "lat": 41.9783286,
+     "lon": 21.4772395
+    }
+   ],
+   "facade_length_m": 32.2,
+   "facade_mid": {
+    "lat": 41.9784526,
+    "lon": 21.4773414
+   },
+   "building_centroid": {
+    "lat": 41.9785082,
+    "lon": 21.4772192
+   },
+   "camera_to_facade_m": 12.3,
+   "osm_road_id": 1038234738,
+   "road_name": ""
+  },
+  {
+   "idx": 56,
+   "lat": 41.9863937,
+   "lon": 21.4744039,
+   "heading": 30.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004418,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 758,
+   "facade_edge": [
+    {
+     "lat": 41.9865534,
+     "lon": 21.4743149
+    },
+    {
+     "lat": 41.9864053,
+     "lon": 21.474628
+    }
+   ],
+   "facade_length_m": 30.6,
+   "facade_mid": {
+    "lat": 41.9864793,
+    "lon": 21.4744714
+   },
+   "building_centroid": {
+    "lat": 41.9865735,
+    "lon": 21.474552
+   },
+   "camera_to_facade_m": 11.0,
+   "osm_road_id": 284742137,
+   "road_name": ""
+  },
+  {
+   "idx": 57,
+   "lat": 41.986874,
+   "lon": 21.4668184,
+   "heading": 128.2,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 79989333,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 1097,
+   "facade_edge": [
+    {
+     "lat": 41.9869046,
+     "lon": 21.4670943
+    },
+    {
+     "lat": 41.9866638,
+     "lon": 21.4668471
+    }
+   ],
+   "facade_length_m": 33.6,
+   "facade_mid": {
+    "lat": 41.9867842,
+    "lon": 21.4669707
+   },
+   "building_centroid": {
+    "lat": 41.9866519,
+    "lon": 21.4669536
+   },
+   "camera_to_facade_m": 16.0,
+   "osm_road_id": 29231790,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 58,
+   "lat": 41.9873764,
+   "lon": 21.478492,
+   "heading": 208.8,
+   "pitch": 20.9,
+   "fov": 69,
+   "osm_building_id": 127325221,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 889,
+   "facade_edge": [
+    {
+     "lat": 41.9872048,
+     "lon": 21.4781063
+    },
+    {
+     "lat": 41.9870297,
+     "lon": 21.4784976
+    }
+   ],
+   "facade_length_m": 37.7,
+   "facade_mid": {
+    "lat": 41.9871172,
+    "lon": 21.478302
+   },
+   "building_centroid": {
+    "lat": 41.9870261,
+    "lon": 21.4782281
+   },
+   "camera_to_facade_m": 32.7,
+   "osm_road_id": 1289706543,
+   "road_name": ""
+  },
+  {
+   "idx": 59,
+   "lat": 41.9858419,
+   "lon": 21.4795819,
+   "heading": 122.1,
+   "pitch": 19.7,
+   "fov": 90,
+   "osm_building_id": 38004426,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 838,
+   "facade_edge": [
+    {
+     "lat": 41.9859292,
+     "lon": 21.4799163
+    },
+    {
+     "lat": 41.9855802,
+     "lon": 21.4796187
+    }
+   ],
+   "facade_length_m": 45.8,
+   "facade_mid": {
+    "lat": 41.9857547,
+    "lon": 21.4797675
+   },
+   "building_centroid": {
+    "lat": 41.9857106,
+    "lon": 21.4798611
+   },
+   "camera_to_facade_m": 18.1,
+   "osm_road_id": 1289706606,
+   "road_name": ""
+  },
+  {
+   "idx": 60,
+   "lat": 41.9794493,
+   "lon": 21.4771767,
+   "heading": 211.7,
+   "pitch": 22.7,
+   "fov": 77,
+   "osm_building_id": 120635003,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1309,
+   "facade_edge": [
+    {
+     "lat": 41.9793467,
+     "lon": 21.4768763
+    },
+    {
+     "lat": 41.979202,
+     "lon": 21.4771878
+    }
+   ],
+   "facade_length_m": 30.3,
+   "facade_mid": {
+    "lat": 41.9792743,
+    "lon": 21.477032
+   },
+   "building_centroid": {
+    "lat": 41.9791091,
+    "lon": 21.4768932
+   },
+   "camera_to_facade_m": 22.7,
+   "osm_road_id": 179451422,
+   "road_name": "Булевар Февруарски поход"
+  },
+  {
+   "idx": 61,
+   "lat": 41.9877655,
+   "lon": 21.467753,
+   "heading": 128.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38003224,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 761,
+   "facade_edge": [
+    {
+     "lat": 41.9875876,
+     "lon": 21.4678021
+    },
+    {
+     "lat": 41.9877718,
+     "lon": 21.4679965
+    }
+   ],
+   "facade_length_m": 26.0,
+   "facade_mid": {
+    "lat": 41.9876797,
+    "lon": 21.4678993
+   },
+   "building_centroid": {
+    "lat": 41.9875982,
+    "lon": 21.468039
+   },
+   "camera_to_facade_m": 15.4,
+   "osm_road_id": 29231790,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 62,
+   "lat": 41.9822752,
+   "lon": 21.4747795,
+   "heading": 203.5,
+   "pitch": 21.6,
+   "fov": 82,
+   "osm_building_id": 38004475,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1045,
+   "facade_edge": [
+    {
+     "lat": 41.982158,
+     "lon": 21.4744848
+    },
+    {
+     "lat": 41.9819934,
+     "lon": 21.4748428
+    }
+   ],
+   "facade_length_m": 34.8,
+   "facade_mid": {
+    "lat": 41.9820757,
+    "lon": 21.4746638
+   },
+   "building_centroid": {
+    "lat": 41.9820137,
+    "lon": 21.474463
+   },
+   "camera_to_facade_m": 24.0,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 63,
+   "lat": 41.9904095,
+   "lon": 21.4688683,
+   "heading": 126.5,
+   "pitch": 16.0,
+   "fov": 90,
+   "osm_building_id": 45421432,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1197,
+   "facade_edge": [
+    {
+     "lat": 41.9904294,
+     "lon": 21.4692373
+    },
+    {
+     "lat": 41.9901451,
+     "lon": 21.468941
+    }
+   ],
+   "facade_length_m": 39.9,
+   "facade_mid": {
+    "lat": 41.9902873,
+    "lon": 21.4690892
+   },
+   "building_centroid": {
+    "lat": 41.9903562,
+    "lon": 21.4693334
+   },
+   "camera_to_facade_m": 22.7,
+   "osm_road_id": 247820810,
+   "road_name": ""
+  },
+  {
+   "idx": 64,
+   "lat": 41.9862881,
+   "lon": 21.4799565,
+   "heading": 302.1,
+   "pitch": 16.0,
+   "fov": 90,
+   "osm_building_id": 38004423,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 796,
+   "facade_edge": [
+    {
+     "lat": 41.9865865,
+     "lon": 21.4798664
+    },
+    {
+     "lat": 41.9862081,
+     "lon": 21.4795824
+    }
+   ],
+   "facade_length_m": 48.0,
+   "facade_mid": {
+    "lat": 41.9863973,
+    "lon": 21.4797244
+   },
+   "building_centroid": {
+    "lat": 41.9864337,
+    "lon": 21.4796367
+   },
+   "camera_to_facade_m": 22.7,
+   "osm_road_id": 1289706606,
+   "road_name": ""
+  },
+  {
+   "idx": 65,
+   "lat": 41.992593,
+   "lon": 21.476763,
+   "heading": 194.2,
+   "pitch": 0.9,
+   "fov": 90,
+   "osm_building_id": 231952860,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 4828,
+   "facade_edge": [
+    {
+     "lat": 41.9923833,
+     "lon": 21.4762463
+    },
+    {
+     "lat": 41.9922361,
+     "lon": 21.4770885
+    }
+   ],
+   "facade_length_m": 71.6,
+   "facade_mid": {
+    "lat": 41.9923097,
+    "lon": 21.4766674
+   },
+   "building_centroid": {
+    "lat": 41.9921774,
+    "lon": 21.4762092
+   },
+   "camera_to_facade_m": 32.3,
+   "osm_road_id": 833610357,
+   "road_name": "Стојка Цекова"
+  },
+  {
+   "idx": 66,
+   "lat": 41.989379,
+   "lon": 21.4693255,
+   "heading": 127.3,
+   "pitch": 13.5,
+   "fov": 90,
+   "osm_building_id": 53724734,
+   "building_type": "apartments",
+   "est_height_m": 18.0,
+   "footprint_m2": 1051,
+   "facade_edge": [
+    {
+     "lat": 41.9890669,
+     "lon": 21.4694166
+    },
+    {
+     "lat": 41.9893938,
+     "lon": 21.4697562
+    }
+   ],
+   "facade_length_m": 45.8,
+   "facade_mid": {
+    "lat": 41.9892303,
+    "lon": 21.4695864
+   },
+   "building_centroid": {
+    "lat": 41.9891672,
+    "lon": 21.4696965
+   },
+   "camera_to_facade_m": 27.1,
+   "osm_road_id": 79989354,
+   "road_name": ""
+  },
+  {
+   "idx": 67,
+   "lat": 41.9922187,
+   "lon": 21.4756373,
+   "heading": 282.6,
+   "pitch": 2.5,
+   "fov": 90,
+   "osm_building_id": 929607481,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 1731,
+   "facade_edge": [
+    {
+     "lat": 41.9925551,
+     "lon": 21.4755984
+    },
+    {
+     "lat": 41.9919274,
+     "lon": 21.4754072
+    }
+   ],
+   "facade_length_m": 71.2,
+   "facade_mid": {
+    "lat": 41.9922412,
+    "lon": 21.4755028
+   },
+   "building_centroid": {
+    "lat": 41.9922654,
+    "lon": 21.4753594
+   },
+   "camera_to_facade_m": 11.4,
+   "osm_road_id": 349522341,
+   "road_name": ""
+  },
+  {
+   "idx": 68,
+   "lat": 41.9800995,
+   "lon": 21.4729536,
+   "heading": 211.8,
+   "pitch": 23.1,
+   "fov": 90,
+   "osm_building_id": 120636366,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 635,
+   "facade_edge": [
+    {
+     "lat": 41.9800494,
+     "lon": 21.4726263
+    },
+    {
+     "lat": 41.9798616,
+     "lon": 21.4730425
+    }
+   ],
+   "facade_length_m": 40.2,
+   "facade_mid": {
+    "lat": 41.9799555,
+    "lon": 21.4728344
+   },
+   "building_centroid": {
+    "lat": 41.9798945,
+    "lon": 21.4727847
+   },
+   "camera_to_facade_m": 18.7,
+   "osm_road_id": 179451395,
+   "road_name": "Гоце Стојчевски Амбарче"
+  },
+  {
+   "idx": 69,
+   "lat": 41.9861302,
+   "lon": 21.4750006,
+   "heading": 30.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004419,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 701,
+   "facade_edge": [
+    {
+     "lat": 41.9862934,
+     "lon": 21.4749332
+    },
+    {
+     "lat": 41.9861625,
+     "lon": 21.4752223
+    }
+   ],
+   "facade_length_m": 28.0,
+   "facade_mid": {
+    "lat": 41.9862279,
+    "lon": 21.4750778
+   },
+   "building_centroid": {
+    "lat": 41.9863247,
+    "lon": 21.475157
+   },
+   "camera_to_facade_m": 12.6,
+   "osm_road_id": 284742137,
+   "road_name": ""
+  },
+  {
+   "idx": 70,
+   "lat": 41.9931179,
+   "lon": 21.4734556,
+   "heading": 296.2,
+   "pitch": 1.0,
+   "fov": 90,
+   "osm_building_id": 37977774,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 2526,
+   "facade_edge": [
+    {
+     "lat": 41.9928879,
+     "lon": 21.4728986
+    },
+    {
+     "lat": 41.9935725,
+     "lon": 21.4734026
+    }
+   ],
+   "facade_length_m": 86.4,
+   "facade_mid": {
+    "lat": 41.9932302,
+    "lon": 21.4731506
+   },
+   "building_centroid": {
+    "lat": 41.9932933,
+    "lon": 21.4729954
+   },
+   "camera_to_facade_m": 28.1,
+   "osm_road_id": 989345750,
+   "road_name": ""
+  },
+  {
+   "idx": 71,
+   "lat": 41.988436,
+   "lon": 21.4689736,
+   "heading": 37.1,
+   "pitch": 20.5,
+   "fov": 73,
+   "osm_building_id": 53724739,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 1027,
+   "facade_edge": [
+    {
+     "lat": 41.9885403,
+     "lon": 21.4693155
+    },
+    {
+     "lat": 41.9886984,
+     "lon": 21.469003
+    }
+   ],
+   "facade_length_m": 31.2,
+   "facade_mid": {
+    "lat": 41.9886193,
+    "lon": 21.4691593
+   },
+   "building_centroid": {
+    "lat": 41.9887864,
+    "lon": 21.4691526
+   },
+   "camera_to_facade_m": 25.4,
+   "osm_road_id": 179454987,
+   "road_name": "Булевар АСНОМ"
+  },
+  {
+   "idx": 72,
+   "lat": 41.9838866,
+   "lon": 21.4652934,
+   "heading": 127.7,
+   "pitch": 1.1,
+   "fov": 90,
+   "osm_building_id": 492439776,
+   "building_type": "apartments",
+   "est_height_m": 6.0,
+   "footprint_m2": 2007,
+   "facade_edge": [
+    {
+     "lat": 41.9840592,
+     "lon": 21.4658749
+    },
+    {
+     "lat": 41.9834294,
+     "lon": 21.4652039
+    }
+   ],
+   "facade_length_m": 89.1,
+   "facade_mid": {
+    "lat": 41.9837443,
+    "lon": 21.4655394
+   },
+   "building_centroid": {
+    "lat": 41.9836813,
+    "lon": 21.4656465
+   },
+   "camera_to_facade_m": 25.7,
+   "osm_road_id": 664120112,
+   "road_name": ""
+  },
+  {
+   "idx": 73,
+   "lat": 41.9844529,
+   "lon": 21.4836093,
+   "heading": 121.5,
+   "pitch": 2.7,
+   "fov": 90,
+   "osm_building_id": 284497908,
+   "building_type": "commercial",
+   "est_height_m": 6.0,
+   "footprint_m2": 1577,
+   "facade_edge": [
+    {
+     "lat": 41.9846548,
+     "lon": 21.4839319
+    },
+    {
+     "lat": 41.9841523,
+     "lon": 21.4835018
+    }
+   ],
+   "facade_length_m": 66.0,
+   "facade_mid": {
+    "lat": 41.9844035,
+    "lon": 21.4837169
+   },
+   "building_centroid": {
+    "lat": 41.9843458,
+    "lon": 21.4838389
+   },
+   "camera_to_facade_m": 10.4,
+   "osm_road_id": 232836036,
+   "road_name": ""
+  },
+  {
+   "idx": 74,
+   "lat": 41.9785261,
+   "lon": 21.4763606,
+   "heading": 31.3,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 120635013,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 828,
+   "facade_edge": [
+    {
+     "lat": 41.9785748,
+     "lon": 21.4765792
+    },
+    {
+     "lat": 41.9786948,
+     "lon": 21.476319
+    }
+   ],
+   "facade_length_m": 25.3,
+   "facade_mid": {
+    "lat": 41.9786348,
+    "lon": 21.4764491
+   },
+   "building_centroid": {
+    "lat": 41.9787604,
+    "lon": 21.4765539
+   },
+   "camera_to_facade_m": 14.1,
+   "osm_road_id": 581857852,
+   "road_name": "Гоце Стојчевски Амбарче"
+  },
+  {
+   "idx": 75,
+   "lat": 41.9838178,
+   "lon": 21.4762132,
+   "heading": 125.1,
+   "pitch": 25.0,
+   "fov": 67,
+   "osm_building_id": 38004599,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 732,
+   "facade_edge": [
+    {
+     "lat": 41.9835757,
+     "lon": 21.4763774
+    },
+    {
+     "lat": 41.9837937,
+     "lon": 21.4765549
+    }
+   ],
+   "facade_length_m": 28.2,
+   "facade_mid": {
+    "lat": 41.9836847,
+    "lon": 21.4764662
+   },
+   "building_centroid": {
+    "lat": 41.9836243,
+    "lon": 21.4766004
+   },
+   "camera_to_facade_m": 25.6,
+   "osm_road_id": 664158112,
+   "road_name": "Видое Смилевски-Бато"
+  },
+  {
+   "idx": 76,
+   "lat": 41.9857933,
+   "lon": 21.4789979,
+   "heading": 31.0,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004422,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 630,
+   "facade_edge": [
+    {
+     "lat": 41.9858372,
+     "lon": 21.4792026
+    },
+    {
+     "lat": 41.9859457,
+     "lon": 21.4789509
+    }
+   ],
+   "facade_length_m": 24.0,
+   "facade_mid": {
+    "lat": 41.9858914,
+    "lon": 21.4790768
+   },
+   "building_centroid": {
+    "lat": 41.9859938,
+    "lon": 21.4791566
+   },
+   "camera_to_facade_m": 12.7,
+   "osm_road_id": 173694064,
+   "road_name": ""
+  },
+  {
+   "idx": 77,
+   "lat": 41.9832702,
+   "lon": 21.4646676,
+   "heading": 127.0,
+   "pitch": 10.4,
+   "fov": 60,
+   "osm_building_id": 136174336,
+   "building_type": "apartments",
+   "est_height_m": 15.0,
+   "footprint_m2": 3604,
+   "facade_edge": [
+    {
+     "lat": 41.983024,
+     "lon": 21.4648415
+    },
+    {
+     "lat": 41.9832196,
+     "lon": 21.4650197
+    }
+   ],
+   "facade_length_m": 26.2,
+   "facade_mid": {
+    "lat": 41.9831218,
+    "lon": 21.4649306
+   },
+   "building_centroid": {
+    "lat": 41.9827742,
+    "lon": 21.4656211
+   },
+   "camera_to_facade_m": 27.3,
+   "osm_road_id": 664120112,
+   "road_name": ""
+  },
+  {
+   "idx": 78,
+   "lat": 41.9854271,
+   "lon": 21.4678926,
+   "heading": 40.3,
+   "pitch": 1.5,
+   "fov": 90,
+   "osm_building_id": 1545139494,
+   "building_type": "apartments",
+   "est_height_m": 6.0,
+   "footprint_m2": 1814,
+   "facade_edge": [
+    {
+     "lat": 41.9853503,
+     "lon": 21.4684127
+    },
+    {
+     "lat": 41.9857703,
+     "lon": 21.4676744
+    }
+   ],
+   "facade_length_m": 76.7,
+   "facade_mid": {
+    "lat": 41.9855603,
+    "lon": 21.4680435
+   },
+   "building_centroid": {
+    "lat": 41.985645,
+    "lon": 21.4681308
+   },
+   "camera_to_facade_m": 19.3,
+   "osm_road_id": 1289707298,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 79,
+   "lat": 41.9889607,
+   "lon": 21.4688994,
+   "heading": 331.1,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38003238,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 518,
+   "facade_edge": [
+    {
+     "lat": 41.989127,
+     "lon": 21.4689265
+    },
+    {
+     "lat": 41.9889561,
+     "lon": 21.468753
+    }
+   ],
+   "facade_length_m": 23.7,
+   "facade_mid": {
+    "lat": 41.9890416,
+    "lon": 21.4688398
+   },
+   "building_centroid": {
+    "lat": 41.9891008,
+    "lon": 21.4687341
+   },
+   "camera_to_facade_m": 10.2,
+   "osm_road_id": 79989354,
+   "road_name": ""
+  },
+  {
+   "idx": 80,
+   "lat": 41.9769616,
+   "lon": 21.4753179,
+   "heading": 44.4,
+   "pitch": 1.7,
+   "fov": 90,
+   "osm_building_id": 284468240,
+   "building_type": "industrial",
+   "est_height_m": 6.0,
+   "footprint_m2": 3639,
+   "facade_edge": [
+    {
+     "lat": 41.9769052,
+     "lon": 21.4756634
+    },
+    {
+     "lat": 41.9772331,
+     "lon": 21.4752541
+    }
+   ],
+   "facade_length_m": 49.6,
+   "facade_mid": {
+    "lat": 41.9770691,
+    "lon": 21.4754588
+   },
+   "building_centroid": {
+    "lat": 41.977294,
+    "lon": 21.4757847
+   },
+   "camera_to_facade_m": 16.6,
+   "osm_road_id": 284468234,
+   "road_name": ""
+  },
+  {
+   "idx": 81,
+   "lat": 41.9849277,
+   "lon": 21.4743781,
+   "heading": 212.3,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 76449221,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 474,
+   "facade_edge": [
+    {
+     "lat": 41.9847381,
+     "lon": 21.4744303
+    },
+    {
+     "lat": 41.9848716,
+     "lon": 21.4741181
+    }
+   ],
+   "facade_length_m": 29.7,
+   "facade_mid": {
+    "lat": 41.9848049,
+    "lon": 21.4742742
+   },
+   "building_centroid": {
+    "lat": 41.9847425,
+    "lon": 21.474226
+   },
+   "camera_to_facade_m": 16.1,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 82,
+   "lat": 41.9833576,
+   "lon": 21.4846274,
+   "heading": 212.3,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 284497957,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 798,
+   "facade_edge": [
+    {
+     "lat": 41.9833174,
+     "lon": 21.4843988
+    },
+    {
+     "lat": 41.9831737,
+     "lon": 21.4846664
+    }
+   ],
+   "facade_length_m": 27.3,
+   "facade_mid": {
+    "lat": 41.9832455,
+    "lon": 21.4845326
+   },
+   "building_centroid": {
+    "lat": 41.9831385,
+    "lon": 21.4844285
+   },
+   "camera_to_facade_m": 14.7,
+   "osm_road_id": 284497967,
+   "road_name": ""
+  },
+  {
+   "idx": 83,
+   "lat": 41.9807939,
+   "lon": 21.4698081,
+   "heading": 132.6,
+   "pitch": 16.2,
+   "fov": 74,
+   "osm_building_id": 284497946,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 634,
+   "facade_edge": [
+    {
+     "lat": 41.9804391,
+     "lon": 21.4699615
+    },
+    {
+     "lat": 41.9807477,
+     "lon": 21.4702382
+    }
+   ],
+   "facade_length_m": 41.1,
+   "facade_mid": {
+    "lat": 41.9805934,
+    "lon": 21.4700999
+   },
+   "building_centroid": {
+    "lat": 41.9805549,
+    "lon": 21.4701776
+   },
+   "camera_to_facade_m": 32.8,
+   "osm_road_id": 284742089,
+   "road_name": "Благој Попов"
+  },
+  {
+   "idx": 84,
+   "lat": 41.9836486,
+   "lon": 21.4685367,
+   "heading": 218.1,
+   "pitch": 1.4,
+   "fov": 90,
+   "osm_building_id": 489591141,
+   "building_type": "apartments",
+   "est_height_m": 6.0,
+   "footprint_m2": 1956,
+   "facade_edge": [
+    {
+     "lat": 41.9833129,
+     "lon": 21.4687283
+    },
+    {
+     "lat": 41.9836938,
+     "lon": 21.4680405
+    }
+   ],
+   "facade_length_m": 70.8,
+   "facade_mid": {
+    "lat": 41.9835033,
+    "lon": 21.4683844
+   },
+   "building_centroid": {
+    "lat": 41.9835057,
+    "lon": 21.4681678
+   },
+   "camera_to_facade_m": 20.4,
+   "osm_road_id": 179454973,
+   "road_name": ""
+  },
+  {
+   "idx": 85,
+   "lat": 41.9841286,
+   "lon": 21.4702269,
+   "heading": 34.2,
+   "pitch": 1.5,
+   "fov": 90,
+   "osm_building_id": 1545139495,
+   "building_type": "apartments",
+   "est_height_m": 6.0,
+   "footprint_m2": 1628,
+   "facade_edge": [
+    {
+     "lat": 41.9844622,
+     "lon": 21.4699951
+    },
+    {
+     "lat": 41.9840764,
+     "lon": 21.4707142
+    }
+   ],
+   "facade_length_m": 73.2,
+   "facade_mid": {
+    "lat": 41.9842693,
+    "lon": 21.4703546
+   },
+   "building_centroid": {
+    "lat": 41.9843506,
+    "lon": 21.4704337
+   },
+   "camera_to_facade_m": 18.8,
+   "osm_road_id": 173694071,
+   "road_name": "Јане Сандански"
+  },
+  {
+   "idx": 86,
+   "lat": 41.9846627,
+   "lon": 21.4660879,
+   "heading": 306.8,
+   "pitch": 2.4,
+   "fov": 90,
+   "osm_building_id": 189887862,
+   "building_type": "retail",
+   "est_height_m": 6.0,
+   "footprint_m2": 3955,
+   "facade_edge": [
+    {
+     "lat": 41.9845895,
+     "lon": 21.4658361
+    },
+    {
+     "lat": 41.9848631,
+     "lon": 21.4661123
+    }
+   ],
+   "facade_length_m": 37.9,
+   "facade_mid": {
+    "lat": 41.9847263,
+    "lon": 21.4659742
+   },
+   "building_centroid": {
+    "lat": 41.9850538,
+    "lon": 21.4657636
+   },
+   "camera_to_facade_m": 11.7,
+   "osm_road_id": 664120112,
+   "road_name": ""
+  },
+  {
+   "idx": 87,
+   "lat": 41.9817167,
+   "lon": 21.4723071,
+   "heading": 211.4,
+   "pitch": 1.9,
+   "fov": 90,
+   "osm_building_id": 120636369,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 2211,
+   "facade_edge": [
+    {
+     "lat": 41.9817273,
+     "lon": 21.4719284
+    },
+    {
+     "lat": 41.981472,
+     "lon": 21.4724948
+    }
+   ],
+   "facade_length_m": 54.7,
+   "facade_mid": {
+    "lat": 41.9815996,
+    "lon": 21.4722116
+   },
+   "building_centroid": {
+    "lat": 41.981623,
+    "lon": 21.4719979
+   },
+   "camera_to_facade_m": 15.2,
+   "osm_road_id": 275874743,
+   "road_name": "Благој Попов"
+  },
+  {
+   "idx": 88,
+   "lat": 41.9860163,
+   "lon": 21.4785025,
+   "heading": 211.0,
+   "pitch": 25.0,
+   "fov": 77,
+   "osm_building_id": 38004420,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 566,
+   "facade_edge": [
+    {
+     "lat": 41.985933,
+     "lon": 21.4782777
+    },
+    {
+     "lat": 41.9858365,
+     "lon": 21.4785158
+    }
+   ],
+   "facade_length_m": 22.4,
+   "facade_mid": {
+    "lat": 41.9858847,
+    "lon": 21.4783968
+   },
+   "building_centroid": {
+    "lat": 41.9857846,
+    "lon": 21.4783232
+   },
+   "camera_to_facade_m": 17.0,
+   "osm_road_id": 173694064,
+   "road_name": ""
+  },
+  {
+   "idx": 89,
+   "lat": 41.9880859,
+   "lon": 21.4746994,
+   "heading": 119.5,
+   "pitch": 22.4,
+   "fov": 70,
+   "osm_building_id": 127325219,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 567,
+   "facade_edge": [
+    {
+     "lat": 41.9878464,
+     "lon": 21.4748838
+    },
+    {
+     "lat": 41.9880878,
+     "lon": 21.475076
+    }
+   ],
+   "facade_length_m": 31.1,
+   "facade_mid": {
+    "lat": 41.9879671,
+    "lon": 21.4749799
+   },
+   "building_centroid": {
+    "lat": 41.9879253,
+    "lon": 21.4750749
+   },
+   "camera_to_facade_m": 26.7,
+   "osm_road_id": 173694063,
+   "road_name": ""
+  },
+  {
+   "idx": 90,
+   "lat": 41.9835677,
+   "lon": 21.4805043,
+   "heading": 31.6,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 38004445,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 515,
+   "facade_edge": [
+    {
+     "lat": 41.9835952,
+     "lon": 21.4806945
+    },
+    {
+     "lat": 41.9836963,
+     "lon": 21.4804426
+    }
+   ],
+   "facade_length_m": 23.6,
+   "facade_mid": {
+    "lat": 41.9836458,
+    "lon": 21.4805686
+   },
+   "building_centroid": {
+    "lat": 41.9837323,
+    "lon": 21.4806314
+   },
+   "camera_to_facade_m": 10.1,
+   "osm_road_id": 173694068,
+   "road_name": ""
+  },
+  {
+   "idx": 91,
+   "lat": 41.9876494,
+   "lon": 21.4722372,
+   "heading": 216.8,
+   "pitch": 25.0,
+   "fov": 87,
+   "osm_building_id": 38004414,
+   "building_type": "apartments",
+   "est_height_m": 24.0,
+   "footprint_m2": 617,
+   "facade_edge": [
+    {
+     "lat": 41.9874633,
+     "lon": 21.4722476
+    },
+    {
+     "lat": 41.9875983,
+     "lon": 21.4719896
+    }
+   ],
+   "facade_length_m": 26.0,
+   "facade_mid": {
+    "lat": 41.9875308,
+    "lon": 21.4721186
+   },
+   "building_centroid": {
+    "lat": 41.9874434,
+    "lon": 21.4720358
+   },
+   "camera_to_facade_m": 16.4,
+   "osm_road_id": 179454963,
+   "road_name": ""
+  },
+  {
+   "idx": 92,
+   "lat": 41.9790383,
+   "lon": 21.4727408,
+   "heading": 31.9,
+   "pitch": 25.0,
+   "fov": 90,
+   "osm_building_id": 284468241,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 864,
+   "facade_edge": [
+    {
+     "lat": 41.9790759,
+     "lon": 21.472925
+    },
+    {
+     "lat": 41.9791742,
+     "lon": 21.4727007
+    }
+   ],
+   "facade_length_m": 21.5,
+   "facade_mid": {
+    "lat": 41.9791251,
+    "lon": 21.4728129
+   },
+   "building_centroid": {
+    "lat": 41.9792812,
+    "lon": 21.4729368
+   },
+   "camera_to_facade_m": 11.3,
+   "osm_road_id": 179467930,
+   "road_name": "Благој Попов"
+  },
+  {
+   "idx": 93,
+   "lat": 41.9841983,
+   "lon": 21.4729247,
+   "heading": 125.5,
+   "pitch": 25.0,
+   "fov": 87,
+   "osm_building_id": 76449223,
+   "building_type": "apartments",
+   "est_height_m": 21.0,
+   "footprint_m2": 834,
+   "facade_edge": [
+    {
+     "lat": 41.9842059,
+     "lon": 21.4731724
+    },
+    {
+     "lat": 41.9840227,
+     "lon": 21.4729923
+    }
+   ],
+   "facade_length_m": 25.1,
+   "facade_mid": {
+    "lat": 41.9841143,
+    "lon": 21.4730823
+   },
+   "building_centroid": {
+    "lat": 41.9841549,
+    "lon": 21.4732187
+   },
+   "camera_to_facade_m": 16.0,
+   "osm_road_id": 173694058,
+   "road_name": ""
+  },
+  {
+   "idx": 94,
+   "lat": 41.9834175,
+   "lon": 21.4758692,
+   "heading": 302.6,
+   "pitch": 11.8,
+   "fov": 86,
+   "osm_building_id": 38004473,
+   "building_type": "apartments",
+   "est_height_m": 15.0,
+   "footprint_m2": 1081,
+   "facade_edge": [
+    {
+     "lat": 41.9833952,
+     "lon": 21.4755013
+    },
+    {
+     "lat": 41.9836729,
+     "lon": 21.4757493
+    }
+   ],
+   "facade_length_m": 36.9,
+   "facade_mid": {
+    "lat": 41.9835341,
+    "lon": 21.4756253
+   },
+   "building_centroid": {
+    "lat": 41.9836916,
+    "lon": 21.4757096
+   },
+   "camera_to_facade_m": 23.9,
+   "osm_road_id": 664158112,
+   "road_name": "Видое Смилевски-Бато"
+  },
+  {
+   "idx": 95,
+   "lat": 41.982068,
+   "lon": 21.4677251,
+   "heading": 216.9,
+   "pitch": 25.0,
+   "fov": 82,
+   "osm_building_id": 136174337,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 539,
+   "facade_edge": [
+    {
+     "lat": 41.9818819,
+     "lon": 21.4677203
+    },
+    {
+     "lat": 41.9820156,
+     "lon": 21.4674906
+    }
+   ],
+   "facade_length_m": 24.1,
+   "facade_mid": {
+    "lat": 41.9819488,
+    "lon": 21.4676055
+   },
+   "building_centroid": {
+    "lat": 41.9818692,
+    "lon": 21.4675217
+   },
+   "camera_to_facade_m": 16.5,
+   "osm_road_id": 179454973,
+   "road_name": ""
+  },
+  {
+   "idx": 96,
+   "lat": 41.9903093,
+   "lon": 21.4720342,
+   "heading": 25.1,
+   "pitch": 1.0,
+   "fov": 90,
+   "osm_building_id": 942848304,
+   "building_type": "yes",
+   "est_height_m": 6.0,
+   "footprint_m2": 3133,
+   "facade_edge": [
+    {
+     "lat": 41.9906618,
+     "lon": 21.4718548
+    },
+    {
+     "lat": 41.9904314,
+     "lon": 21.4725105
+    }
+   ],
+   "facade_length_m": 59.9,
+   "facade_mid": {
+    "lat": 41.9905466,
+    "lon": 21.4721827
+   },
+   "building_centroid": {
+    "lat": 41.9907601,
+    "lon": 21.4723184
+   },
+   "camera_to_facade_m": 29.0,
+   "osm_road_id": 1345192496,
+   "road_name": "АСНОМ"
+  },
+  {
+   "idx": 97,
+   "lat": 41.9818056,
+   "lon": 21.4681892,
+   "heading": 217.2,
+   "pitch": 25.0,
+   "fov": 81,
+   "osm_building_id": 604418670,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 539,
+   "facade_edge": [
+    {
+     "lat": 41.9816159,
+     "lon": 21.4681795
+    },
+    {
+     "lat": 41.9817496,
+     "lon": 21.4679497
+    }
+   ],
+   "facade_length_m": 24.1,
+   "facade_mid": {
+    "lat": 41.9816828,
+    "lon": 21.4680646
+   },
+   "building_centroid": {
+    "lat": 41.9816032,
+    "lon": 21.4679808
+   },
+   "camera_to_facade_m": 17.1,
+   "osm_road_id": 179454973,
+   "road_name": ""
+  },
+  {
+   "idx": 98,
+   "lat": 41.9892209,
+   "lon": 21.467693,
+   "heading": 128.6,
+   "pitch": 25.0,
+   "fov": 61,
+   "osm_building_id": 38003230,
+   "building_type": "apartments",
+   "est_height_m": 30.0,
+   "footprint_m2": 615,
+   "facade_edge": [
+    {
+     "lat": 41.9889976,
+     "lon": 21.4678336
+    },
+    {
+     "lat": 41.9891683,
+     "lon": 21.4680146
+    }
+   ],
+   "facade_length_m": 24.1,
+   "facade_mid": {
+    "lat": 41.9890829,
+    "lon": 21.4679241
+   },
+   "building_centroid": {
+    "lat": 41.9890118,
+    "lon": 21.4680456
+   },
+   "camera_to_facade_m": 24.5,
+   "osm_road_id": 247820810,
+   "road_name": ""
+  },
+  {
+   "idx": 99,
+   "lat": 41.9815415,
+   "lon": 21.4686578,
+   "heading": 216.8,
+   "pitch": 25.0,
+   "fov": 78,
+   "osm_building_id": 604418671,
+   "building_type": "apartments",
+   "est_height_m": 27.0,
+   "footprint_m2": 539,
+   "facade_edge": [
+    {
+     "lat": 41.9813459,
+     "lon": 21.4686442
+    },
+    {
+     "lat": 41.9814797,
+     "lon": 21.4684145
+    }
+   ],
+   "facade_length_m": 24.1,
+   "facade_mid": {
+    "lat": 41.9814128,
+    "lon": 21.4685294
+   },
+   "building_centroid": {
+    "lat": 41.9813333,
+    "lon": 21.4684455
+   },
+   "camera_to_facade_m": 17.8,
+   "osm_road_id": 179454973,
+   "road_name": ""
+  }
+ ]
+}
