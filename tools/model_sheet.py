@@ -36,7 +36,7 @@ def cars():
     for k in range(vehicles.N):
         m = gl3d.car_model(k, 13 if k % 3 == 0 else k)
         x = (k % cols) * 8.5 - 38
-        z = (k // cols) * 6.5 - 14
+        z = (k // cols - (vehicles.N - 1) // cols / 2) * 6.5
         rl.draw_model_ex(m, V3(x, 0, z), V3(0, 1, 0), 20.0, V3(1, 1, 1), rl.WHITE)
 
 
@@ -46,10 +46,17 @@ def peds():
         for fr in (0, 1):
             m = gl3d.ped_model(a, a % 3, fr, a % 4)
             x = (a % cols) * 4.2 - 19
-            z = (a // cols) * 4.6 - 8 + fr * 1.7
+            z = (a // cols - (vehicles.PED_COUNT - 1) // cols / 2) * 4.6 + fr * 1.7
             rl.draw_model_ex(m, V3(x, 0, z), V3(0, 1, 0), 90.0, V3(1, 1, 1), rl.WHITE)
 
 
-shot(out_c, cars, rl.Camera3D(V3(0, 52, 28), V3(0, 0, 2), V3(0, 1, 0), 36.0, rl.CAMERA_PERSPECTIVE))
-shot(out_p, peds, rl.Camera3D(V3(0, 30, 16), V3(0, 0, 0), V3(0, 1, 0), 36.0, rl.CAMERA_PERSPECTIVE))
+def cam(n, cols, dx, dz):
+    """Orthographic camera that holds the whole grid of n models (the fixed perspective one showed 40 of the 97 vehicles)."""
+    rows = (n - 1) // cols + 1
+    asp = rl.get_screen_width() / rl.get_screen_height()
+    return rl.Camera3D(V3(0, 60, 34), V3(0, 0, 0), V3(0, 1, 0), max((rows + 1) * dz * 0.9, (cols + 1) * dx / asp), rl.CAMERA_ORTHOGRAPHIC)
+
+
+shot(out_c, cars, cam(vehicles.N, 10, 8.5, 6.5))
+shot(out_p, peds, cam(vehicles.PED_COUNT, 10, 4.2, 4.6))
 rl.close_window()
