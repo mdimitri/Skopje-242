@@ -133,8 +133,8 @@ def _toggle(x, y, on, labels):
 
 
 def _bar(x, y, w, h, n, col):
-    for b in range(8):
-        _skew(x + b * (w // 8), y, w // 8 - 4, h, -4, col if b < n else _th["p2"])
+    for b in range(6):
+        _skew(x + b * (w // 6), y, w // 6 - 4, h, -4, col if b < n else _th["p2"])
 
 
 def _btn(x, y, w, h, label, hot, sz=22):
@@ -336,7 +336,7 @@ _hero_scroll = {"sel": -1, "y": 0, "max": 0}
 
 
 def _hero_panel(sel, W, H, wheel=0):
-    """Fixed window on the right for the chosen hero: portrait, name, tagline, role, 8 stat bars (n/8 blocks); below them the
+    """Fixed window on the right for the chosen hero: portrait, name, tagline, role, 8 stat bars (n/6 blocks); below them the
     quote, story, goal, ability and weakness in a scrolling area (mouse wheel / PgUp PgDn) so the large text never clips."""
     import hero_profiles as HP
     hid, name = C.LIKOVI[sel][0], C.LIKOVI[sel][1]
@@ -361,16 +361,16 @@ def _hero_panel(sel, W, H, wheel=0):
     font.draw_text(font.fit(f"{pr['role']}  ·  {pr['money']} ден.", fs, w2, CD), x2, y + 2, fs, gray, bold=CD)
     y += fs + 12
     lw = max(font.measure_text(nm + (" *" if k in LOW_GOOD else ""), fs, CD) for k, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES)) + 12
-    bw = max(8, (w2 - lw - 52) // 8 - 3)
+    bw = max(8, (w2 - lw - 52) // 6 - 3)
     rowh = fs + 6
     for key, nm in zip(HP.STAT_KEYS, HP.STAT_NAMES):
         v = pr["stats"][key]
-        n = max(1, -(-v * 8 // 100))                                      # 0..100 -> 1..8 blocks (rounded up, never empty)
-        good = (8 - n) / 7.0 if key in LOW_GOOD else (n - 1) / 7.0        # colour = how GOOD it is, not how big: low Сомнителност is green
+        n = min(6, v // 20 + 1)                                           # stats are 0/20/..100 -> 1..6 blocks
+        good = (6 - n) / 5.0 if key in LOW_GOOD else (n - 1) / 5.0        # colour = how GOOD it is, not how big: low Сомнителност is green
         col = _grad(good)
         font.draw_text(nm + (" *" if key in LOW_GOOD else ""), x2, y, fs, white, bold=CD)
-        _bar(x2 + lw, y + 2, 8 * (bw + 3), fs, n, col)
-        font.draw_text(str(v), x2 + lw + 8 * (bw + 3) + 8, y, fs, white, bold=CD)
+        _bar(x2 + lw, y + 2, 6 * (bw + 3), fs, n, col)
+        font.draw_text(f"{n}/6", x2 + lw + 6 * (bw + 3) + 8, y, fs, white, bold=CD)
         y += rowh
     font.draw_text("зелено = добро · црвено = лошо · * помалку е подобро", x2, y, max(14, fs - 6), gray, bold=CD)
     y = max(y + fs, py + pic_h + 24) + 8
