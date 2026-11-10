@@ -143,6 +143,7 @@ class Guard:
 
     def __init__(self, hud_msg):
         self.errors = {}
+        self.streak = {}                                # failures in a row: only these disable a subsystem
         self.disabled = set()
         self.msg = hud_msg
         self.ms = {}                                    # this frame's time per subsystem (for the hitch log)
@@ -152,15 +153,19 @@ class Guard:
             return None
         t0 = time.perf_counter()
         try:
-            return fn(*a, **kw)
+            r = fn(*a, **kw)
+            if self.streak:
+                self.streak.pop(name, None)             # it works again: a rare hiccup must not add up to a shutdown
+            return r
         except SystemExit:
             raise
         except Exception:  # noqa: BLE001
             n = self.errors.get(name, 0) + 1
             self.errors[name] = n
+            k = self.streak[name] = self.streak.get(name, 0) + 1
             if n <= 3:
                 log(f"[guard] {name} failed ({n}):\n" + traceback.format_exc())
-            if n >= 8:
+            if k >= 8:
                 self.disabled.add(name)
                 self.msg((f'{name}' + TXT("main.0001")))
             return None
