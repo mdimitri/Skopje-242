@@ -570,11 +570,13 @@ def refine_pose(cap, lab, blds, h_of=lambda b: b.gen["h"]):
     return best[1], best[2], best[0]
 
 
-def fit_position(cap, lab, blds, log=None):
+def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
     """Where the photo was really taken: Google's panorama is often metres from the asked-for point.  Searches the camera
     position (up to 50 m back / 15 m sideways along the view) and yaw, and the target's height when OSM has no storeys, for the
     best match of the buildings' outlines with the labelled building pixels above the horizon (below it the road and the cars
-    get mistaken for walls).  Moves the capture; -> (back m, right m, yaw deg, height factor, score)."""
+    get mistaken for walls).  mode "full" tries every grid point (thousands of outline drawings); "fast" a coarse grid and then
+    halving steps round the best (~150 drawings, same result on the test photos).  Moves the capture;
+    -> (back m, right m, yaw deg, height factor, score)."""
     step = 4
     L = lab[::step, ::step]
     isb = (L == L_BUILDING).astype(np.float32)
@@ -587,38 +589,73 @@ def fit_position(cap, lab, blds, log=None):
     near = [b for b in blds.values() if np.hypot(b.c[0] - x0, b.c[1] - z0) < 180]
     tgt = blds.get(cap.bid)
     free = tgt is not None and not tgt.tags.get("building:levels") and not tgt.tags.get("height")
-    hm = [1.0]
+    seen = {}
 
-    def score():
-        pred = _silhouette(cap, near, lambda b: b.gen["h"] * (hm[0] if b is tgt else 1.0), L.shape, step)
-        a, nb = pred & valid, ~pred & valid
-        return float(isb[a].mean() - isb[nb].mean()) if a.sum() >= 20 and nb.sum() >= 20 else -9.0
+    def score(back, lat, dy, m):
+        k = (round(back, 2), round(lat, 2), round(dy, 2), round(m, 2))
+        if k not in seen:
+            cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
+            cap.dyaw = dy
+            pred = _silhouette(cap, near, lambda b: b.gen["h"] * (m if b is tgt else 1.0), L.shape, step)
+            a, nb = pred & valid, ~pred & valid
+            seen[k] = float(isb[a].mean() - isb[nb].mean()) if a.sum() >= 20 and nb.sum() >= 20 else -9.0
+        return seen[k]
     if not near or isb[valid].sum() < 50:
         return 0.0, 0.0, 0.0, 1.0, 0.0
-    cap.dyaw = cap.dpitch = 0.0
-    s0 = score()
+    cap.dpitch = 0.0
+    s0 = score(0.0, 0.0, 0.0, 1.0)
     best = (s0, 0.0, 0.0, 0.0, 1.0)
-    for back in np.arange(-10, 50.1, 2.5):
-        for lat in np.arange(-15, 15.1, 2.5):
-            cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
-            for dy in (-3.0, -1.5, 0.0, 1.5, 3.0):
-                cap.dyaw = dy
-                for m in ((1.0, 1.5, 2.0, 2.5, 3.0) if free else (1.0,)):
-                    hm[0] = m
-                    s = score()
-                    if s > best[0] + 1e-4:
-                        best = (s, back, lat, dy, m)
+    ms = (1.0, 1.5, 2.0, 2.5, 3.0) if free else (1.0,)
+    if mode == "full":
+        grid = [(bk, lt, dy, m) for bk in np.arange(-10, 50.1, 2.5) for lt in np.arange(-15, 15.1, 2.5)
+                for dy in (-3.0, -1.5, 0.0, 1.5, 3.0) for m in ms]
+    else:
+        grid = [(bk, lt, 0.0, m) for bk in np.arange(-10, 50.1, 10.0) for lt in (-15.0, -7.5, 0.0, 7.5, 15.0)
+                for m in ((1.0, 2.0, 3.0) if free else (1.0,))]
+    for g in grid:
+        if stop():
+            break
+        sc = score(*g)
+        if sc > best[0] + 1e-4:
+            best = (sc, *g)
+    if mode != "full":                      # halving pattern search round the best grid point
+        st = [5.0, 3.75, 1.5, 0.5 if free else 0.0]
+        while st[0] >= 1.2 and not stop():
+            moved = False
+            for i in range(4):
+                if st[i] <= 0:
+                    continue
+                for sgn in (-1, 1):
+                    c = list(best[1:])
+                    c[i] += sgn * st[i]
+                    c[0], c[1] = float(np.clip(c[0], -10, 50)), float(np.clip(c[1], -15, 15))
+                    c[2], c[3] = float(np.clip(c[2], -3, 3)), float(np.clip(c[3], 1.0, 3.0))
+                    sc = score(*c)
+                    if sc > best[0] + 1e-4:
+                        best, moved = (sc, *c), True
+            if not moved:
+                st = [v / 2 for v in st]
     s, back, lat, dy, m = best
     if s < s0 + 0.02:                                          # not clearly better: keep the recorded pose
         s, back, lat, dy, m = s0, 0.0, 0.0, 0.0, 1.0
-    cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
-    cap.dyaw = dy
-    if tgt is not None and m != 1.0:
-        tgt.h_seen = max(getattr(tgt, "h_seen", 0.0), tgt.gen["h"] * m)
+    apply_pose(cap, blds, back, lat, dy, m, x0, z0)
     if log:
         log(f"{cap.file[:4]}: камера {back:+.1f} м назад, {lat:+.1f} м десно, {dy:+.1f}°" + (f", висина на целта x{m:.1f}" if m != 1.0 else "")
-            + f" (поклопување {s0:.2f} -> {s:.2f})")
+            + f" (поклопување {s0:.2f} -> {s:.2f}, {len(seen)} обиди)")
     return back, lat, dy, m, s
+
+
+def apply_pose(cap, blds, back, lat, dy, m, x0=None, z0=None):
+    """Move the capture by a found pose (back / right metres along its view, yaw) and note the target's seen height."""
+    x0 = cap.x if x0 is None else x0
+    z0 = cap.z if z0 is None else z0
+    y = math.radians(cap.yaw)
+    fw, rt = np.array([math.sin(y), -math.cos(y)]), np.array([math.cos(y), math.sin(y)])
+    cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
+    cap.dyaw, cap.dpitch = dy, 0.0
+    tgt = blds.get(cap.bid)
+    if tgt is not None and m != 1.0:
+        tgt.h_seen = max(getattr(tgt, "h_seen", 0.0), tgt.gen["h"] * m)
 
 
 def _silhouette(cap, blds, h_of, shape, step):
@@ -953,7 +990,7 @@ def write_fits(blds, algo, path):
 class Job(threading.Thread):
     """Runs the pipeline for one folder and one algorithm; the viewer reads .caps / .blds / .log / .version while it works."""
 
-    def __init__(self, folder, algo, texs=None, osm_dir=None, seg="auto", state=None):
+    def __init__(self, folder, algo, texs=None, osm_dir=None, seg="auto", state=None, pose="fast"):
         super().__init__(daemon=True)
         self.folder, self.algo, self.texs = folder, algo, texs or {}
         self.osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
@@ -965,6 +1002,8 @@ class Job(threading.Thread):
         self.done = False
         self.error = None
         self.stop = False
+        self.pause = False
+        self.pose = pose                 # "fast" | "full" search of the camera position, "file" = as the file says
         self.labels = {}                 # capture file -> label map (viewer overlay)
 
     def log(self, s):
@@ -1009,9 +1048,19 @@ class Job(threading.Thread):
         caps.sort(key=lambda c: (c.bid, c.file))
         last_of = {c.bid: i for i, c in enumerate(caps)}
         touched = set()
+        pose_path = os.path.join(cache, "poses.json")             # found poses are kept: a rebuild does not search again
+        try:
+            with open(pose_path, encoding="utf-8") as f:
+                poses = json.load(f)
+        except (OSError, ValueError):
+            poses = {}
         for i, c in enumerate(caps):
+            while self.pause and not self.stop:
+                self.step = "пауза"
+                time.sleep(0.1)
             if self.stop:
-                return
+                self.log(f"застанато по {i} од {len(caps)} снимки: се довршуваат видените згради")
+                break
             self.step, self.frac = f"снимка {i + 1}/{len(caps)}: {c.file[:28]}", i / max(1, len(caps))
             self.version += 1
             img = c.image()
@@ -1027,7 +1076,19 @@ class Job(threading.Thread):
             if not hasattr(c, "x0"):
                 c.x0, c.z0 = c.x, c.z
             c.x, c.z = c.x0, c.z0
-            fit_position(c, lab, self.blds, self.log)                 # always: the photo is rarely taken where the file says
+            pk = poses.get(c.file)
+            if self.pose == "file":
+                c.dyaw = 0.0
+            elif pk and (pk[4] == "full" or pk[4] == self.pose):
+                apply_pose(c, self.blds, *pk[:4])
+                self.log(f"{c.file[:4]}: камера од зачуваното ({pk[0]:+.1f} м назад, {pk[1]:+.1f} м десно, {pk[2]:+.1f}°)")
+            else:
+                self.step = f"снимка {i + 1}/{len(caps)}: позиција на камерата"
+                r = fit_position(c, lab, self.blds, self.log, self.pose, lambda: self.stop)
+                if not self.stop:
+                    poses[c.file] = [round(float(v), 3) for v in r[:4]] + [self.pose]
+                    with open(pose_path, "w", encoding="utf-8") as f:
+                        json.dump(poses, f)
             edges = wall_edges(self.blds, np.array([c.x, c.z]), 220)
             views = facade_views(c, img, lab, ui, self.blds, edges)
             for o in views:

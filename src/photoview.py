@@ -380,6 +380,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     orb = Orbit(cen)
     sel = next((c for c in caps if c.exists), None)
     show_fr, show_ph, panel_mode, alpha = True, True, 0, 0.55
+    pose_mode = "fast"                              # camera position: fast search (kept in poses.json), full grid, or as the file says
     for c in caps:                                  # headless test: --test "sel=0043,panel=2,free"
         if c.exists and ("sel=" + c.file[:4]) in test:
             sel = c
@@ -516,10 +517,21 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         y += 8
         if _button(16, y, lw - 32, 38, "ГРАДИ ПРЕКУ ВЕТЕ (R)" if algo in {k for b in blds.values() for k in b.fits} else "ИЗГРАДИ (R)", running, 22) or start:
             if not running:
-                job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds))
+                job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds), pose=pose_mode)
                 job.start()
                 look = True
         y += 46
+        hw = (lw - 40) // 2
+        if running:                                             # pause / stop (stop keeps what is done: fits, neighbours, file)
+            if _button(16, y, hw, 30, "ПРОДОЛЖИ (Space)" if job.pause else "ПАУЗА (Space)", job.pause) or rl.is_key_pressed(rl.KEY_SPACE):
+                job.pause = not job.pause
+            if _button(24 + hw, y, hw, 30, "СТОП" if not job.stop else "ЗАСТАНУВА ...", job.stop):
+                job.stop, job.pause = True, False
+        else:
+            names_ = {"fast": "БРЗО", "full": "ЦЕЛОСНО (бавно)", "file": "ОД ФАЈЛОТ"}
+            if _button(16, y, lw - 32, 30, "ПОЗИЦИЈА НА КАМЕРАТА: " + names_[pose_mode], False, 16):
+                pose_mode = {"fast": "full", "full": "file", "file": "fast"}[pose_mode]
+        y += 36
         if _button(16, y, (lw - 40) // 2, 30, "ПРИКАЖИ: " + ("ФОТО" if look else "ТЕКОВНИ") + " (G)", look):
             look = not look
         if _button(24 + (lw - 40) // 2, y, (lw - 40) // 2, 30, "ПРИМЕНИ ВО ИГРАТА", False):
