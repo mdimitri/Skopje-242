@@ -13,7 +13,6 @@ import os
 import shutil
 import subprocess
 import sys
-import threading
 
 import numpy as np
 from PIL import Image
@@ -82,23 +81,52 @@ def _quiet():
         pass
 
 
-def _watch_download(mid, done, log):
-    """While the model loads: MB of the weights in the Hugging Face cache every few seconds (first run only)."""
+FETCH = """import sys
+from huggingface_hub import list_repo_files, snapshot_download
+mid = sys.argv[1]
+files = list_repo_files(mid)
+w = ["*.safetensors"] if any(f.endswith(".safetensors") for f in files) else ["pytorch_model.bin"]
+snapshot_download(mid, allow_patterns=["*.json"] + w)
+"""
+
+
+def fetch(mid, log, stall=90.0):
+    """The model weights into the Hugging Face cache, in a child process that can be killed: Xet transfer first, plain HTTPS
+    when that stalls (no new bytes for `stall` s), MB progress in the log.  -> True when the files are there."""
+    import time
     try:
-        from huggingface_hub import HfApi, constants
-        total = sum((f.size or 0) for f in HfApi().model_info(mid, files_metadata=True).siblings
-                    if f.rfilename.endswith((".safetensors", ".bin", ".json")))
+        from huggingface_hub import constants
         root = os.path.join(constants.HF_HUB_CACHE, "models--" + mid.replace("/", "--"))
-    except Exception:  # noqa: BLE001 - offline: nothing to show
-        return
-    last = -1
-    while not done.wait(3.0):
-        got = 0
-        for dp, _dn, fn in os.walk(root):
-            got += sum(os.path.getsize(os.path.join(dp, f)) for f in fn if not os.path.islink(os.path.join(dp, f)))
-        if got != last:
-            log(f"  веси: {got / 1e6:.0f} / {total / 1e6:.0f} MB")
-            last = got
+    except Exception:  # noqa: BLE001
+        root = None
+
+    def size():
+        if not root or not os.path.isdir(root):
+            return 0
+        return sum(os.path.getsize(os.path.join(dp, f)) for dp, _d, fn in os.walk(root) for f in fn
+                   if not os.path.islink(os.path.join(dp, f)))
+    for extra, how in (({}, "Xet"), ({"HF_HUB_DISABLE_XET": "1"}, "HTTPS")):
+        log(f"веси на моделот ({how}) ...")
+        p = subprocess.Popen([sys.executable, "-c", FETCH, mid], env={**os.environ, **extra}, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        last, t_last = size(), time.time()
+        while p.poll() is None:
+            time.sleep(3.0)
+            got = size()
+            if got != last:
+                log(f"  веси: {got / 1e6:.0f} MB")
+                last, t_last = got, time.time()
+            elif time.time() - t_last > stall:
+                log(f"  {how}: нема нови бајти {stall:.0f} s, прекинувам")
+                p.kill()
+                break
+        if p.wait() == 0:
+            return True
+        err = (p.stderr.read() or "").strip().splitlines()
+        if err:
+            log("  " + err[-1][:110])
+    return False
 
 
 class SegFormer:
@@ -112,13 +140,10 @@ class SegFormer:
         self.dev = "cuda" if torch.cuda.is_available() else "cpu"
         mid = MODEL_GPU if self.dev == "cuda" else MODEL_CPU
         log(f"модел {mid} на {self.dev} (прв пат се симнува)")
-        done = threading.Event()
-        threading.Thread(target=_watch_download, args=(mid, done, log), daemon=True).start()
-        try:
-            self.proc = SegformerImageProcessor.from_pretrained(mid)
-            self.model = SegformerForSemanticSegmentation.from_pretrained(mid).to(self.dev).eval()
-        finally:
-            done.set()
+        if not fetch(mid, log):
+            raise RuntimeError("the model weights could not be downloaded")
+        self.proc = SegformerImageProcessor.from_pretrained(mid)
+        self.model = SegformerForSemanticSegmentation.from_pretrained(mid).to(self.dev).eval()
         log(f"модел вчитан ({'GPU: ' + torch.cuda.get_device_name(0) if self.dev == 'cuda' else 'CPU'})")
 
     def labels(self, img, cache=None):
