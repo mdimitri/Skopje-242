@@ -208,6 +208,8 @@ def main():
             if all(math.hypot(cd["c"][0] - o["c"][0], cd["c"][1] - o["c"][1]) >= sep for o in chosen):
                 chosen.append(cd)
         sep -= 10
+    if a.whole:                           # capture order: from the centre outwards
+        chosen.sort(key=lambda z: math.hypot(*z["c"]))
     out = []
     for n, cd in enumerate(chosen):
         b = blds[cd["i"]]
@@ -217,7 +219,7 @@ def main():
         lat, lon = unproject(*cd["c"])
         e0, e1, mm, cc = unproject(*cd["p0"]), unproject(*cd["p1"]), unproject(*cd["m"]), unproject(*b["c"])
         out.append({
-            "idx": n, "view": cd["view"], "lat": round(lat, 7), "lon": round(lon, 7), "heading": round(hd, 1), "pitch": pitch, "fov": fov,
+            "idx": n, "dist_from_center_m": round(math.hypot(*cd["c"])), "view": cd["view"], "lat": round(lat, 7), "lon": round(lon, 7), "heading": round(hd, 1), "pitch": pitch, "fov": fov,
             "osm_building_id": b["id"], "building_type": b["tag"], "est_height_m": b["h"], "footprint_m2": round(b["area"]),
             "facade_edge": [{"lat": round(e0[0], 7), "lon": round(e0[1], 7)}, {"lat": round(e1[0], 7), "lon": round(e1[1], 7)}],
             "facade_length_m": round(cd["L"], 1), "facade_mid": {"lat": round(mm[0], 7), "lon": round(mm[1], 7)},
