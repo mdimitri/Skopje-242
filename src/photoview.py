@@ -28,23 +28,58 @@ LOOK_COL = {"photo": rl.Color(80, 230, 120, 255), "inferred": rl.Color(90, 160, 
 LABEL_RGB = np.array([[120, 120, 120], [230, 200, 60], [90, 170, 255], [40, 200, 70], [230, 60, 60], [150, 110, 80]], np.uint8)
 
 
+def _pick_windows(start):
+    """The Windows folder dialog through PowerShell (the game's embedded Python has no tkinter) -> path, '' = cancelled, None = failed."""
+    import subprocess
+    ps = ("Add-Type -AssemblyName System.Windows.Forms;"
+          "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
+          "$f.Description = 'Папка со фотограметриски снимки (manifest.csv)';"
+          f"$f.SelectedPath = '{start.replace(chr(39), chr(39) * 2)}';"
+          "$w = New-Object System.Windows.Forms.Form; $w.TopMost = $true;"
+          "if ($f.ShowDialog($w) -eq 'OK') { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $f.SelectedPath }")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps], capture_output=True, timeout=600,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return r.stdout.decode("utf-8", "replace").strip() if r.returncode == 0 else None
+    except Exception as e:  # noqa: BLE001
+        print(f"[photogram] windows folder dialog failed: {e}")
+        return None
+
+
+def _pick_tk(start):
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        return None
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    path = filedialog.askdirectory(title="Папка со фотограметриски снимки (manifest.csv)", initialdir=start or ROOT, parent=root)
+    root.destroy()
+    return path or ""
+
+
 def ask_folder():
-    """The OS folder picker (tkinter), starting at the last folder used -> path or None."""
+    """The OS folder picker, starting at the last folder used -> path or None.  Windows dialog, else tkinter, else the last folder
+    or <game>/Photogrametry when there is one."""
     start = ""
     try:
         start = open(LAST, encoding="utf-8").read().strip()
     except OSError:
         pass
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        path = filedialog.askdirectory(title="Папка со фотограметриски снимки (manifest.csv)", initialdir=start or ROOT, parent=root)
-        root.destroy()
-    except Exception as e:  # noqa: BLE001 - no tkinter: the last folder, if any
-        print(f"[photogram] folder picker failed: {e}")
+    if not start and os.path.isdir(os.path.join(ROOT, "Photogrametry")):
+        start = os.path.join(ROOT, "Photogrametry")
+    path = None
+    for pick in ((_pick_windows, _pick_tk) if os.name == "nt" else (_pick_tk,)):
+        try:
+            path = pick(start)
+        except Exception as e:  # noqa: BLE001
+            print(f"[photogram] folder picker failed: {e}")
+            path = None
+        if path is not None:
+            break
+    if path is None:                                     # no dialog at all: the last / default folder
         path = start
     if path:
         try:
