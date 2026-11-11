@@ -395,8 +395,11 @@ def fit_height(obs, h0):
 def blend_height(b, h, conf):
     """The photo height against what OSM says: the tag wins unless the photos are sure, and never moves it more than 35 %."""
     ho = _osm_h(b)
-    if ho is None:
-        return h if conf >= 0.3 else b.gen["h"] + (h - b.gen["h"]) * conf / 0.3
+    if ho is None:                                   # no tag: the photo decides, within what this kind of building can be
+        g = b.gen["h"]
+        h = h if conf >= 0.3 else g + (h - g) * conf / 0.3
+        hi = 12.0 if b.kind() == "house" else (2.0 * g if b.area < 300 else 3.0 * g)
+        return float(np.clip(h, 0.5 * g, max(g, hi)))
     w = min(1.0, conf) * 0.6
     return float(np.clip(ho + (h - ho) * w, ho * 0.65, ho * 1.35))
 
