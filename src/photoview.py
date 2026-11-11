@@ -234,10 +234,11 @@ class Scene:
                 except Exception:  # noqa: BLE001
                     b._tri = ([], [])
             verts, tri = b._tri
-            if roof and roof.get("kind") == "pitched":
-                parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, float(np.clip(roof["rise"], 1.2, 7.0)), lk["roofc"])))
-            elif roof and roof.get("kind") == "mansard":
-                parts.append((bw.MAT_ROOF, bw.mansard(ring, h, float(np.clip(roof["rise"], 0.8, 7.0)), lk["roofc"])))
+            proof = bw.photo_roof(ring, h, lk, lk["roofc"], lk["wallc"]) if roof else None
+            if proof:
+                parts += [(m_, tuple(g)) for m_, *g in proof]
+            if proof is not None and roof.get("kind") != "flat":
+                pass
             elif lk.get("small") and lk.get("pitched", True) and h < 11:
                 parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(b.area) * 0.12, lk["roofc"])))
             else:

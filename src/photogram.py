@@ -656,6 +656,123 @@ def _weighted_median(vals, w):
     return float(np.asarray(vals)[o][np.searchsorted(c, c[-1] / 2)])
 
 
+def _inward(ring, p, nrm):
+    """How deep the footprint is from point p of a wall straight inwards (along -nrm) -> m."""
+    d = -np.asarray(nrm, float)
+    best = None
+    n = len(ring)
+    for i in range(n):
+        a, e = ring[i], ring[(i + 1) % n]
+        s = e - a
+        den = d[0] * s[1] - d[1] * s[0]
+        if abs(den) < 1e-9:
+            continue
+        w = a - p
+        t = (w[0] * s[1] - w[1] * s[0]) / den
+        q = (w[0] * d[1] - w[1] * d[0]) / den
+        if t > 0.3 and 0 <= q <= 1 and (best is None or t < best):
+            best = t
+    return float(best) if best else 6.0
+
+
+def roof_shape(b, walls, bands, roofcs, log=None):
+    """The roof of the building from the roof lines its walls show (facade.roof_profile per wall section):
+    a triangle of the wall's colour = a gable end (ridge across that wall), a triangle / trapezoid of the roof's colour = hip,
+    a slope = shed, a level line over a roof band = ridge along that wall (hip on houses, mansard on blocks), nothing = flat.
+    Heights seen above the wall plane are behind it: they are pushed back to their real depth with the camera's geometry
+    (similar triangles).  -> {"kind", "rise", "c", "axis" [x, z] ridge direction, "eave", "chim" [[x, z, w, top]],
+    "hous" [[x, z, sx, sz, top, yaw]], "high" [x, z] (shed: the high side's normal)} or None."""
+    obs = []
+    for f in walls:
+        a, e = np.array(f["a"], float), np.array(f["b"], float)
+        ln = max(1e-6, float(np.hypot(*(e - a))))
+        t = (e - a) / ln
+        nrm = np.array([t[1], -t[0]])
+        uc, dn, ey = f.get("cam", [ln / 2, 20.0, 2.5])
+        for rp, sc in zip(f.get("rp", []), f["secs"]):
+            if f["top_seen"] < 0.2:
+                continue
+            obs.append((rp, f, a, t, nrm, dn, ey, sc[2] - sc[3]))
+    if not obs:
+        if bands and roofcs:
+            return {"kind": "hip" if b.area < 400 else "mansard", "rise": round(float(np.median(bands)), 2),
+                    "c": [int(v) for v in np.median(roofcs, 0)], "eave": 0.4 if b.area < 400 else 0.0, "chim": [], "hous": []}
+        return None
+    house = b.kind() == "house" or b.area < 400 or b.gen["small"]
+    rc = [int(v) for v in np.median(roofcs, 0)] if roofcs else list(b.gen["roofc"])
+    ring = b.ring
+
+    def back(v, o, p):                     # a height seen on the wall plane -> its height where it really is (dr behind the wall)
+        rp, f, a, t, nrm, dn, ey, wt = o
+        dr = _inward(ring, a + t * p, nrm) / 2
+        return ey + (v - ey) * (dn + dr) / dn
+
+    for o in obs:                     # slopes on a block's roof line are partial views / trees, not shed or gable roofs
+        rp = o[0]
+        if rp["kind"] != "level" and (not house or rp["rise"] > min(6.0, 0.6 * rp["w"])):
+            rp["kind"] = "level"
+    peaks = [o for o in obs if o[0]["kind"] == "peak"]
+    gables = [o for o in peaks if o[0].get("wall_like", 0) > 0.5]
+    sheds = [o for o in obs if o[0]["kind"].startswith("shed")]
+    traps = [o for o in obs if o[0]["kind"] == "trap"]
+    levels = [o for o in obs if o[0]["kind"] == "level" and o[0]["band"] >= 0.8]
+    axis, high = None, None
+    if gables:
+        o = max(gables, key=lambda o: o[0]["w"])
+        kind, rise, axis = "gable", o[0]["rise"], o[4]                  # the gable wall is in the photo's plane: no correction
+    elif peaks or traps:
+        o = max(peaks + traps, key=lambda o: o[0]["w"])
+        kind = "hip"
+        rise = back(o[7] + o[0]["rise"], o, o[0]["u"]) - o[7]
+        if o[0]["kind"] == "trap":
+            axis = o[3]
+    elif sheds:
+        o = max(sheds, key=lambda o: o[0]["w"])
+        kind, rise = "shed", o[0]["rise"]
+        axis = o[4]
+        high = (o[3] if o[0]["kind"] == "shed_r" else -o[3]).tolist()
+    elif levels:
+        o = max(levels, key=lambda o: o[0]["w"])
+        rise = back(o[7] + o[0]["band"], o, o[0]["u"]) - o[7]
+        if house:
+            kind, axis = "hip", o[3]
+        else:
+            kind, rise = "mansard", o[0]["band"]
+    elif bands and roofcs:
+        kind, rise = ("hip" if house else "mansard"), float(np.median(bands))
+    else:
+        kind, rise = "flat", 0.0
+    ext = np.ptp(ring, 0)
+    if kind == "hip" and axis is None and max(ext) < 1.25 * max(1.0, min(ext)):
+        kind = "pyramid"
+    eaves = [o[0]["eave"] for o in obs if o[0].get("eave", 0) > 0]
+    eave = float(np.median(eaves)) if eaves else (0.45 if kind in ("gable", "hip", "pyramid", "shed") else 0.0)
+    chim, hous = [], []
+    for o in obs:
+        rp, f, a, t, nrm, dn, ey, wt = o
+        for u, w, v in rp["chim"]:
+            dep = _inward(ring, a + t * u, nrm)
+            p = a + t * u - nrm * dep / 2
+            chim.append([round(float(p[0]), 2), round(float(p[1]), 2), w, round(float(min(back(v, o, u), wt + rise + 2.5)), 2)])
+        for u0, u1, v in rp["hous"]:
+            dep = _inward(ring, a + t * (u0 + u1) / 2, nrm)
+            sz = float(np.clip(dep * 0.3, 1.5, 5.0))
+            p = a + t * (u0 + u1) / 2 - nrm * (min(2.0, dep * 0.2) + sz / 2)
+            hous.append([round(float(p[0]), 2), round(float(p[1]), 2), round(u1 - u0, 2), round(sz, 2),
+                         round(float(ey + (v - ey) * (dn + dep * 0.2) / dn), 2), round(math.atan2(t[1], t[0]), 3)])
+    out = {"kind": kind, "rise": round(float(np.clip(rise, 0.0, 9.0)), 2), "c": rc, "eave": round(eave, 2),
+           "chim": chim[:6], "hous": hous[:4]}
+    if axis is not None:
+        out["axis"] = [round(float(axis[0]), 3), round(float(axis[1]), 3)]
+    if high is not None:
+        out["high"] = [round(float(v), 3) for v in high]
+    if log:
+        log(f"    покрив: {kind}, подигање {out['rise']:.1f} м, стреа {eave:.2f} м" + (f", слеме {out.get('axis')}" if axis is not None else "")
+            + f", оџаци {len(out['chim'])}, надградби {len(out['hous'])} (од {len(obs)} профили: "
+            + ", ".join(f"{o[0]['kind']}" for o in obs) + ")")
+    return out
+
+
 def fit_detail(b, obs, log=None):
     """The 'detail' fit: height and colours as the other fits, then every seen wall through facade.analyse (roof line, roof band,
     floor grid, bay columns and their procedural parameters).  Only numbers come out: no photo pixel reaches the game."""
@@ -711,14 +828,13 @@ def fit_detail(b, obs, log=None):
     best = max(walls, key=lambda f: f["ln"] * (1 + len(f["cols"])))
     out.update(floor=best["fh"], bay=best["bw"], walls=walls, params=params, cycle=[c[2] for c in best["cols"]],
                surf=best["surf"], rough=best["rough"])
-    if bands and roofcs:
-        rise = float(np.median(bands))
-        kind = "pitched" if (b.kind() == "house" or b.area < 260 or b.gen["small"]) else "mansard"
-        out["roof"] = {"kind": kind, "rise": round(rise, 2), "c": [int(v) for v in np.median(roofcs, 0)]}
-        out["roofc"] = out["roof"]["c"]
-        out["pitched"] = kind == "pitched"
-        if "h_top" not in out:
-            out["h"] = round(max(2.5, out["h"] - rise), 1) if kind == "mansard" else out["h"]
+    roof = roof_shape(b, walls, bands, roofcs, log)
+    if roof:
+        out["roof"] = roof
+        out["roofc"] = roof["c"]
+        out["pitched"] = roof["kind"] not in ("flat", "mansard")
+        if "h_top" not in out and roof["kind"] == "mansard":
+            out["h"] = round(max(2.5, out["h"] - roof["rise"]), 1)
     if log:
         log(f"  зграда {b.id}: ѕид {out['h']:.1f} м" + (f" + покрив {out['roof']['kind']} {out['roof']['rise']:.1f} м" if "roof" in out else "")
             + f", ѕидови {len(walls)}, видени колони {len(params)}, површина {best['surf']}, клима {sum(len(p['ac']) for p in params)}, "
@@ -802,8 +918,9 @@ def infer(blds, algo, k=3):
         if "cycle" in src[0]:                       # the nearest fitted building's columns (windows, balconies, ...) on every wall
             f.update(cycle=src[0]["cycle"], params=src[0]["params"], floor=src[0]["floor"], bay=src[0]["bay"],
                      surf=src[0]["surf"], rough=src[0]["rough"])
-            if "roof" in src[0] and (src[0]["roof"]["kind"] == "pitched") == (b.kind() == "house" or b.area < 260):
-                f["roof"], f["roofc"] = src[0]["roof"], src[0]["roofc"]
+            if "roof" in src[0] and (src[0]["roof"]["kind"] in ("flat", "mansard")) == (not (b.kind() == "house" or b.area < 400)):
+                f["roof"] = {k: v for k, v in src[0]["roof"].items() if k not in ("chim", "hous", "axis", "high")}   # world positions: its own
+                f["roofc"] = src[0]["roofc"]
         t = b.tags
         if not t.get("height") and not t.get("building:levels"):          # OSM gives no height: the neighbours' fitted one
             hs = [s["h"] for s, o in zip(src, order) if 0.4 < done[same[o]].area / max(b.area, 1) < 2.5]
@@ -899,6 +1016,9 @@ class Job(threading.Thread):
             self.version += 1
             img = c.image()
             lab = seg.labels(img, os.path.join(cache, os.path.splitext(c.file)[0] + f".{seg.name}.png"))
+            if self.algo == "detail":                                 # true colours: haze veil off, the photo's own white point
+                img, V, Wl = facade.restore(img, lab)
+                self.log(f"  боја на снимката: измаглица {[int(v) for v in V]} одземена, бело {Wl:.0f} -> 255")
             self.labels[c.file] = lab
             ui = c.ui_mask()
             lab = lab.copy()

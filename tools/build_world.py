@@ -1060,14 +1060,26 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         yaw = math.atan2(t_[1], t_[0])
         sh = float(np.clip(0.52 + 0.55 * max(0.0, float(np.array([nrm[0], 0, nrm[1]]) @ SUN)), 0.45, 1.12))
         w = next((w for w in seen if np.hypot(*(np.array(w["a"]) - a)) < 1.5 and np.hypot(*(np.array(w["b"]) - b)) < 1.5), None)
-        if w:
-            k = ln / max(0.1, w["ln"])
-            cols = [(c[0] * k, c[1] * k, c[2]) for c in w["cols"]]
-            fh, pv, ref = w["fh"], w["pv"] % w["fh"], w.get("shade", 0.85)
-            cells, wallc, surf = w.get("cells", {}), w["wall"], w.get("surf", fit.get("surf", "plas"))
+        opp = None
+        if not w and fit.get("opp", True):   # an unseen wall facing a seen one of about its length: the seen one's order, front to back
+            par = [s_ for s_ in seen if 0.6 < ln / max(0.1, s_["ln"]) < 1.6
+                   and float((np.array(s_["b"]) - np.array(s_["a"])) @ t_) / max(0.1, s_["ln"]) < -0.85]
+            opp = max(par, key=lambda s_: s_["ln"]) if par else None
+        bands, gf = [], None
+        if w or opp:
+            src_ = w or opp
+            k = ln / max(0.1, src_["ln"])
+            cols = [(c[0] * k, c[1] * k, c[2], c[4] if len(c) > 4 else -1, c[5] if len(c) > 5 else 0.0) for c in src_["cols"]]
+            if opp:
+                cols = [(ln - c1, ln - c0, pi_, -1, d_) for c0, c1, pi_, _g, d_ in reversed(cols)]
+            fh, pv, ref = src_["fh"], src_["pv"] % src_["fh"], src_.get("shade", 0.85)
+            cells = src_.get("cells", {}) if w else {}
+            wallc, surf = src_["wall"], src_.get("surf", fit.get("surf", "plas"))
+            bands = src_.get("bands") or []
+            gf = src_.get("gf") if w else None
         else:
             nb = max(1, int(round(ln / bw0)))
-            cols = [(ln * j / nb, ln * (j + 1) / nb, cyc[(j + i * 3) % len(cyc)]) for j in range(nb)]
+            cols = [(ln * j / nb, ln * (j + 1) / nb, cyc[(j + i * 3) % len(cyc)], -1, 0.0) for j in range(nb)]
             fh, pv, ref, cells = fh0, 0.0, 0.85, {}
             wallc, surf = fit.get("wallc", (200, 200, 200)), fit.get("surf", "plaster")
         lit = float(np.clip(sh / ref, 0.72, 1.18))
@@ -1076,8 +1088,13 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         MS, MG = MAT_SURF[smat], MAT_SURF["glaz"]
         base = SURF_BASE[smat]
 
+        off = [0.0]                                                # the current cell's depth out of (+) / into (-) the OSM wall
+
+        def N(dd):
+            return nrm * (dd + off[0])
+
         def P(u, y, dd=0.0):
-            q = a + t_ * u + nrm * dd
+            q = a + t_ * u + N(dd)
             return (float(q[0]), float(y), float(q[1]))
 
         def wall_rect(u0, u1, y0, y1, col):
@@ -1090,17 +1107,21 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             put(MG, pts, [(0.6, 0.2), (0.9, 0.2), (0.9, 0.8), (0.6, 0.8)], [c * lit * k_ / PAINT_BASE for c in col])
 
         cuts = [y_bot] + [pv + k_ * fh for k_ in range(int(math.ceil(h / fh)) + 1) if y_bot < pv + k_ * fh < h - 0.05] + [h]
-        for ci, (u0, u1, pi) in enumerate(cols):
+        gcols = set(gf["cols"]) if gf else set()
+        Dg = [[(d_ + (gf["d"] if ci in gcols and y1 <= gf["y"] + 0.05 else 0.0)) for y0, y1 in zip(cuts[:-1], cuts[1:])]
+              for ci, (_u0, _u1, _pi, _g, d_) in enumerate(cols)]
+        for ci, (u0, u1, pi, gpi, _d) in enumerate(cols):
             if pi >= len(params) or u1 - u0 < 0.05:
                 continue
-            p = params[pi]
             cw = u1 - u0
-            for y0, y1 in zip(cuts[:-1], cuts[1:]):
+            for bi, (y0, y1) in enumerate(zip(cuts[:-1], cuts[1:])):
+                off[0] = Dg[ci][bi]
+                p = params[gpi] if (0 <= gpi < len(params) and y0 <= 1.5 < y1) else params[pi]   # the ground storey's own look
                 fl = int(math.floor((y0 + 1e-3 - pv) / fh))
                 wc = cells.get(f"{ci},{fl}", wallc) if w else wallc
                 if glassy:
                     wc = p.get("frame") or (70, 76, 82)
-                fullcell = y1 - y0 > 0.95 * fh and y0 > 0.5
+                fullcell = y1 - y0 > 0.95 * fh and y0 > 0.05
                 win = p.get("win")
                 if glassy and fullcell:
                     win = [0.03, 0.97, 0.06, 0.96]
@@ -1142,11 +1163,11 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                         yt = wy0 + (wy1 - wy0) * 0.72
                         paint([P(wx0, yt - 0.025, fd), P(wx1, yt - 0.025, fd), P(wx1, yt + 0.025, fd), P(wx0, yt + 0.025, fd)], fc)
                     if p.get("sill") and not glassy:
-                        cx, cz = a + t_ * (wx0 + wx1) / 2 + nrm * 0.03
+                        cx, cz = a + t_ * (wx0 + wx1) / 2 + N(0.03)
                         put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
                     for fx, cy, aw, ah, *cc in p.get("ac", []):                # AC units with a dark fan grille
                         cu = u0 + fx * cw
-                        cx, cz = a + t_ * cu + nrm * 0.18
+                        cx, cz = a + t_ * cu + N(0.18)
                         yb_ = y0 + cy - ah / 2
                         put_box(MG, cx, cz, aw, 0.35, ah, yb_, [c * lit / PAINT_BASE for c in cc], yaw)
                         gr = ah * 0.32
@@ -1155,25 +1176,105 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 bc = p.get("balc")
                 if bc and not glassy:                                           # balcony: slab + parapet or railing
                     dep, rc_, solid = bc[0], bc[1:4], (bc[4] if len(bc) > 4 else 1) or not full
-                    cx, cz = a + t_ * (u0 + u1) / 2 + nrm * dep / 2
+                    cx, cz = a + t_ * (u0 + u1) / 2 + N(dep / 2)
                     bw_ = cw * 0.96
                     put_box(MG, cx, cz, bw_, dep, 0.16, y0, [c * lit * 0.95 / PAINT_BASE for c in wc], yaw)
                     if solid:
-                        ox, oz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.04)
+                        ox, oz = a + t_ * (u0 + u1) / 2 + N(dep - 0.04)
                         put_box(MG, ox, oz, bw_, 0.08, 0.92, y0 + 0.16, [c * lit / PAINT_BASE for c in rc_], yaw)
                         for su in (u0 + (cw - bw_) / 2 + 0.04, u1 - (cw - bw_) / 2 - 0.04):
-                            sx_, sz_ = a + t_ * su + nrm * dep / 2
+                            sx_, sz_ = a + t_ * su + N(dep / 2)
                             put_box(MG, sx_, sz_, 0.08, dep, 0.92, y0 + 0.16, [c * lit * 0.94 / PAINT_BASE for c in rc_], yaw)
                     else:
-                        ox, oz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.03)
+                        ox, oz = a + t_ * (u0 + u1) / 2 + N(dep - 0.03)
                         put_box(MG, ox, oz, bw_, 0.06, 0.06, y0 + 1.0, [c * lit / PAINT_BASE for c in rc_], yaw)
                         put_box(MG, ox, oz, bw_, 0.04, 0.04, y0 + 0.24, [c * lit / PAINT_BASE for c in rc_], yaw)
                         nposts = max(2, int(bw_ / 0.14))
                         for k_ in range(nposts + 1):
                             pu = u0 + (cw - bw_) / 2 + bw_ * k_ / nposts
-                            px_, pz_ = a + t_ * pu + nrm * (dep - 0.03)
+                            px_, pz_ = a + t_ * pu + N(dep - 0.03)
                             put_box(MG, px_, pz_, 0.025, 0.025, 0.84, y0 + 0.16, [c * lit * 0.9 / PAINT_BASE for c in rc_], yaw)
+        # ---- the wall's relief: side faces where neighbouring columns stand at different depths (and at the wall's ends when
+        # a column stands out), caps / soffits where a column's depth changes between storeys and at the wall top
+        off[0] = 0.0
+
+        def lit_n(nv):
+            return float(np.clip(float(np.clip(0.52 + 0.55 * max(0.0, float(np.array([nv[0], 0, nv[1]]) @ SUN)), 0.45, 1.12)) / ref, 0.6, 1.25))
+
+        def relief(pts, nv, col):
+            put(MS, pts, [(0, 0), (0.1, 0), (0.1, 0.5), (0, 0.5)], [c * lit_n(nv) / base for c in col])
+
+        nc = len(cols)
+        for bi, (y0, y1) in enumerate(zip(cuts[:-1], cuts[1:])):
+            for ci in range(-1, nc):
+                dl = Dg[ci][bi] if ci >= 0 else 0.0
+                dr_ = Dg[ci + 1][bi] if ci + 1 < nc else 0.0
+                u = cols[ci][1] if ci >= 0 else cols[0][0]
+                if (ci < 0 and dr_ <= 0.02) or (ci + 1 >= nc and dl <= 0.02) or abs(dl - dr_) < 0.02:
+                    continue
+                relief([P(u, y0, dl), P(u, y0, dr_), P(u, y1, dr_), P(u, y1, dl)], t_ if dl > dr_ else -t_, wallc)
+        for ci, (u0, u1, *_r) in enumerate(cols):
+            for bi in range(len(cuts) - 1):
+                y = cuts[bi + 1]
+                lo_ = Dg[ci][bi]
+                up_ = Dg[ci][bi + 1] if bi + 1 < len(cuts) - 1 else 0.0
+                if abs(lo_ - up_) < 0.02:
+                    continue
+                if bi + 1 == len(cuts) - 1 and lo_ < 0:              # under the roof's edge over a recessed top
+                    up_ = 0.0
+                inner, outer = min(lo_, up_), max(lo_, up_)
+                if lo_ > up_:
+                    put(MS, [P(u0, y, inner), P(u1, y, inner), P(u1, y, outer), P(u0, y, outer)], [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
+                        [c * 1.05 / base for c in wallc])
+                else:
+                    put(MS, [P(u0, y, outer), P(u1, y, outer), P(u1, y, inner), P(u0, y, inner)], [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
+                        [c * 0.55 / base for c in wallc])
+        # ---- horizontal elements: plinth, string courses, cornice (following the columns' depths)
+        for kind_, by0, by1, dep, *bc in bands:
+            if by1 > h + 0.3:
+                continue
+            bi = max(0, min(len(cuts) - 2, sum(1 for c_ in cuts[1:-1] if c_ <= by0)))
+            for ci, (u0, u1, *_r) in enumerate(cols):
+                cx, cz = a + t_ * (u0 + u1) / 2 + nrm * (Dg[ci][bi] + dep / 2)
+                put_box(MG, cx, cz, u1 - u0 + 0.02, dep, by1 - by0 if kind_ != "plinth" else by1 - y_bot, by0 if kind_ != "plinth" else y_bot,
+                        [c * lit / PAINT_BASE for c in bc], yaw)
+        if gf and gf.get("pil"):                                         # arcade pillars on the line of the wall above
+            for pu in gf["pil"]:
+                ci = next((j for j, c_ in enumerate(cols) if c_[0] <= pu < c_[1]), 0)
+                cx, cz = a + t_ * pu + nrm * (cols[ci][4] - 0.22)
+                put_box(MG, cx, cz, 0.42, 0.42, gf["y"] - y_bot, y_bot, [c * lit / PAINT_BASE for c in wallc], yaw)
     return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
+
+
+ROOF_KINDS = ("flat", "shed", "gable", "hip", "pyramid", "mansard", "gambrel", "halfhip")
+
+
+def photo_roof(outer, h, fit, roofc, wallc):
+    """The fitted roof (src/photogram.py roof_shape) through src/archlib.py: roof pieces, gable walls, fascia, downpipes,
+    chimneys, housings -> [(material, pos, uv, col)] or None when the fit has no roof of a known kind."""
+    import archlib
+    rf = dict(fit.get("roof") or {})
+    if rf.get("kind") == "pitched":                                  # older fits
+        rf["kind"] = "hip"
+    if rf.get("kind") not in ROOF_KINDS:
+        return None
+    m = archlib.roof_mesh(outer, h, rf, roofc, wallc, triangulate)
+    if m is None:
+        return None
+    smat = {"plaster": "plas", "concrete": "concw", "tiles": "tilew", "brick": "brkw", "metal": "metw"}.get(fit.get("surf"), "plas")
+    out = []
+    for part, mat, k in (("roof", MAT_ROOF, 1.0), ("wall", MAT_SURF[smat], 1.0 / SURF_BASE[smat]), ("solid", MAT_SOLID, 1.0)):
+        pos, col = m[part]
+        if not pos:
+            continue
+        P_ = np.array(pos, np.float32)
+        C_ = np.array(col, np.float32)
+        C_[:, :3] = np.clip(C_[:, :3] * k, 0, 255)
+        U_ = np.stack([(P_[:, 0] + P_[:, 2]) / (3.0 if part == "roof" else 4.0), (P_[:, 1] if part != "roof" else P_[:, 2]) / -4.0], 1)
+        if part == "roof":
+            U_ = np.stack([P_[:, 0] / 3.0, P_[:, 2] / 3.0 + P_[:, 1] / 3.0], 1)
+        out.append((mat, P_, U_.astype(np.float32), C_.astype(np.uint8)))
+    return out
 
 
 def _parapet(ring, h, ph, col):
@@ -1477,10 +1578,22 @@ def _bld_job(job):
         gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
         if gg:
             badd(MAT_GRAF, *gg)
-    if roof_fit and roof_fit.get("kind") == "pitched":
-        badd(MAT_ROOF, *pyramid(outer, h, float(np.clip(roof_fit.get("rise", 2.5), 1.2, 7.0)), roofc))
-    elif roof_fit and roof_fit.get("kind") == "mansard":
-        badd(MAT_ROOF, *mansard(outer, h, float(np.clip(roof_fit.get("rise", 2.5), 0.8, 7.0)), roofc))
+    proof = photo_roof(outer, h, fit, roofc, wallc) if roof_fit else None
+    if proof is not None:
+        for m_, *g in proof:
+            badd(m_, *g)
+    if proof is not None and roof_fit.get("kind") == "flat":
+        for hole in holes:
+            hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32), fh, bw)
+            if hw_:
+                badd(mat, *hw_)
+        fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
+        if fp:
+            badd(MAT_ROOF, *fp)
+        pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])
+        if pr:
+            badd(MAT_SOLID, *pr)
+    elif proof is not None:
         for hole in holes:
             hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32), fh, bw)
             if hw_:
