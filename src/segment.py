@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 
 import numpy as np
 from PIL import Image
@@ -65,18 +66,60 @@ class Simple:
         return lab
 
 
+def _quiet():
+    """Library chatter that is not ours (missing torchvision, no HF token, no symlinks on Windows) out of the builder log."""
+    import warnings
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+    warnings.filterwarnings("ignore", module="huggingface_hub")
+    warnings.filterwarnings("ignore", module="transformers")
+    try:
+        from transformers.utils import logging as tl
+        tl.set_verbosity_error()
+        from huggingface_hub.utils import logging as hl
+        hl.set_verbosity_error()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _watch_download(mid, done, log):
+    """While the model loads: MB of the weights in the Hugging Face cache every few seconds (first run only)."""
+    try:
+        from huggingface_hub import HfApi, constants
+        total = sum((f.size or 0) for f in HfApi().model_info(mid, files_metadata=True).siblings
+                    if f.rfilename.endswith((".safetensors", ".bin", ".json")))
+        root = os.path.join(constants.HF_HUB_CACHE, "models--" + mid.replace("/", "--"))
+    except Exception:  # noqa: BLE001 - offline: nothing to show
+        return
+    last = -1
+    while not done.wait(3.0):
+        got = 0
+        for dp, _dn, fn in os.walk(root):
+            got += sum(os.path.getsize(os.path.join(dp, f)) for f in fn if not os.path.islink(os.path.join(dp, f)))
+        if got != last:
+            log(f"  веси: {got / 1e6:.0f} / {total / 1e6:.0f} MB")
+            last = got
+
+
 class SegFormer:
     name = "segformer"
 
     def __init__(self, log):
+        _quiet()
         import torch
         from transformers import SegformerForSemanticSegmentation, SegformerImageProcessor
         self.torch = torch
         self.dev = "cuda" if torch.cuda.is_available() else "cpu"
         mid = MODEL_GPU if self.dev == "cuda" else MODEL_CPU
         log(f"модел {mid} на {self.dev} (прв пат се симнува)")
-        self.proc = SegformerImageProcessor.from_pretrained(mid)
-        self.model = SegformerForSemanticSegmentation.from_pretrained(mid).to(self.dev).eval()
+        done = threading.Event()
+        threading.Thread(target=_watch_download, args=(mid, done, log), daemon=True).start()
+        try:
+            self.proc = SegformerImageProcessor.from_pretrained(mid)
+            self.model = SegformerForSemanticSegmentation.from_pretrained(mid).to(self.dev).eval()
+        finally:
+            done.set()
+        log(f"модел вчитан ({'GPU: ' + torch.cuda.get_device_name(0) if self.dev == 'cuda' else 'CPU'})")
 
     def labels(self, img, cache=None):
         got = _cached(cache) if cache else None
