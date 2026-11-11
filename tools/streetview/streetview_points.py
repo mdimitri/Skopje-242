@@ -42,6 +42,8 @@ def main():
     ap.add_argument("--src", default="data/osm_real")
     ap.add_argument("--out", default="tools/streetview/points_novo_lisice.json")
     ap.add_argument("--n", type=int, default=100)
+    ap.add_argument("--big-m2", type=float, default=450, help="buildings this large also get a second view (0 = off)")
+    ap.add_argument("--diverse", action="store_true", help="spread picks over building types/sizes first")
     ap.add_argument("--min-sep", type=float, default=45.0, help="min distance between camera points (m)")
     a = ap.parse_args()
     cx, cy = project(*CENTER)
@@ -101,7 +103,7 @@ def main():
     cands = []
     for i, b in enumerate(blds):
         r = b["ring"]
-        best = None
+        per_edge = []
         for k in range(len(r) - 1):
             p0, p1 = r[k], r[k + 1]
             L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
@@ -111,6 +113,7 @@ def main():
             # outward normal in the (x east, y south) frame; ring orientation computed in the same frame
             nx, ny = (ey, -ex) if b["ccw"] else (-ey, ex)
             m = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+            best = None
             for p, q, rid, name in segs:
                 dx, dy = q[0] - p[0], q[1] - p[1]
                 l2 = dx * dx + dy * dy
@@ -132,13 +135,37 @@ def main():
                     continue
                 score = L * b["h"] * cosang / (1 + d / 20)
                 if best is None or score > best["score"]:
-                    best = dict(score=score, i=i, c=c, m=m, p0=p0, p1=p1, L=L, d=d, rid=rid, name=name)
-        if best:
-            best["score"] *= math.sqrt(b["area"])
-            cands.append(best)
+                    best = dict(score=score, i=i, c=c, m=m, p0=p0, p1=p1, L=L, d=d, rid=rid, name=name, n=(nx, ny))
+            if best:
+                best["score"] *= math.sqrt(b["area"])
+                per_edge.append(best)
+        per_edge.sort(key=lambda z: -z["score"])
+        if per_edge:
+            per_edge[0]["view"] = 1
+            cands.append(per_edge[0])
+            if b["area"] >= a.big_m2:       # large building: a second view from a clearly different facade direction
+                for z in per_edge[1:]:
+                    if z["n"][0] * per_edge[0]["n"][0] + z["n"][1] * per_edge[0]["n"][1] < 0.7:
+                        z["view"] = 2
+                        z["score"] *= 0.8
+                        cands.append(z)
+                        break
     cands.sort(key=lambda z: -z["score"])
     print("buildings with a viewable facade:", len(cands))
 
+    def bucket(cd):
+        b = blds[cd["i"]]
+        return (b["tag"], int(b["h"] // 6), int(math.log2(b["area"] / 60)))
+    if a.diverse:                       # damp the score of buckets that are already represented
+        cnt = {}
+        for cd in cands:
+            cnt[bucket(cd)] = cnt.get(bucket(cd), 0) + 1
+        seen = {}
+        for cd in sorted(cands, key=lambda z: -z["score"]):
+            k = bucket(cd)
+            cd["score"] /= (1 + 0.5 * seen.get(k, 0)) if cd.get("view") == 1 else 1
+            seen[k] = seen.get(k, 0) + 1
+        cands.sort(key=lambda z: -z["score"])
     chosen = []
     sep = a.min_sep
     while len(chosen) < a.n and sep >= 15:
@@ -159,7 +186,7 @@ def main():
         lat, lon = unproject(*cd["c"])
         e0, e1, mm, cc = unproject(*cd["p0"]), unproject(*cd["p1"]), unproject(*cd["m"]), unproject(*b["c"])
         out.append({
-            "idx": n, "lat": round(lat, 7), "lon": round(lon, 7), "heading": round(hd, 1), "pitch": pitch, "fov": fov,
+            "idx": n, "view": cd["view"], "lat": round(lat, 7), "lon": round(lon, 7), "heading": round(hd, 1), "pitch": pitch, "fov": fov,
             "osm_building_id": b["id"], "building_type": b["tag"], "est_height_m": b["h"], "footprint_m2": round(b["area"]),
             "facade_edge": [{"lat": round(e0[0], 7), "lon": round(e0[1], 7)}, {"lat": round(e1[0], 7), "lon": round(e1[1], 7)}],
             "facade_length_m": round(cd["L"], 1), "facade_mid": {"lat": round(mm[0], 7), "lon": round(mm[1], 7)},
