@@ -28,67 +28,153 @@ LOOK_COL = {"photo": rl.Color(80, 230, 120, 255), "inferred": rl.Color(90, 160, 
 LABEL_RGB = np.array([[120, 120, 120], [230, 200, 60], [90, 170, 255], [40, 200, 70], [230, 60, 60], [150, 110, 80]], np.uint8)
 
 
-def _pick_windows(start):
-    """The Windows folder dialog through PowerShell (the game's embedded Python has no tkinter) -> path, '' = cancelled, None = failed."""
-    import subprocess
-    ps = ("Add-Type -AssemblyName System.Windows.Forms;"
-          "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
-          "$f.Description = 'Папка со фотограметриски снимки (manifest.csv)';"
-          f"$f.SelectedPath = '{start.replace(chr(39), chr(39) * 2)}';"
-          "$w = New-Object System.Windows.Forms.Form; $w.TopMost = $true;"
-          "if ($f.ShowDialog($w) -eq 'OK') { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $f.SelectedPath }")
+def _has_manifest(d):
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", ps], capture_output=True, timeout=600,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        return r.stdout.decode("utf-8", "replace").strip() if r.returncode == 0 else None
-    except Exception as e:  # noqa: BLE001
-        print(f"[photogram] windows folder dialog failed: {e}")
-        return None
+        return any(f.lower().endswith((".csv", ".csf")) for f in os.listdir(d))
+    except OSError:
+        return False
 
 
-def _pick_tk(start):
+def _subdirs(d):
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except ImportError:
-        return None
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    path = filedialog.askdirectory(title="Папка со фотограметриски снимки (manifest.csv)", initialdir=start or ROOT, parent=root)
-    root.destroy()
-    return path or ""
+        return sorted((e.name for e in os.scandir(d) if e.is_dir() and not e.name.startswith((".", "$"))), key=str.lower)
+    except OSError:
+        return []
 
 
-def ask_folder():
-    """The OS folder picker, starting at the last folder used -> path or None.  Windows dialog, else tkinter, else the last folder
-    or <game>/Photogrametry when there is one."""
-    start = ""
+def ask_folder(music=None):
+    """In-game folder browser (drives, folders; the ones with a manifest marked) -> path or None (Esc).  Starts at the last folder
+    used, else <game>/Photogrametry, else the game folder."""
+    cur = ""
     try:
-        start = open(LAST, encoding="utf-8").read().strip()
+        cur = open(LAST, encoding="utf-8").read().strip()
     except OSError:
         pass
-    if not start and os.path.isdir(os.path.join(ROOT, "Photogrametry")):
-        start = os.path.join(ROOT, "Photogrametry")
-    path = None
-    for pick in ((_pick_windows, _pick_tk) if os.name == "nt" else (_pick_tk,)):
-        try:
-            path = pick(start)
-        except Exception as e:  # noqa: BLE001
-            print(f"[photogram] folder picker failed: {e}")
-            path = None
-        if path is not None:
-            break
-    if path is None:                                     # no dialog at all: the last / default folder
-        path = start
-    if path:
-        try:
-            os.makedirs(os.path.dirname(LAST), exist_ok=True)
-            with open(LAST, "w", encoding="utf-8") as f:
-                f.write(path)
-        except OSError:
-            pass
-    return path or None
+    if not os.path.isdir(cur):
+        cur = os.path.join(ROOT, "Photogrametry") if os.path.isdir(os.path.join(ROOT, "Photogrametry")) else ROOT
+    cur = os.path.abspath(cur)
+    drives = [f"{c}:\\" for c in "CDEFGHIJKLMNOPQRSTUVWXYZ" if os.name == "nt" and os.path.exists(f"{c}:\\")]
+    typed, editing = cur, False
+    listing, scroll, sel, t_open = None, 0, 0, time.time()
+    while not rl.window_should_close():
+        if music is not None:
+            music.update()
+        if listing is None:
+            listing = [".."] + _subdirs(cur)
+            marks = {n for n in listing[1:] if _has_manifest(os.path.join(cur, n))}
+            here = _has_manifest(cur)
+            try:
+                n_img = sum(1 for f in os.listdir(cur) if f.lower().endswith((".png", ".jpg", ".jpeg")))
+            except OSError:
+                n_img = 0
+            scroll, sel, typed = 0, 0, cur
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        pw, ph = min(W - 40, 1100), min(H - 40, 760)
+        px, py = (W - pw) // 2, (H - ph) // 2
+        rh = 30
+        ly = py + 150
+        rows = max(3, (ph - 150 - 80) // rh)
+        m = rl.get_mouse_position()
+        armed = time.time() - t_open > 0.25
+        go_to, pick = None, False
+        # keyboard: arrows / Enter / Backspace = up a level; typing edits the path (Enter goes there)
+        if editing:
+            while True:
+                c = rl.get_char_pressed()
+                if not c:
+                    break
+                if c >= 32:
+                    typed += chr(c)
+            if rl.is_key_pressed(rl.KEY_BACKSPACE) or rl.is_key_pressed_repeat(rl.KEY_BACKSPACE):
+                typed = typed[:-1]
+            if rl.is_key_pressed(rl.KEY_ENTER):
+                editing = False
+                if os.path.isdir(typed):
+                    go_to = typed
+            if rl.is_key_pressed(rl.KEY_ESCAPE):
+                editing, typed = False, cur
+        else:
+            if rl.is_key_pressed(rl.KEY_ESCAPE):
+                return None
+            if rl.is_key_pressed(rl.KEY_DOWN) or rl.is_key_pressed_repeat(rl.KEY_DOWN):
+                sel = min(len(listing) - 1, sel + 1)
+            if rl.is_key_pressed(rl.KEY_UP) or rl.is_key_pressed_repeat(rl.KEY_UP):
+                sel = max(0, sel - 1)
+            if rl.is_key_pressed(rl.KEY_BACKSPACE):
+                go_to = ".."
+            if rl.is_key_pressed(rl.KEY_ENTER) and armed:
+                go_to = listing[sel]
+            if rl.is_key_pressed(rl.KEY_SPACE) and here:
+                pick = True
+            if sel < scroll:
+                scroll = sel
+            if sel >= scroll + rows:
+                scroll = sel - rows + 1
+        w = rl.get_mouse_wheel_move()
+        if w:
+            scroll = int(max(0, min(max(0, len(listing) - rows), scroll - w * 3)))
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(12, 10, 16, 255))
+        rl.draw_rectangle(px, py, pw, ph, PANEL)
+        rl.draw_rectangle(px, py, pw, 4, PINK)
+        font.draw_text("ФОТОГРАМЕТРИЈА: ИЗБЕРИ ПАПКА СО СНИМКИ", px + 20, py + 16, 28, PINK, bold="cond")
+        # drives
+        dx = px + 20
+        for d in drives:
+            if _button(dx, py + 58, 54, 28, d[:2], cur.upper().startswith(d[:2].upper()), 16) and armed:
+                go_to = d
+            dx += 60
+        # path field (click to type)
+        fy = py + 96
+        over_f = px + 20 <= m.x < px + pw - 20 and fy <= m.y < fy + 34
+        if over_f and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+            editing = True
+        rl.draw_rectangle(px + 20, fy, pw - 40, 34, rl.Color(40, 28, 44, 255) if not editing else rl.Color(70, 40, 70, 255))
+        shown = typed + ("_" if editing and int(time.time() * 2) % 2 else "")
+        while len(shown) > 8 and font.measure_text(shown, 18) > pw - 60:
+            shown = "…" + shown[2:]
+        font.draw_text(shown, px + 30, fy + 7, 18, rl.WHITE)
+        # folders
+        for i in range(scroll, min(len(listing), scroll + rows)):
+            n = listing[i]
+            y = ly + (i - scroll) * rh
+            hot = px + 20 <= m.x < px + pw - 20 and y <= m.y < y + rh
+            if hot and (rl.get_mouse_delta().x or rl.get_mouse_delta().y):
+                sel = i
+            if i == sel:
+                rl.draw_rectangle(px + 20, y, pw - 40, rh - 2, rl.Color(70, 40, 70, 255))
+            ok = n in marks
+            font.draw_text(("↑  " if n == ".." else "▶  ") + n, px + 30, y + 5, 18, LOOK_COL["photo"] if ok else INK)
+            if ok:
+                font.draw_text("manifest ✓", px + pw - 140, y + 6, 15, LOOK_COL["photo"])
+            if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and armed:
+                go_to = n
+        if len(listing) > rows:
+            font.draw_text(f"{scroll + 1}-{min(len(listing), scroll + rows)} / {len(listing)}  (тркало)", px + 20, ly + rows * rh + 2, 14, DIM)
+        # status + buttons
+        by = py + ph - 56
+        st = (f"оваа папка: manifest ✓, {n_img} слики" if here else f"оваа папка нема manifest.csv ({n_img} слики)")
+        font.draw_text(st, px + 20, by - 26, 16, LOOK_COL["photo"] if here else DIM)
+        if _button(px + pw - 440, by, 260, 40, "ИЗБЕРИ ОВАА ПАПКА", here, 20) and armed and here:
+            pick = True
+        if _button(px + pw - 170, by, 150, 40, "НАЗАД (Esc)", False, 20) and armed:
+            rl.end_drawing()
+            return None
+        font.draw_text("клик/Enter влези · Backspace горе · Space избери · клик на патеката за пишување", px + 20, by + 12, 14, DIM)
+        rl.end_drawing()
+        if pick:
+            try:
+                os.makedirs(os.path.dirname(LAST), exist_ok=True)
+                with open(LAST, "w", encoding="utf-8") as f:
+                    f.write(cur)
+            except OSError:
+                pass
+            return cur
+        if go_to is not None:
+            nxt = os.path.dirname(cur) if go_to == ".." else os.path.abspath(os.path.join(cur, go_to))
+            if os.path.isdir(nxt):
+                cur, listing, t_open = nxt, None, time.time() - 0.2
+    return None
 
 
 def game_textures():
@@ -240,7 +326,7 @@ def _button(x, y, w, h, label, on=False, sz=18):
 def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None, test=""):
     """-> 'changed' when the game's choice of buildings changed (the world has to be built again), else None.
     frames / shot: headless test (run that many frames, save the last one)."""
-    folder = folder or ask_folder()
+    folder = folder or ask_folder(music)
     if not folder:
         return None
     osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
