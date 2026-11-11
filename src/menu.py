@@ -692,6 +692,19 @@ def title_menu(aud=None, music=None):
             if not WORLD["built"] or _confirm_rebuild():
                 return "rebuild"
             t_open = time.time()
+        # the photogrammetric building fitter: its own button bottom left (P on the keyboard), see src/photoview.py
+        plab = "ФОТОГРАМЕТРИЈА"
+        pbw = font.measure_text(plab, bsz, "cond") + 3 * bsz
+        pbx, pby = 16, H - bbh - 16
+        if pbx + pbw > x0 - 12:                                        # a narrow window: top left
+            pby = 56
+        over_p = pbx <= m.x < pbx + pbw and pby <= m.y < pby + bbh
+        if armed and ((over_p and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_P)):
+            go = False
+            import photoview
+            if photoview.run(aud, music) == "changed" and WORLD["built"] and _confirm_rebuild():
+                return "rebuild"
+            t_open = time.time()
         if go:
             k = TITLE_ITEMS[sel][0]
             if aud is not None:
@@ -732,6 +745,7 @@ def title_menu(aud=None, music=None):
             else:
                 font.draw_text(label, tx + 2, ty + 2, sz, rl.Color(0, 0, 0, 170), bold="cond")    # drop shadow over the art
                 font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
+        _btn(pbx, pby, pbw, bbh, plab, over_p, bsz)
         _btn(bbx, bby, bbw, bbh, blab, over_b or (not WORLD["built"] and int(time.time() * 2) % 2 == 0), bsz)   # blinks while there is no world
         font.draw_version(W, H)
         if time.time() - flash_t < 2.0:

@@ -455,6 +455,35 @@ def building_height(t, area, r):
     return max(2.5, min(h, 90.0))
 
 
+def bld_style(t, ar, outer, r):
+    """Height, roof / wall colour, facade material and the small pitched-roof flag of one building, with the random draws in the
+    world build's order (src/photogram.py calls it to show the current look of a building)."""
+    h = building_height(t, ar, r)
+    roofc = vary(r.choice(ROOFS), r)
+    if h > 14 and r.random() < 0.6:
+        roofc = vary(r.choice(ROOFS[3:8]), r, 6)
+    wallc = vary(r.choice(WALLS), r, 6)
+    b_type = t.get("building", "yes")
+    mat = MAT_FACADE_B if (h > 16 and r.random() < .45) or b_type in ("commercial", "office", "retail", "industrial") else MAT_FACADE_A
+    small = ar < 240 and h < 11 and len(outer) <= 8 and is_convex(outer) and r.random() < 0.75
+    if mat == MAT_FACADE_A:
+        if h >= 22 or (h >= 15 and r.random() < 0.6):
+            mat = MAT_PANEL                  # Аеродром / Карпош / Ѓорче Петров blocks
+        elif h < 10 and (small or b_type in ("house", "detached", "semidetached_house", "terrace")):
+            mat = MAT_HOUSE
+    if not small and h >= 7 and mat in (MAT_FACADE_A, MAT_PANEL):
+        q_ = r.random()
+        if mat == MAT_PANEL:
+            mat = MAT_BRICK if q_ < 0.3 else MAT_MIX if q_ < 0.5 else MAT_CONC if q_ < 0.58 else MAT_CONCG if q_ < 0.66 else MAT_CREAM if q_ < 0.8 else MAT_PANEL
+        else:
+            mat = MAT_BRICK if q_ < 0.25 else MAT_MIX if q_ < 0.4 else MAT_CREAM if q_ < 0.6 else MAT_FACADE_A
+        if mat == MAT_BRICK:
+            wallc = vary((250, 244, 238), r, 5)
+        elif mat in (MAT_CONC, MAT_CONCG, MAT_MIX):
+            wallc = vary((236, 234, 228), r, 5)
+    return h, roofc, wallc, mat, small
+
+
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
@@ -485,8 +514,8 @@ def chunk_of(x, z):
     return (math.floor(x / CHUNK), math.floor(z / CHUNK))
 
 
-def walls(ring, h, tint, y0=None):
-    """Wall quads for a ring (x,z); returns pos(N,3) uv(N,2) col(N,4)."""
+def walls(ring, h, tint, y0=None, fh=3.2, bw=3.4):
+    """Wall quads for a ring (x,z); returns pos(N,3) uv(N,2) col(N,4).  fh / bw: the floor height and window-bay width (m) of one texture tile."""
     r = np.asarray(ring, dtype=np.float32)
     nxt = np.roll(r, -1, axis=0)
     d = nxt - r
@@ -497,8 +526,8 @@ def walls(ring, h, tint, y0=None):
     n = len(r)
     if n == 0:
         return None
-    floors = np.maximum(1, np.round((h - yb) / 3.2))
-    nb = np.maximum(1, np.round(ln / 3.4))
+    floors = np.maximum(1, np.round((h - yb) / fh))
+    nb = np.maximum(1, np.round(ln / bw))
     p = np.empty((n, 6, 3), np.float32)
     uv = np.empty((n, 6, 2), np.float32)
     # quad corners: A(bottom,start) B(bottom,end) C(top,end) D(top,start); triangles ABC, ACD
@@ -1166,10 +1195,18 @@ def _read_list(path):
         return []
 
 
+def load_photogram(src):
+    """{OSM id: fitted look} that src/photogram.py wrote next to the OSM files (photogram.json), or {} = the generated look."""
+    try:
+        return {int(k): v for k, v in json.load(open(os.path.join(src, "photogram.json"), encoding="utf-8"))["buildings"].items()}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
 def load_elements(src):
     elements, seen = [], set()
     # side files in data/osm that are not Overpass element dumps (read elsewhere with _read_list / main.py)
-    side = {"box.json", "bus_stops.json", "signals.json", "transit.json", "rail.json", "map_pois.json", "map_poi_kinds.json"}
+    side = {"box.json", "bus_stops.json", "signals.json", "transit.json", "rail.json", "map_pois.json", "map_poi_kinds.json", "photogram.json", "photogram.off.json"}
     files = [f for f in sorted(glob.glob(os.path.join(src, "*.json"))) if os.path.basename(f) not in side]
     for f in each(files, "read OSM files"):
         try:
@@ -1205,7 +1242,8 @@ def _bld_init(T):
 def _bld_job(job):
     """One building's meshes on the terrain (walls, roof, facade extras, graffiti, roof junk) -> (binfo entry, [(material, pos, uv, col)]).
     Runs in a pool worker; the building's own random streams make the result independent of the other buildings."""
-    (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) = job
+    (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit) = job
+    fh, bw = (fit or {}).get("floor", 3.2), (fit or {}).get("bay", 3.4)
     T = _BT[0]
     adds = []
     ring = np.asarray(outer, np.float64)
@@ -1221,7 +1259,7 @@ def _bld_job(job):
         adds.append((m, pos, uv, col))
 
     binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
-    w = walls(outer, h, wallc, skirt_a)
+    w = walls(outer, h, wallc, skirt_a, fh, bw)
     if w:
         badd(mat, *w)
     rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
@@ -1239,7 +1277,7 @@ def _bld_job(job):
                 badd(MAT_GRAF, *pg)
     else:
         for hole in holes:
-            hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32))
+            hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32), fh, bw)
             if hw_:
                 badd(mat, *hw_)
         fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
@@ -1304,6 +1342,7 @@ def main():
         except Exception as e:  # noqa: BLE001 - optional
             print(f"[build] extras skipped: {e}")
     elements = load_elements(a.src)
+    photo_fit = load_photogram(a.src)
     print(f"[build] {len(elements)} OSM elements from {a.src}")
     if not any(e.get("tags", {}).get("highway") for e in elements):
         raise SystemExit("[build] no roads found in source data")
@@ -1354,43 +1393,26 @@ def main():
                 verts, tri = triangulate(outer, holes)
                 if not tri:
                     continue
-                h = building_height(t, ar, r)
+                h, roofc, wallc, mat, small = bld_style(t, ar, outer, r)
+                fit = photo_fit.get(el["id"])             # the photo-fitted look (src/photogram.py), when --src has photogram.json
+                if fit:
+                    h, mat = fit.get("h", h), fit.get("mat", mat)
+                    wallc, roofc = tuple(fit.get("wallc", wallc)), tuple(fit.get("roofc", roofc))
+                    small = small and fit.get("pitched", True)
                 xs = [p[0] for p in outer]
                 ys = [p[1] for p in outer]
-                roofc = vary(r.choice(ROOFS), r)
-                if h > 14 and r.random() < 0.6:
-                    roofc = vary(r.choice(ROOFS[3:8]), r, 6)
-                wallc = vary(r.choice(WALLS), r, 6)
                 bb = (min(xs), min(ys), max(xs), max(ys))
                 buildings.append({"ring": outer, "v": verts, "tri": tri, "h": h, "bb": bb, "area": ar})
                 od.polygon(cells(outer), fill=255)
                 bd.polygon(cells(outer), fill=255)
                 key = chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2)
-                b_type = t.get("building", "yes")
-                mat = MAT_FACADE_B if (h > 16 and r.random() < .45) or b_type in ("commercial", "office", "retail", "industrial") else MAT_FACADE_A
-                small = ar < 240 and h < 11 and len(outer) <= 8 and is_convex(outer) and r.random() < 0.75
-                if mat == MAT_FACADE_A:
-                    if h >= 22 or (h >= 15 and r.random() < 0.6):
-                        mat = MAT_PANEL                  # Аеродром / Карпош / Ѓорче Петров blocks
-                    elif h < 10 and (small or b_type in ("house", "detached", "semidetached_house", "terrace")):
-                        mat = MAT_HOUSE
-                if not small and h >= 7 and mat in (MAT_FACADE_A, MAT_PANEL):
-                    q_ = r.random()
-                    if mat == MAT_PANEL:
-                        mat = MAT_BRICK if q_ < 0.3 else MAT_MIX if q_ < 0.5 else MAT_CONC if q_ < 0.58 else MAT_CONCG if q_ < 0.66 else MAT_CREAM if q_ < 0.8 else MAT_PANEL
-                    else:
-                        mat = MAT_BRICK if q_ < 0.25 else MAT_MIX if q_ < 0.4 else MAT_CREAM if q_ < 0.6 else MAT_FACADE_A
-                    if mat == MAT_BRICK:
-                        wallc = vary((250, 244, 238), r, 5)
-                    elif mat in (MAT_CONC, MAT_CONCG, MAT_MIX):
-                        wallc = vary((236, 234, 228), r, 5)
                 rooftop = []
                 if not small and ar > 300 and r.random() < 0.8:        # rooftop boxes: stairwell / AC units
                     for _ in range(r.randint(1, 3)):
                         px, py = r.uniform(bb[0], bb[2]), r.uniform(bb[1], bb[3])
                         if pip((px, py), outer) and all(pip((px + dx, py + dy), outer) for dx, dy in ((2, 2), (-2, -2), (2, -2), (-2, 2))):
                             rooftop.append((px, py, r.uniform(1.5, 3.2), r.uniform(1.5, 3.2), r.uniform(1.0, 2.4)))
-                pending.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop))
+                pending.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
             except Exception as e:  # noqa: BLE001 - skip a malformed building
                 print(f"   skipped building {el.get('id')}: {e}")
     print(f"[build] buildings: {len(buildings)}")
@@ -1522,7 +1544,7 @@ def main():
     bmap = {id(b_["ring"]): b_ for b_ in buildings}
     n_clip = n_drop = 0
     jobs_ = []
-    for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
+    for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
         o2 = clip_ring(outer, bgrid)
         if o2 is not outer:
             n_clip += 1
@@ -1545,7 +1567,7 @@ def main():
                 xs_ = [p[0] for p in o2]
                 ys_ = [p[1] for p in o2]
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
-        jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop))
+        jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
     bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
     for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
