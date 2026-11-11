@@ -57,6 +57,17 @@ def _to_texture(rt, mipmaps=True):
     return tex
 
 
+def load_atlas(path):
+    """A texture atlas from a PNG: mipmaps + trilinear, clamped (tiles are padded, so neighbours do not bleed in)."""
+    tex = rl.load_texture(path)
+    if tex.id == 0:
+        raise OSError(f"could not load {path}")
+    rl.gen_texture_mipmaps(tex)
+    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_TRILINEAR)
+    rl.set_texture_wrap(tex, rl.TEXTURE_WRAP_CLAMP)
+    return tex
+
+
 def _speckle(rng, n, size, base_alpha=18):
     for _ in range(n):
         v = rng.choice((0, 0, 255))

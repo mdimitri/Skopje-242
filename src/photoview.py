@@ -211,24 +211,53 @@ class Scene:
             gl3d.free_model(m)
         self.models = []
 
+    def _atlas(self, blds, algo):
+        """The photo tiles of the 'detail' fit in one texture (as the world build gets it) -> {building id: tile uvs}."""
+        import facade
+        own = [b for b in blds.values() if algo in b.fits and b.fits[algo].get("src") == "photo" and getattr(b, "tiles", None)
+               and "cycle" in b.fits[algo]]
+        if not own:
+            return {}
+        atlas, uvs = facade.pack([b.tiles for b in own])
+        rgba = np.ascontiguousarray(np.concatenate([atlas, np.full(atlas.shape[:2] + (1,), 255, np.uint8)], 2))
+        img = rl.Image(gl3d.ffi.from_buffer(rgba), atlas.shape[1], atlas.shape[0], 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        if self.tex.get("photo") is not None:
+            rl.unload_texture(self.tex["photo"])
+        t = rl.load_texture_from_image(img)
+        rl.gen_texture_mipmaps(t)
+        rl.set_texture_filter(t, rl.TEXTURE_FILTER_TRILINEAR)
+        rl.set_texture_wrap(t, rl.TEXTURE_WRAP_CLAMP)
+        self.tex["photo"] = t
+        return {b.id: uv for b, uv in zip(own, uvs)}
+
     def build(self, blds, algo):
         bw = pg.tools()
         acc = {}
+        uv_of = self._atlas(blds, algo) if algo == "detail" else {}
         for b in blds.values():
             lk = b.look(algo)
             h = float(lk["h"])
             ring = [tuple(p) for p in b.ring]
-            w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
             parts = []
-            if w:
-                parts.append((lk["mat"], w))
+            tiles = uv_of.get(lk.get("tile_src", b.id)) if "cycle" in lk else None
+            if tiles:
+                parts += [(m_, tuple(g)) for m_, *g in bw.photo_facade(ring, h, {**lk, "tiles": tiles}, 0.0)]
+            else:
+                w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
+                if w:
+                    parts.append((lk["mat"], w))
+            roof = lk.get("roof") if tiles else None
             if not hasattr(b, "_tri"):
                 try:
                     b._tri = bw.triangulate(ring, [])
                 except Exception:  # noqa: BLE001
                     b._tri = ([], [])
             verts, tri = b._tri
-            if lk.get("small") and lk.get("pitched", True) and h < 11:
+            if roof and roof.get("kind") == "pitched":
+                parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, float(np.clip(roof["rise"], 1.2, 7.0)), lk["roofc"])))
+            elif roof and roof.get("kind") == "mansard":
+                parts.append((bw.MAT_ROOF, bw.mansard(ring, h, float(np.clip(roof["rise"], 0.8, 7.0)), lk["roofc"])))
+            elif lk.get("small") and lk.get("pitched", True) and h < 11:
                 parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(b.area) * 0.12, lk["roofc"])))
             else:
                 fp = bw.flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in lk["roofc"]])
@@ -240,7 +269,7 @@ class Scene:
                 e = acc.setdefault(mat, ([], [], []))
                 e[0].append(pos); e[1].append(np.asarray(uv, np.float32)); e[2].append(np.asarray(col, np.uint8))
         self.free()
-        names = {**pg.MATS, bw.MAT_ROOF: "roof"}
+        names = {**pg.MATS, bw.MAT_ROOF: "roof", bw.MAT_SOLID: "white", bw.MAT_PHOTO: "photo"}
         for mat, (P, U, C) in acc.items():
             m = gl3d.make_model(np.concatenate(P), np.concatenate(U), np.concatenate(C))
             if m is not None:
@@ -349,7 +378,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         return None
     splash(f"ФОТОГРАМЕТРИЈА: {len(caps)} снимки, згради околу нив ...")
     blds = pg.load_city(osm_dir, caps)
-    algo_i = 2
+    algo_i = 3                                     # ДЕТАЛИ: photo tiles, roofs, 3D details
     look = True                                     # show the fitted look (else the current one)
     job = None
     scene = Scene(tex)
@@ -376,6 +405,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         panel_mode = int(test.split("panel=")[1][0])
     if "free" in test and sel is not None:
         orb.free = sel
+    if "alpha=" in test:
+        alpha = float(test.split("alpha=")[1].split(",")[0])
     rt = rl.load_render_texture(480, 270)
     lab_tex = {}
     msg, msg_t = "", 0.0

@@ -574,6 +574,13 @@ def main():
         img = rl.gen_image_color(4, 4, rl.WHITE)
         t = rl.load_texture_from_image(img)
         tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t, "graf": t, "brick": t, "conc": t, "concg": t, "cream": t, "mix": t}
+    atlas = os.path.join(world.path, "photo_atlas.png")          # photo-fitted facades (src/photogram.py), built into this world
+    if os.path.exists(atlas):
+        try:
+            tex["photo"] = gl3d.load_atlas(atlas)
+            log(f"[game] photo facade atlas {tex['photo'].width}x{tex['photo'].height}")
+        except Exception:  # noqa: BLE001 - those walls are skipped, the rest of the city stands
+            log("[game] photo atlas failed:\n" + traceback.format_exc())
     streamer = Streamer(world, tex)
     renderer = Renderer(world, streamer, overview)
     sunshadow = SunShadow(world, streamer)

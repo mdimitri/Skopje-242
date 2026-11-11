@@ -490,6 +490,7 @@ MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graf
 GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
 MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM, MAT_MIX = 7, 8, 9, 10, 11     # photo-based Skopje facades
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
+MAT_PHOTO = 12                       # photo-fitted facades: tiles in <world>/photo_atlas.png (src/photogram.py, ДЕТАЛИ)
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
 
@@ -974,6 +975,116 @@ def pyramid(ring, y0, apex_h, col):
     return np.array(pos, np.float32), np.array(uv, np.float32), np.array(cols, np.uint8)
 
 
+def mansard(ring, y0, rise, col):
+    """Mansard roof: the slopes from the wall top in to an inset ring `rise` higher, and its flat top -> pos, uv, col."""
+    r = np.asarray(ring, np.float64)
+    n = len(r)
+    inset = min(rise * 0.55, 0.3 * min(np.ptp(r[:, 0]), np.ptp(r[:, 1])))
+    nin = []
+    for i in range(n):
+        d = r[(i + 1) % n] - r[i]
+        ln = math.hypot(*d) or 1.0
+        nin.append(np.array([-d[1], d[0]]) / ln)                  # inward normal (positive-shoelace ring)
+    q = []
+    for i in range(n):
+        m = nin[i - 1] + nin[i]
+        den = 1.0 + float(nin[i - 1] @ nin[i])
+        q.append(r[i] + (m / den if den > 0.2 else nin[i]) * inset)
+    pos, uv, cols = [], [], []
+    y1 = y0 + rise
+    for i in range(n):
+        a, b, qa, qb = r[i], r[(i + 1) % n], q[i], q[(i + 1) % n]
+        nrm = np.array([-nin[i][0] * rise, inset, -nin[i][1] * rise])
+        nrm /= np.linalg.norm(nrm) or 1.0
+        sh = max(0.55, min(1.15, shade(nrm) * 1.05))
+        c = (*[min(255, v * sh) for v in col], 255)
+        for p_, y in ((a, y0), (b, y0), (qb, y1), (a, y0), (qb, y1), (qa, y1)):
+            pos.append((p_[0], y, p_[1]))
+            uv.append((p_[0] / 3.0, p_[1] / 3.0 + y))
+            cols.append(c)
+    try:
+        v_, tri = triangulate([tuple(p_) for p_ in q], [])
+        fp = flat_poly(v_, tri, y1, 6.0, [c * 1.02 for c in col])
+    except Exception:  # noqa: BLE001 - a self-crossing inset: slopes only
+        fp = None
+    out = (np.array(pos, np.float32), np.array(uv, np.float32), np.array(cols, np.uint8))
+    if fp:
+        out = tuple(np.concatenate([x, y_]) for x, y_ in zip(out, fp))
+    return out
+
+
+def photo_facade(outer, h, fit, y_bot=0.0):
+    """Walls of a photo-fitted building (src/photogram.py, ДЕТАЛИ): every wall cut into bay columns x floors, each cell textured
+    with its column's tile from the photo atlas; walls the photos did not see repeat the building's own columns.  Plus the 3D
+    details the photos showed: AC boxes and balcony slabs.  -> [(material, pos, uv, col)]."""
+    T, cyc, dets = fit["tiles"], fit["cycle"] or [0], fit.get("det") or []
+    fh0, bw0 = max(2.4, fit.get("floor", 3.2)), max(2.0, fit.get("bay", 3.4))
+    seen = fit.get("walls") or []
+    r = np.asarray(outer, np.float64)
+    n = len(r)
+    P, U, C, solid = [], [], [], []
+    for i in range(n):
+        a, b = r[i], r[(i + 1) % n]
+        d = b - a
+        ln = float(math.hypot(*d))
+        if ln < 0.15:
+            continue
+        t_ = d / ln
+        nrm = np.array([t_[1], -t_[0]])                            # outward
+        sh = float(np.clip(0.52 + 0.55 * max(0.0, float(np.array([nrm[0], 0, nrm[1]]) @ SUN)), 0.45, 1.12))
+        w = next((w for w in seen if np.hypot(*(np.array(w["a"]) - a)) < 1.5 and np.hypot(*(np.array(w["b"]) - b)) < 1.5), None)
+        if w:
+            k = ln / max(0.1, w["ln"])
+            cols = [(c[0] * k, c[1] * k, c[2]) for c in w["cols"]]
+            fh, pv, ref = w["fh"], w["pv"] % w["fh"], w.get("shade", 0.85)
+        else:
+            nb = max(1, int(round(ln / bw0)))
+            cols = [(ln * j / nb, ln * (j + 1) / nb, cyc[(j + i * 3) % len(cyc)]) for j in range(nb)]
+            fh, pv, ref = fh0, 0.0, 0.85
+        lit = float(np.clip(sh / ref, 0.72, 1.18))
+        # floor bands: [y_bot .. pv] partial, full floors, partial top
+        cuts = [y_bot] + [pv + k_ * fh for k_ in range(int(math.ceil(h / fh)) + 1) if y_bot < pv + k_ * fh < h - 0.05] + [h]
+        for u0, u1, tid in cols:
+            if tid >= len(T) or u1 - u0 < 0.05:
+                continue
+            ul, vb, ur, vt = T[tid]
+            p0, p1 = a + t_ * u0, a + t_ * u1
+            for y0, y1 in zip(cuts[:-1], cuts[1:]):
+                fl = math.floor((y0 + 1e-3 - pv) / fh)                   # which floor, and where in its tile the band starts / ends
+                f0 = max(0.0, (y0 - (pv + fl * fh)) / fh)
+                f1 = min(1.0, (y1 - (pv + fl * fh)) / fh)
+                v0_, v1_ = vb + (vt - vb) * f0, vb + (vt - vb) * f1
+                ao0 = 0.8 if y0 <= y_bot + 0.01 else 1.0
+                for (pp, y, uu, vv, ao) in ((p0, y0, ul, v0_, ao0), (p1, y0, ur, v0_, ao0), (p1, y1, ur, v1_, 1.0),
+                                            (p0, y0, ul, v0_, ao0), (p1, y1, ur, v1_, 1.0), (p0, y1, ul, v1_, 1.0)):
+                    P.append((pp[0], y, pp[1]))
+                    U.append((uu, vv))
+                    C.append(min(255, int(235 * lit * ao)))
+                if f0 > 0.01 or f1 < 0.99 or tid >= len(dets) or y0 < 2.0:
+                    continue
+                dt = dets[tid]
+                yaw = math.atan2(t_[1], t_[0])
+                for fx, cy, aw, ah, *cc in dt.get("ac", []):          # AC units: boxes 0.35 m deep on the wall
+                    cu = u0 + fx * (u1 - u0)
+                    cx, cz = a + t_ * cu + nrm * 0.18
+                    solid.append(box(cx, cz, aw, 0.35, ah, y0 + cy - ah / 2, [v * lit for v in cc], yaw))
+                bc = dt.get("balc")
+                if bc:                                                 # balcony: slab + rail at the floor line
+                    dep, cc = bc[0], [v * lit * 0.92 for v in bc[1:]]
+                    cx, cz = a + t_ * (u0 + u1) / 2 + nrm * dep / 2
+                    solid.append(box(cx, cz, (u1 - u0) * 0.92, dep, 0.16, y0, cc, yaw))
+                    rx, rz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.03)
+                    solid.append(box(rx, rz, (u1 - u0) * 0.92, 0.05, 0.06, y0 + 1.0, [v * 0.8 for v in cc], yaw))
+    out = []
+    if P:
+        c = np.array(C, np.uint8)
+        out.append((MAT_PHOTO, np.array(P, np.float32), np.array(U, np.float32),
+                    np.stack([c, c, c, np.full_like(c, 255)], 1)))
+    if solid:
+        out.append((MAT_SOLID, *(np.concatenate(x) for x in zip(*solid))))
+    return out
+
+
 def _parapet(ring, h, ph, col):
     """Low wall round the edge of a flat roof (outside face + inside face + top), so roofs read as roofs."""
     pos, cols = [], []
@@ -1259,17 +1370,31 @@ def _bld_job(job):
         adds.append((m, pos, uv, col))
 
     binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
-    w = walls(outer, h, wallc, skirt_a, fh, bw)
-    if w:
-        badd(mat, *w)
+    photo = bool(fit and fit.get("tiles") and fit.get("cycle"))      # facade tiles from the photos (ДЕТАЛИ fit)
+    roof_fit = (fit or {}).get("roof") if photo else None
+    if photo:
+        for m_, *g in photo_facade(outer, h, fit, -skirt):
+            badd(m_, *g)
+    else:
+        w = walls(outer, h, wallc, skirt_a, fh, bw)
+        if w:
+            badd(mat, *w)
     rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
-    extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60) else []
+    extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60 and not photo) else []      # the photos have their own
     n_el = min(1.0, len(extras) / 40.0)                                       # the more added elements, the more graffiti
-    if rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
+    if not photo and rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
         gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
         if gg:
             badd(MAT_GRAF, *gg)
-    if small:
+    if roof_fit and roof_fit.get("kind") == "pitched":
+        badd(MAT_ROOF, *pyramid(outer, h, float(np.clip(roof_fit.get("rise", 2.5), 1.2, 7.0)), roofc))
+    elif roof_fit and roof_fit.get("kind") == "mansard":
+        badd(MAT_ROOF, *mansard(outer, h, float(np.clip(roof_fit.get("rise", 2.5), 0.8, 7.0)), roofc))
+        for hole in holes:
+            hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32), fh, bw)
+            if hw_:
+                badd(mat, *hw_)
+    elif small:
         badd(MAT_ROOF, *pyramid(outer, h, 1.8 + math.sqrt(ar) * 0.12, roofc))
         if rg.random() < 0.14:                                             # a piece on the visible roof slope (80% fewer than v42)
             pg = pitched_graffiti(outer, h, 1.8 + math.sqrt(ar) * 0.12, rg)
@@ -2252,6 +2377,10 @@ def main():
     os.makedirs(tmp)
     off = 0
     nverts_total = 0
+    import shutil
+    atlas = os.path.join(a.src, "photogram_atlas.png")
+    if any(f_.get("tiles") for f_ in photo_fit.values()) and os.path.exists(atlas):
+        shutil.copyfile(atlas, os.path.join(tmp, "photo_atlas.png"))      # the photo-fitted facades' tiles (local only)
     with open(os.path.join(tmp, "meshes.bin"), "wb") as f:
         for (key, mat), (P, U, C) in each(sorted(mesh.d.items()), "write mesh blob",
                                          feed=("chunk", None, lambda it: [(it[0][0][0] + 0.5) * CHUNK, (it[0][0][1] + 0.5) * CHUNK])):

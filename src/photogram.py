@@ -40,6 +40,7 @@ ALGOS = [
     ("colour", "БОЈА + ВИСИНА", "висина од силуетата, боја на ѕидот; фасадата останува"),
     ("grid", "РЕШЕТКА", "+ катови и прозорци од периодичноста, фасада по сличност"),
     ("render", "РЕНДЕР-СПОРЕДИ", "+ дотерување на камерата, фасада/катови/прозорци по најмала разлика"),
+    ("detail", "ДЕТАЛИ", "плочки од фотографиите по колона, кровови, клими и балкони во 3D"),
 ]
 URL_POSE = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+),(?:[\d.]+a,)?([\d.]+)y,([\d.]+)h,([\d.]+)t")
 # boxes of the Google Maps page around the picture (fractions of the screenshot): search box + place card, top icons, minimap,
@@ -297,7 +298,8 @@ def facade_views(cap, img, lab, ui, blds, edges, only=None, min_px=1500):
             if to_cam @ nrm <= 0.5:                      # faces away (or edge-on)
                 continue
             nu = max(2, int(ln * RES))
-            nv = int(min(VMAX, max(b.gen["h"] * 1.8, b.gen["h"] + 12)) * RES)
+            hh = max(b.gen["h"], getattr(b, "h_seen", 0.0))
+            nv = int(min(VMAX, max(hh * 1.8, hh + 12)) * RES)
             us = (np.arange(nu) + 0.5) / RES
             vs = (np.arange(nv) + 0.5) / RES
             xz = a[None, :] + (bb - a)[None, :] * (us / ln)[:, None]               # (nu, 2)
@@ -568,6 +570,57 @@ def refine_pose(cap, lab, blds, h_of=lambda b: b.gen["h"]):
     return best[1], best[2], best[0]
 
 
+def fit_position(cap, lab, blds, log=None):
+    """Where the photo was really taken: Google's panorama is often metres from the asked-for point.  Searches the camera
+    position (up to 50 m back / 15 m sideways along the view) and yaw, and the target's height when OSM has no storeys, for the
+    best match of the buildings' outlines with the labelled building pixels above the horizon (below it the road and the cars
+    get mistaken for walls).  Moves the capture; -> (back m, right m, yaw deg, height factor, score)."""
+    step = 4
+    L = lab[::step, ::step]
+    isb = (L == L_BUILDING).astype(np.float32)
+    valid = (L != L_NONE) & (L != L_VEHICLE)
+    hz = int((cap.H / 2 + cap.focal() * math.tan(math.radians(cap.pitch))) / step)
+    valid[max(0, hz):] = False
+    x0, z0 = cap.x, cap.z
+    y = math.radians(cap.yaw)
+    fw, rt = np.array([math.sin(y), -math.cos(y)]), np.array([math.cos(y), math.sin(y)])
+    near = [b for b in blds.values() if np.hypot(b.c[0] - x0, b.c[1] - z0) < 180]
+    tgt = blds.get(cap.bid)
+    free = tgt is not None and not tgt.tags.get("building:levels") and not tgt.tags.get("height")
+    hm = [1.0]
+
+    def score():
+        pred = _silhouette(cap, near, lambda b: b.gen["h"] * (hm[0] if b is tgt else 1.0), L.shape, step)
+        a, nb = pred & valid, ~pred & valid
+        return float(isb[a].mean() - isb[nb].mean()) if a.sum() >= 20 and nb.sum() >= 20 else -9.0
+    if not near or isb[valid].sum() < 50:
+        return 0.0, 0.0, 0.0, 1.0, 0.0
+    cap.dyaw = cap.dpitch = 0.0
+    s0 = score()
+    best = (s0, 0.0, 0.0, 0.0, 1.0)
+    for back in np.arange(-10, 50.1, 2.5):
+        for lat in np.arange(-15, 15.1, 2.5):
+            cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
+            for dy in (-3.0, -1.5, 0.0, 1.5, 3.0):
+                cap.dyaw = dy
+                for m in ((1.0, 1.5, 2.0, 2.5, 3.0) if free else (1.0,)):
+                    hm[0] = m
+                    s = score()
+                    if s > best[0] + 1e-4:
+                        best = (s, back, lat, dy, m)
+    s, back, lat, dy, m = best
+    if s < s0 + 0.02:                                          # not clearly better: keep the recorded pose
+        s, back, lat, dy, m = s0, 0.0, 0.0, 0.0, 1.0
+    cap.x, cap.z = np.array([x0, z0]) - back * fw + lat * rt
+    cap.dyaw = dy
+    if tgt is not None and m != 1.0:
+        tgt.h_seen = max(getattr(tgt, "h_seen", 0.0), tgt.gen["h"] * m)
+    if log:
+        log(f"{cap.file[:4]}: камера {back:+.1f} м назад, {lat:+.1f} м десно, {dy:+.1f}°" + (f", висина на целта x{m:.1f}" if m != 1.0 else "")
+            + f" (поклопување {s0:.2f} -> {s:.2f})")
+    return back, lat, dy, m, s
+
+
 def _silhouette(cap, blds, h_of, shape, step):
     """Pixels covered by the buildings' boxes (footprint x height) from the capture camera, at 1/step resolution."""
     from PIL import ImageDraw
@@ -597,8 +650,88 @@ def plausible_mats(b, h):
     return [0, 1, 4, 7, 8, 9, 10, 11] if h >= 15 else [0, 4, 7, 10, 11]
 
 
-def fit_building(b, obs, algo, texs):
+def _weighted_median(vals, w):
+    o = np.argsort(vals)
+    c = np.cumsum(np.asarray(w, np.float64)[o])
+    return float(np.asarray(vals)[o][np.searchsorted(c, c[-1] / 2)])
+
+
+def fit_detail(b, obs, log=None):
+    """The 'detail' fit: height and colours as the other fits, then every seen wall through facade.analyse (roof line, roof band,
+    floor grid, bay columns, a texture tile per column, AC units, balconies).  Tiles stay in b.tiles (photo pixels, local only)."""
+    import facade
+    good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))] or obs
+    h_raw, hc = fit_height(good, max(b.gen["h"], getattr(b, "h_seen", 0.0)))
+    h = blend_height(b, h_raw, hc)
+    out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(good)}
+    wall, win = fit_colours(good, h)
+    if wall is not None:
+        out["wallc"] = [int(v) for v in wall]
+    if win is not None:
+        out["winc"] = [int(v) for v in win]
+    try:
+        lv = float(str(b.tags.get("building:levels", "")).split(";")[-1])
+    except ValueError:
+        lv = 0.0
+    best_view = {}                               # per wall: its own capture first (aimed at it), then the most facade pixels
+    rank = lambda o: (o.cap.bid == b.id, o.n_build)
+    for o in good:
+        if o.wi not in best_view or rank(o) > rank(best_view[o.wi]):
+            best_view[o.wi] = o
+    walls, tiles, dets = [], [], []
+    for wi, o in sorted(best_view.items()):
+        try:
+            f = facade.analyse(o, lv, log)
+        except Exception as e:  # noqa: BLE001 - one odd wall must not stop the building
+            if log:
+                log(f"    ѕид {wi}: анализата падна ({type(e).__name__}: {e})")
+            continue
+        if f is None:
+            continue
+        t = f.pop("_tiles")
+        off = len(tiles)
+        tiles += t
+        dets += f.pop("det")
+        for c in f["cols"]:
+            c[2] += off
+        walls.append(f)
+    out["pitched"] = h < 11 and b.gen["small"]
+    if not walls:
+        return out
+    lens = [f["ln"] for f in walls]
+    seen = [f for f in walls if f["top_seen"] > 0.3]
+    if seen:
+        wt = _weighted_median([f["walltop"] for f in seen], [f["ln"] for f in seen])
+        top = _weighted_median([f["top"] for f in seen], [f["ln"] for f in seen])
+        if not (b.tags.get("height") or b.tags.get("building:levels")) or abs(top - b.gen["h"]) < 0.4 * b.gen["h"]:
+            out["h"] = round(max(2.5, wt), 1)
+            out["h_top"] = round(top, 1)
+    elif getattr(b, "h_seen", 0.0) > out["h"]:
+        out["h"] = round(b.h_seen, 1)
+    bands = [s[3] for f in walls for s in f["secs"] if s[3] > 0]
+    roofcs = [f["roofc"] for f in walls if f.get("roofc")]
+    best = max(walls, key=lambda f: f["ln"] * (1 + len(f["cols"])))
+    out.update(floor=best["fh"], bay=best["bw"], walls=walls, det=dets, cycle=[c[2] for c in best["cols"]], ntiles=len(tiles))
+    if bands and roofcs:
+        rise = float(np.median(bands))
+        kind = "pitched" if (b.kind() == "house" or b.area < 260 or b.gen["small"]) else "mansard"
+        out["roof"] = {"kind": kind, "rise": round(rise, 2), "c": [int(v) for v in np.median(roofcs, 0)]}
+        out["roofc"] = out["roof"]["c"]
+        out["pitched"] = kind == "pitched"
+        if "h_top" not in out:
+            out["h"] = round(max(2.5, out["h"] - rise), 1) if kind == "mansard" else out["h"]
+    b.tiles = tiles
+    if log:
+        log(f"  зграда {b.id}: ѕид {out['h']:.1f} м" + (f" + покрив {out['roof']['kind']} {out['roof']['rise']:.1f} м" if "roof" in out else "")
+            + f", ѕидови {len(walls)}, плочки {len(tiles)}, клима {sum(len(d['ac']) for d in dets)}, балкони {sum(1 for d in dets if d['balc'])}"
+            + f", кат {best['fh']:.2f} м, колона {best['bw']:.2f} м")
+    return out
+
+
+def fit_building(b, obs, algo, texs, log=None):
     """The fitted look of one building from its views."""
+    if algo == "detail":
+        return fit_detail(b, obs, log)
     # views that are mostly something else (trees, cars) only add noise when there are better ones
     good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))]
     obs = good or obs
@@ -668,6 +801,10 @@ def infer(blds, algo, k=3):
             f["wallc"] = [int(v) for v in sum(c * wi for c, wi in cs) / sum(wi for _, wi in cs)]
         if "mat" in src[0]:
             f["mat"], f["floor"], f["bay"] = src[0]["mat"], src[0].get("floor", 3.2), src[0].get("bay", 3.4)
+        if "cycle" in src[0]:                       # the nearest fitted building's column tiles and details on every wall
+            f.update(tile_src=f["from"][0], cycle=src[0]["cycle"], det=src[0]["det"], floor=src[0]["floor"], bay=src[0]["bay"])
+            if "roof" in src[0] and (src[0]["roof"]["kind"] == "pitched") == (b.kind() == "house" or b.area < 260):
+                f["roof"], f["roofc"] = src[0]["roof"], src[0]["roofc"]
         t = b.tags
         if not t.get("height") and not t.get("building:levels"):          # OSM gives no height: the neighbours' fitted one
             hs = [s["h"] for s, o in zip(src, order) if 0.4 < done[same[o]].area / max(b.area, 1) < 2.5]
@@ -678,6 +815,10 @@ def infer(blds, algo, k=3):
     return n
 
 
+def atlas_path(fit_path):
+    return os.path.splitext(fit_path)[0] + "_atlas.png"
+
+
 def write_fits(blds, algo, path):
     """The game's file: only what differs from the generated look matters, the rest is for the viewer / later rounds."""
     out = {}
@@ -685,9 +826,23 @@ def write_fits(blds, algo, path):
         f = b.fits.get(algo)
         if not f:
             continue
-        e = {k: f[k] for k in ("h", "mat", "wallc", "floor", "bay", "pitched", "src", "conf") if k in f}
+        e = {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
+                               "det", "tile_src") if k in f}
         out[str(b.id)] = e
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    owners = [b for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo" and getattr(b, "tiles", None) and "cycle" in b.fits[algo]]
+    if owners:                                    # one texture atlas for all tiles: photo pixels, stays next to the photos
+        import facade
+        atlas, uvs = facade.pack([b.tiles for b in owners])
+        Image.fromarray(atlas).save(atlas_path(path))
+        uv_of = {b.id: uv for b, uv in zip(owners, uvs)}
+        for k, e in list(out.items()):
+            src = uv_of.get(int(e.get("tile_src", k)))
+            if "cycle" in e and src is not None:
+                e["tiles"] = [[round(v, 6) for v in r] for r in src]
+            elif "cycle" in e:
+                for key in ("cycle", "walls", "det", "tile_src"):
+                    e.pop(key, None)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"version": 1, "algo": algo, "made": time.strftime("%Y-%m-%d %H:%M"), "buildings": out}, f, indent=0)
@@ -742,6 +897,10 @@ class Job(threading.Thread):
         for b in self.blds.values():
             b.obs = []
             b.fits.pop(self.algo, None)
+        global RES
+        import facade
+        RES = facade.RES if self.algo == "detail" else 4.0            # the detail fit reads windows and AC units: 12 px/m
+        self.log(f"резолуција на фасадите: {RES:.0f} px/м")
         seg = segment.get(self.seg_kind, self.log)
         self.log(f"сегментација: {seg.name}")
         cache = os.path.join(self.folder, CACHE)
@@ -763,9 +922,10 @@ class Job(threading.Thread):
             lab = lab.copy()
             lab[ui] = L_NONE
             c.dyaw = c.dpitch = 0.0
-            if self.algo == "render":
-                dy, dp, sc = refine_pose(c, lab, self.blds)
-                self.log(f"{c.file[:4]}: камера {dy:+.1f}° / {dp:+.1f}° (поклопување {sc:.2f})")
+            if not hasattr(c, "x0"):
+                c.x0, c.z0 = c.x, c.z
+            c.x, c.z = c.x0, c.z0
+            fit_position(c, lab, self.blds, self.log)                 # always: the photo is rarely taken where the file says
             edges = wall_edges(self.blds, np.array([c.x, c.z]), 220)
             views = facade_views(c, img, lab, ui, self.blds, edges)
             for o in views:
@@ -780,18 +940,19 @@ class Job(threading.Thread):
                 if bid in pending_bids:
                     continue
                 b = self.blds[bid]
-                b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs)
+                b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
                 b.version += 1
                 touched.discard(bid)
                 f = b.fits[self.algo]
-                self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
+                if self.algo != "detail":
+                    self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
                          + (f", кат {f['floor']:.2f} м, прозорец {f['bay']:.2f} м" if "floor" in f else "")
                          + (f", разлика {f['loss']:.2f}" if "loss" in f else ""))
                 self.version += 1
             del img
         for bid in touched:
             b = self.blds[bid]
-            b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs)
+            b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
             b.version += 1
         self.step = "незабележани згради"
         n = infer(self.blds, self.algo)
@@ -811,6 +972,11 @@ def apply_to_game(folder, algo, osm_dir=None):
     osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
     src = os.path.join(folder, CACHE, f"fit_{algo}.json")
     shutil.copyfile(src, os.path.join(osm_dir, "photogram.json"))
+    at = os.path.join(osm_dir, "photogram_atlas.png")
+    if os.path.exists(atlas_path(src)):
+        shutil.copyfile(atlas_path(src), at)
+    elif os.path.exists(at):
+        os.remove(at)
     off = os.path.join(osm_dir, "photogram.off.json")
     if os.path.exists(off):
         os.remove(off)
