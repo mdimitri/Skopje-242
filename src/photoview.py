@@ -459,7 +459,6 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.begin_drawing()
         rl.clear_background(rl.Color(150, 172, 196, 255))
         rl.begin_mode_3d(cam)
-        rl.draw_plane(_v3(cen), rl.Vector2(1600, 1600), rl.Color(120, 126, 112, 255))
         scene.draw()
         for b in blds.values():                                   # fitted outlines: green = from photos, blue = from neighbours
             f = b.fits.get(algo) if look else None
@@ -603,7 +602,6 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     fwd, _r, up = sel.basis()
                     e = sel.eye()
                     rl.begin_mode_3d(rl.Camera3D(_v3(e), _v3(e + fwd * 10), _v3(up), float(sel.fov), rl.CAMERA_PERSPECTIVE))
-                    rl.draw_plane(_v3(cen), rl.Vector2(1600, 1600), rl.Color(120, 126, 112, 255))
                     scene.draw()
                     rl.end_mode_3d()
                     rl.end_texture_mode()
