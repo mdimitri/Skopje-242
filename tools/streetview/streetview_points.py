@@ -44,9 +44,13 @@ def main():
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--big-m2", type=float, default=450, help="buildings this large also get a second view (0 = off)")
     ap.add_argument("--diverse", action="store_true", help="spread picks over building types/sizes first")
+    ap.add_argument("--whole", action="store_true", help="whole world box: all big buildings (2 views for the largest), houses thinned by distance from the centre")
     ap.add_argument("--min-sep", type=float, default=45.0, help="min distance between camera points (m)")
     a = ap.parse_args()
     cx, cy = project(*CENTER)
+    radius = 1e9 if a.whole else RADIUS
+    if a.whole:
+        cx = cy = 0.0
 
     blds = []
     for e in json.load(open(os.path.join(a.src, "buildings.json")))["elements"]:
@@ -58,7 +62,7 @@ def main():
             continue
         mx = sum(p[0] for p in ring[:-1]) / (len(ring) - 1)
         my = sum(p[1] for p in ring[:-1]) / (len(ring) - 1)
-        if math.hypot(mx - cx, my - cy) > RADIUS:
+        if math.hypot(mx - cx, my - cy) > radius:
             continue
         ar = area_sign(ring)
         if abs(ar) < 60:
@@ -68,7 +72,7 @@ def main():
             lv = float(t.get("building:levels", 0)) or 2
         except ValueError:
             lv = 2
-        blds.append(dict(id=e["id"], ring=ring, area=abs(ar), ccw=ar > 0, c=(mx, my), h=min(lv * 3.0, 30.0), tag=t.get("building")))
+        blds.append(dict(id=e["id"], ring=ring, area=abs(ar), ccw=ar > 0, c=(mx, my), h=min(lv * 3.0, 30.0), tag=t.get("building"), big=(abs(ar) >= 450 or lv >= 5 or t.get("building") in ("apartments", "commercial", "retail", "industrial", "office", "public", "school", "hospital", "university", "warehouse"))))
     grid = {}
     for i, b in enumerate(blds):
         xs = [p[0] for p in b["ring"]]; ys = [p[1] for p in b["ring"]]
@@ -85,9 +89,15 @@ def main():
             continue
         pts = [project(p["lat"], p["lon"]) for p in e.get("geometry", [])]
         for p, q in zip(pts, pts[1:]):
-            if min(math.hypot(p[0] - cx, p[1] - cy), math.hypot(q[0] - cx, q[1] - cy)) < RADIUS + 60:
+            if min(math.hypot(p[0] - cx, p[1] - cy), math.hypot(q[0] - cx, q[1] - cy)) < radius + 60:
                 segs.append((p, q, e["id"], t.get("name", "")))
     print(f"buildings {len(blds)}, road segments {len(segs)}")
+    sgrid = {}
+    for sg in segs:
+        (p, q) = sg[0], sg[1]
+        for gx in range(int((min(p[0], q[0]) - 45) // CELL), int((max(p[0], q[0]) + 45) // CELL) + 1):
+            for gy in range(int((min(p[1], q[1]) - 45) // CELL), int((max(p[1], q[1]) + 45) // CELL) + 1):
+                sgrid.setdefault((gx, gy), []).append(sg)
 
     def blocked(p, m, own):
         for gx in range(int(min(p[0], m[0]) // CELL), int(max(p[0], m[0]) // CELL) + 1):
@@ -114,7 +124,8 @@ def main():
             nx, ny = (ey, -ex) if b["ccw"] else (-ey, ex)
             m = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
             best = None
-            for p, q, rid, name in segs:
+            near = sgrid.get((int(m[0] // CELL), int(m[1] // CELL)), ())
+            for p, q, rid, name in near:
                 dx, dy = q[0] - p[0], q[1] - p[1]
                 l2 = dx * dx + dy * dy
                 if l2 == 0:
@@ -143,7 +154,7 @@ def main():
         if per_edge:
             per_edge[0]["view"] = 1
             cands.append(per_edge[0])
-            if b["area"] >= a.big_m2:       # large building: a second view from a clearly different facade direction
+            if b["area"] >= a.big_m2 or b["big"]:       # large building: a second view from a clearly different facade direction
                 for z in per_edge[1:]:
                     if z["n"][0] * per_edge[0]["n"][0] + z["n"][1] * per_edge[0]["n"][1] < 0.7:
                         z["view"] = 2
@@ -167,6 +178,26 @@ def main():
             seen[k] = seen.get(k, 0) + 1
         cands.sort(key=lambda z: -z["score"])
     chosen = []
+    if a.whole:
+        occ = {}
+        def free(cd, sp):
+            gx, gy, r = int(cd["c"][0] // 160), int(cd["c"][1] // 160), int(sp // 160) + 1
+            return all(math.hypot(cd["c"][0] - o["c"][0], cd["c"][1] - o["c"][1]) >= sp
+                       for ix in range(gx - r, gx + r + 1) for iy in range(gy - r, gy + r + 1) for o in occ.get((ix, iy), ()))
+        def take(cd):
+            chosen.append(cd); occ.setdefault((int(cd["c"][0] // 160), int(cd["c"][1] // 160)), []).append(cd)
+        for cd in cands:                      # big / distinctive buildings first, close spacing
+            if blds[cd["i"]]["big"] and free(cd, 18):
+                take(cd)
+        nb = len(chosen)
+        for cd in cands:                      # houses: one sample per ~40 m in town, ~70 m further out, skipping spots near big-building cameras
+            if blds[cd["i"]]["big"] or cd.get("view") != 1:
+                continue
+            d = math.hypot(*cd["c"])
+            if free(cd, 40 if d < 3000 else 70):
+                take(cd)
+        print("big-building images:", nb, " house images:", len(chosen) - nb)
+        a.n = 0
     sep = a.min_sep
     while len(chosen) < a.n and sep >= 15:
         for cd in cands:
@@ -194,7 +225,7 @@ def main():
             "camera_to_facade_m": round(cd["d"], 1), "osm_road_id": cd["rid"], "road_name": cd["name"],
         })
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-    json.dump({"area": "Novo Lisice, Skopje", "center": {"lat": CENTER[0], "lon": CENTER[1]}, "radius_m": RADIUS,
+    json.dump({"area": "whole map" if a.whole else "Novo Lisice, Skopje", "center": {"lat": CENTER[0], "lon": CENTER[1]}, "radius_m": RADIUS,
                "heading_note": "degrees clockwise from north, camera looks at facade_mid", "points": out},
               open(a.out, "w"), ensure_ascii=False, indent=1)
     print("wrote", len(out), "points ->", a.out)
