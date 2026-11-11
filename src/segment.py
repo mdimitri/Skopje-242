@@ -95,15 +95,33 @@ class SegFormer:
 
 
 def _pip(args, log):
-    cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"] + args
+    """pip install with its lines in the log; downloads report MB done every ~5 % (pip's raw progress bar)."""
+    def go(extra):
+        cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"] + extra + args
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        last, bad = -1, False
+        for line in p.stdout:
+            line = line.strip()
+            if line.startswith("Progress ") and " of " in line:          # "Progress 123456 of 2887000000"
+                try:
+                    a, b = (int(v) for v in line[9:].split(" of "))
+                    pc = int(100 * a / max(1, b))
+                    if pc // 5 != last // 5 or a == b:
+                        last = pc
+                        log(f"  {a / 1e6:.0f} / {b / 1e6:.0f} MB ({pc} %)")
+                except ValueError:
+                    pass
+            elif "no such option" in line or "invalid choice" in line:
+                bad = True
+            elif line and not bad and not line.startswith(("Usage:", sys.executable)):
+                log("  " + line[:110])
+        return p.wait() == 0, bad
     log("инсталирам: " + " ".join(args))
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    for line in p.stdout:
-        line = line.strip()
-        if line.startswith(("Downloading", "Installing", "Successfully", "ERROR")):
-            log("  " + line[:110])
-    return p.wait() == 0
+    ok, bad = go(["--progress-bar", "raw"])
+    if bad:                                                           # an old pip: no raw progress
+        ok, _ = go([])
+    return ok
 
 
 def install(log):
