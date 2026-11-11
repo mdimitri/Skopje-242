@@ -179,6 +179,12 @@ class Bld:
         self.obs = []                                   # facade views (Obs)
         self.version = 0
 
+    def __getstate__(self):                             # to a worker: no views, no fits, no cached triangles
+        d = dict(self.__dict__)
+        d.update(obs=[], fits={})
+        d.pop("_tri", None)
+        return d
+
     def look(self, algo=None):
         """The look to show / write: the fit of `algo` over the generated one (None = generated)."""
         d = dict(self.gen)
@@ -262,6 +268,15 @@ class Obs:
         n3 = np.array([nrm[0], 0.0, nrm[1]])
         self.shade = float(np.clip(0.52 + 0.55 * max(0.0, float(n3 @ SUN)), 0.45, 1.12))
         self.n_build = int(((lab == L_BUILDING) & ok).sum())
+
+    def __getstate__(self):                             # photo pixels travel between processes as bytes, not floats
+        d = dict(self.__dict__)
+        d["rgb"] = np.clip(self.rgb, 0, 255).astype(np.uint8)
+        return d
+
+    def __setstate__(self, d):
+        d["rgb"] = d["rgb"].astype(np.float32)
+        self.__dict__.update(d)
 
 
 def wall_edges(blds, near_xz, radius):
@@ -664,16 +679,33 @@ def _silhouette(cap, blds, h_of, shape, step):
     im = Image.new("L", (shape[1], shape[0]), 0)
     d = ImageDraw.Draw(im)
     eye = cap.eye()
+    fwd, right, up = cap.basis()
+    f = cap.focal()
+    M = np.stack([right, up, fwd], 1)
     for b in blds:
-        for a, bb, nrm, ln in b.walls():
-            if (eye[[0, 2]] - (a + bb) / 2) @ nrm <= 0:
-                continue
-            h = h_of(b)
-            P = np.array([[a[0], b.base - 1, a[1]], [bb[0], b.base - 1, bb[1]], [bb[0], b.base + h, bb[1]], [a[0], b.base + h, a[1]]])
-            u, v, zc = cap.project(P)
-            if (zc < 1).any():
-                continue
-            d.polygon([(float(x) / step, float(y) / step) for x, y in zip(u, v)], fill=1)
+        ws = b.walls()
+        if not ws:
+            continue
+        h = h_of(b)
+        A = np.array([w[0] for w in ws])
+        Bq = np.array([w[1] for w in ws])
+        Nq = np.array([w[2] for w in ws])
+        vis = ((eye[[0, 2]] - (A + Bq) / 2) * Nq).sum(1) > 0
+        if not vis.any():
+            continue
+        A, Bq = A[vis], Bq[vis]
+        k = len(A)
+        P = np.empty((k, 4, 3))
+        P[:, 0, 0], P[:, 0, 2], P[:, 1, 0], P[:, 1, 2] = A[:, 0], A[:, 1], Bq[:, 0], Bq[:, 1]
+        P[:, 2, 0], P[:, 2, 2], P[:, 3, 0], P[:, 3, 2] = Bq[:, 0], Bq[:, 1], A[:, 0], A[:, 1]
+        P[:, :2, 1], P[:, 2:, 1] = b.base - 1, b.base + h
+        q = (P - eye) @ M
+        ok = (q[:, :, 2] >= 1).all(1)
+        zs = np.maximum(q[:, :, 2], 1e-3)
+        U = (cap.W / 2 + f * q[:, :, 0] / zs) / step
+        V = (cap.H / 2 - f * q[:, :, 1] / zs) / step
+        for j in np.nonzero(ok)[0]:
+            d.polygon(list(zip(U[j].tolist(), V[j].tolist())), fill=1)
     return np.asarray(im, bool)
 
 
@@ -986,6 +1018,87 @@ def write_fits(blds, algo, path):
     return len(out)
 
 
+# ------------------------------------------------------------------------------------------------------------ the workers
+_W = {}
+
+
+def _w_init(folder, osm_dir, algo):
+    """A worker process: its own copy of the captures and the city (read once)."""
+    global RES
+    import facade
+    RES = facade.RES if algo == "detail" else 4.0
+    caps = read_manifest(folder)
+    _W.update(caps={c.file: c for c in caps}, blds=load_city(osm_dir, caps, log=lambda s: None), algo=algo)
+
+
+def _w_capture(file, x0, z0, mode, pk, lab):
+    """One capture in a worker: true colours, camera pose (searched or saved), facade views.  -> dict (views pickle small)."""
+    import facade
+    c, blds = _W["caps"][file], _W["blds"]
+    lines = []
+    img = c.image()
+    if _W["algo"] == "detail":                                       # true colours: haze veil off, the photo's own white point
+        img, V, Wl = facade.restore(img, lab)
+        lines.append(f"{file[:4]}: боја на снимката: измаглица {[int(v) for v in V]} одземена, бело {Wl:.0f} -> 255")
+    c.x, c.z, c.dyaw, c.dpitch = x0, z0, 0.0, 0.0
+    pose = None
+    tgt = blds.get(c.bid)
+    if mode == "file":
+        r = (0.0, 0.0, 0.0, 1.0)
+    elif pk:
+        r = pk[:4]
+        apply_pose(c, blds, *r, x0, z0)
+        lines.append(f"{file[:4]}: камера од зачуваното ({r[0]:+.1f} м назад, {r[1]:+.1f} м десно, {r[2]:+.1f}°)")
+    else:
+        r = fit_position(c, lab, blds, lines.append, mode)
+        pose = [round(float(v), 3) for v in r[:4]] + [mode]
+    ui = lab == L_NONE
+    edges = wall_edges(blds, np.array([c.x, c.z]), 220)
+    views = facade_views(c, img, lab, ui, blds, edges)
+    return {"x": float(c.x), "z": float(c.z), "dyaw": float(c.dyaw), "pose": pose, "log": lines, "views": views,
+            "h_seen": float(tgt.gen["h"] * r[3]) if tgt is not None and r[3] != 1.0 else 0.0}
+
+
+def _w_fit(b, obs, algo):
+    """One building's fit in a worker -> (fit dict, log lines)."""
+    lines = []
+    return fit_building(b, obs, algo, {}, lines.append), lines
+
+
+def _kill(ex):
+    """Stop the workers now (a running pose search or fit is not waited for)."""
+    procs = list((getattr(ex, "_processes", None) or {}).values())
+    ex.shutdown(wait=False, cancel_futures=True)
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:  # noqa: BLE001 - already gone
+            pass
+
+
+def _pool(folder, osm_dir, algo, log):
+    """Worker processes on all cores but one (the GPU feeder / viewer); a single in-thread worker when processes fail."""
+    import concurrent.futures as cf
+    import multiprocessing as mp
+    n = max(1, min(12, (os.cpu_count() or 2) - 1))
+    main = sys.modules.get("__main__")
+    mf = getattr(main, "__file__", None)
+    try:
+        if mf is not None:
+            del main.__file__                              # spawned workers must not re-run main.py (it opens a window)
+        ex = cf.ProcessPoolExecutor(n, mp_context=mp.get_context("spawn"), initializer=_w_init, initargs=(folder, osm_dir, algo))
+        for f in [ex.submit(int, 0) for _ in range(n)]:    # start them all now, while main.py's name is hidden
+            f.result()
+        log(f"паралелно: {n} процеси (од {os.cpu_count()} јадра)")
+        return ex, n
+    except Exception as e:  # noqa: BLE001 - no processes: one worker thread
+        log(f"паралелно: не може ({type(e).__name__}: {e}), една нишка")
+        return cf.ThreadPoolExecutor(1, initializer=_w_init, initargs=(folder, osm_dir, algo)), 1
+    finally:
+        if mf is not None:
+            main.__file__ = mf
+
+
 # ------------------------------------------------------------------------------------------------------------ the job
 class Job(threading.Thread):
     """Runs the pipeline for one folder and one algorithm; the viewer reads .caps / .blds / .log / .version while it works."""
@@ -1046,77 +1159,126 @@ class Job(threading.Thread):
         caps = [c for c in self.caps if c.exists]
         # the captures of one building one after the other, so it can be fitted (and shown) as soon as its last view is in
         caps.sort(key=lambda c: (c.bid, c.file))
-        last_of = {c.bid: i for i, c in enumerate(caps)}
-        touched = set()
         pose_path = os.path.join(cache, "poses.json")             # found poses are kept: a rebuild does not search again
         try:
             with open(pose_path, encoding="utf-8") as f:
                 poses = json.load(f)
         except (OSError, ValueError):
             poses = {}
+        # segmentation runs here (one GPU); pose search, facade views and fits run on the other cores, overlapped with it
+        ex, nw = _pool(self.folder, self.osm_dir, self.algo, self.log)
+        cap_f, fit_f, gen = {}, {}, {}
+        left = {}                                        # captures of each target not back yet
+        for c in caps:
+            left[c.bid] = left.get(c.bid, 0) + 1
+        touched = set()
+        nback = [0]
+
+        def fit_one(bid, inline=False):
+            b = self.blds[bid]
+            gen[bid] = gen.get(bid, 0) + 1
+            if self.algo == "detail" and not inline:                    # in a worker (only numbers come back)
+                fit_f[ex.submit(_w_fit, b, b.obs, self.algo)] = (bid, gen[bid])
+                return
+            b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
+            f = b.fits[self.algo]
+            self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
+                     + (f", кат {f['floor']:.2f} м, прозорец {f['bay']:.2f} м" if "floor" in f else "")
+                     + (f", разлика {f['loss']:.2f}" if "loss" in f else ""))
+            b.version += 1
+
+        def drain(block=False):
+            import concurrent.futures as cf
+            allf = list(cap_f) + list(fit_f)
+            if not allf:
+                return
+            done, _ = cf.wait(allf, timeout=0.25 if block else 0, return_when=cf.FIRST_COMPLETED)   # short: stop stays quick
+            for fu in done:
+                if fu in cap_f:
+                    c = cap_f.pop(fu)
+                    if fu.cancelled():
+                        continue
+                    r = fu.result()
+                    for ln in r["log"]:
+                        self.log(ln)
+                    c.x, c.z, c.dyaw, c.dpitch = r["x"], r["z"], r["dyaw"], 0.0
+                    if r["pose"] is not None:
+                        poses[c.file] = r["pose"]
+                        with open(pose_path, "w", encoding="utf-8") as f:
+                            json.dump(poses, f)
+                    if r["h_seen"] and c.bid in self.blds:
+                        tb = self.blds[c.bid]
+                        tb.h_seen = max(getattr(tb, "h_seen", 0.0), r["h_seen"])
+                    for o in r["views"]:
+                        o.bld, o.cap = self.blds[o.bld.id], c
+                        o.bld.obs.append(o)
+                        touched.add(o.bld.id)
+                    tgt = sum(1 for o in r["views"] if o.bld.id == c.bid)
+                    c.status = f"{len(r['views'])} ѕида ({tgt} на целта)" if r["views"] else "ништо употребливо"
+                    self.log(f"{c.file[:4]}: {c.status}")
+                    left[c.bid] -= 1
+                    nback[0] += 1
+                    self.frac = nback[0] / max(1, len(caps))
+                    for bid in list(touched):          # every building whose own captures are all back
+                        if left.get(bid, 0) <= 0:
+                            touched.discard(bid)
+                            fit_one(bid)
+                else:
+                    bid, g = fit_f.pop(fu)
+                    fit, lines = fu.result()
+                    for ln in lines:
+                        self.log(ln)
+                    if g == gen.get(bid):              # a newer fit of it (more views came in) wins
+                        self.blds[bid].fits[self.algo] = fit
+                        self.blds[bid].version += 1
+                self.version += 1
+
         for i, c in enumerate(caps):
             while self.pause and not self.stop:
                 self.step = "пауза"
+                drain()
                 time.sleep(0.1)
             if self.stop:
-                self.log(f"застанато по {i} од {len(caps)} снимки: се довршуваат видените згради")
                 break
-            self.step, self.frac = f"снимка {i + 1}/{len(caps)}: {c.file[:28]}", i / max(1, len(caps))
+            self.step = f"снимка {i + 1}/{len(caps)}: сегментација ({nw} јадра работат)"
             self.version += 1
             img = c.image()
             lab = seg.labels(img, os.path.join(cache, os.path.splitext(c.file)[0] + f".{seg.name}.png"))
-            if self.algo == "detail":                                 # true colours: haze veil off, the photo's own white point
-                img, V, Wl = facade.restore(img, lab)
-                self.log(f"  боја на снимката: измаглица {[int(v) for v in V]} одземена, бело {Wl:.0f} -> 255")
+            del img
             self.labels[c.file] = lab
-            ui = c.ui_mask()
             lab = lab.copy()
-            lab[ui] = L_NONE
-            c.dyaw = c.dpitch = 0.0
+            lab[c.ui_mask()] = L_NONE
             if not hasattr(c, "x0"):
                 c.x0, c.z0 = c.x, c.z
-            c.x, c.z = c.x0, c.z0
             pk = poses.get(c.file)
-            if self.pose == "file":
-                c.dyaw = 0.0
-            elif pk and (pk[4] == "full" or pk[4] == self.pose):
-                apply_pose(c, self.blds, *pk[:4])
-                self.log(f"{c.file[:4]}: камера од зачуваното ({pk[0]:+.1f} м назад, {pk[1]:+.1f} м десно, {pk[2]:+.1f}°)")
-            else:
-                self.step = f"снимка {i + 1}/{len(caps)}: позиција на камерата"
-                r = fit_position(c, lab, self.blds, self.log, self.pose, lambda: self.stop)
-                if not self.stop:
-                    poses[c.file] = [round(float(v), 3) for v in r[:4]] + [self.pose]
-                    with open(pose_path, "w", encoding="utf-8") as f:
-                        json.dump(poses, f)
-            edges = wall_edges(self.blds, np.array([c.x, c.z]), 220)
-            views = facade_views(c, img, lab, ui, self.blds, edges)
-            for o in views:
-                o.bld.obs.append(o)
-                touched.add(o.bld.id)
-            tgt = sum(1 for o in views if o.bld.id == c.bid)
-            c.status = f"{len(views)} ѕида ({tgt} на целта)" if views else "ништо употребливо"
-            self.log(f"{c.file[:4]}: {c.status}")
-            # fit every building whose views are all in (its own captures done; neighbours seen from here count too)
-            pending_bids = {cc.bid for cc in caps[i + 1:]}
+            pk = pk if (pk and (pk[4] == "full" or pk[4] == self.pose)) else None
+            cap_f[ex.submit(_w_capture, c.file, c.x0, c.z0, self.pose, pk, lab)] = c
+            while len(cap_f) >= 2 * nw and not self.stop:   # a bounded queue: the views of many photos are big
+                drain(True)
+            drain()
+        while cap_f and not self.stop:
+            drain(True)
+        if self.stop:                        # stop now: the workers are killed, what came back is fitted here
+            self.log(f"застанато: {nback[0]} од {len(caps)} снимки готови, се довршуваат видените згради")
+            redo = touched | {bid for bid, _g in fit_f.values()}
+            cap_f.clear()
+            fit_f.clear()
+            _kill(ex)
+            self.step = f"напасување на {len(redo)} згради"
+            for bid in redo:
+                fit_one(bid, inline=True)
+        else:
             for bid in list(touched):
-                if bid in pending_bids:
-                    continue
-                b = self.blds[bid]
-                b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
-                b.version += 1
-                touched.discard(bid)
-                f = b.fits[self.algo]
-                if self.algo != "detail":
-                    self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
-                         + (f", кат {f['floor']:.2f} м, прозорец {f['bay']:.2f} м" if "floor" in f else "")
-                         + (f", разлика {f['loss']:.2f}" if "loss" in f else ""))
-                self.version += 1
-            del img
-        for bid in touched:
-            b = self.blds[bid]
-            b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
-            b.version += 1
+                fit_one(bid)
+            self.step = f"напасување на згради ({len(fit_f)} во тек)"
+            while fit_f:
+                drain(True)
+                if self.stop:
+                    redo = {bid for bid, _g in fit_f.values()}
+                    fit_f.clear()
+                    for bid in redo:
+                        fit_one(bid, inline=True)
+            _kill(ex)
         self.step = "незабележани згради"
         n = infer(self.blds, self.algo)
         for b in self.blds.values():
