@@ -490,7 +490,8 @@ MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graf
 GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
 MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM, MAT_MIX = 7, 8, 9, 10, 11     # photo-based Skopje facades
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
-MAT_PHOTO = 12                       # photo-fitted facades: tiles in <world>/photo_atlas.png (src/photogram.py, ДЕТАЛИ)
+# photo-fitted facades (src/photogram.py, ДЕТАЛИ): procedural surfaces, textures from gl3d.surface_textures (same order as gl3d.SURF_NAMES)
+MAT_SURF = {"plas": 12, "concw": 13, "tilew": 14, "brkw": 15, "metw": 16, "glaz": 17}
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
 
@@ -1013,16 +1014,41 @@ def mansard(ring, y0, rise, col):
     return out
 
 
+SURF_BASE = {"plas": 0.84, "concw": 0.80, "tilew": 0.86, "brkw": 0.80, "metw": 0.86}     # mean of each texture (gl3d.surface_textures)
+GLASS_BASE, PAINT_BASE = 0.26, 0.88
+
+
 def photo_facade(outer, h, fit, y_bot=0.0):
-    """Walls of a photo-fitted building (src/photogram.py, ДЕТАЛИ): every wall cut into bay columns x floors, each cell textured
-    with its column's tile from the photo atlas; walls the photos did not see repeat the building's own columns.  Plus the 3D
-    details the photos showed: AC boxes and balcony slabs.  -> [(material, pos, uv, col)]."""
-    T, cyc, dets = fit["tiles"], fit["cycle"] or [0], fit.get("det") or []
+    """Walls of a photo-fitted building (src/photogram.py ДЕТАЛИ), all procedural from the fitted numbers: every wall cut into its
+    bay columns x floors; each cell a wall surface (plaster / concrete / tiles / brick / metal texture in the photo's colour) with a
+    recessed window (reveals, glass, frame, glazing bars, blind, sill) or a loggia, balcony slab and parapet or railing, AC units.
+    Walls the photos did not see repeat the building's own columns.  Inferred buildings (no photo of their own) get the lighter
+    set (no frames, bars, sills, posts or AC).  -> [(material, pos, uv, col)]."""
+    params, cyc = fit.get("params") or [], fit.get("cycle") or []
+    if not params or not cyc:
+        return []
+    full = fit.get("src") == "photo"
     fh0, bw0 = max(2.4, fit.get("floor", 3.2)), max(2.0, fit.get("bay", 3.4))
     seen = fit.get("walls") or []
     r = np.asarray(outer, np.float64)
     n = len(r)
-    P, U, C, solid = [], [], [], []
+    acc = {}
+
+    def put(mat, pts, uvs, col):
+        e_ = acc.setdefault(mat, ([], [], []))
+        c = (*[int(min(255, max(0, v))) for v in col], 255)
+        for k in (0, 1, 2, 0, 2, 3):
+            e_[0].append(pts[k])
+            e_[1].append(uvs[k])
+            e_[2].append(c)
+
+    def put_box(mat, cx, cz, sx, sz, hh, y0, col, yaw, uv=(0.75, 0.5)):
+        pos, _uv, cl = box(cx, cz, sx, sz, hh, y0, col, yaw)
+        e_ = acc.setdefault(mat, ([], [], []))
+        e_[0].extend(map(tuple, pos))
+        e_[1].extend([uv] * len(pos))
+        e_[2].extend(map(tuple, cl))
+
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
         d = b - a
@@ -1031,58 +1057,123 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             continue
         t_ = d / ln
         nrm = np.array([t_[1], -t_[0]])                            # outward
+        yaw = math.atan2(t_[1], t_[0])
         sh = float(np.clip(0.52 + 0.55 * max(0.0, float(np.array([nrm[0], 0, nrm[1]]) @ SUN)), 0.45, 1.12))
         w = next((w for w in seen if np.hypot(*(np.array(w["a"]) - a)) < 1.5 and np.hypot(*(np.array(w["b"]) - b)) < 1.5), None)
         if w:
             k = ln / max(0.1, w["ln"])
             cols = [(c[0] * k, c[1] * k, c[2]) for c in w["cols"]]
             fh, pv, ref = w["fh"], w["pv"] % w["fh"], w.get("shade", 0.85)
+            cells, wallc, surf = w.get("cells", {}), w["wall"], w.get("surf", fit.get("surf", "plas"))
         else:
             nb = max(1, int(round(ln / bw0)))
             cols = [(ln * j / nb, ln * (j + 1) / nb, cyc[(j + i * 3) % len(cyc)]) for j in range(nb)]
-            fh, pv, ref = fh0, 0.0, 0.85
+            fh, pv, ref, cells = fh0, 0.0, 0.85, {}
+            wallc, surf = fit.get("wallc", (200, 200, 200)), fit.get("surf", "plaster")
         lit = float(np.clip(sh / ref, 0.72, 1.18))
-        # floor bands: [y_bot .. pv] partial, full floors, partial top
+        glassy = surf == "glass"
+        smat = {"plaster": "plas", "concrete": "concw", "tiles": "tilew", "brick": "brkw", "metal": "metw", "glass": "metw"}.get(surf, "plas")
+        MS, MG = MAT_SURF[smat], MAT_SURF["glaz"]
+        base = SURF_BASE[smat]
+
+        def P(u, y, dd=0.0):
+            q = a + t_ * u + nrm * dd
+            return (float(q[0]), float(y), float(q[1]))
+
+        def wall_rect(u0, u1, y0, y1, col):
+            if u1 - u0 < 0.01 or y1 - y0 < 0.01:
+                return
+            put(MS, [P(u0, y0), P(u1, y0), P(u1, y1), P(u0, y1)], [(u0 / 4, -y0 / 4), (u1 / 4, -y0 / 4), (u1 / 4, -y1 / 4), (u0 / 4, -y1 / 4)],
+                [c * lit / base for c in col])
+
+        def paint(pts, col, k_=1.0):
+            put(MG, pts, [(0.6, 0.2), (0.9, 0.2), (0.9, 0.8), (0.6, 0.8)], [c * lit * k_ / PAINT_BASE for c in col])
+
         cuts = [y_bot] + [pv + k_ * fh for k_ in range(int(math.ceil(h / fh)) + 1) if y_bot < pv + k_ * fh < h - 0.05] + [h]
-        for u0, u1, tid in cols:
-            if tid >= len(T) or u1 - u0 < 0.05:
+        for ci, (u0, u1, pi) in enumerate(cols):
+            if pi >= len(params) or u1 - u0 < 0.05:
                 continue
-            ul, vb, ur, vt = T[tid]
-            p0, p1 = a + t_ * u0, a + t_ * u1
+            p = params[pi]
+            cw = u1 - u0
             for y0, y1 in zip(cuts[:-1], cuts[1:]):
-                fl = math.floor((y0 + 1e-3 - pv) / fh)                   # which floor, and where in its tile the band starts / ends
-                f0 = max(0.0, (y0 - (pv + fl * fh)) / fh)
-                f1 = min(1.0, (y1 - (pv + fl * fh)) / fh)
-                v0_, v1_ = vb + (vt - vb) * f0, vb + (vt - vb) * f1
-                ao0 = 0.8 if y0 <= y_bot + 0.01 else 1.0
-                for (pp, y, uu, vv, ao) in ((p0, y0, ul, v0_, ao0), (p1, y0, ur, v0_, ao0), (p1, y1, ur, v1_, 1.0),
-                                            (p0, y0, ul, v0_, ao0), (p1, y1, ur, v1_, 1.0), (p0, y1, ul, v1_, 1.0)):
-                    P.append((pp[0], y, pp[1]))
-                    U.append((uu, vv))
-                    C.append(min(255, int(235 * lit * ao)))
-                if f0 > 0.01 or f1 < 0.99 or tid >= len(dets) or y0 < 2.0:
+                fl = int(math.floor((y0 + 1e-3 - pv) / fh))
+                wc = cells.get(f"{ci},{fl}", wallc) if w else wallc
+                if glassy:
+                    wc = p.get("frame") or (70, 76, 82)
+                fullcell = y1 - y0 > 0.95 * fh and y0 > 0.5
+                win = p.get("win")
+                if glassy and fullcell:
+                    win = [0.03, 0.97, 0.06, 0.96]
+                if not fullcell or not win:
+                    wall_rect(u0, u1, y0, y1, wc)
                     continue
-                dt = dets[tid]
-                yaw = math.atan2(t_[1], t_[0])
-                for fx, cy, aw, ah, *cc in dt.get("ac", []):          # AC units: boxes 0.35 m deep on the wall
-                    cu = u0 + fx * (u1 - u0)
-                    cx, cz = a + t_ * cu + nrm * 0.18
-                    solid.append(box(cx, cz, aw, 0.35, ah, y0 + cy - ah / 2, [v * lit for v in cc], yaw))
-                bc = dt.get("balc")
-                if bc:                                                 # balcony: slab + rail at the floor line
-                    dep, cc = bc[0], [v * lit * 0.92 for v in bc[1:]]
+                wx0, wx1 = u0 + win[0] * cw, u0 + win[1] * cw
+                wy0, wy1 = y0 + win[2] * fh, y0 + win[3] * fh
+                rec = 0.05 if glassy else float(p.get("rec", 0.18))
+                wall_rect(u0, wx0, y0, y1, wc)
+                wall_rect(wx1, u1, y0, y1, wc)
+                wall_rect(wx0, wx1, y0, wy0, wc)
+                wall_rect(wx0, wx1, wy1, y1, wc)
+                rc = [c * (0.62 if rec > 0.5 else 0.86) for c in wc]          # reveals (a loggia's walls are in shade)
+                for pts in ((P(wx0, wy0), P(wx0, wy0, -rec), P(wx0, wy1, -rec), P(wx0, wy1)),
+                            (P(wx1, wy1), P(wx1, wy1, -rec), P(wx1, wy0, -rec), P(wx1, wy0)),
+                            (P(wx1, wy0), P(wx1, wy0, -rec), P(wx0, wy0, -rec), P(wx0, wy0)),
+                            (P(wx0, wy1), P(wx0, wy1, -rec), P(wx1, wy1, -rec), P(wx1, wy1))):
+                    put(MS, list(pts), [(0, 0), (rec / 4, 0), (rec / 4, 0.3), (0, 0.3)], [c * lit / base for c in rc])
+                g = p.get("glass") or (70, 80, 92)
+                gd = -rec + 0.02
+                put(MG, [P(wx0, wy0, gd), P(wx1, wy0, gd), P(wx1, wy1, gd), P(wx0, wy1, gd)],
+                    [(0.05, 0.95), (0.45, 0.95), (0.45, 0.05), (0.05, 0.05)], [c * lit / (GLASS_BASE * 255) * 255 for c in g])
+                bl = p.get("blind")
+                if bl and not glassy:                                          # blind / roller shutter, down from the top
+                    yb = wy1 - bl[0] * (wy1 - wy0)
+                    paint([P(wx0, yb, gd + 0.03), P(wx1, yb, gd + 0.03), P(wx1, wy1, gd + 0.03), P(wx0, wy1, gd + 0.03)], bl[1:], 0.97)
+                if full:
+                    fc = p.get("frame") or (236, 236, 232)
+                    fw, fd = 0.06, gd + 0.04
+                    for (x0_, x1_, y0_, y1_) in ((wx0, wx0 + fw, wy0, wy1), (wx1 - fw, wx1, wy0, wy1),
+                                                 (wx0, wx1, wy0, wy0 + fw), (wx0, wx1, wy1 - fw, wy1)):
+                        paint([P(x0_, y0_, fd), P(x1_, y0_, fd), P(x1_, y1_, fd), P(x0_, y1_, fd)], fc)
+                    nm = 1 if glassy else int(p.get("mull", 0))
+                    for m_ in range(1, nm + 1):                                 # glazing bars
+                        xm = wx0 + (wx1 - wx0) * m_ / (nm + 1)
+                        paint([P(xm - 0.025, wy0, fd), P(xm + 0.025, wy0, fd), P(xm + 0.025, wy1, fd), P(xm - 0.025, wy1, fd)], fc)
+                    if wy1 - wy0 > 1.6:                                          # transom of a tall (door) opening
+                        yt = wy0 + (wy1 - wy0) * 0.72
+                        paint([P(wx0, yt - 0.025, fd), P(wx1, yt - 0.025, fd), P(wx1, yt + 0.025, fd), P(wx0, yt + 0.025, fd)], fc)
+                    if p.get("sill") and not glassy:
+                        cx, cz = a + t_ * (wx0 + wx1) / 2 + nrm * 0.03
+                        put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
+                    for fx, cy, aw, ah, *cc in p.get("ac", []):                # AC units with a dark fan grille
+                        cu = u0 + fx * cw
+                        cx, cz = a + t_ * cu + nrm * 0.18
+                        yb_ = y0 + cy - ah / 2
+                        put_box(MG, cx, cz, aw, 0.35, ah, yb_, [c * lit / PAINT_BASE for c in cc], yaw)
+                        gr = ah * 0.32
+                        paint([P(cu - gr - aw * 0.12, yb_ + ah / 2 - gr, 0.355), P(cu + gr - aw * 0.12, yb_ + ah / 2 - gr, 0.355),
+                               P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.355), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.355)], (58, 60, 62))
+                bc = p.get("balc")
+                if bc and not glassy:                                           # balcony: slab + parapet or railing
+                    dep, rc_, solid = bc[0], bc[1:4], (bc[4] if len(bc) > 4 else 1) or not full
                     cx, cz = a + t_ * (u0 + u1) / 2 + nrm * dep / 2
-                    solid.append(box(cx, cz, (u1 - u0) * 0.92, dep, 0.16, y0, cc, yaw))
-                    rx, rz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.03)
-                    solid.append(box(rx, rz, (u1 - u0) * 0.92, 0.05, 0.06, y0 + 1.0, [v * 0.8 for v in cc], yaw))
-    out = []
-    if P:
-        c = np.array(C, np.uint8)
-        out.append((MAT_PHOTO, np.array(P, np.float32), np.array(U, np.float32),
-                    np.stack([c, c, c, np.full_like(c, 255)], 1)))
-    if solid:
-        out.append((MAT_SOLID, *(np.concatenate(x) for x in zip(*solid))))
-    return out
+                    bw_ = cw * 0.96
+                    put_box(MG, cx, cz, bw_, dep, 0.16, y0, [c * lit * 0.95 / PAINT_BASE for c in wc], yaw)
+                    if solid:
+                        ox, oz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.04)
+                        put_box(MG, ox, oz, bw_, 0.08, 0.92, y0 + 0.16, [c * lit / PAINT_BASE for c in rc_], yaw)
+                        for su in (u0 + (cw - bw_) / 2 + 0.04, u1 - (cw - bw_) / 2 - 0.04):
+                            sx_, sz_ = a + t_ * su + nrm * dep / 2
+                            put_box(MG, sx_, sz_, 0.08, dep, 0.92, y0 + 0.16, [c * lit * 0.94 / PAINT_BASE for c in rc_], yaw)
+                    else:
+                        ox, oz = a + t_ * (u0 + u1) / 2 + nrm * (dep - 0.03)
+                        put_box(MG, ox, oz, bw_, 0.06, 0.06, y0 + 1.0, [c * lit / PAINT_BASE for c in rc_], yaw)
+                        put_box(MG, ox, oz, bw_, 0.04, 0.04, y0 + 0.24, [c * lit / PAINT_BASE for c in rc_], yaw)
+                        nposts = max(2, int(bw_ / 0.14))
+                        for k_ in range(nposts + 1):
+                            pu = u0 + (cw - bw_) / 2 + bw_ * k_ / nposts
+                            px_, pz_ = a + t_ * pu + nrm * (dep - 0.03)
+                            put_box(MG, px_, pz_, 0.025, 0.025, 0.84, y0 + 0.16, [c * lit * 0.9 / PAINT_BASE for c in rc_], yaw)
+    return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
 
 
 def _parapet(ring, h, ph, col):
@@ -1370,7 +1461,7 @@ def _bld_job(job):
         adds.append((m, pos, uv, col))
 
     binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
-    photo = bool(fit and fit.get("tiles") and fit.get("cycle"))      # facade tiles from the photos (ДЕТАЛИ fit)
+    photo = bool(fit and fit.get("params") and fit.get("cycle"))     # procedural facade from the photos' numbers (ДЕТАЛИ fit)
     roof_fit = (fit or {}).get("roof") if photo else None
     if photo:
         for m_, *g in photo_facade(outer, h, fit, -skirt):
@@ -2377,10 +2468,6 @@ def main():
     os.makedirs(tmp)
     off = 0
     nverts_total = 0
-    import shutil
-    atlas = os.path.join(a.src, "photogram_atlas.png")
-    if any(f_.get("tiles") for f_ in photo_fit.values()) and os.path.exists(atlas):
-        shutil.copyfile(atlas, os.path.join(tmp, "photo_atlas.png"))      # the photo-fitted facades' tiles (local only)
     with open(os.path.join(tmp, "meshes.bin"), "wb") as f:
         for (key, mat), (P, U, C) in each(sorted(mesh.d.items()), "write mesh blob",
                                          feed=("chunk", None, lambda it: [(it[0][0][0] + 0.5) * CHUNK, (it[0][0][1] + 0.5) * CHUNK])):

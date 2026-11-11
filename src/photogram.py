@@ -40,7 +40,7 @@ ALGOS = [
     ("colour", "БОЈА + ВИСИНА", "висина од силуетата, боја на ѕидот; фасадата останува"),
     ("grid", "РЕШЕТКА", "+ катови и прозорци од периодичноста, фасада по сличност"),
     ("render", "РЕНДЕР-СПОРЕДИ", "+ дотерување на камерата, фасада/катови/прозорци по најмала разлика"),
-    ("detail", "ДЕТАЛИ", "плочки од фотографиите по колона, кровови, клими и балкони во 3D"),
+    ("detail", "ДЕТАЛИ", "прозорци, лоѓии, балкони, клими, кровови и површини во 3D, сè процедурално"),
 ]
 URL_POSE = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+),(?:[\d.]+a,)?([\d.]+)y,([\d.]+)h,([\d.]+)t")
 # boxes of the Google Maps page around the picture (fractions of the screenshot): search box + place card, top icons, minimap,
@@ -658,7 +658,7 @@ def _weighted_median(vals, w):
 
 def fit_detail(b, obs, log=None):
     """The 'detail' fit: height and colours as the other fits, then every seen wall through facade.analyse (roof line, roof band,
-    floor grid, bay columns, a texture tile per column, AC units, balconies).  Tiles stay in b.tiles (photo pixels, local only)."""
+    floor grid, bay columns and their procedural parameters).  Only numbers come out: no photo pixel reaches the game."""
     import facade
     good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))] or obs
     h_raw, hc = fit_height(good, max(b.gen["h"], getattr(b, "h_seen", 0.0)))
@@ -678,7 +678,7 @@ def fit_detail(b, obs, log=None):
     for o in good:
         if o.wi not in best_view or rank(o) > rank(best_view[o.wi]):
             best_view[o.wi] = o
-    walls, tiles, dets = [], [], []
+    walls, params = [], []
     for wi, o in sorted(best_view.items()):
         try:
             f = facade.analyse(o, lv, log)
@@ -688,10 +688,8 @@ def fit_detail(b, obs, log=None):
             continue
         if f is None:
             continue
-        t = f.pop("_tiles")
-        off = len(tiles)
-        tiles += t
-        dets += f.pop("det")
+        off = len(params)
+        params += f.pop("params")
         for c in f["cols"]:
             c[2] += off
         walls.append(f)
@@ -711,7 +709,8 @@ def fit_detail(b, obs, log=None):
     bands = [s[3] for f in walls for s in f["secs"] if s[3] > 0]
     roofcs = [f["roofc"] for f in walls if f.get("roofc")]
     best = max(walls, key=lambda f: f["ln"] * (1 + len(f["cols"])))
-    out.update(floor=best["fh"], bay=best["bw"], walls=walls, det=dets, cycle=[c[2] for c in best["cols"]], ntiles=len(tiles))
+    out.update(floor=best["fh"], bay=best["bw"], walls=walls, params=params, cycle=[c[2] for c in best["cols"]],
+               surf=best["surf"], rough=best["rough"])
     if bands and roofcs:
         rise = float(np.median(bands))
         kind = "pitched" if (b.kind() == "house" or b.area < 260 or b.gen["small"]) else "mansard"
@@ -720,11 +719,10 @@ def fit_detail(b, obs, log=None):
         out["pitched"] = kind == "pitched"
         if "h_top" not in out:
             out["h"] = round(max(2.5, out["h"] - rise), 1) if kind == "mansard" else out["h"]
-    b.tiles = tiles
     if log:
         log(f"  зграда {b.id}: ѕид {out['h']:.1f} м" + (f" + покрив {out['roof']['kind']} {out['roof']['rise']:.1f} м" if "roof" in out else "")
-            + f", ѕидови {len(walls)}, плочки {len(tiles)}, клима {sum(len(d['ac']) for d in dets)}, балкони {sum(1 for d in dets if d['balc'])}"
-            + f", кат {best['fh']:.2f} м, колона {best['bw']:.2f} м")
+            + f", ѕидови {len(walls)}, видени колони {len(params)}, површина {best['surf']}, клима {sum(len(p['ac']) for p in params)}, "
+            f"балкони {sum(1 for p in params if p['balc'])}, кат {best['fh']:.2f} м, колона {best['bw']:.2f} м")
     return out
 
 
@@ -801,8 +799,9 @@ def infer(blds, algo, k=3):
             f["wallc"] = [int(v) for v in sum(c * wi for c, wi in cs) / sum(wi for _, wi in cs)]
         if "mat" in src[0]:
             f["mat"], f["floor"], f["bay"] = src[0]["mat"], src[0].get("floor", 3.2), src[0].get("bay", 3.4)
-        if "cycle" in src[0]:                       # the nearest fitted building's column tiles and details on every wall
-            f.update(tile_src=f["from"][0], cycle=src[0]["cycle"], det=src[0]["det"], floor=src[0]["floor"], bay=src[0]["bay"])
+        if "cycle" in src[0]:                       # the nearest fitted building's columns (windows, balconies, ...) on every wall
+            f.update(cycle=src[0]["cycle"], params=src[0]["params"], floor=src[0]["floor"], bay=src[0]["bay"],
+                     surf=src[0]["surf"], rough=src[0]["rough"])
             if "roof" in src[0] and (src[0]["roof"]["kind"] == "pitched") == (b.kind() == "house" or b.area < 260):
                 f["roof"], f["roofc"] = src[0]["roof"], src[0]["roofc"]
         t = b.tags
@@ -815,10 +814,6 @@ def infer(blds, algo, k=3):
     return n
 
 
-def atlas_path(fit_path):
-    return os.path.splitext(fit_path)[0] + "_atlas.png"
-
-
 def write_fits(blds, algo, path):
     """The game's file: only what differs from the generated look matters, the rest is for the viewer / later rounds."""
     out = {}
@@ -827,22 +822,9 @@ def write_fits(blds, algo, path):
         if not f:
             continue
         e = {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
-                               "det", "tile_src") if k in f}
+                               "params", "surf", "rough") if k in f}
         out[str(b.id)] = e
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    owners = [b for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo" and getattr(b, "tiles", None) and "cycle" in b.fits[algo]]
-    if owners:                                    # one texture atlas for all tiles: photo pixels, stays next to the photos
-        import facade
-        atlas, uvs = facade.pack([b.tiles for b in owners])
-        Image.fromarray(atlas).save(atlas_path(path))
-        uv_of = {b.id: uv for b, uv in zip(owners, uvs)}
-        for k, e in list(out.items()):
-            src = uv_of.get(int(e.get("tile_src", k)))
-            if "cycle" in e and src is not None:
-                e["tiles"] = [[round(v, 6) for v in r] for r in src]
-            elif "cycle" in e:
-                for key in ("cycle", "walls", "det", "tile_src"):
-                    e.pop(key, None)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"version": 1, "algo": algo, "made": time.strftime("%Y-%m-%d %H:%M"), "buildings": out}, f, indent=0)
@@ -972,10 +954,8 @@ def apply_to_game(folder, algo, osm_dir=None):
     osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
     src = os.path.join(folder, CACHE, f"fit_{algo}.json")
     shutil.copyfile(src, os.path.join(osm_dir, "photogram.json"))
-    at = os.path.join(osm_dir, "photogram_atlas.png")
-    if os.path.exists(atlas_path(src)):
-        shutil.copyfile(atlas_path(src), at)
-    elif os.path.exists(at):
+    at = os.path.join(osm_dir, "photogram_atlas.png")          # an earlier version's photo-pixel atlas: no longer used
+    if os.path.exists(at):
         os.remove(at)
     off = os.path.join(osm_dir, "photogram.off.json")
     if os.path.exists(off):

@@ -57,17 +57,6 @@ def _to_texture(rt, mipmaps=True):
     return tex
 
 
-def load_atlas(path):
-    """A texture atlas from a PNG: mipmaps + trilinear, clamped (tiles are padded, so neighbours do not bleed in)."""
-    tex = rl.load_texture(path)
-    if tex.id == 0:
-        raise OSError(f"could not load {path}")
-    rl.gen_texture_mipmaps(tex)
-    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_TRILINEAR)
-    rl.set_texture_wrap(tex, rl.TEXTURE_WRAP_CLAMP)
-    return tex
-
-
 def _speckle(rng, n, size, base_alpha=18):
     for _ in range(n):
         v = rng.choice((0, 0, 255))
@@ -333,7 +322,86 @@ def build_textures(tick=None):
     if tick:
         tick(9 / 10)
     rl.unload_image(img)
+    try:
+        for name, arr in surface_textures().items():
+            tex[name] = _np_texture(arr)
+    except Exception:  # noqa: BLE001 - the photo-fitted facades fall back to nothing rather than the game to nothing
+        import traceback
+        print("[gfx] surface textures failed:\n" + traceback.format_exc())
     return tex
+
+
+# names of the procedural surfaces of the photo-fitted facades (build_world.MAT_SURF order)
+SURF_NAMES = ("plas", "concw", "tilew", "brkw", "metw", "glaz")
+
+
+def _np_texture(arr):
+    rgba = np.ascontiguousarray(np.concatenate([arr, np.full(arr.shape[:2] + (1,), 255, np.uint8)], 2))
+    img = rl.Image(ffi.from_buffer(rgba), arr.shape[1], arr.shape[0], 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+    t = rl.load_texture_from_image(img)
+    rl.gen_texture_mipmaps(t)
+    rl.set_texture_filter(t, rl.TEXTURE_FILTER_TRILINEAR)
+    rl.set_texture_wrap(t, rl.TEXTURE_WRAP_REPEAT)
+    return t
+
+
+def _noise(rng, n, cell):
+    """Smooth value noise (n, n) in 0..1 with features of `cell` px, tileable."""
+    k = max(1, n // cell)
+    g = rng.random((k, k))
+    x = np.arange(n) * k / n
+    i0 = np.floor(x).astype(int)
+    t = x - i0
+    t = t * t * (3 - 2 * t)
+    i1 = (i0 + 1) % k
+    a = g[i0][:, i0] * (1 - t)[None, :] + g[i0][:, i1] * t[None, :]
+    b = g[i1][:, i0] * (1 - t)[None, :] + g[i1][:, i1] * t[None, :]
+    return a * (1 - t)[:, None] + b * t[:, None]
+
+
+def surface_textures(n=256):
+    """Wall finishes for the photo-fitted facades, 4 m x 4 m per repeat (64 px/m), near-white so the fitted colour is the vertex
+    colour; the building shader turns their light / dark grain into bump and roughness.  Subtle on purpose.  Plus 'glaz':
+    left half glazing (dark: glossy by day, lit at night like every facade's glass), right half smooth paint (frames, rails, AC)."""
+    rng = np.random.default_rng(242)
+    fine = rng.random((n, n))
+    mid = _noise(rng, n, 16)
+    big = _noise(rng, n, 64)
+    out = {}
+    plas = 0.84 + 0.035 * (fine - 0.5) + 0.04 * (mid - 0.5) + 0.03 * (big - 0.5)          # trowelled render
+    out["plas"] = plas
+    pores = (rng.random((n, n)) > 0.985) * -0.10
+    conc = 0.80 + 0.03 * (fine - 0.5) + 0.05 * (mid - 0.5) + 0.05 * (big - 0.5) + pores
+    conc[(np.arange(n) % 96) < 1, :] -= 0.06                                               # formwork / panel joints every 1.5 m
+    conc[:, (np.arange(n) % 192) < 1] -= 0.06
+    out["concw"] = conc
+    tile = 0.86 + 0.02 * (fine - 0.5) + 0.03 * (rng.random((n // 16, n // 16)).repeat(16, 0).repeat(16, 1) - 0.5)
+    tile[(np.arange(n) % 16) < 1, :] -= 0.12                                               # 0.25 m ceramic tiles, grout lines
+    tile[:, (np.arange(n) % 16) < 1] -= 0.12
+    out["tilew"] = tile
+    brk = np.zeros((n, n))
+    ch, cw = 5, 16                                                                         # 7.8 cm courses, 25 cm bricks
+    for r in range(0, n, ch):
+        off = (r // ch % 2) * cw // 2
+        for c in range(-cw, n, cw):
+            v = 0.80 + 0.08 * (rng.random() - 0.5)
+            brk[r:r + ch, max(0, c + off):max(0, c + off + cw)] = v
+    brk += 0.03 * (fine - 0.5)
+    brk[(np.arange(n) % ch) == 0, :] = 0.66                                                # mortar
+    for r in range(0, n, ch):
+        off = (r // ch % 2) * cw // 2
+        brk[r:r + ch, [(c + off) % n for c in range(0, n, cw)]] = 0.66
+    out["brkw"] = brk
+    met = 0.86 + 0.012 * (fine - 0.5) + 0.02 * (big - 0.5)
+    met[:, (np.arange(n) % 64) < 1] -= 0.10                                                # 1 m cladding panels
+    met[(np.arange(n) % 128) < 1, :] -= 0.08
+    out["metw"] = met
+    gl = np.empty((n, n))
+    yy = np.linspace(0, 1, n)[:, None]
+    gl[:, :n // 2] = 0.24 + 0.04 * yy + 0.02 * (big[:, :n // 2] - 0.5)                    # glazing: lum < 0.18..0.36 = glass (lit at night)
+    gl[:, n // 2:] = 0.88 + 0.015 * (fine[:, n // 2:] - 0.5)                                  # paint
+    out["glaz"] = gl
+    return {k: np.clip(v[..., None] * 255, 0, 255).astype(np.uint8).repeat(3, 2) for k, v in out.items()}
 
 
 # ------------------------------------------------------------------ geometry helpers

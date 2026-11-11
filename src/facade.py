@@ -1,9 +1,9 @@
 """Facade analysis for src/photogram.py: one wall seen in one photo (resampled onto the wall plane, see photogram.Obs) ->
-roof line, roof band (mansard / pitched roof slope seen above the wall), floor grid, bay columns, a texture tile per bay column
-(the median of that column over its floors: trees, washing and one-offs drop out) and the small 3D details of each column
-(air-conditioner boxes, balcony slabs).  numpy only (the game's embedded Python has no scipy / OpenCV).
-
-Tiles are the photos' own pixels, so they stay on this computer: data/ is not in git and the game never uploads them.
+roof line, roof band (mansard / pitched roof slope seen above the wall), floor grid, bay columns and, per bay column, the numbers
+the world build turns into procedural 3D: window opening, glass / frame / blind colours, mullions, recess or loggia depth, sill,
+balcony slab and railing, AC units; per cell the wall colour and blind; per wall the surface (plaster / concrete / tiles / brick)
+and its roughness.  The photo pixels are only looked at here (the median of each column over its floors, in memory): nothing
+of them is written, so the fit can ship with the game.  numpy only (the game's embedded Python has no scipy / OpenCV).
 """
 import warnings
 from collections import deque
@@ -13,7 +13,7 @@ import numpy as np
 L_BUILDING, L_SKY = 1, 2
 LUM = np.array([.3, .59, .11])
 RES = 12.0                                  # facade resampling for the detail analysis (pixels per metre)
-TILE_PPM = 16.0                             # texture tiles in the atlas (pixels per metre)
+TILE_PPM = 16.0                             # the in-memory column medians (pixels per metre)
 
 
 def _medfilt(a, k):
@@ -82,28 +82,115 @@ def _components(m):
         yield np.array(ys), np.array(xs)
 
 
-def tile_details(t, wall, fh, bw):
-    """3D details of one column tile (rows: 0 = bottom of the floor) -> {"ac": [[u, v, w, h, r, g, b]], "balc": [depth, r, g, b] | None}:
-    u = centre as a fraction of the column width, v / w / h in metres.  AC units: compact light / grey boxes; balcony: a bottom band that differs from the wall."""
+def col_params(t, wall, fh, cw):
+    """One bay column's median tile (rows: 0 = bottom of the floor) -> the numbers of its procedural cell (metres / RGB):
+    win [x0, x1, y0, y1] (fractions of the cell), glass, frame, mull (glazing bars), blind [fraction from the top, r, g, b],
+    rec (recess depth: 0.18 window, ~1 m loggia), sill, balc [depth, rail r, g, b, solid 1 / bars 0], ac [[u, v, w, h, r, g, b]]
+    (u a fraction of the column width)."""
     th, tw = t.shape[:2]
     f = t.astype(np.float32)
     lum, sat = f @ LUM, f.max(2) - f.min(2)
     diff = np.abs(f - wall).sum(2)
-    out = {"ac": [], "balc": None}
+    ppm = th / fh
+    out = {"win": None, "glass": None, "frame": None, "mull": 0, "blind": None, "rec": 0.18, "sill": 0, "balc": None, "ac": []}
+    # AC units: compact light / grey boxes
     dark = lum < 0.62 * np.percentile(lum, 70)
     cand = (diff > 70) & (sat < 45) & (lum > 120) & ~dark
-    ppm = th / fh
+    acm = np.zeros_like(cand)
     for ys, xs in _components(cand):
         w_, h_ = (np.ptp(xs) + 1) / ppm, (np.ptp(ys) + 1) / ppm
         fill = len(ys) / ((np.ptp(xs) + 1) * (np.ptp(ys) + 1))
-        if 0.45 <= w_ <= 1.3 and 0.3 <= h_ <= 1.0 and fill > 0.55 and w_ < 0.8 * bw:
+        if 0.45 <= w_ <= 1.3 and 0.3 <= h_ <= 1.0 and fill > 0.55 and w_ < 0.8 * cw:
             c = np.median(f[ys, xs], 0)
             out["ac"].append([round((xs.mean() + 0.5) / tw, 3), round((ys.mean() + 0.5) / ppm, 2), round(w_, 2), round(h_, 2),
                               *[int(v) for v in c]])
-    bot, mid = f[:max(1, th // 3)].reshape(-1, 3), f[th // 3:].reshape(-1, 3)
-    if np.abs(bot.mean(0) - mid.mean(0)).sum() > 45 and np.abs(bot.mean(0) - wall).sum() > 45:
-        out["balc"] = [0.9, *[int(v) for v in np.median(bot, 0)]]
+            acm[ys, xs] = True
+    # balcony: a bottom band (up to ~1.1 m) that differs from the wall and from the floor above it
+    nb = max(2, min(th // 3, int(1.1 * ppm)))
+    bot, mid = f[:nb][~acm[:nb]], f[nb:][~acm[nb:]]
+    if len(bot) > 10 and len(mid) > 10 and np.abs(bot.mean(0) - mid.mean(0)).sum() > 45 and np.abs(np.median(bot, 0) - wall).sum() > 45:
+        band = f[:nb]
+        hx = np.abs(np.diff(band @ LUM, axis=1)).mean()             # bars flicker along the rail, a parapet is smooth
+        out["balc"] = [0.9, *[int(v) for v in np.median(bot, 0)], 0 if hx > 14 else 1]
+    # window: the biggest blob that is not wall (above the balcony band when there is one)
+    y_lo = nb if out["balc"] else int(0.15 * th)
+    nw = (diff > 45) & ~acm
+    nw[:y_lo] = False
+    best = None
+    for ys, xs in _components(nw):
+        if best is None or len(ys) > len(best[0]):
+            best = (ys, xs)
+    if best is not None and len(best[0]) > 0.04 * th * tw:
+        ys, xs = best
+        x0, x1 = np.percentile(xs, 8) / tw, (np.percentile(xs, 92) + 1) / tw
+        y0, y1 = np.percentile(ys, 8) / th, (np.percentile(ys, 92) + 1) / th
+        if out["balc"]:
+            y0 = min(y0, (nb + 1) / th)                               # a balcony door reaches the slab
+        x0, x1 = max(0.04, x0), min(0.96, x1)
+        y0, y1 = max(0.04, y0), min(0.94, y1)
+        if x1 - x0 > 0.12 and y1 - y0 > 0.15:
+            X0, X1, Y0, Y1 = int(x0 * tw), int(x1 * tw), int(y0 * th), int(y1 * th)
+            reg = f[Y0:Y1, X0:X1]
+            rl_ = reg @ LUM
+            mid_ = (rl_ >= np.percentile(rl_, 20)) & (rl_ <= np.percentile(rl_, 60))   # glass: the panes' middle tones (reflections, curtains)
+            gl = np.median(reg[mid_].reshape(-1, 3), 0)
+            out["win"] = [round(float(x0), 3), round(float(x1), 3), round(float(y0), 3), round(float(y1), 3)]
+            out["glass"] = [int(v) for v in gl]
+            fr = reg[(rl_ > gl @ LUM + 50) & ((reg.max(2) - reg.min(2)) < 40)]
+            out["frame"] = [int(v) for v in (np.median(fr, 0) if len(fr) > 8 else np.minimum(255, wall * 1.05))]
+            colp = (rl_ > gl @ LUM + 50).mean(0)                     # glazing bars: bright full-height columns inside the opening
+            inner = colp[int(0.12 * len(colp)):int(0.88 * len(colp)) + 1] > 0.6
+            out["mull"] = int(min(3, np.sum(np.diff(inner.astype(int)) == 1) + (1 if len(inner) and inner[0] else 0)))
+            n_bl = 0                                                  # blind / roller shutter: light, flat rows from the top down
+            for r in range(Y1 - 1, Y0 - 1, -1):
+                row = f[r, X0:X1]
+                if (row @ LUM).mean() > 150 and (row.max(1) - row.min(1)).mean() < 40:
+                    n_bl += 1
+                else:
+                    break
+            if n_bl > 0.12 * (Y1 - Y0):
+                bc = np.median(f[Y1 - n_bl:Y1, X0:X1].reshape(-1, 3), 0)
+                out["blind"] = [round(n_bl / max(1, Y1 - Y0), 2), *[int(v) for v in bc]]
+            if x1 - x0 > 0.72 and y1 - y0 > 0.55 and gl @ LUM < 70:  # a wide dark opening: a loggia, not a window
+                out["rec"] = 1.0
+            out["sill"] = 0 if out["balc"] else 1
     return out
+
+
+def surface(rgb, B, wall_c):
+    """Wall finish from the photo: 'glass' (a dark / bluish, smooth curtain wall), 'metal' (bright, smooth, grey cladding),
+    'brick' (red-brown and rough), 'tiles' (a fine regular grid), 'concrete' (grey, porous) or 'plaster', and how rough
+    (0 smooth .. 1 coarse) -> (name, roughness)."""
+    lum = rgb @ LUM
+    near = B & (np.abs(rgb - wall_c).sum(2) < 35)                 # plain wall only: frames, edges and clutter would read as grain
+    if near.sum() < 200:
+        return "plaster", 0.3
+    bl = np.full_like(lum, np.nan)
+    bl[near] = lum[near]
+    hp = []
+    for dy, dx in ((0, 1), (1, 0)):
+        d = bl[dy:, dx:] - bl[:bl.shape[0] - dy, :bl.shape[1] - dx]
+        hp.append(np.nanstd(d))
+    rough = float(np.clip((np.mean(hp) - 3.0) / 14.0, 0.0, 1.0))
+    r, g, b = wall_c
+    sat = max(wall_c) - min(wall_c)
+    # fine regular grid: rows / columns of wall pixels repeat every 2-5 px (0.17-0.4 m)
+    per = 0.0
+    for prof in (np.nanmean(bl, 1), np.nanmean(bl, 0)):
+        lag, st = _period(prof, 2, 5)
+        per = max(per, st if lag else 0.0)
+    L = 0.3 * r + 0.59 * g + 0.11 * b
+    if L < 110 and b >= r - 5 and rough < 0.35:
+        return "glass", rough
+    if sat < 20 and L > 150 and rough < 0.12 and per < 0.3:
+        return "metal", rough
+    if r - b > 45 and sat > 45 and rough > 0.35:
+        return "brick", rough
+    if per > 0.45 and rough > 0.25:
+        return "tiles", rough
+    if sat < 30 and 110 <= L < 185 and rough > 0.1:              # grey and a little porous: bare concrete / prefab panels
+        return "concrete", rough
+    return "plaster", rough
 
 
 def analyse(o, levels=0.0, log=None):
@@ -219,10 +306,10 @@ def analyse(o, levels=0.0, log=None):
         g = [q for q in np.arange(ph - bw * 50, o.ln, bw) if a / RES + 0.6 < q < e / RES - 0.6] if n > 1 else []
         ub += [a / RES] + list(g)
     ub = np.array(ub + [o.ln])
-    # ---- column tiles: the median of each column over its floors
+    # ---- per bay column: the median over its floors (in memory only) -> procedural parameters; per cell its own wall colour
     TH = int(round(fh * TILE_PPM))
-    tiles, cols = [], []
-    for u0, u1 in zip(ub[:-1], ub[1:]):
+    params, cols, cells = [], [], {}
+    for ci, (u0, u1) in enumerate(zip(ub[:-1], ub[1:])):
         a0, a1 = int(u0 * RES), int(u1 * RES)
         if a1 - a0 < 3:
             continue
@@ -236,75 +323,39 @@ def analyse(o, levels=0.0, log=None):
             mk = B[b0:b1, a0:a1]
             if mk.mean() < 0.45:
                 continue
+            px = rgb[b0:b1, a0:a1][mk]
+            cw_ = np.median(px[np.abs(px - wall_c).sum(1) < 90], 0) if (np.abs(px - wall_c).sum(1) < 90).sum() > 10 else None
+            if cw_ is not None and np.abs(cw_ - wall_c).sum() > 18:
+                cells[f"{len(cols)},{i}"] = [int(v) for v in cw_]
             im = _resamp(rgb[b0:b1, a0:a1], TH, TW).copy()
             im[~_resamp(mk, TH, TW)] = np.nan
             stack.append(im)
-        tile = None
+        pi = -1
         if stack:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)          # all-NaN pixels: nobody saw them, filled below
                 e_ = np.nanmedian(np.array(stack), 0)
             if np.isnan(e_).mean() < 0.3:
                 e_[np.isnan(e_)] = np.broadcast_to(wall_c, e_.shape)[np.isnan(e_)]
-                tile = np.clip(e_, 0, 255).astype(np.uint8)
-        cols.append([round(float(u0), 2), round(float(u1), 2), len(tiles) if tile is not None else -1, len(stack)])
-        if tile is not None:
-            tiles.append(tile)
-    if not tiles:
+                params.append(col_params(e_, wall_c, fh, u1 - u0))
+                pi = len(params) - 1
+        cols.append([round(float(u0), 2), round(float(u1), 2), pi, len(stack)])
+    if not params:
         return None
-    # columns nobody saw clearly: the nearest seen column's tile
-    seen_ids = [c for c in cols if c[2] >= 0]
+    seen_ids = [c for c in cols if c[2] >= 0]                    # columns nobody saw clearly: the nearest seen column
     for c in cols:
         if c[2] < 0:
             c[2] = min(seen_ids, key=lambda s: abs((s[0] + s[1]) - (c[0] + c[1])))[2]
-    det = [tile_details(t, wall_c, fh, bw) for t in tiles]
+    surf, rough = surface(rgb, B, wall_c)
     if log:
         log(f"    ѕид {o.wi}: {o.ln:.1f} м, врв {h_top:.1f} м, ѕид до {walltop:.1f} м, покрив {max(s[3] for s in secs):.1f} м, "
-            f"кат {fh:.2f} м, колони {len(cols)}, плочки {len(tiles)}, клима {sum(len(d['ac']) for d in det)}, "
-            f"балкони {sum(1 for d in det if d['balc'])}")
+            f"кат {fh:.2f} м, колони {len(cols)} ({len(params)} видени), површина {surf} {rough:.2f}, прозорци "
+            f"{sum(1 for p in params if p['win'])}, ролетни {sum(1 for p in params if p['blind'])}, лоѓии {sum(1 for p in params if p['rec'] > 0.5)}, "
+            f"клима {sum(len(p['ac']) for p in params)}, балкони {sum(1 for p in params if p['balc'])}, ќелии со своја боја {len(cells)}")
     return {"wi": o.wi, "a": [round(float(v), 2) for v in o.a], "b": [round(float(v), 2) for v in o.b], "ln": round(float(o.ln), 2),
             "secs": [[round(s[0] / RES, 2), round(s[1] / RES, 2), round(s[2], 2), round(s[3], 2), s[4]] for s in secs],
             "top": round(h_top, 2), "walltop": round(walltop, 2), "top_seen": round(float(seen_top), 2),
-            "fh": round(fh, 3), "pv": round(float(pv), 3), "bw": round(bw, 3), "cols": cols, "det": det,
-            "wall": [int(v) for v in wall_c], "shade": round(float(o.shade), 3), "_tiles": tiles,
+            "fh": round(fh, 3), "pv": round(float(pv), 3), "bw": round(bw, 3), "cols": cols, "params": params, "cells": cells,
+            "surf": surf, "rough": round(rough, 2),
+            "wall": [int(v) for v in wall_c], "shade": round(float(o.shade), 3),
             "roofc": [int(v) for v in np.median(roof_px, 0)] if roof_px else None}
-
-
-def pack(tile_lists, width=4096, max_h=4096):
-    """[[tile arrays] per building] -> (atlas uint8 (H, W, 3), [[ [u0, v0, u1, v1] per tile ] per building]) with 2 px edge padding;
-    tiles shrink by half until they fit.  uv per tile: [u left, v bottom, u right, v top] (v = 0 at the image's top row)."""
-    for scale in (1, 2, 4, 8):
-        x = y = row_h = 0
-        rects, place = [], []
-        ok = True
-        for tl in tile_lists:
-            rr = []
-            for t in tl:
-                h, w = max(2, t.shape[0] // scale), max(2, t.shape[1] // scale)
-                if x + w + 4 > width:
-                    x, y, row_h = 0, y + row_h, 0
-                if y + h + 4 > max_h:
-                    ok = False
-                    break
-                place.append((t, x + 2, y + 2, w, h))
-                rr.append((x + 2, y + 2, w, h))
-                x += w + 4
-                row_h = max(row_h, h + 4)
-            if not ok:
-                break
-            rects.append(rr)
-        if ok:
-            break
-    H = max(4, y + row_h)
-    H = 1 << (H - 1).bit_length()
-    atlas = np.zeros((H, width, 3), np.uint8)
-    for t, px, py, w, h in place:
-        s = _resamp(t[::-1], h, w)                                     # analysis row 0 = bottom, image row 0 = top
-        atlas[py:py + h, px:px + w] = s
-        atlas[py - 2:py, px:px + w] = s[:1]
-        atlas[py + h:py + h + 2, px:px + w] = s[-1:]
-        atlas[py - 2:py + h + 2, px - 2:px] = atlas[py - 2:py + h + 2, px:px + 1]
-        atlas[py - 2:py + h + 2, px + w:px + w + 2] = atlas[py - 2:py + h + 2, px + w - 1:px + w]
-    # uv: v = 0 at the image's top row (raylib's texture origin); the tile's row 0 is the bottom of the floor
-    uv = [[[px / width, (py + h) / H, (px + w) / width, py / H] for px, py, w, h in rr] for rr in rects]
-    return atlas, uv
