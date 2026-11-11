@@ -415,7 +415,8 @@ def _rows(o, h, lo=None):
 
 def fit_colours(obs, h):
     """(wall colour, window colour) of the building pixels: two clusters, the bigger brighter one is the wall."""
-    px = np.concatenate([o.rgb[_rows(o, h)] / o.shade for o in obs]) if obs else np.zeros((0, 3))
+    # the photo already carries its own light: no division by the game's baked wall shade (that clipped light walls to white)
+    px = np.concatenate([o.rgb[_rows(o, h)] for o in obs]) if obs else np.zeros((0, 3))
     if len(px) < 50:
         return None, None
     if len(px) > 40000:
@@ -437,7 +438,9 @@ def _period(profile, lo, hi):
     if good.sum() < hi * 2:
         return None, 0.0
     p = np.where(good, p, np.nanmean(p))
-    p = p - np.convolve(p, np.ones(9) / 9, "same")            # detrend (lighting gradients)
+    k = int(hi) * 2 + 1                                        # detrend over two periods (slow lighting gradients only)
+    pad = np.pad(p, k // 2, mode="edge")
+    p = p - np.convolve(pad, np.ones(k) / k, "valid")
     p -= p.mean()
     den = float(p @ p) or 1.0
     best, bs = None, 0.0
@@ -453,18 +456,22 @@ def fit_grid(obs, h):
     fl, bays = [], []
     for o in obs:
         m = _rows(o, h, lo=0.5)
+        # only the clean stretches: columns that are facade over most of their height (trees break the rhythm)
+        k0, k1 = int(0.5 * RES), int(max(1.0, h - 0.3) * RES)
+        clean = m[k0:k1].mean(0) > 0.7
+        m = m & clean[None, :]
         if m.sum() < 400:
             continue
         lum = o.rgb @ np.array([0.3, 0.59, 0.11])
         cnt = m.sum(1)
         row = np.where(cnt > 3, (lum * m).sum(1) / np.maximum(cnt, 1), np.nan)
         lag, s = _period(row, 2.6 * RES, 4.2 * RES)
-        if lag and s > 0.15:                          # weak repeats are noise (trees, plain walls): no vote
+        if lag and s > 0.1:                           # weak repeats are noise (plain walls): no vote
             fl.append((lag / RES, s * cnt.sum()))
         cntc = m.sum(0)
         col = np.where(cntc > 3, (lum * m).sum(0) / np.maximum(cntc, 1), np.nan)
         lag, s = _period(col, 2.2 * RES, min(7.0, o.ln / 2) * RES)
-        if lag and s > 0.15:
+        if lag and s > 0.1:
             bays.append((lag / RES, s * cntc.sum()))
 
     def wmed(v):
@@ -507,7 +514,7 @@ def render_loss(obs, texs, mat, h, fh, bw):
         m = _rows(o, h)
         if m.sum() < 100:
             continue
-        s = synth(o, tex, h, fh, bw) * o.shade
+        s = synth(o, tex, h, fh, bw)                 # albedo against albedo: the photo's light is its own
         # 2x2 averaging: windows are big, single pixels are noise
         def half(a):
             nv, nu = a.shape[:2]
@@ -519,7 +526,10 @@ def render_loss(obs, texs, mat, h, fh, bw):
     if not P:
         return None, None
     P, Tt = np.concatenate(P), np.concatenate(Tt)
-    tint = np.clip((P * Tt).sum(0) / np.maximum((Tt * Tt).sum(0), 1e-6), 0, 255)
+    tint = (P * Tt).sum(0) / np.maximum((Tt * Tt).sum(0), 1e-6)
+    if tint.max() > 255:                             # a texture darker than the wall: keep the hue, cap the brightness
+        tint = tint * (255.0 / tint.max())
+    tint = np.clip(tint, 0, 255)
     loss = float(np.abs(P - Tt * tint).sum() / max(1.0, P.sum()))
     return loss, tint
 
@@ -606,6 +616,11 @@ def fit_building(b, obs, algo, texs):
                 out["loss"] = round(loss, 3)
     else:
         f_, b_, _s = fit_grid(obs, h)
+        try:                                         # OSM storeys beat a weak brightness rhythm for the floor height
+            lv = float(str(b.tags.get("building:levels", "")).split(";")[-1])
+            f_ = float(np.clip((h - 1.0) / lv, 2.6, 4.2)) if lv >= 1 else f_
+        except ValueError:
+            pass
         if algo == "grid":
             fh, bw = (f_ or fh), (b_ or bw)
             cands = [(m, fh, bw) for m in plausible_mats(b, h)]
