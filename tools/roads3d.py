@@ -647,7 +647,7 @@ def _corners(out, edges, plates, ribs, trims, cov, hulls):
                     continue                                       # that stretch lies on a carriageway: no kerb across asphalt
                 out.quad((I[j][0], SW_H, I[j][1]), (I[j + 1][0], SW_H, I[j + 1][1]), (O[j + 1][0], SW_H, O[j + 1][1]), (O[j][0], SW_H, O[j][1]), pc)
                 out.quad((I[j][0], yv - 0.012, I[j][1]), (I[j + 1][0], yv - 0.012, I[j + 1][1]), (I[j + 1][0], SW_H, I[j + 1][1]),
-                         (I[j][0], SW_H, I[j][1]), (150, 148, 142), 0.78)
+                         (I[j][0], SW_H, I[j][1]), (200, 196, 188), 0.92)
 
 
 def _junctions(out, edges, plates, hulls):
@@ -768,7 +768,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
         for side in (1, -1):
             I_, O_ = offset(pts, fr, side * hw), offset(pts, fr, side * (hw + bsw))
             _strip(out, I_, O_, SW_H, (178, 174, 166))
-            _wall(out, I_, SW_H, y, (150, 148, 142), 0.78)
+            _wall(out, I_, SW_H, y, (200, 196, 188), 0.92)
     # pavements with a curb face, trimmed exactly where another road's asphalt starts (never drawn over it)
     if cls in SIDEWALK and not e["bridge"]:
         skip = partners.get(i, ())
@@ -814,7 +814,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                         pc = (pav, pav - 4, pav - 12)
                         out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), pc)
                         out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]),
-                                 (150, 148, 142), 0.78)
+                                 (200, 196, 188), 0.92)
             if first is not None:                            # where the pavement really starts / stops: the curb corners join there
                 trims[(i, 0, side)], trims[(i, 1, side)] = first, last
     # dead ends: the pavement wraps round the rounded asphalt end instead of stopping flush with it
@@ -834,7 +834,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                 if prev:
                     (i0, o0), (i1, o1) = prev, cur
                     out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (172, 168, 158))
-                    out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (150, 148, 142), 0.78)
+                    out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (200, 196, 188), 0.92)
                 prev = cur
     # lane markings
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
