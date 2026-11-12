@@ -28,6 +28,25 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EYE = 2.5                      # Street View camera height above the ground (m)
 RES = 4.0                      # facade resampling: pixels per metre
+# the builder's settings (photoview's settings tab; saved per photo folder in _photogram/settings.json).  Every setting that changes
+# the result is part of the stored job's signature: change one and the stored per-photo results are not reused.
+SETTINGS = {"res": 12.0,          # ДЕТАЛИ facade resolution, pixels per metre (8 fast / 12 / 16 fine)
+            "dist": 200.0,        # walls further than this from a camera are not read (m)
+            "workers": 0,         # worker processes, 0 = all cores but one
+            "pose": "fast",       # camera position: fast / full / file
+            "seg": "auto",        # segmenter: auto / segformer / simple
+            "priors": True,       # depth from the usual Skopje block order when no side face is seen
+            "sym": True,          # fill unseen columns from mirror symmetry / repeats
+            "fuse": True,         # combine every view of a wall (else only the best one)
+            "min_px": 1500}       # a view needs this many building pixels
+# how the fitted numbers become geometry (tools/build_world.py photo_facade / photo_roof; no new fit needed when they change):
+# the photogrammetry screen's ЕЛЕМЕНТИ tab; they go into photogram.json with the fit ("opts")
+OPTS = {"relief": True, "windows": True, "frames": True, "blinds": True, "sills": True, "balconies": True, "ac": True,
+        "bands": True, "ground": True, "steps": True, "opp": True, "cells": True, "roofs": True, "roof_extras": True,
+        "eaves": True, "kit_on": True, "kit": [], "kit_auto": True, "kit_scope": "blocks", "style": "НИШТО",
+        "inferred": "lite", "sat": 1.0, "lod": 400.0}
+RESULT_KEYS = ("res", "dist", "pose", "seg", "priors", "sym", "min_px")       # these change the per-photo results
+CODE_VER = 3                      # bump when the per-photo results change meaning
 VMAX = 90.0                    # highest facade point sampled (m)
 NEAR = 320.0                   # buildings this close to a capture are loaded (and may be inferred)
 CACHE = "_photogram"           # work folder inside the photo folder (labels, fits); never part of the game
@@ -279,6 +298,28 @@ class Obs:
         self.__dict__.update(d)
 
 
+class Slim:
+    """A facade view reduced to numbers in the worker: its facade.analyse result, its roof-line votes and a small colour sample.
+    No photo pixels survive it, so thousands of them fit in memory, travel between processes and are stored for a resumed job."""
+
+    def __init__(self, o, levels, log=None):
+        import facade
+        self.cap, self.bld, self.wi, self.a, self.b, self.nrm, self.ln = o.cap, o.bld, o.wi, o.a, o.b, o.nrm, o.ln
+        self.shade, self.n_build, self.n_ok = o.shade, o.n_build, int(o.ok.sum())
+        h0 = max(o.bld.gen["h"], getattr(o.bld, "h_seen", 0.0))
+        self.hv, self.lows = _height_votes(o, h0)
+        px = o.rgb[_rows(o, h0)]
+        if len(px) > 3000:
+            px = px[np.random.default_rng(o.wi).choice(len(px), 3000, replace=False)]
+        self.px = np.clip(px, 0, 255).astype(np.uint8)
+        try:
+            self.fa = facade.analyse(o, levels, log)
+        except Exception as e:  # noqa: BLE001 - one odd wall must not stop the photo
+            self.fa = None
+            if log:
+                log(f"    ѕид {o.wi}: анализата падна ({type(e).__name__}: {e})")
+
+
 def wall_edges(blds, near_xz, radius):
     """All wall segments within `radius` of a point -> (E0 (M,2), E1 (M,2), top (M,), base (M,), owner ids, wall index)."""
     E0, E1, top, base, own, wix = [], [], [], [], [], []
@@ -305,7 +346,7 @@ def facade_views(cap, img, lab, ui, blds, edges, only=None, min_px=1500):
     for b in blds.values():
         if only is not None and b.id not in only:
             continue
-        if np.hypot(*(b.c - eye[[0, 2]])) > 200:
+        if np.hypot(*(b.c - eye[[0, 2]])) > SETTINGS["dist"]:
             continue
         for wi, (a, bb, nrm, ln) in enumerate(b.walls()):
             mid = (a + bb) / 2
@@ -376,26 +417,10 @@ def fit_height(obs, h0):
     top (only a lower bound), single wrong columns (inter-quartile trim), views that disagree (median of per-view medians)."""
     per_view, lows = [], []
     for o in obs:
-        lab, ok = o.lab, o.ok
-        nv = lab.shape[0]
-        isb = (lab == L_BUILDING) & ok
-        issky = (lab == L_SKY) & ok
-        tops = []
-        for j in np.nonzero(isb.any(0))[0]:
-            rows = np.nonzero(isb[:, j])[0]
-            if rows[0] > max(6.0, 0.5 * h0) * RES:         # no facade low down in this column: a building behind, not this one
-                continue
-            top = rows[-1]
-            above = np.nonzero(issky[top + 1:min(nv, top + 1 + int(2.0 * RES)), j])[0]
-            if len(above):
-                tops.append((top + 1) / RES)
-            elif not ok[top + 1:, j].any():
-                lows.append((top + 1) / RES)
-        if len(tops) >= 6:
-            t = np.array(tops)
-            q1, q3 = np.percentile(t, [25, 75])
-            t = t[(t >= q1 - 1.5 * (q3 - q1) - 1) & (t <= q3 + 1.5 * (q3 - q1) + 1)]
-            per_view.append((float(np.median(t)), len(t), float(q3 - q1)))
+        v, lw = (o.hv, o.lows) if isinstance(o, Slim) else _height_votes(o, h0)
+        lows += lw
+        if v is not None:
+            per_view.append(v)
     if per_view:
         hs = np.array([v[0] for v in per_view])
         n = sum(v[1] for v in per_view)
@@ -407,6 +432,31 @@ def fit_height(obs, h0):
     if lows:
         return max(h0, float(np.percentile(lows, 75))), 0.2
     return h0, 0.0
+
+
+def _height_votes(o, h0):
+    """One view's roof-line vote: (median top, columns, spread) or None, and the lower bounds of cut-off columns."""
+    lab, ok = o.lab, o.ok
+    nv = lab.shape[0]
+    isb = (lab == L_BUILDING) & ok
+    issky = (lab == L_SKY) & ok
+    tops, lows = [], []
+    for j in np.nonzero(isb.any(0))[0]:
+        rows = np.nonzero(isb[:, j])[0]
+        if rows[0] > max(6.0, 0.5 * h0) * RES:             # no facade low down in this column: a building behind, not this one
+            continue
+        top = rows[-1]
+        above = np.nonzero(issky[top + 1:min(nv, top + 1 + int(2.0 * RES)), j])[0]
+        if len(above):
+            tops.append((top + 1) / RES)
+        elif not ok[top + 1:, j].any():
+            lows.append((top + 1) / RES)
+    if len(tops) < 6:
+        return None, lows
+    t = np.array(tops)
+    q1, q3 = np.percentile(t, [25, 75])
+    t = t[(t >= q1 - 1.5 * (q3 - q1) - 1) & (t <= q3 + 1.5 * (q3 - q1) + 1)]
+    return (float(np.median(t)), len(t), float(q3 - q1)), lows
 
 
 def blend_height(b, h, conf):
@@ -433,7 +483,7 @@ def _rows(o, h, lo=None):
 def fit_colours(obs, h):
     """(wall colour, window colour) of the building pixels: two clusters, the bigger brighter one is the wall."""
     # the photo already carries its own light: no division by the game's baked wall shade (that clipped light walls to white)
-    px = np.concatenate([o.rgb[_rows(o, h)] for o in obs]) if obs else np.zeros((0, 3))
+    px = np.concatenate([o.px.astype(np.float32) if isinstance(o, Slim) else o.rgb[_rows(o, h)] for o in obs]) if obs else np.zeros((0, 3))
     if len(px) < 50:
         return None, None
     if len(px) > 40000:
@@ -846,7 +896,7 @@ def fit_detail(b, obs, log=None):
     """The 'detail' fit: height and colours as the other fits, then every seen wall through facade.analyse (roof line, roof band,
     floor grid, bay columns and their procedural parameters).  Only numbers come out: no photo pixel reaches the game."""
     import facade
-    good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))] or obs
+    good = [o for o in obs if o.n_build >= 0.25 * max(1, o.n_ok if isinstance(o, Slim) else int(o.ok.sum()))] or obs
     h_raw, hc = fit_height(good, max(b.gen["h"], getattr(b, "h_seen", 0.0)))
     h = blend_height(b, h_raw, hc)
     out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(good)}
@@ -859,21 +909,27 @@ def fit_detail(b, obs, log=None):
         lv = float(str(b.tags.get("building:levels", "")).split(";")[-1])
     except ValueError:
         lv = 0.0
-    best_view = {}                               # per wall: its own capture first (aimed at it), then the most facade pixels
+    by_wall = {}                                 # per wall: every view of it, its own capture first (aimed at it), then pixels
     rank = lambda o: (o.cap.bid == b.id, o.n_build)
     for o in good:
-        if o.wi not in best_view or rank(o) > rank(best_view[o.wi]):
-            best_view[o.wi] = o
+        by_wall.setdefault(o.wi, []).append(o)
     walls, params = [], []
-    for wi, o in sorted(best_view.items()):
-        try:
-            f = facade.analyse(o, lv, log)
-        except Exception as e:  # noqa: BLE001 - one odd wall must not stop the building
-            if log:
-                log(f"    ѕид {wi}: анализата падна ({type(e).__name__}: {e})")
+    for wi, vs in sorted(by_wall.items()):
+        vs.sort(key=rank, reverse=True)
+        if isinstance(vs[0], Slim):
+            fas = [o.fa for o in vs if o.fa is not None]
+        else:
+            fas = []
+            for o in vs[:1]:
+                try:
+                    fas.append(facade.analyse(o, lv, log))
+                except Exception as e:  # noqa: BLE001 - one odd wall must not stop the building
+                    if log:
+                        log(f"    ѕид {wi}: анализата падна ({type(e).__name__}: {e})")
+            fas = [f for f in fas if f is not None]
+        if not fas:
             continue
-        if f is None:
-            continue
+        f = facade.fuse(fas[0], fas[1:], log) if SETTINGS["fuse"] and len(fas) > 1 else fas[0]
         off = len(params)
         params += f.pop("params")
         for c in f["cols"]:
@@ -1022,18 +1078,35 @@ def write_fits(blds, algo, path):
 _W = {}
 
 
-def _w_init(folder, osm_dir, algo):
-    """A worker process: its own copy of the captures and the city (read once)."""
+def apply_settings(st, algo):
+    """SETTINGS -> the module globals they drive (here and in facade)."""
     global RES
     import facade
+    SETTINGS.update(st)
+    facade.RES = float(SETTINGS["res"])
+    facade.OPT.update(priors=bool(SETTINGS["priors"]), sym=bool(SETTINGS["sym"]))
     RES = facade.RES if algo == "detail" else 4.0
+
+
+def _w_init(folder, osm_dir, algo, st):
+    """A worker process: its own copy of the captures and the city (read once), the job's settings."""
+    apply_settings(st, algo)
     caps = read_manifest(folder)
     _W.update(caps={c.file: c for c in caps}, blds=load_city(osm_dir, caps, log=lambda s: None), algo=algo)
 
 
+def _levels(b):
+    try:
+        return float(str(b.tags.get("building:levels", "")).split(";")[-1])
+    except ValueError:
+        return 0.0
+
+
 def _w_capture(file, x0, z0, mode, pk, lab):
-    """One capture in a worker: true colours, camera pose (searched or saved), facade views.  -> dict (views pickle small)."""
+    """One capture in a worker: true colours, camera pose (searched or saved), facade views; for ДЕТАЛИ every view is analysed
+    here and only its numbers go back (Slim).  -> dict."""
     import facade
+    t0 = time.time()
     c, blds = _W["caps"][file], _W["blds"]
     lines = []
     img = c.image()
@@ -1043,6 +1116,7 @@ def _w_capture(file, x0, z0, mode, pk, lab):
     c.x, c.z, c.dyaw, c.dpitch = x0, z0, 0.0, 0.0
     pose = None
     tgt = blds.get(c.bid)
+    t1 = time.time()
     if mode == "file":
         r = (0.0, 0.0, 0.0, 1.0)
     elif pk:
@@ -1052,17 +1126,117 @@ def _w_capture(file, x0, z0, mode, pk, lab):
     else:
         r = fit_position(c, lab, blds, lines.append, mode)
         pose = [round(float(v), 3) for v in r[:4]] + [mode]
+    t2 = time.time()
     ui = lab == L_NONE
-    edges = wall_edges(blds, np.array([c.x, c.z]), 220)
-    views = facade_views(c, img, lab, ui, blds, edges)
+    edges = wall_edges(blds, np.array([c.x, c.z]), SETTINGS["dist"] + 20)
+    views = facade_views(c, img, lab, ui, blds, edges, min_px=int(SETTINGS["min_px"]))
+    t3 = time.time()
+    if _W["algo"] == "detail":
+        views = [Slim(o, _levels(o.bld), lines.append) for o in views]
+    lines.append(f"{file[:4]}: време {time.time() - t0:.1f} с (боја {t1 - t0:.1f}, камера {t2 - t1:.1f}, ѕидови {t3 - t2:.1f}, "
+                 f"анализа {time.time() - t3:.1f}), {len(views)} погледи")
     return {"x": float(c.x), "z": float(c.z), "dyaw": float(c.dyaw), "pose": pose, "log": lines, "views": views,
-            "h_seen": float(tgt.gen["h"] * r[3]) if tgt is not None and r[3] != 1.0 else 0.0}
+            "h_seen": float(tgt.gen["h"] * r[3]) if tgt is not None and r[3] != 1.0 else 0.0,
+            "t": {"colour": t1 - t0, "pose": t2 - t1, "walls": t3 - t2, "analyse": time.time() - t3}}
 
 
-def _w_fit(b, obs, algo):
-    """One building's fit in a worker -> (fit dict, log lines)."""
-    lines = []
-    return fit_building(b, obs, algo, {}, lines.append), lines
+class _Done:
+    """A finished result from the job store, handled like a worker's future."""
+
+    def __init__(self, r):
+        self.r = r
+
+    def result(self):
+        return self.r
+
+    def cancelled(self):
+        return False
+
+    def cancel(self):
+        return False
+
+
+def _read_json(p):
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def job_store(folder, algo):
+    return os.path.join(folder, CACHE, f"job_{algo}")
+
+
+def job_signature(st, algo, seg_name):
+    return {"algo": algo, "code": CODE_VER, "seg": seg_name, **{k: st[k] for k in RESULT_KEYS if k != "seg"}}
+
+
+def _store_path(store, file):
+    return os.path.join(store, os.path.splitext(file)[0] + ".pkl")
+
+
+def _store_put(store, file, r):
+    import pickle
+    p = _store_path(store, file)
+    with open(p + ".tmp", "wb") as f:
+        pickle.dump(r, f, protocol=4)
+    os.replace(p + ".tmp", p)                         # never a half-written file, even if the game is killed
+
+
+def _store_get(store, file):
+    import pickle
+    p = _store_path(store, file)
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, "rb") as f:
+            return pickle.load(f)
+    except Exception:  # noqa: BLE001 - a broken file: that photo is simply redone
+        return None
+
+
+def job_status(folder, algo, st, seg_name=None):
+    """(photos stored, signature matches the given settings) for the viewer."""
+    store = job_store(folder, algo)
+    if not os.path.isdir(store):
+        return 0, True
+    n = sum(1 for f in os.listdir(store) if f.endswith(".pkl"))
+    old = _read_json(os.path.join(store, "job.json")).get("sig", {})
+    same = all(old.get(k) == v for k, v in job_signature(st, algo, seg_name or old.get("seg")).items())
+    return n, same
+
+
+def clear_job(folder, algo, poses=True):
+    """Forget the stored job (and the found camera poses): the next run starts from scratch."""
+    import shutil
+    shutil.rmtree(job_store(folder, algo), ignore_errors=True)
+    if poses:
+        try:
+            os.remove(os.path.join(folder, CACHE, "poses.json"))
+        except OSError:
+            pass
+
+
+def load_settings(folder):
+    """-> (settings, opts) saved with the photo folder (defaults for what is missing or of the wrong type)."""
+    d = _read_json(os.path.join(folder, CACHE, "settings.json"))
+    st, op = dict(SETTINGS), json.loads(json.dumps(OPTS))
+    def ok(v, ref):
+        if isinstance(ref, float):
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+        return type(v) is type(ref)
+    st.update({k: (float(v) if isinstance(SETTINGS[k], float) else v) for k, v in d.items() if k in SETTINGS and ok(v, SETTINGS[k])})
+    op.update({k: (float(v) if isinstance(OPTS[k], float) else v) for k, v in (d.get("opts") or {}).items() if k in OPTS and ok(v, OPTS[k])})
+    return st, op
+
+
+def save_settings(folder, st, op=None):
+    os.makedirs(os.path.join(folder, CACHE), exist_ok=True)
+    p = os.path.join(folder, CACHE, "settings.json")
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        json.dump({**st, "opts": op if op is not None else OPTS}, f, indent=1, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
 
 
 def _kill(ex):
@@ -1076,24 +1250,25 @@ def _kill(ex):
             pass
 
 
-def _pool(folder, osm_dir, algo, log):
+def _pool(folder, osm_dir, algo, log, st=None):
     """Worker processes on all cores but one (the GPU feeder / viewer); a single in-thread worker when processes fail."""
     import concurrent.futures as cf
     import multiprocessing as mp
-    n = max(1, min(12, (os.cpu_count() or 2) - 1))
+    st = st or SETTINGS
+    n = int(st.get("workers") or 0) or max(1, min(12, (os.cpu_count() or 2) - 1))
     main = sys.modules.get("__main__")
     mf = getattr(main, "__file__", None)
     try:
         if mf is not None:
             del main.__file__                              # spawned workers must not re-run main.py (it opens a window)
-        ex = cf.ProcessPoolExecutor(n, mp_context=mp.get_context("spawn"), initializer=_w_init, initargs=(folder, osm_dir, algo))
+        ex = cf.ProcessPoolExecutor(n, mp_context=mp.get_context("spawn"), initializer=_w_init, initargs=(folder, osm_dir, algo, st))
         for f in [ex.submit(int, 0) for _ in range(n)]:    # start them all now, while main.py's name is hidden
             f.result()
         log(f"паралелно: {n} процеси (од {os.cpu_count()} јадра)")
         return ex, n
     except Exception as e:  # noqa: BLE001 - no processes: one worker thread
         log(f"паралелно: не може ({type(e).__name__}: {e}), една нишка")
-        return cf.ThreadPoolExecutor(1, initializer=_w_init, initargs=(folder, osm_dir, algo)), 1
+        return cf.ThreadPoolExecutor(1, initializer=_w_init, initargs=(folder, osm_dir, algo, st)), 1
     finally:
         if mf is not None:
             main.__file__ = mf
@@ -1103,11 +1278,17 @@ def _pool(folder, osm_dir, algo, log):
 class Job(threading.Thread):
     """Runs the pipeline for one folder and one algorithm; the viewer reads .caps / .blds / .log / .version while it works."""
 
-    def __init__(self, folder, algo, texs=None, osm_dir=None, seg="auto", state=None, pose="fast"):
+    def __init__(self, folder, algo, texs=None, osm_dir=None, seg=None, state=None, pose=None, settings=None, only=None):
         super().__init__(daemon=True)
         self.folder, self.algo, self.texs = folder, algo, texs or {}
         self.osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
-        self.seg_kind = seg
+        self.settings = dict(SETTINGS, **(settings or {}))
+        if seg:
+            self.settings["seg"] = seg
+        if pose:
+            self.settings["pose"] = pose
+        self.seg_kind = self.settings["seg"]
+        self.only = set(only) if only else None      # proofing: only these photos (and the buildings they see)
         self.caps, self.blds = (state or (None, None))
         self.log_lines = []
         self.version = 0
@@ -1116,7 +1297,8 @@ class Job(threading.Thread):
         self.error = None
         self.stop = False
         self.pause = False
-        self.pose = pose                 # "fast" | "full" search of the camera position, "file" = as the file says
+        self.pose = self.settings["pose"]  # "fast" | "full" search of the camera position, "file" = as the file says
+        self.stats = {}                  # per stage seconds, photos from the store, ... (the viewer's status lines)
         self.labels = {}                 # capture file -> label map (viewer overlay)
 
     def log(self, s):
@@ -1148,15 +1330,16 @@ class Job(threading.Thread):
         for b in self.blds.values():
             b.obs = []
             b.fits.pop(self.algo, None)
-        global RES
-        import facade
-        RES = facade.RES if self.algo == "detail" else 4.0            # the detail fit reads windows and AC units: 12 px/m
+        apply_settings(self.settings, self.algo)
+        self.log(f"поставки: {', '.join(f'{k}={v}' for k, v in self.settings.items())}")
         self.log(f"резолуција на фасадите: {RES:.0f} px/м")
         seg = segment.get(self.seg_kind, self.log)
         self.log(f"сегментација: {seg.name}")
         cache = os.path.join(self.folder, CACHE)
         os.makedirs(cache, exist_ok=True)
-        caps = [c for c in self.caps if c.exists]
+        caps = [c for c in self.caps if c.exists and (self.only is None or c.file in self.only)]
+        if self.only is not None:
+            self.log(f"ПРОБА: {len(caps)} избрани снимки, само зградите што тие ги гледаат")
         # the captures of one building one after the other, so it can be fitted (and shown) as soon as its last view is in
         caps.sort(key=lambda c: (c.bid, c.file))
         pose_path = os.path.join(cache, "poses.json")             # found poses are kept: a rebuild does not search again
@@ -1165,21 +1348,34 @@ class Job(threading.Thread):
                 poses = json.load(f)
         except (OSError, ValueError):
             poses = {}
+        # the stored job: each photo's result (numbers only) under a signature of the settings that shape it; a paused, stopped
+        # or crashed run resumes from it, changed settings start a fresh one
+        store = job_store(self.folder, self.algo)
+        sig = job_signature(self.settings, self.algo, seg.name)
+        if self.algo == "detail":
+            old = _read_json(os.path.join(store, "job.json"))
+            if old.get("sig") != sig:
+                if old:
+                    self.log("поставките се сменети: зачуваните резултати не важат, почнува ново")
+                clear_job(self.folder, self.algo, poses=False)
+            os.makedirs(store, exist_ok=True)
+            with open(os.path.join(store, "job.json"), "w", encoding="utf-8") as f:
+                json.dump({"sig": sig, "made": time.strftime("%Y-%m-%d %H:%M")}, f)
+            nst = sum(1 for c in caps if os.path.exists(_store_path(store, c.file)))
+            if nst:
+                self.log(f"продолжува: {nst} од {len(caps)} снимки се веќе готови (зачувани)")
+        t_start = time.time()
         # segmentation runs here (one GPU); pose search, facade views and fits run on the other cores, overlapped with it
-        ex, nw = _pool(self.folder, self.osm_dir, self.algo, self.log)
-        cap_f, fit_f, gen = {}, {}, {}
+        ex, nw = _pool(self.folder, self.osm_dir, self.algo, self.log, self.settings)
+        cap_f = {}
         left = {}                                        # captures of each target not back yet
         for c in caps:
             left[c.bid] = left.get(c.bid, 0) + 1
         touched = set()
         nback = [0]
 
-        def fit_one(bid, inline=False):
+        def fit_one(bid):                                # numbers only by now (ДЕТАЛИ): quick, here
             b = self.blds[bid]
-            gen[bid] = gen.get(bid, 0) + 1
-            if self.algo == "detail" and not inline:                    # in a worker (only numbers come back)
-                fit_f[ex.submit(_w_fit, b, b.obs, self.algo)] = (bid, gen[bid])
-                return
             b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
             f = b.fits[self.algo]
             self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
@@ -1189,48 +1385,45 @@ class Job(threading.Thread):
 
         def drain(block=False):
             import concurrent.futures as cf
-            allf = list(cap_f) + list(fit_f)
-            if not allf:
-                return
-            done, _ = cf.wait(allf, timeout=0.25 if block else 0, return_when=cf.FIRST_COMPLETED)   # short: stop stays quick
+            allf = [f_ for f_ in cap_f if not isinstance(f_, _Done)]
+            done = {f_ for f_ in cap_f if isinstance(f_, _Done)}
+            if allf and not done:
+                done, _ = cf.wait(allf, timeout=0.25 if block else 0, return_when=cf.FIRST_COMPLETED)   # short: stop stays quick
             for fu in done:
-                if fu in cap_f:
-                    c = cap_f.pop(fu)
-                    if fu.cancelled():
-                        continue
-                    r = fu.result()
-                    for ln in r["log"]:
-                        self.log(ln)
-                    c.x, c.z, c.dyaw, c.dpitch = r["x"], r["z"], r["dyaw"], 0.0
-                    if r["pose"] is not None:
-                        poses[c.file] = r["pose"]
-                        with open(pose_path, "w", encoding="utf-8") as f:
-                            json.dump(poses, f)
-                    if r["h_seen"] and c.bid in self.blds:
-                        tb = self.blds[c.bid]
-                        tb.h_seen = max(getattr(tb, "h_seen", 0.0), r["h_seen"])
-                    for o in r["views"]:
-                        o.bld, o.cap = self.blds[o.bld.id], c
-                        o.bld.obs.append(o)
-                        touched.add(o.bld.id)
-                    tgt = sum(1 for o in r["views"] if o.bld.id == c.bid)
-                    c.status = f"{len(r['views'])} ѕида ({tgt} на целта)" if r["views"] else "ништо употребливо"
-                    self.log(f"{c.file[:4]}: {c.status}")
-                    left[c.bid] -= 1
-                    nback[0] += 1
-                    self.frac = nback[0] / max(1, len(caps))
-                    for bid in list(touched):          # every building whose own captures are all back
-                        if left.get(bid, 0) <= 0:
-                            touched.discard(bid)
-                            fit_one(bid)
-                else:
-                    bid, g = fit_f.pop(fu)
-                    fit, lines = fu.result()
-                    for ln in lines:
-                        self.log(ln)
-                    if g == gen.get(bid):              # a newer fit of it (more views came in) wins
-                        self.blds[bid].fits[self.algo] = fit
-                        self.blds[bid].version += 1
+                c = cap_f.pop(fu)
+                if fu.cancelled():
+                    continue
+                r = fu.result()
+                if self.algo == "detail" and not r.get("stored"):
+                    _store_put(store, c.file, r)
+                for ln in r["log"]:
+                    self.log(ln)
+                for k_, v_ in (r.get("t") or {}).items():         # per-stage seconds over all workers (the viewer's ДНЕВНИК)
+                    if not r.get("stored"):
+                        self.stats[k_] = self.stats.get(k_, 0.0) + v_
+                self.stats["stored" if r.get("stored") else "fresh"] = self.stats.get("stored" if r.get("stored") else "fresh", 0) + 1
+                c.x, c.z, c.dyaw, c.dpitch = r["x"], r["z"], r["dyaw"], 0.0
+                if r["pose"] is not None:
+                    poses[c.file] = r["pose"]
+                    with open(pose_path, "w", encoding="utf-8") as f:
+                        json.dump(poses, f)
+                if r["h_seen"] and c.bid in self.blds:
+                    tb = self.blds[c.bid]
+                    tb.h_seen = max(getattr(tb, "h_seen", 0.0), r["h_seen"])
+                for o in r["views"]:
+                    o.bld, o.cap = self.blds[o.bld.id], c
+                    o.bld.obs.append(o)
+                    touched.add(o.bld.id)
+                tgt = sum(1 for o in r["views"] if o.bld.id == c.bid)
+                c.status = f"{len(r['views'])} ѕида ({tgt} на целта)" if r["views"] else "ништо употребливо"
+                self.log(f"{c.file[:4]}: {c.status}")
+                left[c.bid] -= 1
+                nback[0] += 1
+                self.frac = nback[0] / max(1, len(caps))
+                for bid in list(touched):          # every building whose own captures are all back
+                    if left.get(bid, 0) <= 0:
+                        touched.discard(bid)
+                        fit_one(bid)
                 self.version += 1
 
         for i, c in enumerate(caps):
@@ -1240,16 +1433,27 @@ class Job(threading.Thread):
                 time.sleep(0.1)
             if self.stop:
                 break
-            self.step = f"снимка {i + 1}/{len(caps)}: сегментација ({nw} јадра работат)"
+            if not hasattr(c, "x0"):
+                c.x0, c.z0 = c.x, c.z
+            if self.algo == "detail":
+                r = _store_get(store, c.file)
+                if r is not None:                         # done in an earlier (paused / stopped) run
+                    r["stored"] = True
+                    fu = _Done(r)
+                    cap_f[fu] = c
+                    drain()
+                    continue
+            self.step = f"снимка {i + 1}/{len(caps)}: сегментација ({nw} процеси работат)"
             self.version += 1
-            img = c.image()
-            lab = seg.labels(img, os.path.join(cache, os.path.splitext(c.file)[0] + f".{seg.name}.png"))
-            del img
+            ts = time.time()
+            lp = os.path.join(cache, os.path.splitext(c.file)[0] + f".{seg.name}.png")
+            lab = segment._cached(lp) if os.path.exists(lp) else None
+            if lab is None or lab.shape != (c.H, c.W):
+                lab = seg.labels(c.image(), lp)
+            self.stats["seg"] = self.stats.get("seg", 0.0) + time.time() - ts
             self.labels[c.file] = lab
             lab = lab.copy()
             lab[c.ui_mask()] = L_NONE
-            if not hasattr(c, "x0"):
-                c.x0, c.z0 = c.x, c.z
             pk = poses.get(c.file)
             pk = pk if (pk and (pk[4] == "full" or pk[4] == self.pose)) else None
             cap_f[ex.submit(_w_capture, c.file, c.x0, c.z0, self.pose, pk, lab)] = c
@@ -1260,43 +1464,39 @@ class Job(threading.Thread):
             drain(True)
         if self.stop:                        # stop now: the workers are killed, what came back is fitted here
             self.log(f"застанато: {nback[0]} од {len(caps)} снимки готови, се довршуваат видените згради")
-            redo = touched | {bid for bid, _g in fit_f.values()}
             cap_f.clear()
-            fit_f.clear()
-            _kill(ex)
-            self.step = f"напасување на {len(redo)} згради"
-            for bid in redo:
-                fit_one(bid, inline=True)
-        else:
-            for bid in list(touched):
-                fit_one(bid)
-            self.step = f"напасување на згради ({len(fit_f)} во тек)"
-            while fit_f:
-                drain(True)
-                if self.stop:
-                    redo = {bid for bid, _g in fit_f.values()}
-                    fit_f.clear()
-                    for bid in redo:
-                        fit_one(bid, inline=True)
-            _kill(ex)
+        _kill(ex)
+        self.step = f"напасување на {len(touched)} згради"
+        for bid in list(touched):
+            fit_one(bid)
         self.step = "незабележани згради"
-        n = infer(self.blds, self.algo)
+        n = infer(self.blds, self.algo) if self.only is None else 0
         for b in self.blds.values():
             b.version += 1
             b.obs = []                                   # free the resampled photos (the viewer keeps only numbers)
         self.log(f"изведени од соседи: {n}")
-        out = os.path.join(cache, f"fit_{self.algo}.json")
+        out = os.path.join(cache, f"fit_{self.algo}" + ("_proof" if self.only is not None else "") + ".json")
+        self.stats["total"] = time.time() - t_start
         k = write_fits(self.blds, self.algo, out)
         self.log(f"готово: {k} згради -> {out}")
         self.step, self.frac = "готово", 1.0
 
 
-def apply_to_game(folder, algo, osm_dir=None):
+def apply_to_game(folder, algo, osm_dir=None, opts=None):
     """Copy a finished fit to <osm>/photogram.json: the next world build uses it (the setting decides, see set_enabled)."""
     import shutil
     osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
     src = os.path.join(folder, CACHE, f"fit_{algo}.json")
-    shutil.copyfile(src, os.path.join(osm_dir, "photogram.json"))
+    dst = os.path.join(osm_dir, "photogram.json")
+    if opts is None:
+        shutil.copyfile(src, dst)
+    else:                                                       # the element switches / kit go with the fit
+        with open(src, encoding="utf-8") as f:
+            d = json.load(f)
+        d["opts"] = opts
+        with open(dst + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=0)
+        os.replace(dst + ".tmp", dst)
     at = os.path.join(osm_dir, "photogram_atlas.png")          # an earlier version's photo-pixel atlas: no longer used
     if os.path.exists(at):
         os.remove(at)

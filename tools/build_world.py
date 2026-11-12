@@ -1018,6 +1018,32 @@ SURF_BASE = {"plas": 0.84, "concw": 0.80, "tilew": 0.86, "brkw": 0.80, "metw": 0
 GLASS_BASE, PAINT_BASE = 0.26, 0.88
 
 
+def _depth_in(ring, p, nrm):
+    """How deep the outline is from wall point p straight inwards (along -nrm) -> m (6 when nothing is hit)."""
+    d = -np.asarray(nrm, float)
+    best = None
+    n = len(ring)
+    for i in range(n):
+        a, e = ring[i], ring[(i + 1) % n]
+        s_ = e - a
+        den = d[0] * s_[1] - d[1] * s_[0]
+        if abs(den) < 1e-9:
+            continue
+        w = a - p
+        t = (w[0] * s_[1] - w[1] * s_[0]) / den
+        q = (w[0] * d[1] - w[1] * d[0]) / den
+        if t > 0.3 and 0 <= q <= 1 and (best is None or t < best):
+            best = t
+    return float(best) if best else 6.0
+
+
+def photo_on(fit):
+    """Does this fit get the procedural photo facade?  (Inferred buildings can be switched to the plain look.)"""
+    if not (fit and fit.get("params") and fit.get("cycle")):
+        return False
+    return fit.get("src") == "photo" or (fit.get("opts") or {}).get("inferred", "lite") != "none"
+
+
 def photo_facade(outer, h, fit, y_bot=0.0):
     """Walls of a photo-fitted building (src/photogram.py ДЕТАЛИ), all procedural from the fitted numbers: every wall cut into its
     bay columns x floors; each cell a wall surface (plaster / concrete / tiles / brick / metal texture in the photo's colour) with a
@@ -1027,7 +1053,21 @@ def photo_facade(outer, h, fit, y_bot=0.0):
     params, cyc = fit.get("params") or [], fit.get("cycle") or []
     if not params or not cyc:
         return []
-    full = fit.get("src") == "photo"
+    op = fit.get("opts") or {}                                     # the builder's element switches (photoview ЕЛЕМЕНТИ tab)
+
+    def on(k):
+        return bool(op.get(k, True))
+    full = fit.get("src") == "photo" or op.get("inferred", "lite") == "full"
+    import archkit
+    kit = archkit.kit_ids(fit, op) if on("kit_on") else []
+    sat = float(op.get("sat", 1.0))                                # colour strength (1 = as measured)
+
+    def satc(c_):
+        if abs(sat - 1.0) < 1e-3:
+            return tuple(c_)
+        m_ = sum(c_) / 3.0
+        return tuple(float(min(255, max(0, m_ + (v - m_) * sat))) for v in c_)
+    nbox = [0]
     fh0, bw0 = max(2.4, fit.get("floor", 3.2)), max(2.0, fit.get("bay", 3.4))
     seen = fit.get("walls") or []
     r = np.asarray(outer, np.float64)
@@ -1049,6 +1089,13 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         e_[1].extend([uv] * len(pos))
         e_[2].extend(map(tuple, cl))
 
+    def kbox(cx, cz, sx, sz, hh, y0, col, yw):
+        """A kit box with its underside (cantilevers are seen from the street)."""
+        put_box(MAT_SURF["glaz"], cx, cz, sx, sz, hh, y0, col, yw)
+        ca, sa = math.cos(yw), math.sin(yw)
+        q = [(cx + ca * x - sa * z, y0, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (-sx / 2, sz / 2), (sx / 2, sz / 2), (sx / 2, -sz / 2))]
+        put(MAT_SURF["glaz"], q, [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
+    longest = max(range(n), key=lambda j: float(np.hypot(*(r[(j + 1) % n] - r[j])))) if n else 0
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
         d = b - a
@@ -1061,7 +1108,7 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         sh = float(np.clip(0.52 + 0.55 * max(0.0, float(np.array([nrm[0], 0, nrm[1]]) @ SUN)), 0.45, 1.12))
         w = next((w for w in seen if np.hypot(*(np.array(w["a"]) - a)) < 1.5 and np.hypot(*(np.array(w["b"]) - b)) < 1.5), None)
         opp = None
-        if not w and fit.get("opp", True):   # an unseen wall facing a seen one of about its length: the seen one's order, front to back
+        if not w and fit.get("opp", True) and on("opp"):   # an unseen wall facing a seen one of about its length: the seen one's order, front to back
             par = [s_ for s_ in seen if 0.6 < ln / max(0.1, s_["ln"]) < 1.6
                    and float((np.array(s_["b"]) - np.array(s_["a"])) @ t_) / max(0.1, s_["ln"]) < -0.85]
             opp = max(par, key=lambda s_: s_["ln"]) if par else None
@@ -1077,11 +1124,34 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             wallc, surf = src_["wall"], src_.get("surf", fit.get("surf", "plas"))
             bands = src_.get("bands") or []
             gf = src_.get("gf") if w else None
+            secs = src_.get("secs") or [] if w else []
         else:
             nb = max(1, int(round(ln / bw0)))
             cols = [(ln * j / nb, ln * (j + 1) / nb, cyc[(j + i * 3) % len(cyc)], -1, 0.0) for j in range(nb)]
             fh, pv, ref, cells = fh0, 0.0, 0.85, {}
             wallc, surf = fit.get("wallc", (200, 200, 200)), fit.get("surf", "plaster")
+            secs = []
+        wallc = satc(wallc)
+        if sat != 1.0 and cells:
+            cells = {k_: satc(v_) for k_, v_ in cells.items()}
+        if not on("relief"):
+            cols = [(c0, c1, pi_, g_, 0.0) for c0, c1, pi_, g_, _d in cols]
+            gf = None
+        if not on("ground"):
+            gf = None
+            cols = [(c0, c1, pi_, -1, d_) for c0, c1, pi_, _g, d_ in cols]
+        if not on("bands"):
+            bands = []
+        if not on("cells"):
+            cells = {}
+        # lower roof-line sections: their upper storeys stand back (a set-back / a lower wing in front), the depth half the plan's
+        steps_ = []
+        if on("steps") and w:
+            for su0, su1, sh_, sb_, *_r in secs:
+                wt_ = sh_ - sb_
+                if wt_ < h - 1.0 and su1 - su0 >= 2.0 and wt_ > 2.5:
+                    mid = a + t_ * (su0 + su1) / 2
+                    steps_.append((su0 * k, su1 * k, wt_, -min(6.0, 0.45 * _depth_in(r, mid, nrm))))
         lit = float(np.clip(sh / ref, 0.72, 1.18))
         glassy = surf == "glass"
         smat = {"plaster": "plas", "concrete": "concw", "tiles": "tilew", "brick": "brkw", "metal": "metw", "glass": "metw"}.get(surf, "plas")
@@ -1107,8 +1177,12 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             put(MG, pts, [(0.6, 0.2), (0.9, 0.2), (0.9, 0.8), (0.6, 0.8)], [c * lit * k_ / PAINT_BASE for c in col])
 
         cuts = [y_bot] + [pv + k_ * fh for k_ in range(int(math.ceil(h / fh)) + 1) if y_bot < pv + k_ * fh < h - 0.05] + [h]
+        cuts = sorted(set(cuts + [st_[2] for st_ in steps_ if y_bot < st_[2] < h - 0.05]))
+
+        def setback(u0, u1, y0):
+            return next((st_[3] for st_ in steps_ if st_[0] <= (u0 + u1) / 2 < st_[1] and y0 >= st_[2] - 0.01), 0.0)
         gcols = set(gf["cols"]) if gf else set()
-        Dg = [[(d_ + (gf["d"] if ci in gcols and y1 <= gf["y"] + 0.05 else 0.0)) for y0, y1 in zip(cuts[:-1], cuts[1:])]
+        Dg = [[(d_ + (gf["d"] if ci in gcols and y1 <= gf["y"] + 0.05 else 0.0) + setback(_u0, _u1, y0)) for y0, y1 in zip(cuts[:-1], cuts[1:])]
               for ci, (_u0, _u1, _pi, _g, d_) in enumerate(cols)]
         for ci, (u0, u1, pi, gpi, _d) in enumerate(cols):
             if pi >= len(params) or u1 - u0 < 0.05:
@@ -1122,7 +1196,7 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 if glassy:
                     wc = p.get("frame") or (70, 76, 82)
                 fullcell = y1 - y0 > 0.95 * fh and y0 > 0.05
-                win = p.get("win")
+                win = p.get("win") if on("windows") else None
                 if glassy and fullcell:
                     win = [0.03, 0.97, 0.06, 0.96]
                 if not fullcell or not win:
@@ -1146,12 +1220,12 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 put(MG, [P(wx0, wy0, gd), P(wx1, wy0, gd), P(wx1, wy1, gd), P(wx0, wy1, gd)],
                     [(0.05, 0.95), (0.45, 0.95), (0.45, 0.05), (0.05, 0.05)], [c * lit / (GLASS_BASE * 255) * 255 for c in g])
                 bl = p.get("blind")
-                if bl and not glassy:                                          # blind / roller shutter, down from the top
+                if bl and not glassy and on("blinds"):                                          # blind / roller shutter, down from the top
                     yb = wy1 - bl[0] * (wy1 - wy0)
                     paint([P(wx0, yb, gd + 0.04), P(wx1, yb, gd + 0.04), P(wx1, wy1, gd + 0.04), P(wx0, wy1, gd + 0.04)], bl[1:], 0.97)
-                if full:
-                    fc = p.get("frame") or (236, 236, 232)
-                    fw, fd = 0.06, gd + 0.07                              # glass, blind, frame, bars: 3 cm apart (no flicker far off)
+                fc = p.get("frame") or (236, 236, 232)
+                fw, fd = 0.06, gd + 0.07                                  # glass, blind, frame, bars: 3 cm apart (no flicker far off)
+                if full and on("frames"):
                     for (x0_, x1_, y0_, y1_) in ((wx0, wx0 + fw, wy0, wy1), (wx1 - fw, wx1, wy0, wy1),
                                                  (wx0, wx1, wy0, wy0 + fw), (wx0, wx1, wy1 - fw, wy1)):
                         paint([P(x0_, y0_, fd), P(x1_, y0_, fd), P(x1_, y1_, fd), P(x0_, y1_, fd)], fc)
@@ -1162,9 +1236,10 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                     if wy1 - wy0 > 1.6:                                          # transom of a tall (door) opening
                         yt = wy0 + (wy1 - wy0) * 0.72
                         paint([P(wx0, yt - 0.025, fd + 0.02), P(wx1, yt - 0.025, fd + 0.02), P(wx1, yt + 0.025, fd + 0.02), P(wx0, yt + 0.025, fd + 0.02)], fc)
-                    if p.get("sill") and not glassy:
-                        cx, cz = a + t_ * (wx0 + wx1) / 2 + N(0.03)
-                        put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
+                if full and p.get("sill") and not glassy and on("sills"):
+                    cx, cz = a + t_ * (wx0 + wx1) / 2 + N(0.03)
+                    put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
+                if full and on("ac"):
                     for fx, cy, aw, ah, *cc in p.get("ac", []):                # AC units with a dark fan grille
                         cu = u0 + fx * cw
                         cx, cz = a + t_ * cu + N(0.18)
@@ -1174,8 +1249,8 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                         paint([P(cu - gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38), P(cu + gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38),
                                P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38)], (58, 60, 62))
                 bc = p.get("balc")
-                if bc and not glassy:                                           # balcony: slab + parapet or railing
-                    dep, rc_, solid = bc[0], bc[1:4], (bc[4] if len(bc) > 4 else 1) or not full
+                if bc and not glassy and on("balconies"):                                           # balcony: slab + parapet or railing
+                    dep, rc_, solid = bc[0], satc(bc[1:4]), (bc[4] if len(bc) > 4 else 1) or not full
                     cx, cz = a + t_ * (u0 + u1) / 2 + N(dep / 2)
                     bw_ = cw * 0.96
                     put_box(MG, cx, cz, bw_, dep, 0.16, y0, [c * lit * 0.95 / PAINT_BASE for c in wc], yaw)
@@ -1238,12 +1313,33 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             for ci, (u0, u1, *_r) in enumerate(cols):
                 cx, cz = a + t_ * (u0 + u1) / 2 + nrm * (Dg[ci][bi] + dep / 2)
                 put_box(MG, cx, cz, u1 - u0, dep, by1 - by0 if kind_ != "plinth" else by1 - y_bot, by0 if kind_ != "plinth" else y_bot,
-                        [c * lit / PAINT_BASE for c in bc], yaw)
+                        [c * lit / PAINT_BASE for c in satc(bc)], yaw)
         if gf and gf.get("pil"):                                         # arcade pillars on the line of the wall above
             for pu in gf["pil"]:
                 ci = next((j for j, c_ in enumerate(cols) if c_[0] <= pu < c_[1]), 0)
                 cx, cz = a + t_ * pu + nrm * (cols[ci][4] - 0.22)
                 put_box(MG, cx, cz, 0.42, 0.42, gf["y"] - y_bot, y_bot, [c * lit / PAINT_BASE for c in wallc], yaw)
+        if kit and nbox[0] < archkit.MAX_BOXES:                        # the element kit (src/archkit.py) on this wall
+            def D_(u, y, cols=cols, Dg=Dg, cuts=cuts):
+                ci = next((j for j, c_ in enumerate(cols) if u < c_[1]), len(cols) - 1)
+                bi = max(0, min(len(cuts) - 2, sum(1 for c_ in cuts[1:-1] if c_ <= y)))
+                return max(0.0, Dg[ci][bi]) if ci >= 0 else 0.0
+            pp = [params[c_[2]] if 0 <= c_[2] < len(params) else {} for c_ in cols]
+            cand = [tuple(v) for v in cells.values()] + [tuple(q["balc"][1:4]) for q in pp if q.get("balc")] + [tuple(b_[4:7]) for b_ in bands if len(b_) >= 7]
+            cand = sorted({c_ for c_ in cand if len(c_) == 3}, key=lambda c_: -(max(c_) - min(c_)))
+            accent = [satc(c_) for c_ in cand if max(c_) - min(c_) > 22 and sum(abs(x - y) for x, y in zip(c_, wallc)) > 40][:2]
+            Wk = {"a": a, "ln": ln, "h": h, "fh": fh, "pv": pv, "y_bot": y_bot, "cols": [(c_[0], c_[1]) for c_ in cols], "D": D_,
+                  "wins": [q.get("win") if q.get("win") and not glassy else None for q in pp],
+                  "balc": [bool(q.get("balc")) for q in pp], "bdep": [float(q["balc"][0]) if q.get("balc") else 0.9 for q in pp], "loggia": [q.get("rec", 0) > 0.5 for q in pp],
+                  "wallc": wallc, "longest": i == longest, "accent": accent or [tuple(v * 0.8 for v in wallc)]}
+            for it in archkit.kit_wall(kit, Wk)[:max(0, archkit.MAX_BOXES - nbox[0])]:
+                u_, o_, ky0, su_, sd_, hh_, rgb_ = it[:7]
+                cx, cz = a + t_ * u_ + nrm * o_
+                kbox(cx, cz, su_, sd_, hh_, ky0, [c * lit / PAINT_BASE for c in rgb_], yaw + (it[7] if len(it) > 7 else 0.0))
+                nbox[0] += 1
+    if kit and nbox[0] < archkit.MAX_BOXES:
+        for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof(kit, r, h, fit.get("wallc", (200, 200, 200)), fit.get("roof")):
+            kbox(x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_)
     return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
 
 
@@ -1255,6 +1351,13 @@ def photo_roof(outer, h, fit, roofc, wallc):
     chimneys, housings -> [(material, pos, uv, col)] or None when the fit has no roof of a known kind."""
     import archlib
     rf = dict(fit.get("roof") or {})
+    op = fit.get("opts") or {}
+    if not op.get("roofs", True):                                    # the builder's switches: plain flat roofs
+        return None
+    if not op.get("roof_extras", True):
+        rf["chim"], rf["hous"] = [], []
+    if not op.get("eaves", True):
+        rf["eave"] = 0.0
     if rf.get("kind") == "pitched":                                  # older fits
         rf["kind"] = "hip"
     if rf.get("kind") not in ROOF_KINDS:
@@ -1502,9 +1605,15 @@ def _read_list(path):
 def load_photogram(src):
     """{OSM id: fitted look} that src/photogram.py wrote next to the OSM files (photogram.json), or {} = the generated look."""
     try:
-        return {int(k): v for k, v in json.load(open(os.path.join(src, "photogram.json"), encoding="utf-8"))["buildings"].items()}
-    except (OSError, ValueError, KeyError):
+        d = json.load(open(os.path.join(src, "photogram.json"), encoding="utf-8"))
+        op = d.get("opts") or {}                                    # the photogrammetry screen's element switches / kit
+        out = {int(k): v for k, v in d["buildings"].items()}
+    except (OSError, ValueError, KeyError, AttributeError):
         return {}
+    if op:
+        for v in out.values():
+            v.setdefault("opts", op)
+    return out
 
 
 def load_elements(src):
@@ -1563,7 +1672,7 @@ def _bld_job(job):
         adds.append((m, pos, uv, col))
 
     binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
-    photo = bool(fit and fit.get("params") and fit.get("cycle"))     # procedural facade from the photos' numbers (ДЕТАЛИ fit)
+    photo = photo_on(fit)                                             # procedural facade from the photos' numbers (ДЕТАЛИ fit)
     roof_fit = (fit or {}).get("roof") if photo else None
     if photo:
         for m_, *g in photo_facade(outer, h, fit, -skirt):

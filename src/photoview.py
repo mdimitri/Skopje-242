@@ -200,64 +200,131 @@ def _v3(p):
 
 
 class Scene:
-    """Per-material models of all loaded buildings in one look (current, or one algorithm's fit)."""
+    """Per-material models of all loaded buildings in one look (current, or one algorithm's fit).
+    Each building's mesh parts are kept with the key they were made for (look, fit version, element switches), so a change
+    rebuilds only the buildings it touches; the rebuild runs a slice per frame (step) and the old models stay up meanwhile."""
 
     def __init__(self, tex):
         self.tex = tex
         self.models = []
-        self.key = None
+        self.parts = {}                      # building id -> (key, [(mat, pos, uv, col)])
+        self.todo = []
+        self.want = None
+        self.stats = {"verts": 0, "blds": 0, "ms": 0.0, "rebuilt": 0}
+        self.busy = 0.0                      # 0..1 while a rebuild runs
+        self.focus, self.radius = None, 1e9
 
     def free(self):
         for m in self.models:
             gl3d.free_model(m)
         self.models = []
 
-    def build(self, blds, algo):
+    def _parts(self, b, algo, opts, near=True):
         bw = pg.tools()
+        lk = b.look(algo)
+        if opts is not None:
+            lk["opts"] = opts
+        h = float(lk["h"])
+        ring = [tuple(p) for p in b.ring]
+        parts = []
+        proc = bw.photo_facade(ring, h, lk, 0.0) if near and bw.photo_on(lk) else []   # far: the fitted box only
+        tiles = bool(proc)
+        if proc:
+            parts += [(m_, tuple(g)) for m_, *g in proc]
+        else:
+            w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
+            if w:
+                parts.append((lk["mat"], w))
+        roof = lk.get("roof") if tiles else None
+        if not hasattr(b, "_tri"):
+            try:
+                b._tri = bw.triangulate(ring, [])
+            except Exception:  # noqa: BLE001
+                b._tri = ([], [])
+        verts, tri = b._tri
+        proof = bw.photo_roof(ring, h, lk, lk["roofc"], lk["wallc"]) if roof else None
+        if proof:
+            parts += [(m_, tuple(g)) for m_, *g in proof]
+        if proof is not None and roof.get("kind") != "flat":
+            pass
+        elif lk.get("small") and lk.get("pitched", True) and h < 11:
+            parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(b.area) * 0.12, lk["roofc"])))
+        else:
+            fp = bw.flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in lk["roofc"]])
+            if fp:
+                parts.append((bw.MAT_ROOF, fp))
+        out = []
+        for mat, (pos, uv, col) in parts:
+            pos = np.asarray(pos, np.float32).copy()
+            pos[:, 1] += b.base
+            out.append((mat, pos, np.asarray(uv, np.float32), np.asarray(col, np.uint8)))
+        return out
+
+    def _near(self, b):
+        return self.focus is None or math.hypot(b.c[0] - self.focus[0], b.c[1] - self.focus[1]) < self.radius
+
+    def _key(self, b, algo, opts, only):
+        a = algo if (only is None or b.id in only) else None
+        f = b.fits.get(a) if a else None
+        near = self._near(b)
+        return (a, id(f), b.version, repr(sorted(opts.items())) if (opts is not None and f and near) else None, near)
+
+    def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9):
+        """Ask for this look; step() does the work.  only: building ids that show the fit (proof), the rest the current look.
+        focus / radius: buildings further away are plain fitted boxes (a big city stays quick)."""
+        self.want = (blds, algo, opts, only)
+        self.focus, self.radius = focus, radius
+        todo = [b for b in blds.values() if self.parts.get(b.id, (None,))[0] != self._key(b, algo, opts, only)]
+        if focus is not None:                       # nearest first
+            todo.sort(key=lambda b: -math.hypot(b.c[0] - focus[0], b.c[1] - focus[1]))
+        self.todo = todo
+        self.t0, self.n0 = time.time(), len(self.todo)
+        self.stats["rebuilt"] = 0
+        if not self.todo:
+            self._upload()
+
+    def step(self, budget=0.025):
+        """Rebuild for at most `budget` seconds; -> True when the models changed."""
+        if self.want is None:
+            return False
+        blds, algo, opts, only = self.want
+        t = time.time()
+        while self.todo and time.time() - t < budget:
+            b = self.todo.pop()
+            self.parts[b.id] = (self._key(b, algo, opts, only), self._parts(b, algo if (only is None or b.id in only) else None, opts, self._near(b)))
+            self.stats["rebuilt"] += 1
+        self.busy = 1.0 - len(self.todo) / max(1, self.n0) if self.todo else 0.0
+        if self.todo:
+            return False
+        self._upload()
+        return True
+
+    def build(self, blds, algo, opts=None, only=None):
+        """All at once (tests)."""
+        self.request(blds, algo, opts, only)
+        while not self.step(10.0):
+            pass
+
+    def _upload(self):
+        blds = self.want[0]
         acc = {}
-        for b in blds.values():
-            lk = b.look(algo)
-            h = float(lk["h"])
-            ring = [tuple(p) for p in b.ring]
-            parts = []
-            proc = bw.photo_facade(ring, h, lk, 0.0) if "cycle" in lk else []
-            tiles = bool(proc)
-            if proc:
-                parts += [(m_, tuple(g)) for m_, *g in proc]
-            else:
-                w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
-                if w:
-                    parts.append((lk["mat"], w))
-            roof = lk.get("roof") if tiles else None
-            if not hasattr(b, "_tri"):
-                try:
-                    b._tri = bw.triangulate(ring, [])
-                except Exception:  # noqa: BLE001
-                    b._tri = ([], [])
-            verts, tri = b._tri
-            proof = bw.photo_roof(ring, h, lk, lk["roofc"], lk["wallc"]) if roof else None
-            if proof:
-                parts += [(m_, tuple(g)) for m_, *g in proof]
-            if proof is not None and roof.get("kind") != "flat":
-                pass
-            elif lk.get("small") and lk.get("pitched", True) and h < 11:
-                parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(b.area) * 0.12, lk["roofc"])))
-            else:
-                fp = bw.flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in lk["roofc"]])
-                if fp:
-                    parts.append((bw.MAT_ROOF, fp))
-            for mat, (pos, uv, col) in parts:
-                pos = np.asarray(pos, np.float32).copy()
-                pos[:, 1] += b.base
+        nv = 0
+        for bid in blds:
+            for mat, pos, uv, col in self.parts.get(bid, (None, []))[1]:
                 e = acc.setdefault(mat, ([], [], []))
-                e[0].append(pos); e[1].append(np.asarray(uv, np.float32)); e[2].append(np.asarray(col, np.uint8))
+                e[0].append(pos); e[1].append(uv); e[2].append(col)
+                nv += len(pos)
         self.free()
+        bw = pg.tools()
         names = {**pg.MATS, bw.MAT_ROOF: "roof", bw.MAT_SOLID: "white", **{m_: k for k, m_ in bw.MAT_SURF.items()}}
         for mat, (P, U, C) in acc.items():
             m = gl3d.make_model(np.concatenate(P), np.concatenate(U), np.concatenate(C))
             if m is not None:
                 gl3d.set_texture(m, self.tex.get(names.get(mat, "A"), self.tex["white"]))
                 self.models.append(m)
+        self.stats.update(verts=nv, blds=len(blds), ms=(time.time() - self.t0) * 1000)
+        self.want = None
+        self.busy = 0.0
 
     def draw(self):
         for m in self.models:
@@ -335,9 +402,62 @@ def _button(x, y, w, h, label, on=False, sz=18):
     return hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)
 
 
+def _hot(x, y, w, h):
+    m = rl.get_mouse_position()
+    return x <= m.x < x + w and y <= m.y < y + h
+
+
+def _toggle(x, y, w, label, val, sz=15, tip=None):
+    """A tick box row -> the (maybe flipped) value."""
+    hot = _hot(x, y, w, 22)
+    if hot:
+        rl.draw_rectangle(x, y, w, 22, rl.Color(60, 36, 62, 255))
+    rl.draw_rectangle_lines(x + 2, y + 3, 16, 16, INK)
+    if val:
+        rl.draw_rectangle(x + 5, y + 6, 10, 10, PINK)
+    font.draw_text(_fit(label, sz, w - 28), x + 24, y + 3, sz, INK if val else DIM)
+    return (not val) if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) else val
+
+
+def _choice(x, y, w, label, options, val, names=None, sz=15, mark=False):
+    """'label: value' button; left click = next option, right click = previous -> the value."""
+    i = options.index(val) if val in options else 0
+    nm = (names or {}).get(options[i], str(options[i]))
+    hot = _hot(x, y, w, 24)
+    rl.draw_rectangle(x, y, w, 24, rl.Color(70, 40, 70, 255) if hot else rl.Color(40, 28, 44, 255))
+    font.draw_text(label, x + 8, y + 4, sz, PINK if mark else DIM)
+    tw = font.measure_text(nm, sz, "cond")
+    font.draw_text(nm, x + w - tw - 10, y + 4, sz, rl.WHITE, bold="cond")
+    if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+        return options[(i + 1) % len(options)]
+    if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_RIGHT):
+        return options[(i - 1) % len(options)]
+    return options[i]
+
+
+def _fit(s, sz, w):
+    while len(s) > 3 and font.measure_text(s, sz) > w:
+        s = s[:-2] + "…" if not s.endswith("…") else s[:-2] + "…"
+    return s
+
+
+def _hms(s):
+    s = int(max(0, s))
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
+
+
+TABS = ["ГРАДИ", "ПОСТАВКИ", "ЕЛЕМЕНТИ", "ПРОБА", "ДНЕВНИК"]
+SHOW = [("relief", "релјеф (испусти / вовлекувања)"), ("windows", "прозорци"), ("frames", "рамки и пречки"),
+        ("blinds", "ролетни"), ("sills", "подпрозорници"), ("balconies", "балкони"), ("ac", "клима уреди"),
+        ("bands", "венци и ленти"), ("ground", "приземје (свој изглед)"), ("steps", "повлечени катови"),
+        ("opp", "спротивен ѕид од видениот"), ("cells", "бои по стан"), ("roofs", "покриви од сликата"),
+        ("roof_extras", "оџаци и кабини"), ("eaves", "стреи")]
+
+
 def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None, test=""):
     """-> 'changed' when the game's choice of buildings changed (the world has to be built again), else None.
     frames / shot: headless test (run that many frames, save the last one)."""
+    import archkit
     folder = folder or ask_folder(music)
     if not folder:
         return None
@@ -361,26 +481,39 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         return None
     splash(f"ФОТОГРАМЕТРИЈА: {len(caps)} снимки, згради околу нив ...")
     blds = pg.load_city(osm_dir, caps)
+    st, op = pg.load_settings(folder)                # engine settings + element switches, kept with the photo folder
     algo_i = 3                                     # ДЕТАЛИ: procedural windows, balconies, AC, roofs, surfaces
     look = True                                     # show the fitted look (else the current one)
-    job = None
+    job, t_job = None, 0.0
     scene = Scene(tex)
     scene.build(blds, None)
-    shown = (None, -1)
+    shown = None
     thumbs, quads = {}, {}
     cache = os.path.join(folder, pg.CACHE)
     os.makedirs(cache, exist_ok=True)
     thumb_q = [c for c in caps if c.exists]          # photo thumbnails load a few per frame: the window is up at once
+    ok_caps = [c for c in caps if c.exists]
     cen = np.mean([[c.x, 0, c.z] for c in caps], 0)
     orb = Orbit(cen)
     sel = next((c for c in caps if c.exists), None)
     show_fr, show_ph, panel_mode, alpha = True, True, 0, 0.55
-    pose_mode = "fast"                              # camera position: fast search (kept in poses.json), full grid, or as the file says
-    for c in caps:                                  # headless test: --test "sel=0043,panel=2,free"
+    tab, scr = 0, [0, 0, 0, 0, 10 ** 9]              # the left panel's tab and each tab's scroll
+    proof = set()                                   # photos ticked for a proof run
+    group = "сè"
+    groups = ["сè"] + sorted({e[3] for e in archkit.ELEMENTS})
+    opt_t = None                                     # an element switch changed: the scene follows a moment later
+    focus = None                                     # full detail round this point (op["lod"] metres), boxes further out
+    status, status_t = (0, True), 0.0
+    for c in caps:                                  # headless test: --test "sel=0043,panel=2,free,tab=2,style=3,proof"
         if c.exists and ("sel=" + c.file[:4]) in test:
             sel = c
     if "panel=" in test:
         panel_mode = int(test.split("panel=")[1][0])
+    if "tab=" in test:
+        tab = int(test.split("tab=")[1][0])
+    if "style=" in test:
+        nm_ = list(archkit.STYLES)[int(test.split("style=")[1].split(",")[0])]
+        op.update(style=nm_, kit=list(archkit.STYLES[nm_]), kit_scope="all")
     if "free" in test and sel is not None:
         orb.free = sel
     if "alpha=" in test:
@@ -390,6 +523,24 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     msg, msg_t = "", 0.0
     changed = False
     n = 0
+
+    def say(s):
+        nonlocal msg, msg_t
+        msg, msg_t = s, time.time()
+
+    def start_job(only=None):
+        nonlocal job, t_job, look
+        pg.save_settings(folder, st, op)
+        job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds), settings=st, only=only)
+        job.start()
+        t_job, look = time.time(), True
+        say(("ПРОБА на " + str(len(only)) + " снимки" if only else "ГРАДЕЊЕ на сите снимки") + f" · {algo} · поставки зачувани")
+
+    def opts_changed():
+        nonlocal opt_t
+        pg.save_settings(folder, st, op)
+        opt_t = time.time()
+
     while not rl.window_should_close():
         n += 1
         if music is not None:
@@ -398,11 +549,14 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         while thumb_q and time.time() - t_q < 0.012:
             c = thumb_q.pop(0)
             p = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
-            if not os.path.exists(p):
-                Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
-            thumbs[c.file] = rl.load_texture(p)
+            try:
+                if not os.path.exists(p):
+                    Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
+                thumbs[c.file] = rl.load_texture(p)
+            except OSError:
+                pass
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        lw, pw = 330, 500                                       # left / right panel widths
+        lw, pw = 390, 500                                       # left / right panel widths
         m = rl.get_mouse_position()
         over_ui = m.x < lw or (sel is not None and m.x > W - pw)
         if rl.is_key_pressed(rl.KEY_ESCAPE):
@@ -412,9 +566,13 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 break
         algo = pg.ALGOS[algo_i][0]
         running = job is not None and not job.done
-        for i, k in enumerate((rl.KEY_ONE, rl.KEY_TWO, rl.KEY_THREE)):
-            if rl.is_key_pressed(k):
+        shift = rl.is_key_down(rl.KEY_LEFT_SHIFT) or rl.is_key_down(rl.KEY_RIGHT_SHIFT)
+        for i, k in enumerate((rl.KEY_ONE, rl.KEY_TWO, rl.KEY_THREE, rl.KEY_FOUR)):
+            if rl.is_key_pressed(k) and i < len(pg.ALGOS):
                 algo_i = i
+        for i, k in enumerate((rl.KEY_F1, rl.KEY_F2, rl.KEY_F3, rl.KEY_F4, rl.KEY_F5)):
+            if rl.is_key_pressed(k):
+                tab = i
         if rl.is_key_pressed(rl.KEY_F):
             show_fr = not show_fr
         if rl.is_key_pressed(rl.KEY_T):
@@ -427,21 +585,23 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             alpha = max(0.0, alpha - 0.1)
         if rl.is_key_pressed(rl.KEY_RIGHT_BRACKET):
             alpha = min(1.0, alpha + 0.1)
-        if rl.is_key_pressed(rl.KEY_TAB) and caps:
-            ok_caps = [c for c in caps if c.exists]
+        if rl.is_key_pressed(rl.KEY_TAB) and ok_caps:
             sel = ok_caps[(ok_caps.index(sel) + 1) % len(ok_caps)] if sel in ok_caps else ok_caps[0]
             orb.t = np.array([sel.x, sel.y, sel.z])
         if sel is not None and rl.is_key_pressed(rl.KEY_V):
             orb.free = None if orb.free is sel else sel
-        start = rl.is_key_pressed(rl.KEY_R)
+        if sel is not None and rl.is_key_pressed(rl.KEY_K):
+            proof ^= {sel.file}
+        if rl.is_key_pressed(rl.KEY_R) and not running:
+            start_job(set(proof) if shift and proof else None)
+        if running and rl.is_key_pressed(rl.KEY_SPACE):
+            job.pause = not job.pause
         orb.update(over_ui)
         cam = orb.cam()
-        # pick a capture: the nearest camera apex / photo centre on screen
+        # pick a capture: the nearest camera apex / photo centre on screen (Shift = tick it for a proof run)
         if not over_ui and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and show_fr:
             best = (24.0, None)
-            for c in caps:
-                if not c.exists:
-                    continue
+            for c in ok_caps:
                 e, pts = _frustum(c)
                 for p in (e, np.mean(pts, 0)):
                     s = rl.get_world_to_screen(_v3(p), cam)
@@ -450,13 +610,23 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                         best = (dd, c)
             if best[1] is not None:
                 sel = best[1]
-        # the meshes follow the job (at most twice a second) and the look switch
-        want = (algo if look else None, (job.version if job else 0) + sum(b.version for b in blds.values()) if look else 0)
-        if want != shown and (n % 30 == 0 or want[0] != shown[0] or not running):
-            scene.build(blds, want[0])
+                if shift:
+                    proof ^= {sel.file}
+        # the meshes follow the job (twice a second), the look switch and the element switches (a slice per frame)
+        lod = op.get("lod", 400.0)
+        if focus is None or math.hypot(orb.t[0] - focus[0], orb.t[2] - focus[1]) > min(lod, 1e6) / 4:
+            focus = (float(orb.t[0]), float(orb.t[2]))
+        want = (algo if look else None, job.version if job else 0, id(job), focus, lod)
+        if opt_t is not None and time.time() - opt_t > 0.25:
+            opt_t, shown = None, None
+        if want != shown and (n % 30 == 0 or want[0] != (shown or (None,))[0] or not running) and opt_t is None:
+            scene.request(blds, want[0], op, None, focus, lod)
             shown = want
+        scene.step(0.02)
         if sel is not None and sel.file in quads and quads[sel.file][1] != (sel.dyaw, sel.dpitch):
             gl3d.free_model(quads.pop(sel.file)[0])
+        if time.time() - status_t > 1.0:                   # the stored job (resume / settings changed), once a second
+            status, status_t = pg.job_status(folder, algo, st), time.time()
         # ---- draw
         rl.begin_drawing()
         rl.clear_background(rl.Color(150, 172, 196, 255))
@@ -474,11 +644,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             for i in range(len(r)):
                 rl.draw_line_3d(rl.Vector3(r[i][0], hh, r[i][1]), rl.Vector3(r[(i + 1) % len(r)][0], hh, r[(i + 1) % len(r)][1]), col)
         if show_fr:
-            for c in caps:
-                if not c.exists:
-                    continue
+            for c in ok_caps:
                 e, pts = _frustum(c)
-                col = rl.YELLOW if c is sel else (rl.Color(255, 120, 200, 255) if c.status else rl.Color(255, 255, 255, 200))
+                col = rl.YELLOW if c is sel else (rl.Color(60, 230, 255, 255) if c.file in proof else
+                                                  (rl.Color(255, 120, 200, 255) if c.status else rl.Color(255, 255, 255, 200)))
                 for p in pts:
                     rl.draw_line_3d(_v3(e), _v3(p), col)
                 for i in range(4):
@@ -498,78 +667,302 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             sh = sw * c.H / c.W
             rl.draw_texture_pro(t, rl.Rectangle(0, 0, t.width, t.height), rl.Rectangle((W - sw) / 2, (H - sh) / 2, sw, sh),
                                 rl.Vector2(0, 0), 0, rl.Color(255, 255, 255, int(255 * alpha)))
-        # ---- left panel: algorithms, actions, progress, log
+        # ---- left panel: tabs
         rl.draw_rectangle(0, 0, lw, H, PANEL)
-        y = 14
-        font.draw_text("ФОТОГРАМЕТРИЈА", 16, y, 30, PINK, bold="cond")
-        y += 40
-        font.draw_text(os.path.basename(folder.rstrip("/\\"))[:34], 16, y, 16, DIM)
-        y += 26
-        font.draw_text("АЛГОРИТАМ (1-3)", 16, y, 18, INK, bold="cond")
-        y += 26
-        for i, (k, name, note) in enumerate(pg.ALGOS):
-            have = sum(1 for b in blds.values() if k in b.fits)
-            if _button(16, y, lw - 32, 30, f"{i + 1}  {name}" + (f"  ({have})" if have else ""), i == algo_i):
-                algo_i = i
-            y += 32
-            if i == algo_i:
-                font.draw_text(note[:44], 20, y, 14, DIM)
-                y += 18
-        y += 8
-        if _button(16, y, lw - 32, 38, "ГРАДИ ПРЕКУ ВЕТЕ (R)" if algo in {k for b in blds.values() for k in b.fits} else "ИЗГРАДИ (R)", running, 22) or start:
+        y = 10
+        font.draw_text("ФОТОГРАМЕТРИЈА", 16, y, 28, PINK, bold="cond")
+        font.draw_text(_fit(os.path.basename(folder.rstrip("/\\")), 14, 150), lw - 166, y + 10, 14, DIM)
+        y += 38
+        tw_ = (lw - 16) // len(TABS)
+        for i, tn in enumerate(TABS):
+            if _button(8 + i * tw_, y, tw_ - 3, 26, tn, i == tab, 13):
+                tab = i
+        y += 34
+        wheel = rl.get_mouse_wheel_move() if m.x < lw else 0.0
+        bottom = H - 118                                         # the always-there progress block starts here
+        changed_res = not status[1]
+        if tab == 0:                                            # ---- build
+            font.draw_text("АЛГОРИТАМ (1-4)", 16, y, 16, INK, bold="cond")
+            y += 22
+            for i, (k, name, note) in enumerate(pg.ALGOS):
+                have = sum(1 for b in blds.values() if k in b.fits)
+                if _button(16, y, lw - 32, 28, f"{i + 1}  {name}" + (f"  ({have})" if have else ""), i == algo_i, 17):
+                    algo_i = i
+                y += 30
+                if i == algo_i:
+                    font.draw_text(_fit(note, 13, lw - 40), 20, y, 13, DIM)
+                    y += 17
+            y += 6
+            hw = (lw - 40) // 2
             if not running:
-                job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds), pose=pose_mode)
-                job.start()
-                look = True
-        y += 46
-        hw = (lw - 40) // 2
-        if running:                                             # pause / stop (stop keeps what is done: fits, neighbours, file)
-            if _button(16, y, hw, 30, "ПРОДОЛЖИ (Space)" if job.pause else "ПАУЗА (Space)", job.pause) or rl.is_key_pressed(rl.KEY_SPACE):
-                job.pause = not job.pause
-            if _button(24 + hw, y, hw, 30, "СТОП" if not job.stop else "ЗАСТАНУВА ...", job.stop):
-                job.stop, job.pause = True, False
-        else:
-            names_ = {"fast": "БРЗО", "full": "ЦЕЛОСНО (бавно)", "file": "ОД ФАЈЛОТ"}
-            if _button(16, y, lw - 32, 30, "ПОЗИЦИЈА НА КАМЕРАТА: " + names_[pose_mode], False, 16):
-                pose_mode = {"fast": "full", "full": "file", "file": "fast"}[pose_mode]
-        y += 36
-        if _button(16, y, (lw - 40) // 2, 30, "ПРИКАЖИ: " + ("ФОТО" if look else "ТЕКОВНИ") + " (G)", look):
-            look = not look
-        if _button(24 + (lw - 40) // 2, y, (lw - 40) // 2, 30, "ПРИМЕНИ ВО ИГРАТА", False):
-            try:
-                pg.apply_to_game(folder, algo, osm_dir)
-                msg, changed = f"photogram.json <- {algo}: важи по следното градење", True
-            except OSError as e:
-                msg = f"нема готов резултат за {algo} ({e.strerror})"
-            msg_t = time.time()
-        y += 36
-        st = pg.enabled(osm_dir)
-        lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ФОТО", False: "ТЕКОВНИ"}[st]
-        if _button(16, y, lw - 32, 30, lab, bool(st)) and st is not None:
-            pg.set_enabled(not st, osm_dir)
-            changed, msg, msg_t = True, "се менува по следното градење на светот", time.time()
-        y += 44
-        if job is not None:
-            rl.draw_rectangle(16, y, lw - 32, 8, rl.Color(60, 50, 64, 255))
-            rl.draw_rectangle(16, y, int((lw - 32) * (1.0 if job.done else job.frac)), 8, PINK)
-            y += 14
-            font.draw_text((job.error or job.step)[:40], 16, y, 16, INK)
+                if _button(16, y, hw, 38, "ИЗГРАДИ СЕ (R)", False, 18):
+                    start_job()
+                if _button(24 + hw, y, hw, 38, f"ПРОБА ({len(proof)}) Shift+R", bool(proof), 16) and proof:
+                    start_job(set(proof))
+            else:
+                if _button(16, y, hw, 38, "ПРОДОЛЖИ (Space)" if job.pause else "ПАУЗА (Space)", job.pause, 16):
+                    job.pause = not job.pause
+                if _button(24 + hw, y, hw, 38, "СТОП (се чува)" if not job.stop else "ЗАСТАНУВА ...", job.stop, 16):
+                    job.stop, job.pause = True, False
+            y += 44
+            nst, same = status
+            if nst:
+                font.draw_text((f"зачувани {nst} снимки: следното градење продолжува" if same else
+                                f"зачувани {nst} снимки, но поставките се сменети: почнува одново"), 16, y, 13,
+                               LOOK_COL["photo"] if same else PINK)
+            else:
+                font.draw_text("нема зачувано: градењето почнува од почеток", 16, y, 13, DIM)
+            y += 18
+            if nst and _button(16, y, lw - 32, 26, "ИСЧИСТИ ЗАЧУВАНО (пресметај сè одново)", False, 14) and not running:
+                pg.clear_job(folder, algo, poses=False)
+                status_t = 0.0
+                say("зачуваните резултати се избришани (позициите на камерите остануваат)")
+            y += 32
+            if _button(16, y, hw, 28, "ПРИКАЖИ: " + ("ФОТО" if look else "ТЕКОВНИ") + " (G)", look, 14):
+                look = not look
+            if _button(24 + hw, y, hw, 28, "ПРИМЕНИ ВО ИГРАТА", False, 14):
+                try:
+                    pg.apply_to_game(folder, algo, osm_dir, op)
+                    say(f"photogram.json <- {algo} + елементи ({len(op['kit'])} во комплетот): важи по следното градење")
+                    changed = True
+                except OSError as e:
+                    say(f"нема готов резултат за {algo} ({e.strerror})")
+            y += 34
+            stg = pg.enabled(osm_dir)
+            lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ФОТО", False: "ТЕКОВНИ"}[stg]
+            if _button(16, y, lw - 32, 28, lab, bool(stg), 14) and stg is not None:
+                pg.set_enabled(not stg, osm_dir)
+                changed = True
+                say("се менува по следното градење на светот")
+            y += 38
+            nphoto = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo")
+            ninf = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "inferred")
+            for ln in (f"згради {len(blds)} · од фото {nphoto} · од соседи {ninf}",
+                       f"снимки {len(ok_caps)} · обработени {sum(1 for c in ok_caps if c.status)} · за проба {len(proof)}",
+                       f"сцена: {scene.stats['verts'] / 1e6:.2f} M темиња, {scene.stats['ms'] / 1000:.1f} с"
+                       + (f" · обновува {int(scene.busy * 100)}%" if scene.want is not None else ""),
+                       f"комплет: {len(op['kit'])} елементи · {op['style']}" + (" · авто" if op["kit_auto"] else "")):
+                font.draw_text(ln, 16, y, 14, INK)
+                y += 19
+            if job is not None:
+                y += 6
+                for ln in job.log_lines[-max(0, (bottom - y) // 16):]:
+                    font.draw_text(_fit(ln, 13, lw - 32), 16, y, 13, DIM)
+                    y += 16
+        elif tab == 1:                                          # ---- engine settings
+            nst, same = status
+            font.draw_text("ПОСТАВКИ НА ПРЕСМЕТКАТА", 16, y, 16, INK, bold="cond")
+            y += 22
+            font.draw_text("* = менува резултати (зачуваното не важи)", 16, y, 13, PINK if changed_res else DIM)
+            y += 20
+            hw3 = (lw - 44) // 3
+            for i, (pn, pv_) in enumerate((("БРЗО", dict(res=8.0, dist=120.0, pose="file", priors=True, sym=True, fuse=False, min_px=3000)),
+                                           ("УРАМНОТЕЖЕНО", dict(res=12.0, dist=200.0, pose="fast", priors=True, sym=True, fuse=True, min_px=1500)),
+                                           ("НАЈДОБРО", dict(res=16.0, dist=300.0, pose="full", priors=True, sym=True, fuse=True, min_px=600)))):
+                cur = all(st.get(k) == v for k, v in pv_.items())
+                if _button(16 + i * (hw3 + 6), y, hw3, 26, pn, cur, 13) and not running:
+                    st.update(pv_)
+                    pg.save_settings(folder, st, op)
+                    status_t = 0.0
+                    say(f"поставки: {pn}")
+            y += 32
+            ncpu = os.cpu_count() or 2
+            rows = [("res", "резолуција на фасадата", [8.0, 10.0, 12.0, 16.0], {8.0: "8 px/м брзо", 10.0: "10 px/м", 12.0: "12 px/м", 16.0: "16 px/м фино"}),
+                    ("dist", "ѕидови до", [80.0, 120.0, 160.0, 200.0, 300.0], {v: f"{v:.0f} м" for v in (80.0, 120.0, 160.0, 200.0, 300.0)}),
+                    ("workers", "процеси", [0, 1, 2, 4, 6, 8, 12, 16], {0: f"авто ({max(1, min(12, ncpu - 1))})", **{v: str(v) for v in (1, 2, 4, 6, 8, 12, 16)}}),
+                    ("pose", "позиција на камерата", ["fast", "full", "file"], {"fast": "брзо барање", "full": "целосна мрежа (бавно)", "file": "од фајлот"}),
+                    ("seg", "сегментација", ["auto", "segformer", "simple"], {"auto": "авто", "segformer": "SegFormer (GPU)", "simple": "едноставна (брза)"}),
+                    ("min_px", "најмалку пиксели на ѕид", [600, 1500, 3000, 6000], {v: str(v) for v in (600, 1500, 3000, 6000)})]
+            for k, lab, opts_, names in rows:
+                v = _choice(16, y, lw - 32, lab + (" *" if k in pg.RESULT_KEYS else ""), opts_, st[k], names, 14, k in pg.RESULT_KEYS and changed_res)
+                if v != st[k] and not running:
+                    st[k] = v
+                    pg.save_settings(folder, st, op)
+                    status_t = 0.0
+                y += 28
+            for k, lab in (("priors", "длабочина од вообичаениот ред (кога не се гледа) *"), ("sym", "симетрија / повторување за невидените колони *"),
+                           ("fuse", "спој ги сите погледи на ѕидот")):
+                v = _toggle(16, y, lw - 32, lab, st[k], 14)
+                if v != st[k] and not running:
+                    st[k] = v
+                    pg.save_settings(folder, st, op)
+                    status_t = 0.0
+                y += 24
+            y += 8
+            font.draw_text((f"зачувани {nst} снимки · " + ("исти поставки: продолжува" if same else "сменети поставки: почнува одново")) if nst
+                           else "нема зачувано", 16, y, 14, LOOK_COL["photo"] if (same and nst) else (PINK if nst else DIM))
+            y += 22
+            hw = (lw - 40) // 2
+            if _button(16, y, hw, 28, "ИСЧИСТИ ЗАЧУВАНО", False, 14) and not running:
+                pg.clear_job(folder, algo, poses=False)
+                status_t = 0.0
+                say("зачуваното е избришано")
+            if _button(24 + hw, y, hw, 28, "+ ПОЗИЦИИ НА КАМЕРИ", False, 14) and not running:
+                pg.clear_job(folder, algo, poses=True)
+                status_t = 0.0
+                say("зачуваното и позициите на камерите се избришани")
+            y += 34
+            if _button(16, y, lw - 32, 28, "ВРАТИ ПОЧЕТНИ ПОСТАВКИ", False, 14) and not running:
+                st = dict(pg.SETTINGS)
+                pg.save_settings(folder, st, op)
+                status_t = 0.0
+            y += 36
+            if running:
+                font.draw_text("за време на градењето поставките се заклучени", 16, y, 13, PINK)
+        elif tab == 2:                                          # ---- elements: what the numbers become (no new fit needed)
+            font.draw_text("ПРИКАЗ (важи веднаш, без ново градење)", 16, y, 15, INK, bold="cond")
+            y += 22
+            cw2 = (lw - 32) // 2
+            for j, (k, lab) in enumerate(SHOW):
+                v = _toggle(16 + (j % 2) * cw2, y + (j // 2) * 22, cw2 - 4, lab, op[k], 13)
+                if v != op[k]:
+                    op[k] = v
+                    opts_changed()
+            y += (len(SHOW) + 1) // 2 * 22 + 6
+            v = _choice(16, y, cw2 - 4, "без слика", ["full", "lite", "none"], op["inferred"], {"full": "сè", "lite": "лесно", "none": "обични"}, 13)
+            if v != op["inferred"]:
+                op["inferred"] = v
+                opts_changed()
+            lods = [150.0, 250.0, 400.0, 700.0, 1e9]
+            v = _choice(16, y + 28, lw - 32, "детали до (подалеку само кутии)", lods, min(lods, key=lambda s_: abs(s_ - op["lod"])),
+                        {v_: (f"{v_:.0f} м" if v_ < 1e8 else "секаде") for v_ in lods}, 13)
+            if v != op["lod"]:
+                op["lod"] = v
+                opts_changed()
+            sats = [0.6, 0.8, 1.0, 1.2, 1.4, 1.7, 2.0]
+            v = _choice(20 + cw2, y, cw2 - 4, "бои", sats, min(sats, key=lambda s_: abs(s_ - op["sat"])), {s_: f"×{s_:.1f}" for s_ in sats}, 13)
+            if abs(v - op["sat"]) > 1e-6:
+                op["sat"] = v
+                opts_changed()
+            y += 58
+            font.draw_text(f"КОМПЛЕТ ЕЛЕМЕНТИ ({len(archkit.ELEMENTS)})", 16, y, 15, INK, bold="cond")
+            y += 22
+            v = _toggle(16, y, cw2 - 4, "комплетот вклучен", op["kit_on"], 13)
+            if v != op["kit_on"]:
+                op["kit_on"] = v
+                opts_changed()
+            v = _toggle(20 + cw2, y, cw2 - 4, "авто од сликата", op["kit_auto"], 13)
+            if v != op["kit_auto"]:
+                op["kit_auto"] = v
+                opts_changed()
             y += 24
-            lines = job.log_lines[-max(4, (H - y - 120) // 17):]
-            for ln in lines:
-                font.draw_text(ln[:46], 16, y, 14, DIM)
+            styles = list(archkit.STYLES)
+            v = _choice(16, y, lw - 32, "стил", styles, op["style"] if op["style"] in styles else styles[0], None, 13)
+            if v != op["style"]:
+                op["style"], op["kit"] = v, list(archkit.STYLES[v])
+                opts_changed()
+            y += 28
+            scopes = ["blocks", "houses", "flat", "photo", "all"] + list(archkit.ARCHETYPES)
+            v = _choice(16, y, cw2 - 4, "на", scopes, op["kit_scope"], {"blocks": "блокови 4+", "houses": "куќи", "flat": "рамни покриви",
+                                                                         "photo": "само од фото", "all": "сите", **archkit.ARCHETYPES}, 13)
+            if v != op["kit_scope"]:
+                op["kit_scope"] = v
+                opts_changed()
+            group = _choice(20 + cw2, y, cw2 - 4, "група", groups, group, None, 13)
+            y += 28
+            items = [e for e in archkit.ELEMENTS if group == "сè" or e[3] == group]
+            font.draw_text(f"избрани {len(op['kit'])} · прикажани {len(items)} · тркало лизга", 16, y, 13, DIM)
+            if _button(lw - 96, y - 2, 80, 20, "ИСЧИСТИ", False, 12) and op["kit"]:
+                op["kit"] = []
+                opts_changed()
+            y += 20
+            rows_ = max(1, (bottom - y) // 21)
+            scr[2] = int(max(0, min(max(0, len(items) - rows_), scr[2] - wheel * 4)))
+            for e in items[scr[2]:scr[2] + rows_]:
+                on_ = e[0] in op["kit"]
+                v = _toggle(16, y, lw - 32, _fit(e[2], 13, lw - 70), on_, 13)
+                if v != on_:
+                    op["kit"] = [i for i in op["kit"] if i != e[0]] + ([e[0]] if v else [])
+                    opts_changed()
+                y += 21
+        elif tab == 3:                                          # ---- proof: tick photos, run only those
+            font.draw_text("ПРОБА НА ИЗБРАНИ СНИМКИ", 16, y, 16, INK, bold="cond")
+            y += 22
+            for ln in ("штиклирај снимки (K / Shift+клик на рамката / тука),", "па ПРОБА: се градат само зградите што тие ги гледаат.",
+                       "Резултатите се чуваат и целото градење ги користи."):
+                font.draw_text(ln, 16, y, 13, DIM)
+                y += 16
+            y += 4
+            hw = (lw - 44) // 3
+            if _button(16, y, hw, 26, "ВИДЛИВИ", False, 13):
+                for c in ok_caps:
+                    s = rl.get_world_to_screen(_v3(c.eye()), cam)
+                    if lw < s.x < W - pw and 0 < s.y < H:
+                        proof.add(c.file)
+            if _button(22 + hw, y, hw, 26, "НЕОБРАБОТЕНИ", False, 13):
+                proof |= {c.file for c in ok_caps if not c.status}
+            if _button(28 + 2 * hw, y, hw, 26, "ИСЧИСТИ", False, 13):
+                proof = set()
+            y += 32
+            if _button(16, y, lw - 32, 34, f"ПРОБАЈ НА {len(proof)} СНИМКИ (Shift+R)", bool(proof), 17) and proof and not running:
+                start_job(set(proof))
+            y += 42
+            rows_ = max(1, (bottom - y) // 21)
+            scr[3] = int(max(0, min(max(0, len(ok_caps) - rows_), scr[3] - wheel * 4)))
+            for c in ok_caps[scr[3]:scr[3] + rows_]:
+                on_ = c.file in proof
+                if c is sel:
+                    rl.draw_rectangle(14, y, lw - 28, 21, rl.Color(80, 70, 20, 255))
+                v = _toggle(16, y, 190, _fit(c.file, 13, 160), on_, 13)
+                if v != on_:
+                    proof ^= {c.file}
+                if _hot(210, y, lw - 226, 21) and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
+                    sel = c
+                    orb.t = np.array([c.x, c.y, c.z])
+                font.draw_text(_fit(c.status or "—", 12, lw - 230), 212, y + 4, 12, LOOK_COL["photo"] if c.status else DIM)
+                y += 21
+        else:                                                   # ---- log + timings
+            font.draw_text("ДНЕВНИК", 16, y, 16, INK, bold="cond")
+            y += 22
+            if job is not None and job.stats:
+                s_ = job.stats
+                tt = sum(s_.get(k, 0.0) for k in ("colour", "pose", "walls", "analyse")) or 1.0
+                font.draw_text(f"нови {s_.get('fresh', 0)} · од зачуваното {s_.get('stored', 0)} · сегментација {s_.get('seg', 0.0):.1f} с"
+                               + (f" · вкупно {s_['total']:.1f} с" if "total" in s_ else ""), 16, y, 13, INK)
                 y += 17
-        nphoto = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo")
-        ninf = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "inferred")
-        font.draw_text(f"згради {len(blds)}  ·  од фото {nphoto}  ·  од соседи {ninf}", 16, H - 70, 15, INK)
-        font.draw_text("десно влечи вртење · средно/Shift поместување · тркало зум", 16, H - 48, 13, DIM)
-        font.draw_text("WASD/QE · F рамки · T слики · V од камерата · Tab · Esc", 16, H - 30, 13, DIM)
+                x_ = 16
+                for k, nm_ in (("colour", "боја"), ("pose", "камера"), ("walls", "ѕидови"), ("analyse", "анализа")):
+                    v_ = s_.get(k, 0.0)
+                    wbar = int((lw - 32) * v_ / tt)
+                    rl.draw_rectangle(x_, y, max(1, wbar), 12, {"colour": rl.Color(230, 200, 60, 255), "pose": PINK, "walls": rl.Color(90, 170, 255, 255),
+                                                               "analyse": LOOK_COL["photo"]}[k])
+                    x_ += wbar
+                y += 15
+                font.draw_text("  ".join(f"{nm_} {s_.get(k, 0.0):.1f} с" for k, nm_ in (("colour", "боја"), ("pose", "камера"), ("walls", "ѕидови"),
+                                                                                        ("analyse", "анализа"))) + "  (процесорско време)", 16, y, 12, DIM)
+                y += 18
+            lines = job.log_lines if job is not None else []
+            rows_ = max(1, (bottom - y) // 15)
+            follow = scr[4] >= max(0, len(lines) - rows_) - 1
+            scr[4] = int(max(0, min(max(0, len(lines) - rows_), scr[4] - wheel * 5)))
+            if follow and not wheel:
+                scr[4] = max(0, len(lines) - rows_)
+            for ln in lines[scr[4]:scr[4] + rows_]:
+                font.draw_text(_fit(ln, 12, lw - 30), 14, y, 12, DIM)
+                y += 15
+            if not lines:
+                font.draw_text("уште нема градење во оваа сесија", 16, y, 13, DIM)
+        # ---- always: progress, ETA, keys
+        y = bottom + 6
+        if job is not None:
+            frac = 1.0 if job.done else job.frac
+            rl.draw_rectangle(16, y, lw - 32, 10, rl.Color(60, 50, 64, 255))
+            rl.draw_rectangle(16, y, int((lw - 32) * frac), 10, PINK if not job.error else rl.RED)
+            el = (time.time() - t_job) if not job.done else job.stats.get("total", 0.0)
+            eta = el * (1 - frac) / frac if 0.02 < frac < 1 and not job.pause else None
+            font.draw_text(f"{int(frac * 100)}%  · {_hms(el)}" + (f" · остануваат ~{_hms(eta)}" if eta else "")
+                           + (" · ПРОБА" if job.only else ""), 16, y + 14, 13, INK)
+            font.draw_text(_fit(job.error or job.step, 14, lw - 32), 16, y + 32, 14, rl.RED if job.error else INK)
+        if scene.want is not None:
+            rl.draw_rectangle(16, y + 52, int((lw - 32) * scene.busy), 4, LOOK_COL["inferred"])
+        font.draw_text("десно влечи · средно/Shift поместување · тркало зум · WASD/QE", 16, H - 46, 12, DIM)
+        font.draw_text("F рамки · T слики · V камера · K проба · R гради · F1-F5 табови", 16, H - 28, 12, DIM)
         # ---- right panel: the picked capture
         if sel is not None:
             x0 = W - pw
             rl.draw_rectangle(x0, 0, pw, H, PANEL)
             yy = 14
-            font.draw_text(sel.file[:44], x0 + 10, yy, 16, PINK, bold="cond")
+            font.draw_text(sel.file[:44] + ("  [ПРОБА]" if sel.file in proof else ""), x0 + 10, yy, 16, PINK, bold="cond")
             yy += 22
             font.draw_text(f"зграда {sel.bid}  ·  {sel.yaw:.0f}° / {sel.pitch:+.0f}° / fov {sel.fov:.0f}°"
                            + (f"  ·  поправка {sel.dyaw:+.1f}° {sel.dpitch:+.1f}°" if sel.dyaw or sel.dpitch else ""), x0 + 10, yy, 14, DIM)
@@ -629,8 +1022,21 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     wc = lk.get("wallc")
                     if wc:
                         rl.draw_rectangle(x0 + pw - 34, yy - 18, 20, 14, rl.Color(int(wc[0]), int(wc[1]), int(wc[2]), 255))
-            yy += 6
-            font.draw_text("M прикажи · V застани во камерата · [ ] провидност", x0 + 10, H - 30, 13, DIM)
+                f = b.fits.get(algo)
+                if f and algo == "detail":                       # what was measured for this building, in words
+                    rf = f.get("roof") or {}
+                    ws = f.get("walls") or []
+                    pr_ = f.get("params") or []
+                    for ln in (f"покрив: {rf.get('kind', '—')}" + (f", {rf.get('rise', 0):.1f} м" if rf.get("rise") else "")
+                               + f", оџаци {len(rf.get('chim', []))}, кабини {len(rf.get('hous', []))}, стреа {rf.get('eave', 0):.2f} м",
+                               f"видени ѕидови {len(ws)}, колони {len(pr_)}, површина {f.get('surf', '?')}",
+                               f"балкони {sum(1 for q in pr_ if q.get('balc'))}, ролетни {sum(1 for q in pr_ if q.get('blind'))}, "
+                               f"клими {sum(len(q.get('ac', [])) for q in pr_)}",
+                               f"тип: {archkit.ARCHETYPES[archkit.archetype(dict(f, h=lk['h']))]}",
+                               "комплет: " + _fit(", ".join(archkit.BY_ID[i][2].split(':')[0] for i in archkit.kit_ids(dict(f, h=lk['h']), op)) or "—", 13, pw - 90)):
+                        font.draw_text(ln, x0 + 10, yy, 13, INK)
+                        yy += 17
+            font.draw_text("M прикажи · V застани во камерата · [ ] провидност · K проба", x0 + 10, H - 30, 13, DIM)
         if time.time() - msg_t < 4:
             tw = font.measure_text(msg, 20)
             rl.draw_rectangle((W - tw) // 2 - 12, H - 60, tw + 24, 34, rl.Color(0, 0, 0, 200))
@@ -640,9 +1046,11 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.end_drawing()
         if frames is not None:
             if n == 3 and job is None:
-                job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds), seg=os.environ.get("SK242_SEG", "auto"))
-                job.start()
-            if job is not None and job.done and frames > 0:
+                if "proof" in test and sel is not None:
+                    proof = {sel.file}
+                st["seg"] = os.environ.get("SK242_SEG", st["seg"])
+                start_job(set(proof) if proof else None)
+            if job is not None and job.done and scene.want is None and frames > 0:
                 frames -= 1
             if frames == 0 or (job is not None and job.done and frames <= 0):
                 if shot:

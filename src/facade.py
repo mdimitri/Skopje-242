@@ -13,6 +13,7 @@ import numpy as np
 L_BUILDING, L_SKY = 1, 2
 LUM = np.array([.3, .59, .11])
 RES = 12.0                                  # facade resampling for the detail analysis (pixels per metre)
+OPT = {"priors": True, "sym": True}         # photogram.SETTINGS switches that act here
 TILE_PPM = 16.0                             # the in-memory column medians (pixels per metre)
 
 
@@ -374,13 +375,15 @@ def analyse(o, levels=0.0, log=None):
             px = rgb[k0:k1, a0:a1][B[k0:k1, a0:a1]]
             if len(px) > 20 and np.abs(np.median(px, 0) - wall_c).sum() > 25:
                 cd[i] += 0.25                                     # a pilaster / fin of its own colour
-    if not steps and len(cols) >= 3:          # no side face seen (a frontal view): the usual Skopje block order as the prior
+    dsrc = "steps" if steps else "none"
+    if not steps and len(cols) >= 3 and OPT["priors"]:          # no side face seen (a frontal view): the usual Skopje block order as the prior
         win_ = [params[c[2]]["win"] is not None if c[2] >= 0 else True for c in cols]
         stk = [c[2] >= 0 and (params[c[2]]["balc"] is not None or params[c[2]]["rec"] > 0.5) for c in cols]
         wid = [c[1] - c[0] for c in cols]
         if not win_[0] and not win_[-1] and wid[0] >= 1.5 and wid[-1] >= 1.5 and all(win_[1:-1]):
             cd[0] += 1.2                          # blank end walls of wings that stand out past the windowed middle
             cd[-1] += 1.2
+            dsrc = "prior"
         else:                                     # a balcony / loggia stack between plain window columns sits back
             i = 0
             while i < len(cols):
@@ -392,13 +395,14 @@ def analyse(o, levels=0.0, log=None):
                     e += 1
                 if i > 0 and e < len(cols) and 2.0 <= cols[e - 1][1] - cols[i][0] <= 0.6 * o.ln:
                     cd[i:e] -= 1.2
+                    dsrc = "prior"
                 i = e
     if len(cols):
         wts = {}
         for i, c in enumerate(cols):
             wts[round(cd[i], 1)] = wts.get(round(cd[i], 1), 0) + c[1] - c[0]
         cd = np.clip(cd - max(wts, key=wts.get), -3.0, 3.0)
-    sym, nfill = complete(cols, params, cd)
+    sym, nfill = complete(cols, params, cd) if OPT["sym"] else ({"axis": None, "ms": 0.0, "per": 0, "ps": 0.0, "broken": 0}, 0)
     for c in cols:
         if c[2] < 0:
             c[2] = next(cc[2] for cc in cols if cc[2] >= 0)
@@ -434,7 +438,7 @@ def analyse(o, levels=0.0, log=None):
             "top": round(h_top, 2), "walltop": round(walltop, 2), "top_seen": round(float(seen_top), 2),
             "fh": round(fh, 3), "pv": round(float(pv), 3), "bw": round(bw, 3), "cols": cols, "params": params, "cells": cells,
             "surf": surf, "rough": round(rough, 2), "bands": bands, "gf": gf, "rp": rps, "sym": sym,
-            "cam": [round(uc, 2), round(dn, 2), round(ey, 2)],
+            "cam": [round(uc, 2), round(dn, 2), round(ey, 2)], "dsrc": dsrc,
             "wall": [int(v) for v in wall_c], "shade": round(float(o.shade), 3),
             "roofc": [int(v) for v in np.median(roof_px, 0)] if roof_px else None}
 
@@ -714,3 +718,48 @@ def complete(cols, params, cd):
         cd[i] = cd[src]
         nf += 1
     return sym, nf
+
+
+def fuse(base, others, log=None):
+    """One wall seen by several photos -> one facade: the best view (own capture, most pixels) is the base; columns it did not
+    see take the look of the view that saw them (same wall coordinates: every view is rectified onto the same wall plane);
+    measured depth (side faces) beats prior depth; the clearest roof line (most sky over it) wins; bands and the ground storey
+    come from any view that found them."""
+    f = dict(base)
+    f["params"] = list(base["params"])
+    f["cols"] = [list(c) for c in base["cols"]]
+    filled = 0
+
+    def col_at(g, u):
+        return next((c for c in g["cols"] if c[0] <= u < c[1] and c[3] > 0), None)
+    for c in f["cols"]:
+        if c[3] > 0:
+            continue
+        u = (c[0] + c[1]) / 2
+        for g in others:
+            k = col_at(g, u)
+            if k is not None:
+                f["params"].append(g["params"][k[2]])
+                c[2], c[3] = len(f["params"]) - 1, k[3]
+                filled += 1
+                break
+    dep = next((g for g in others if g.get("dsrc") == "steps"), None) if base.get("dsrc") != "steps" else None
+    if dep is not None:
+        for c in f["cols"]:
+            k = next((k for k in dep["cols"] if k[0] <= (c[0] + c[1]) / 2 < k[1]), None)
+            if k is not None and len(k) > 5 and len(c) > 5:
+                c[5] = k[5]
+        f["dsrc"] = "steps"
+    top = max([base] + others, key=lambda g: g["top_seen"])
+    if top is not base and top["top_seen"] > base["top_seen"] + 0.2:
+        for k in ("secs", "rp", "top", "walltop", "top_seen", "roofc"):
+            f[k] = top.get(k)
+    if not f.get("bands"):
+        f["bands"] = next((g["bands"] for g in others if g.get("bands")), [])
+    if not f.get("gf"):
+        f["gf"] = next((g["gf"] for g in others if g.get("gf")), None)
+    f["views"] = 1 + len(others)
+    if log:
+        log(f"    ѕид {base['wi']}: {1 + len(others)} погледи споени: {filled} колони од други снимки"
+            + (", длабочина од друга снимка" if dep is not None else "") + (", покрив од друга снимка" if top is not base else ""))
+    return f
