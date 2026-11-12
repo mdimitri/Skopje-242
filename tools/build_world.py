@@ -1148,20 +1148,20 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 bl = p.get("blind")
                 if bl and not glassy:                                          # blind / roller shutter, down from the top
                     yb = wy1 - bl[0] * (wy1 - wy0)
-                    paint([P(wx0, yb, gd + 0.03), P(wx1, yb, gd + 0.03), P(wx1, wy1, gd + 0.03), P(wx0, wy1, gd + 0.03)], bl[1:], 0.97)
+                    paint([P(wx0, yb, gd + 0.04), P(wx1, yb, gd + 0.04), P(wx1, wy1, gd + 0.04), P(wx0, wy1, gd + 0.04)], bl[1:], 0.97)
                 if full:
                     fc = p.get("frame") or (236, 236, 232)
-                    fw, fd = 0.06, gd + 0.04
+                    fw, fd = 0.06, gd + 0.07                              # glass, blind, frame, bars: 3 cm apart (no flicker far off)
                     for (x0_, x1_, y0_, y1_) in ((wx0, wx0 + fw, wy0, wy1), (wx1 - fw, wx1, wy0, wy1),
                                                  (wx0, wx1, wy0, wy0 + fw), (wx0, wx1, wy1 - fw, wy1)):
                         paint([P(x0_, y0_, fd), P(x1_, y0_, fd), P(x1_, y1_, fd), P(x0_, y1_, fd)], fc)
                     nm = 1 if glassy else int(p.get("mull", 0))
                     for m_ in range(1, nm + 1):                                 # glazing bars
                         xm = wx0 + (wx1 - wx0) * m_ / (nm + 1)
-                        paint([P(xm - 0.025, wy0, fd), P(xm + 0.025, wy0, fd), P(xm + 0.025, wy1, fd), P(xm - 0.025, wy1, fd)], fc)
+                        paint([P(xm - 0.025, wy0, fd + 0.02), P(xm + 0.025, wy0, fd + 0.02), P(xm + 0.025, wy1, fd + 0.02), P(xm - 0.025, wy1, fd + 0.02)], fc)
                     if wy1 - wy0 > 1.6:                                          # transom of a tall (door) opening
                         yt = wy0 + (wy1 - wy0) * 0.72
-                        paint([P(wx0, yt - 0.025, fd), P(wx1, yt - 0.025, fd), P(wx1, yt + 0.025, fd), P(wx0, yt + 0.025, fd)], fc)
+                        paint([P(wx0, yt - 0.025, fd + 0.02), P(wx1, yt - 0.025, fd + 0.02), P(wx1, yt + 0.025, fd + 0.02), P(wx0, yt + 0.025, fd + 0.02)], fc)
                     if p.get("sill") and not glassy:
                         cx, cz = a + t_ * (wx0 + wx1) / 2 + N(0.03)
                         put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
@@ -1171,8 +1171,8 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                         yb_ = y0 + cy - ah / 2
                         put_box(MG, cx, cz, aw, 0.35, ah, yb_, [c * lit / PAINT_BASE for c in cc], yaw)
                         gr = ah * 0.32
-                        paint([P(cu - gr - aw * 0.12, yb_ + ah / 2 - gr, 0.355), P(cu + gr - aw * 0.12, yb_ + ah / 2 - gr, 0.355),
-                               P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.355), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.355)], (58, 60, 62))
+                        paint([P(cu - gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38), P(cu + gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38),
+                               P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38)], (58, 60, 62))
                 bc = p.get("balc")
                 if bc and not glassy:                                           # balcony: slab + parapet or railing
                     dep, rc_, solid = bc[0], bc[1:4], (bc[4] if len(bc) > 4 else 1) or not full
@@ -1184,7 +1184,7 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                         put_box(MG, ox, oz, bw_, 0.08, 0.92, y0 + 0.16, [c * lit / PAINT_BASE for c in rc_], yaw)
                         for su in (u0 + (cw - bw_) / 2 + 0.04, u1 - (cw - bw_) / 2 - 0.04):
                             sx_, sz_ = a + t_ * su + N(dep / 2)
-                            put_box(MG, sx_, sz_, 0.08, dep, 0.92, y0 + 0.16, [c * lit * 0.94 / PAINT_BASE for c in rc_], yaw)
+                            put_box(MG, sx_, sz_, 0.08, dep - 0.1, 0.9, y0 + 0.16, [c * lit * 0.94 / PAINT_BASE for c in rc_], yaw)
                     else:
                         ox, oz = a + t_ * (u0 + u1) / 2 + N(dep - 0.03)
                         put_box(MG, ox, oz, bw_, 0.06, 0.06, y0 + 1.0, [c * lit / PAINT_BASE for c in rc_], yaw)
@@ -1227,7 +1227,8 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                     put(MS, [P(u0, y, inner), P(u1, y, inner), P(u1, y, outer), P(u0, y, outer)], [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
                         [c * 1.05 / base for c in wallc])
                 else:
-                    put(MS, [P(u0, y, outer), P(u1, y, outer), P(u1, y, inner), P(u0, y, inner)], [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
+                    ys = y - 0.05 if bi + 1 == len(cuts) - 1 else y         # under the roof slab, not in its plane
+                    put(MS, [P(u0, ys, outer), P(u1, ys, outer), P(u1, ys, inner), P(u0, ys, inner)], [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
                         [c * 0.55 / base for c in wallc])
         # ---- horizontal elements: plinth, string courses, cornice (following the columns' depths)
         for kind_, by0, by1, dep, *bc in bands:
@@ -1236,7 +1237,7 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             bi = max(0, min(len(cuts) - 2, sum(1 for c_ in cuts[1:-1] if c_ <= by0)))
             for ci, (u0, u1, *_r) in enumerate(cols):
                 cx, cz = a + t_ * (u0 + u1) / 2 + nrm * (Dg[ci][bi] + dep / 2)
-                put_box(MG, cx, cz, u1 - u0 + 0.02, dep, by1 - by0 if kind_ != "plinth" else by1 - y_bot, by0 if kind_ != "plinth" else y_bot,
+                put_box(MG, cx, cz, u1 - u0, dep, by1 - by0 if kind_ != "plinth" else by1 - y_bot, by0 if kind_ != "plinth" else y_bot,
                         [c * lit / PAINT_BASE for c in bc], yaw)
         if gf and gf.get("pil"):                                         # arcade pillars on the line of the wall above
             for pu in gf["pil"]:

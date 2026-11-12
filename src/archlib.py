@@ -364,9 +364,9 @@ def roof_mesh(ring, y0, spec, roofc, wallc, triangulate=None):
             tri = [(t[m][0], ys[m], t[m][1]) for m in range(3)]
             _tri(rpos, rcol, *tri, roofc)
             under.append(tri)
-    if eave > 0:                                                 # the overhang's underside, in shade
-        for tri in under:
-            _tri(rpos, rcol, *tri, [c * 0.6 for c in roofc], up=False)
+    if eave > 0:                                                 # the overhang's underside, in shade (a roof board below the top:
+        for tri in under:                                        # never in the top's own plane, or the two flicker)
+            _tri(rpos, rcol, *[(x, y - 0.08, z) for x, y, z in tri], [c * 0.6 for c in roofc], up=False)
     H = (lambda P: _height(np.atleast_2d(P), pl, capy)) if convex else \
         (lambda P: y0 + np.minimum(k * _seg_dist(np.atleast_2d(P), r) * np.where(_inside(np.atleast_2d(P), r), 1.0, -1.0),
                                    cap if cap is not None else 1e9))

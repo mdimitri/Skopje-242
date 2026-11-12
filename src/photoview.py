@@ -29,10 +29,7 @@ LABEL_RGB = np.array([[120, 120, 120], [230, 200, 60], [90, 170, 255], [40, 200,
 
 
 def _has_manifest(d):
-    try:
-        return any(f.lower().endswith((".csv", ".csf")) for f in os.listdir(d))
-    except OSError:
-        return False
+    return os.path.isfile(os.path.join(d, "manifest.csv"))        # one stat, not a listing of every subfolder
 
 
 def _subdirs(d):
@@ -53,7 +50,11 @@ def ask_folder(music=None):
     if not os.path.isdir(cur):
         cur = os.path.join(ROOT, "Photogrametry") if os.path.isdir(os.path.join(ROOT, "Photogrametry")) else ROOT
     cur = os.path.abspath(cur)
-    drives = [f"{c}:\\" for c in "CDEFGHIJKLMNOPQRSTUVWXYZ" if os.name == "nt" and os.path.exists(f"{c}:\\")]
+    drives = []
+    if os.name == "nt":                     # the drive bitmask: probing letters stalls on network / card-reader drives
+        import ctypes
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        drives = [f"{c}:\\" for i, c in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ") if mask >> i & 1 and c not in "AB"]
     typed, editing = cur, False
     listing, scroll, sel, t_open = None, 0, 0, time.time()
     while not rl.window_should_close():
@@ -64,7 +65,7 @@ def ask_folder(music=None):
             marks = {n for n in listing[1:] if _has_manifest(os.path.join(cur, n))}
             here = _has_manifest(cur)
             try:
-                n_img = sum(1 for f in os.listdir(cur) if f.lower().endswith((".png", ".jpg", ".jpeg")))
+                n_img = sum(1 for e in os.scandir(cur) if e.name.lower().endswith((".png", ".jpg", ".jpeg")))
             except OSError:
                 n_img = 0
             scroll, sel, typed = 0, 0, cur
@@ -369,13 +370,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     thumbs, quads = {}, {}
     cache = os.path.join(folder, pg.CACHE)
     os.makedirs(cache, exist_ok=True)
-    for c in caps:
-        if not c.exists:
-            continue
-        p = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
-        if not os.path.exists(p):
-            Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
-        thumbs[c.file] = rl.load_texture(p)
+    thumb_q = [c for c in caps if c.exists]          # photo thumbnails load a few per frame: the window is up at once
     cen = np.mean([[c.x, 0, c.z] for c in caps], 0)
     orb = Orbit(cen)
     sel = next((c for c in caps if c.exists), None)
@@ -399,6 +394,13 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         n += 1
         if music is not None:
             music.update()
+        t_q = time.time()
+        while thumb_q and time.time() - t_q < 0.012:
+            c = thumb_q.pop(0)
+            p = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
+            if not os.path.exists(p):
+                Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
+            thumbs[c.file] = rl.load_texture(p)
         W, H = rl.get_screen_width(), rl.get_screen_height()
         lw, pw = 330, 500                                       # left / right panel widths
         m = rl.get_mouse_position()
