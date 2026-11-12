@@ -74,6 +74,52 @@ class Selfie:
         rect = (wk.x - VIEW, wk.y - VIEW, wk.x + VIEW, wk.y + VIEW)
         return cam, rect
 
+    def _walls(self, world):
+        """Building walls with their roof height, in 16 m cells (made once per world)."""
+        g = getattr(world, "_cam_walls", None)
+        if g is None:
+            g = {}
+            for b in world.buildings:
+                ring = b["ring"]
+                top = world.th(*ring[0]) + b.get("h", 8.0)
+                for i in range(len(ring)):
+                    (ax, ay), (bx, by) = ring[i], ring[(i + 1) % len(ring)]
+                    for cx in range(int(min(ax, bx) // 16), int(max(ax, bx) // 16) + 1):
+                        for cy in range(int(min(ay, by) // 16), int(max(ay, by) // 16) + 1):
+                            g.setdefault((cx, cy), []).append((ax, ay, bx, by, top))
+            world._cam_walls = g
+        return g
+
+    def clip(self, world, f, p):
+        """Fraction (0..1) of the way from the focus f=(x, y, z) to the wanted camera p that is free of buildings and trees / posts.
+        Three parallel rays (centre and 0.6 m either side) so the lens keeps clear of corners; the camera sits 0.7 m short of a hit."""
+        walls, solids = self._walls(world), world.pgrid
+        fx, fy, fz = f
+        dx, dy, dz = p[0] - fx, p[1] - fy, p[2] - fz
+        L = math.hypot(dx, dy)
+        if L < 1e-6:
+            return 1.0
+        nx, ny = -dy / L, dx / L
+        best = 1.0
+        for off in (0.0, 0.4, -0.4, 0.8, -0.8):
+            ox, oy = fx + nx * off, fy + ny * off
+            for cx in range(int(min(ox, ox + dx) // 16), int(max(ox, ox + dx) // 16) + 1):
+                for cy in range(int(min(oy, oy + dy) // 16), int(max(oy, oy + dy) // 16) + 1):
+                    for ax, ay, bx, by, top in walls.get((cx, cy), ()):
+                        ex, ey = bx - ax, by - ay
+                        den = dx * ey - dy * ex
+                        if abs(den) < 1e-9:
+                            continue
+                        t = ((ax - ox) * ey - (ay - oy) * ex) / den
+                        u = ((ax - ox) * dy - (ay - oy) * dx) / den
+                        if 0.0 <= t < best and 0.0 <= u <= 1.0 and fz + dz * t < top + 0.5:
+                            best = t
+                    for x, y, r, lo, hi in solids.get((cx, cy), ()):
+                        t = max(0.0, min(1.0, ((x - ox) * dx + (y - oy) * dy) / (L * L)))
+                        if t < best and math.hypot(ox + dx * t - x, oy + dy * t - y) < r + 0.35 and lo - 0.3 < fz + dz * t < hi + 0.3:
+                            best = max(0.0, t - r / L)
+        return max(0.0, best - 0.5 / L)
+
     def chase(self, sim, world, dt):
         """Debug street-level chase camera: slightly behind and above the avatar (or car), looking where it faces."""
         o = sim.car if sim.mode == "car" else sim.walker
@@ -89,7 +135,16 @@ class Selfie:
         lift = max(-lp, 0.0) * 30.0                     # mouse up: the camera tilts up towards the sky
         px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
         self.yaw = h
-        cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
+        fz_ = az + 1.2
+        want = (px, pz, az + up)
+        s = self.clip(world, (o.x, o.y, fz_), want)
+        cs = getattr(self, "cs_", 1.0)
+        cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)       # shrinks at once (never inside a wall), eases back out
+        self.cs_ = cs
+        cs = max(cs, 0.04)
+        px, pz = o.x + (px - o.x) * cs, o.y + (pz - o.y) * cs
+        cy_ = fz_ + (az + up - fz_) * cs + (1.0 - cs) * 3.5     # pulled in: also higher, looking down at the avatar
+        cam = rl.Camera3D(V3(px, cy_, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
         f = VIEW * 2.25                                    # drawn out to the low-quality ring
         return cam, (o.x - f, o.y - f, o.x + f, o.y + f)
