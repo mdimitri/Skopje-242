@@ -266,6 +266,7 @@ class Renderer:
         return m
 
     trailer_m = None
+    trailer_ax = None
 
     def _audit3d(self, cars, trailers, peds):
         """SK242_AUDIT3D=1 test harness: read the depth buffer (world drawn, people and cars not yet) and measure how far each
@@ -349,11 +350,11 @@ class Renderer:
         mat.shader.id, mat.shader.locs = old_id, old_locs
         m.transform = old[0]
 
-    def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll, tgz=None, tpitch=None, troll=None):
+    def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll, tgz=None, tpitch=None, troll=None, ckey=None):
         """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th.
         tgz / tpitch / troll: the trailer's own pose at the kingpin (actors.ride), else the tractor's."""
         hx, hy = x + math.cos(h) * vehicles.SEMI_HITCH, y + math.sin(h) * vehicles.SEMI_HITCH
-        out.append((hx, hy, th, gy if tgz is None else tgz, pitch if tpitch is None else tpitch, roll if troll is None else troll))
+        out.append((hx, hy, th, gy if tgz is None else tgz, pitch if tpitch is None else tpitch, roll if troll is None else troll, ckey))
         if self._near(x, y):
             return
         sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, vehicles.DIMS[vehicles.SEMI][1] / 2, 70, gy, vehicles.DIMS[vehicles.SEMI][4]))
@@ -742,7 +743,7 @@ class Renderer:
             if self._in(c.x, c.y, rect):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color, id(c), c.v))
                 if c.kind == vehicles.SEMI:
-                    self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll, c.tgz, c.tpitch, c.troll)
+                    self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll, c.tgz, c.tpitch, c.troll, id(c))
                 elif not self._near(c.x, c.y):
                     sh.append((c.x, c.y, c.h, vehicles.DIMS[c.kind][0] / 2, vehicles.DIMS[c.kind][1] / 2, 70, c.gz, vehicles.DIMS[c.kind][4]))
         for b in sim.bodies:
@@ -761,7 +762,7 @@ class Renderer:
                 if b.door > 0.01:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
-                    self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll, getattr(b, "tgz", None), getattr(b, "tpitch", None), getattr(b, "troll", None))
+                    self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll, getattr(b, "tgz", None), getattr(b, "tpitch", None), getattr(b, "troll", None), id(b))
                 elif not self._near(b.x, b.y):
                     sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80, gy, vehicles.DIMS[b.kind][4]))
         # peds
@@ -859,24 +860,32 @@ class Renderer:
         if self.shadows:
             self._shadow_batch(sh)
         fr = self.frustum
-        if trailers:
-            if self.trailer_m is None:
-                self.trailer_m = gl3d.trailer_model()
-            tm = self.trailer_m
-            old = _keep(tm.transform)
-            for x, z, h, gy, pitch, roll in trailers:
-                tm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
-                                                                     rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
-                rl.draw_model(tm, V3(0, 0, 0), 1.0, WHITE)
-                if self._near(x, z):
-                    self._proj_shadow(tm, tm.transform, gy, 70)
-            tm.transform = old[0]
         now_ = time.perf_counter()
         sdt_ = min(0.1, now_ - getattr(self, "_spin_t", now_))
         self._spin_t = now_
         spin_ = getattr(self, "_spin", None)
         if spin_ is None or len(spin_) > 800:
             spin_ = self._spin = {}
+        if trailers:
+            if self.trailer_m is None:
+                self.trailer_m = gl3d.trailer_model()
+            tm = self.trailer_m
+            old = _keep(tm.transform)
+            if self.trailer_ax is None:
+                self.trailer_ax = gl3d.trailer_axles()
+            tax, trr, twm = self.trailer_ax
+            for x, z, h, gy, pitch, roll, tkey in trailers:
+                tm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
+                                                                     rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+                rl.draw_model(tm, V3(0, 0, 0), 1.0, WHITE)
+                if self._near(x, z):
+                    self._proj_shadow(tm, tm.transform, gy, 70)
+                Mt, old_w = tm.transform, _keep(twm.transform)
+                for axx in tax:                              # trailer wheels roll with the tractor's
+                    twm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-spin_.get(tkey, 0.0)), rl.matrix_translate(axx, trr, 0.0)), Mt)
+                    rl.draw_model(twm, V3(0, 0, 0), 1.0, WHITE)
+                twm.transform = old_w[0]
+            tm.transform = old[0]
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col, ckey, cspd in cars:
             if m is None:
                 continue
@@ -900,18 +909,18 @@ class Renderer:
             m.transform = old[0]
             fw = self.front_wheels.get(kind)
             if fw is None:
-                fw = self.front_wheels[kind] = gl3d.front_wheel(kind) if kind not in vehicles.BIKES else (0, 0, 0, None)
+                fw = self.front_wheels[kind] = gl3d.front_wheel(kind)
             wx, wr, hz, wm = fw
             if wm is None:
                 continue
             old = _keep(wm.transform)
             sp_ = spin_[ckey] = (spin_.get(ckey, 0.0) + cspd * sdt_ / max(0.1, wr)) % 6.2831853       # rolled distance / radius: the rim turns
-            for sd in (-hz, hz):                             # front wheels turned about their own centres by the steering angle
+            for sd in ((-hz, hz) if hz else (0.0,)):                             # front wheels turned about their own centres by the steering angle
                 wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang)),
                                                                      rl.matrix_translate(wx, wr, sd)), M)
                 rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
             wm.transform = old[0]
-            if kind not in vehicles.BIKES:                   # the other axles: one model per axle, spun about its own centre
+            if True:                                         # the other axles: one model per axle, spun about its own centre
                 ra = self.rear_axle_models.get(kind)
                 if ra is None:
                     ra = self.rear_axle_models[kind] = gl3d.rear_axles(kind)

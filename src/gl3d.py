@@ -486,6 +486,8 @@ for _n, _e in (("Zastava Yugo", "boxy"), ("Golf Dvojka", "boxy"), ("Lada Niva", 
 def _shape_body(v, kind, st, L, W, y0, belt, cx, cl):
     """Bend the lower-body box into the real car's silhouette: sloping bonnet / boot lid, rounded corners."""
     era = _ERA.get(_ERA_OF.get(V.IDS[kind]))
+    if era is None and st == "bus":                      # buses: rounded plan corners and a slightly shorter, rounded nose / tail
+        era = (0.0, 0.0, 1.3)
     if era is None:
         return v
     hood, trunk, rnd = era[0], era[1], era[2]
@@ -647,11 +649,25 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
             col = (40, 130, 70)
         if ex == "tanker":
             col = (196, 200, 208)
-        if ex == "mixer":                                                  # rotating drum, built from stepped boxes
-            for i, (dx, sh, wd) in enumerate(((0.0, 1.5, 1.1), (0.6, 1.8, 1.7), (1.4, 2.0, 2.0), (2.2, 1.8, 1.7), (2.8, 1.4, 1.2))):
-                xx = xb + 0.5 + dx * 0.95
-                box(xx, belt, 0, 1.0, sh, W * 0.9 * wd / 2.0 + 0.2, (236, 140, 40) if i % 2 == 0 else (210, 120, 30))
-            quad((xb + 0.6, belt + 2.05, -0.5), (3.0, 0, 0), (0, 0, 1.0), (0, 1, 0), (240, 240, 240))
+        if ex == "mixer":                                                  # drum: a revolved, rear-high cone-cylinder with a spiral stripe
+            u_r = ((0.0, 0.55), (0.12, 0.88), (0.35, 0.95), (0.65, 0.95), (0.88, 0.7), (1.0, 0.3))
+            xa, xz = xb + 0.25, x1 - 0.25
+            n = 14
+            ring = lambda u, r: [(xa + (xz - xa) * (1 - u), belt + 1.15 + 0.2 * u + r * math.cos(2 * math.pi * k / n), r * math.sin(2 * math.pi * k / n) * 1.0) for k in range(n)]
+            rings = [ring(1 - u, r) for u, r in u_r]
+            for i in range(len(rings) - 1):
+                for k in range(n):
+                    k2 = (k + 1) % n
+                    a, b, c2, d = rings[i][k], rings[i + 1][k], rings[i + 1][k2], rings[i][k2]
+                    mid = np.array([(a[j] + c2[j]) / 2 for j in range(3)], np.float32)
+                    nn = np.array((0.0, mid[1] - (belt + 1.2), mid[2]), np.float32)
+                    nn /= max(1e-6, float(np.linalg.norm(nn)))
+                    stripe = (k + i) % 4 == 0
+                    cc = np.array((240, 240, 238) if stripe else (236, 140, 40), np.float32) * _shade(nn)
+                    v = np.array([a, b, c2, a, c2, d], np.float32)
+                    parts.append((v, np.tile(cc, (6, 1)), True))
+            box(xb + 0.5, belt + 0.55, 0, 1.0, 1.0, W * 0.6, (60, 62, 66))        # drum frame / hopper
+            box(xz - 0.15, belt + 0.05, 0, 0.5, 0.7, W * 0.7, (200, 120, 36))      # drum support behind the cab
         else:
             from_h = top_h - belt if ex != "fire" else 1.5
             for name, (v, n) in box_faces(cgx, belt, 0, cgl, from_h, W * 0.96, 6, 3, 3).items():
@@ -676,6 +692,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
         return
     if st == "tractor":
         box(xf - 0.8, belt + 0.5, 0, 0.12, 1.0, 0.12, (30, 30, 34))        # exhaust
+        for s_ in (-1, 1):                                                  # rear mudguards over the big wheels, a step below them
+            box(-L * 0.28, 1.78, s_ * (W / 2 - 0.12), 1.5, 0.07, 0.5, tuple(body_c * 0.9))
         for s in (-1, 1):
             box(xf + 0.02, belt - 0.2, s * 0.4, 0.06, 0.2, 0.25, (255, 244, 180))
         return
@@ -741,14 +759,15 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
         box(cx - 2.0, roof, 0, 1.6, 0.25, 1.4, (190, 192, 196))
 
 
-def _bike_parts(ex, body_c, A, box, quad, parts):
+def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
     """Two-wheelers (x forward, y up, z right), no rider. ex = bike | moped | scooter | kick."""
     dark, steel, tyre, hub = (36, 36, 40), (150, 152, 158), A((24, 24, 26)), A((170, 170, 176))
     bc = tuple(body_c)
 
     def wheel(x, r, wd):
-        v, c = _cyl(x, r, 0.0, r, wd, tyre, hub)
-        parts.append((v, c, False))
+        if bake:                                                  # else the renderer draws them spinning (bike_wheels)
+            v, c = _cyl(x, r, 0.0, r, wd, tyre, hub)
+            parts.append((v, c, False))
 
     if ex == "bike":
         wheel(0.62, 0.34, 0.05)
@@ -813,9 +832,25 @@ def _wheel_layout(st, L, name=None):
             "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, r, 0.26), (-L * 0.31, r, 0.26)])
 
 
+_BIKE_WHEELS = {"bike": (0.62, 0.34, 0.05), "kick": (0.46, 0.14, 0.05), "moped": (0.68, 0.27, 0.1), "scooter": (0.68, 0.24, 0.1)}
+
+
+def _bike_wheel_model(kind):
+    """(axle x of the front wheel, radius, model of one spokeless-looking wheel at the origin) for a two-wheeler."""
+    x, r, wd = _BIKE_WHEELS[V.EXTRA[kind % V.N]]
+    v, c = _cyl(0.0, 0.0, 0.0, r, wd, np.array((24, 24, 26), np.float32), np.array((170, 170, 176), np.float32))
+    rgba = np.empty((len(v), 4), np.uint8)
+    rgba[:, :3] = np.clip(c, 0, 255)
+    rgba[:, 3] = 255
+    return x, r, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+
+
 def front_wheel(kind):
     """(axle x, track half-width z, wheel model with its centre at the origin) of a car's front wheels, which the renderer
     turns by the steering angle (car_arrays(steer_wheels=True) leaves them out of the body)."""
+    if V.STYLE[kind % V.N] == "bike":
+        x, r, m = _bike_wheel_model(kind)
+        return x, r, 0.0, m
     L, W = V.DIMS[kind % V.N][:2]
     semi = V.EXTRA[kind % V.N] == "semi"
     wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
@@ -831,6 +866,9 @@ def rear_axles(kind):
     """[(axle x, radius, track half-width z, model of that axle's wheel pair with its centre at the origin)] of every axle behind the
     front one; the renderer spins them (steer_wheels=True models leave all wheels out of the body)."""
     kind %= V.N
+    if V.STYLE[kind] == "bike":
+        x, r, m = _bike_wheel_model(kind)
+        return [(-x, r, 0.0, m)]
     L, W = V.DIMS[kind][:2]
     semi = V.EXTRA[kind] == "semi"
     name = V.IDS[kind]
@@ -917,7 +955,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
             (parts if lst is None else lst).append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), deform))
 
     if st == "bike":
-        _bike_parts(ex, body_c, A, box, quad, parts)
+        _bike_parts(ex, body_c, A, box, quad, parts, not steer_wheels)
         return _finish_arrays(parts, dents, burnt, belt)
     if st in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
         return _loft_arrays(kind, color, dents, burnt, player, steer_wheels, (L, W, y0, belt, roof, st, ex), (body_c, accent, two, rng),
@@ -1045,6 +1083,9 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
                     quad((dx, y0 + 0.08, zz + 0.004), (1.1, 0, 0), (0, (1.8 if dd else roof - y0 - 0.5), 0), (0, 0, 1), (58, 72, 96), 1, 2)
         mx = cx + cl / 2 - 0.12
         box(mx, belt + 0.18, s * (W / 2 + 0.08), 0.1, 0.1, 0.16, (40, 40, 44))      # mirrors
+        if st == "bus":                                                              # big arm-mounted rear-view mirrors
+            box(mx - 0.1, belt + 0.55, s * (W / 2 + 0.22), 0.05, 0.42, 0.22, (30, 30, 34))
+            box(mx - 0.1, belt + 0.2, s * (W / 2 + 0.12), 0.05, 0.05, 0.22, (30, 30, 34))
     if st == "pickup":
         bx0 = cx - cl / 2 - 0.02
         quad((xb + 0.05, belt + 0.004, -W / 2 + 0.06), (bx0 - xb - 0.05, 0, 0), (0, 0, W - 0.12), (0, 1, 0), (46, 44, 42), 2, 2)
@@ -1123,7 +1164,7 @@ def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, pa
     return _finish_arrays(parts, dents, burnt, belt)
 
 
-def trailer_arrays():
+def trailer_arrays(wheels=True):
     """Semi trailer, origin at the kingpin, extending towards -x; hinged to the tractor's fifth wheel by the renderer."""
     A = lambda c: np.array(c, np.float32)
     parts = []
@@ -1150,7 +1191,7 @@ def trailer_arrays():
     quad((-T + 0.3 - 0.01, y0 + 0.1, -W / 2 + 0.05), (0, 0, W - 0.1), (0, top - y0 - 0.2, 0), (-1, 0, 0), (200, 202, 208))  # rear doors
     quad((-T + 0.3 - 0.012, y0 + 0.1, -0.015), (0, 0, 0.03), (0, top - y0 - 0.2, 0), (-1, 0, 0), (60, 62, 68))
     box(-T + 0.2, 0.62, 0, 0.1, 0.12, W * 0.92, (60, 62, 68))                         # underride bar
-    for ax in (-T + 1.4, -T + 2.6, -T + 3.8):                                         # tri-axle
+    for ax in ((-T + 1.4, -T + 2.6, -T + 3.8) if wheels else ()):                    # tri-axle (the renderer spins them otherwise)
         for sd in (-1, 1):
             v, c = _cyl(ax, 0.5, sd * (W / 2 - 0.02), 0.5, 0.3, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), sd)
             parts.append((v, c, False))
@@ -1158,8 +1199,24 @@ def trailer_arrays():
 
 
 def trailer_model():
-    pos, uv, col = trailer_arrays()
+    pos, uv, col = trailer_arrays(False)
     return make_model(pos, uv, col)
+
+
+def trailer_axles():
+    """([axle x from the kingpin], radius, model of one axle's wheel pair at the origin) of the semi trailer."""
+    A = lambda c: np.array(c, np.float32)
+    T, W = V.SEMI_TRAILER_L, 2.55
+    vs, cs = [], []
+    for sd in (-1, 1):
+        v, c = _cyl(0.0, 0.0, sd * (W / 2 - 0.02), 0.5, 0.3, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), sd)
+        vs.append(v)
+        cs.append(c)
+    v, c = np.concatenate(vs), np.concatenate(cs)
+    rgba = np.empty((len(v), 4), np.uint8)
+    rgba[:, :3] = np.clip(c, 0, 255)
+    rgba[:, 3] = 255
+    return (-T + 1.4, -T + 2.6, -T + 3.8), 0.5, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
 
 
 def _finish_arrays(parts, dents, burnt, belt):
