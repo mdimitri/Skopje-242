@@ -7,6 +7,7 @@ import numpy as np
 
 SR = 22050
 _R = np.random.default_rng(242)
+MODE_DECAY = 0.5                                  # ring time of struck objects relative to the written decays (long ringing = 'tin can')
 
 
 # ------------------------------------------------------------------ toolkit
@@ -53,8 +54,10 @@ def modal(t, modes, t0=0.0):
     """Struck object: sum of decaying sinusoids, modes = [(Hz, decay s, amp)]."""
     tt = np.maximum(t - t0, 0)
     y = np.zeros_like(t)
-    for f, d, a in modes:
-        y += a * np.sin(2 * np.pi * f * tt + _R.uniform(0, 6.28)) * np.exp(-tt / d)
+    for f, d, a in modes:                                                    # real objects: modes die faster, are slightly detuned and wobble in level; highs are weaker
+        f = f * _R.uniform(0.97, 1.03)
+        wob = 1 + 0.25 * np.sin(2 * np.pi * _R.uniform(3, 11) * tt + _R.uniform(0, 6.28))
+        y += a / (1 + f / 1400.0) * wob * np.sin(2 * np.pi * f * tt + _R.uniform(0, 6.28)) * np.exp(-tt / (d * MODE_DECAY))
     return y * (t >= t0) * np.minimum(1.0, tt / 0.0008)
 
 
@@ -463,7 +466,16 @@ def build():
     # ---- animals and birds
     S.update(_animals())
     S.update(_birds())
+    for k in list(S):                                                       # body: add low end and roll off the harsh 4-8 kHz of everything that is not meant to be a clean tone
+        if not k.startswith(TONAL):
+            x = S[k].astype(np.float64)
+            hi = 4200.0 if k.startswith(("crash_glass", "glass_bottle", "bell", "clock", "scooter")) else 3200.0
+            x = filt(x, hi=hi, order=1) + 0.7 * filt(x, hi=260.0, order=2)
+            S[k] = norm(x)
     return S
+
+
+TONAL = ("horn", "siren", "train_horn", "car_alarm", "truck_reverse", "fuel_warning", "whistle", "bird_", "ui_", "denied", "hum", "street_lamp", "power_", "neon", "crane", "bee_", "fly_", "weapon_pickup", "cat_", "sheep", "donkey", "horse", "baby", "dog_", "frog", "rat_")
 
 
 def _SIREN():
