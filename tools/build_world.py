@@ -22,6 +22,7 @@ from geo import HX, HY, project
 from progress import Bar, each, phase, spread, flat, frac, span
 import par
 import terrain as terrain_mod
+import arch as arch_mod
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = 66
@@ -1770,6 +1771,9 @@ def _bld_job(job):
         adds.append((m, pos, uv, col))
 
     binf = (key, cxm, cym, base, h, 0.5 * max(ring[:, 0].max() - ring[:, 0].min(), ring[:, 1].max() - ring[:, 1].min()))
+    if (fit or {}).get("arch"):                                       # Porta Macedonia: the arch mesh replaces walls and roof
+        badd(MAT_SOLID, *arch_mod.arch_mesh(fit["arch"], box, shade))
+        return binf, adds
     photo = photo_on(fit)                                             # procedural facade from the photos' numbers (ДЕТАЛИ fit)
     roof_fit = (fit or {}).get("roof") if photo else None
     if photo:
@@ -1914,6 +1918,8 @@ def main():
     mesh = MeshAcc()
 
     # ---- buildings (+ their 3D meshes) -------------------------------------------------------
+    passages = [geom_pts(e) for e in elements if e.get("type") == "way" and e.get("tags", {}).get("tunnel") == "building_passage"
+                and e.get("tags", {}).get("highway")]
     buildings = []
     pending = []                      # mesh emission waits until the river bed is carved into the terrain
     for el in each([e for e in elements if "building" in e.get("tags", {}) and e["tags"].get("building") != "no"],
@@ -1935,6 +1941,19 @@ def main():
                     outer = outer[::-1]
                 verts, tri = triangulate(outer, holes)
                 if not tri:
+                    continue
+                if arch_mod.is_arch(t):                    # Porta Macedonia: a triumphal arch with an open passage (tools/arch.py)
+                    frame = arch_mod.arch_frame(outer, passages)
+                    for pier in arch_mod.arch_piers(frame):
+                        pv, pt_ = triangulate(pier, [])
+                        pxs, pys = [p[0] for p in pier], [p[1] for p in pier]
+                        buildings.append({"ring": pier, "v": pv, "tri": pt_, "h": arch_mod.H, "bb": (min(pxs), min(pys), max(pxs), max(pys)),
+                                          "area": abs(shoelace(pier))})
+                        od.polygon(cells(pier), fill=255)
+                        bd.polygon(cells(pier), fill=255)
+                    bb = (min(p[0] for p in outer), min(p[1] for p in outer), max(p[0] for p in outer), max(p[1] for p in outer))
+                    pending.append((chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), MAT_SOLID, outer, holes, verts, tri, arch_mod.H,
+                                    (232, 228, 216), (232, 228, 216), ar, False, [], {"arch": frame}))
                     continue
                 h, roofc, wallc, mat, small = bld_style(t, ar, outer, r)
                 fit = photo_fit.get(el["id"])             # the photo-fitted look (src/photogram.py), when --src has photogram.json
