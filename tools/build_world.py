@@ -1959,7 +1959,7 @@ def main():
                     pending.append((chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), MAT_SOLID, outer, holes, verts, tri, arch_mod.H,
                                     (232, 228, 216), (232, 228, 216), ar, False, [], {"arch": frame}))
                     continue
-                ws = worship.kind(t) and worship.build(worship.kind(t), outer, t)
+                ws = worship.kind(t, el["id"]) and worship.build(worship.kind(t, el["id"]), outer, t)
                 if ws:                                     # church / mosque / türbe model (tools/worship.py), never photo-fitted to a box
                     wh = worship.height(ws)
                     xs, ys = [p[0] for p in outer], [p[1] for p in outer]
@@ -1967,6 +1967,13 @@ def main():
                     buildings.append({"ring": outer, "v": verts, "tri": tri, "h": wh, "bb": bb, "area": ar})
                     od.polygon(cells(outer), fill=255)
                     bd.polygon(cells(outer), fill=255)
+                    for sr, sh_ in worship.solids(ws):     # minaret bases stand outside the footprint: solid too
+                        sv, st_ = triangulate(sr, [])
+                        sxs, sys_ = [p[0] for p in sr], [p[1] for p in sr]
+                        buildings.append({"ring": sr, "v": sv, "tri": st_, "h": sh_, "bb": (min(sxs), min(sys_), max(sxs), max(sys_)),
+                                          "area": abs(shoelace(sr))})
+                        od.polygon(cells(sr), fill=255)
+                        bd.polygon(cells(sr), fill=255)
                     pending.append((chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), MAT_SOLID, outer, holes, verts, tri, wh,
                                     (230, 220, 200), (176, 90, 60), ar, False, [], {"worship": ws}))
                     continue
