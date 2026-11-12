@@ -193,11 +193,53 @@ class Out:
                 _TICK[0](k_ / max(1, len(self.d)))
             pos = np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)])      # pre: blocks from the pool workers
             c = np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])
+            if deck is None:
+                pos, c = _drop_covered_pavement(pos, c)
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
             elif self.T is not None:
                 pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
             add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
+
+
+def _drop_covered_pavement(pos, col, G=0.2):
+    """Pavement-top triangles (all vertices at SW_H) that lie completely inside earlier pavement triangles are drawn
+    twice at the same height: drop them (z-fighting, extra polygons).  Raster test on a G-metre grid per chunk."""
+    n = len(pos) // 3
+    if n < 2:
+        return pos, col
+    t = pos.reshape(n, 3, 3)
+    top = np.nonzero(np.all(np.abs(t[:, :, 1] - SW_H) < 1e-6, axis=1))[0]
+    if len(top) < 2:
+        return pos, col
+    x0, z0 = float(t[top][:, :, 0].min()) - 1.0, float(t[top][:, :, 2].min()) - 1.0
+    W = int((float(t[top][:, :, 0].max()) - x0) / G) + 3
+    H = int((float(t[top][:, :, 2].max()) - z0) / G) + 3
+    if W * H > 4_000_000:
+        return pos, col
+    grid = np.zeros((H, W), bool)
+    keep = np.ones(n, bool)
+    for k in top:
+        a, b, c3 = [((t[k, j, 0] - x0) / G, (t[k, j, 2] - z0) / G) for j in range(3)]
+        mx0, mx1 = int(min(a[0], b[0], c3[0])), int(max(a[0], b[0], c3[0])) + 1
+        my0, my1 = int(min(a[1], b[1], c3[1])), int(max(a[1], b[1], c3[1])) + 1
+        gx, gy = np.meshgrid(np.arange(mx0, mx1 + 1) + 0.5, np.arange(my0, my1 + 1) + 0.5)
+        d = (b[1] - c3[1]) * (a[0] - c3[0]) + (c3[0] - b[0]) * (a[1] - c3[1])
+        if abs(d) < 1e-9:
+            keep[k] = False                                 # degenerate sliver
+            continue
+        l1 = ((b[1] - c3[1]) * (gx - c3[0]) + (c3[0] - b[0]) * (gy - c3[1])) / d
+        l2 = ((c3[1] - a[1]) * (gx - c3[0]) + (a[0] - c3[0]) * (gy - c3[1])) / d
+        m = (l1 > 0.12) & (l2 > 0.12) & (1 - l1 - l2 > 0.12)         # interior cells only (shared borders do not count)
+        if not m.any():
+            continue
+        sub = grid[my0:my1 + 1, mx0:mx1 + 1]
+        if np.all(sub[m]):
+            keep[k] = False
+        else:
+            sub |= m
+    ki = np.repeat(keep, 3)
+    return pos[ki], col[ki]
 
 
 def _strip(out, L, R, y, col, shade=TOP):
