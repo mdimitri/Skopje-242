@@ -1,5 +1,6 @@
 """3D drawing: ground chunk quads, streamed building/tree meshes, cars with dents, pedestrians, pickups, shadows."""
 import math
+import time
 import os
 
 import numpy as np
@@ -706,7 +707,7 @@ class Renderer:
         cars, doors, trailers = [], [], []
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect):
-                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color))
+                cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color, id(c), c.v))
                 if c.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll)
                 elif not self._near(c.x, c.y):
@@ -723,7 +724,7 @@ class Renderer:
                     self.log(f"[vanish] player car not drawn: model {m is not None} own {b.model is not None} dirty {b.dirty} "
                              f"kind {b.kind} colour {b.color} y {gy}")
                 cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll, b.kind, b.wheel,
-                             b.color if b.model is None and b.color >= 0 and not b.exploded else None))
+                             b.color if b.model is None and b.color >= 0 and not b.exploded else None, id(b), math.hypot(b.vx, b.vy)))
                 if b.door > 0.01:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
@@ -851,7 +852,13 @@ class Renderer:
                 if self._near(x, z):
                     self._proj_shadow(tm, tm.transform, gy, 70)
             tm.transform = old[0]
-        for x, z, h, m, tint, gy, pitch, roll, kind, ang, col in cars:
+        now_ = time.perf_counter()
+        sdt_ = min(0.1, now_ - getattr(self, "_spin_t", now_))
+        self._spin_t = now_
+        spin_ = getattr(self, "_spin", None)
+        if spin_ is None or len(spin_) > 800:
+            spin_ = self._spin = {}
+        for x, z, h, m, tint, gy, pitch, roll, kind, ang, col, ckey, cspd in cars:
             if m is None:
                 continue
             M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
@@ -879,8 +886,10 @@ class Renderer:
             if wm is None:
                 continue
             old = _keep(wm.transform)
+            sp_ = spin_[ckey] = (spin_.get(ckey, 0.0) + cspd * sdt_ / max(0.1, wr)) % 6.2831853       # rolled distance / radius: the rim turns
             for sd in (-hz, hz):                             # front wheels turned about their own centres by the steering angle
-                wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_y(-ang), rl.matrix_translate(wx, wr, sd)), M)
+                wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang)),
+                                                                     rl.matrix_translate(wx, wr, sd)), M)
                 rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
             wm.transform = old[0]
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge

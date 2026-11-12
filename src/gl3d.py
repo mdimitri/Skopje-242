@@ -505,23 +505,29 @@ def _shape_body(v, kind, st, L, W, y0, belt, cx, cl):
     return v
 
 
-def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12):
-    """Wheel with its axis along z. Returns (verts, colours)."""
+def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12, rim=(6, 0.62, 0.58)):
+    """Wheel with its axis along z. Returns (verts, colours).  rim = (spokes, dark share of the gaps, hub radius / tyre radius): the
+    wheel face is a fan of 2 x spokes wedges alternating bright / dark, so a turning wheel visibly turns for no extra triangles."""
     vs, cs = [], []
+    za, zb = cz - wd / 2, cz + wd / 2
     for i in range(sides):
         a0, a1 = 2 * math.pi * i / sides, 2 * math.pi * (i + 1) / sides
         p0 = (cx + R * math.cos(a0), cy + R * math.sin(a0))
         p1 = (cx + R * math.cos(a1), cy + R * math.sin(a1))
         am = (a0 + a1) / 2
         sh = 0.55 + 0.5 * max(0.0, math.cos(am) * 0.4 + math.sin(am) * 0.9)
-        za, zb = cz - wd / 2, cz + wd / 2
         vs += [(p0[0], p0[1], za), (p1[0], p1[1], za), (p1[0], p1[1], zb), (p0[0], p0[1], za), (p1[0], p1[1], zb), (p0[0], p0[1], zb)]
         cs += [tyre * sh] * 6
-        for z, c, r in ((za, tyre * 0.8, R), (zb, tyre * 0.8, R), (zb + 0.012, hub, R * 0.58), (za - 0.012, hub, R * 0.58)):
-            q0 = (cx + r * math.cos(a0), cy + r * math.sin(a0))
-            q1 = (cx + r * math.cos(a1), cy + r * math.sin(a1))
-            vs += [(cx, cy, z), (q0[0], q0[1], z), (q1[0], q1[1], z)]
-            cs += [c] * 3
+        for z in (za, zb):                                                 # tyre sidewalls
+            vs += [(cx, cy, z), p0 + (z,), p1 + (z,)]
+            cs += [tyre * 0.8] * 3
+    ns, dk, rf = rim
+    r = R * rf
+    for z in (zb + 0.012, za - 0.012):                                     # the wheel face
+        for k in range(2 * ns):
+            a0, a1 = math.pi * k / ns, math.pi * (k + 1) / ns
+            vs += [(cx, cy, z), (cx + r * math.cos(a0), cy + r * math.sin(a0), z), (cx + r * math.cos(a1), cy + r * math.sin(a1), z)]
+            cs += [hub if k % 2 == 0 else hub * dk] * 3
     return np.array(vs, np.float32), np.array(cs, np.float32)
 
 
@@ -764,7 +770,7 @@ def front_wheel(kind):
     semi = V.EXTRA[kind % V.N] == "semi"
     wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
     wx += V.SEMI_SHIFT if semi else 0.0
-    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 8)
+    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 12, carbody.layout(V.IDS[kind % V.N], L)["rim"] if carbody.has(V.IDS[kind % V.N]) else (5, 0.55, 0.58))
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
@@ -1037,7 +1043,7 @@ def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, pa
         if steer_wheels and wi == 0:
             continue
         for s in (-1, 1):
-            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16)
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16, lay["rim"])
             parts.append((v, c, False))
     return _finish_arrays(parts, dents, burnt, belt)
 
