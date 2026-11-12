@@ -814,6 +814,50 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
             box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
 
 
+def _heli_parts(body_c, A, box, quad, parts):
+    """Medical helicopter (x forward, y up, z right), rotors left out (see rotor_model): white, red stripe and cross."""
+    wh, red, dark, glass = (238, 238, 242), (200, 32, 36), (50, 52, 58), (60, 90, 120)
+    box(0.9, 0.7, 0, 3.4, 1.7, 1.9, wh)                        # cabin
+    box(2.9, 0.7, 0, 1.4, 1.2, 1.6, wh)                        # nose
+    box(2.1, 1.3, 0, 0.1, 0.9, 1.65, glass)                   # windscreen band
+    box(2.95, 1.2, 0, 0.1, 0.7, 1.4, glass)
+    box(-1.2, 1.35, 0, 1.6, 0.9, 1.5, wh)                      # engine hump
+    box(-4.4, 1.6, 0, 5.2, 0.45, 0.4, wh)                      # tail boom
+    box(-6.8, 1.9, 0, 0.5, 1.3, 0.12, red)                     # fin
+    box(-6.5, 1.5, 0, 0.9, 0.12, 1.1, wh)                      # tailplane
+    box(-1.0, 2.2, 0, 0.3, 0.5, 0.3, dark)                     # rotor mast
+    for sd in (-1, 1):
+        box(0.4, 0.05, sd * 0.95, 4.2, 0.08, 0.1, dark)        # skid
+        box(1.4, 0.35, sd * 0.95, 0.1, 0.65, 0.1, dark)
+        box(-0.6, 0.35, sd * 0.95, 0.1, 0.65, 0.1, dark)
+        zs = sd * 0.96
+        quad((-0.8, 0.95, zs), (3.4, 0, 0), (0, 0.22, 0), (0, 0, sd), red)           # stripe
+        quad((0.0, 1.45, zs + sd * 0.01), (0.9, 0, 0), (0, 0.2, 0), (0, 0, sd), red)    # cross, bar 1
+        quad((0.35, 1.2, zs + sd * 0.01), (0.2, 0, 0), (0, 0.7, 0), (0, 0, sd), red)    # cross, bar 2
+    box(-1.2, 0.7, 0, 0.2, 0.2, 1.0, (250, 230, 120))          # beacon-ish lamp
+    box(3.6, 0.7, 0, 0.1, 0.18, 0.18, (255, 244, 180))         # landing light
+
+
+def rotor_model(kind, tail=False):
+    """Spinning blades of the helicopter: main rotor about y at the mast, or the tail rotor about z."""
+    A = lambda c: np.array(c, np.float32)
+    parts = []
+    def box(cx_, cy_, cz_, sx, sy, sz, col):
+        for name, (v, n) in box_faces(cx_, cy_, cz_, sx, sy, sz).items():
+            parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1)), False))
+    if tail:
+        box(0, 0, 0, 0.1, 1.5, 0.05, (40, 40, 44))
+    else:
+        box(0, 0, 0, 9.6, 0.04, 0.28, (40, 40, 44))
+        box(0, 0, 0, 0.28, 0.04, 9.6, (40, 40, 44))
+    pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
+    col = np.concatenate([p[1] for p in parts])
+    rgba = np.empty((len(pos), 4), np.uint8)
+    rgba[:, :3] = np.clip(col, 0, 255)
+    rgba[:, 3] = 255
+    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+
+
 _TYRE_R = {"mini": 0.27, "hatch": 0.30, "sedan": 0.31, "taxi": 0.31, "wagon": 0.31, "limo": 0.33, "van": 0.34,
            "suv": 0.38, "pickup": 0.38}
 
@@ -957,6 +1001,9 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
     if st == "bike":
         _bike_parts(ex, body_c, A, box, quad, parts, not steer_wheels)
         return _finish_arrays(parts, dents, burnt, belt)
+    if st == "heli":
+        _heli_parts(body_c, A, box, quad, parts)
+        return _finish_arrays(parts, dents, burnt, 1.0)
     if st in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
         return _loft_arrays(kind, color, dents, burnt, player, steer_wheels, (L, W, y0, belt, roof, st, ex), (body_c, accent, two, rng),
                             parts, A, quad, box)

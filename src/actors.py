@@ -90,6 +90,8 @@ class Body:
         self.roll = 0.0
         self.ignite = 0.0            # 0..1: heat soaked up from burning neighbours (1 -> catches fire)
         self.fire_lvl = 1.0          # flames left (the fire brigade brings it down to 0)
+        self.rotor = 0.0             # helicopter: main rotor angle (rad)
+        self.rpm = 0.0               # helicopter: rotor speed 0..1 (spins up while someone sits in it)
         self.door = 0.0              # driver's door: 0 shut .. 1 wide open (carjack animation, drawn by the renderer)
 
     @property
@@ -354,6 +356,50 @@ def ride(b, s, x, y, h, dt, rate=9.0, dp=0.0, dr=0.0):
         b.tpitch = math.asin(max(-0.5, min(0.5, q)))
         b.tgz, b.troll = hk, b.roll
     return gz
+
+
+HELI_PADS = [   # (lat, lon, name): hospital helipads, one medical helicopter each (Sim._make_helis)
+    (41.9885, 21.4240, "Клинички центар Мајка Тереза"), (41.9927, 21.4343, "Градска болница 8 Септември"),
+    (42.0041, 21.4034, "Клиничка болница Жан Митрев"), (42.0140, 21.4045, "Аџибадем Систина"), (41.9902, 21.4047, "Детска болница Козле")]
+
+
+def fly(p, inp, dt, w):
+    """Helicopter: W/S speed, A/D turn, Space climb, Shift descend. Unpiloted ones settle onto the ground."""
+    VMAX, ACC, STEER, _G, _M = vehicles.PERF[p.kind]
+    ground = w.ground_y(p.x, p.y)
+    if p.az is None:
+        p.az, p.vz = ground, 0.0
+    pilot = p.player_car and inp is not None and p.alive
+    p.rpm += ((1.0 if pilot else 0.0) - p.rpm) * min(1.0, 0.7 * dt)
+    p.rotor = (p.rotor + p.rpm * 38.0 * dt) % 6.2831853
+    alt = p.az - ground
+    lift = pilot and p.rpm > 0.85
+    want = 0.0
+    if lift:
+        want = 7.0 * ((1 if inp.get("handbrake") else 0) - (1 if inp.get("run") else 0))
+    elif alt > 0.05:
+        want = -4.0                                             # autorotates down
+    p.vz += (want - p.vz) * min(1.0, 2.0 * dt)
+    p.az += p.vz * dt
+    if p.az <= ground:
+        p.az, p.vz = ground, 0.0
+    alt = p.az - ground
+    fx, fy = math.cos(p.h), math.sin(p.h)
+    vf = p.vx * fx + p.vy * fy
+    thr = inp.get("throttle", 0) if lift else 0.0
+    steer = inp.get("steer", 0) if lift else 0.0
+    if alt > 0.5:
+        vf += (thr * VMAX - vf) * min(1.0, (ACC / VMAX) * 1.5 * dt) if thr else -vf * min(1.0, 0.6 * dt)
+        p.h += steer * 1.1 * dt
+        p.steer += (steer - p.steer) * min(1.0, 5 * dt)
+    else:
+        vf *= math.exp(-3.0 * dt)
+    p.vx, p.vy = math.cos(p.h) * vf, math.sin(p.h) * vf
+    p.x += p.vx * dt
+    p.y += p.vy * dt
+    p.pitch += (-0.22 * vf / VMAX - p.pitch) * min(1.0, 3 * dt)
+    p.roll += (p.steer * 0.3 * min(1.0, abs(vf) / 20.0) - p.roll) * min(1.0, 3 * dt)
+    p.air = alt > 0.5
 
 
 def settle(b, w, dt, ev=None):
@@ -2333,12 +2379,27 @@ class Sim:
         self.kiosks = []                  # (x, y, heading)
         self._make_pickups()
         self._make_kiosks()
+        self._make_helis()
         for _ in range(n_cars * 6):
             if len(self.traffic.cars) < n_cars:
                 self.traffic.spawn(sx, sy, 60, 330)
         for _ in range(n_peds * 6):
             if len(self.peds.list) < n_peds:
                 self.peds.spawn(sx, sy)
+
+    def _make_helis(self):
+        """One medical helicopter on each hospital helipad (works for the OSM and the photogrammetric world alike)."""
+        import geo
+        self.helipads = []
+        for lat, lon, _n in HELI_PADS:
+            x, y = geo.project(lat, lon)
+            if abs(x) > self.w.hx - 30 or abs(y) > self.w.hy - 30:
+                continue
+            self.helipads.append((x, y))
+            b = Body(x, y, -math.pi / 2, vehicles.HELI, 0)
+            b.az = self.w.ground_y(x, y)
+            b.fuel = 1.0
+            self.bodies.append(b)
 
     # ---------------------------------------------------------------- helpers
     def ev(self, _kind, **kw):
@@ -2818,6 +2879,9 @@ class Sim:
                 self.money -= fare
                 b.rental = False
                 self.ev("rent", item=name, price=fare)
+            if b.kind in vehicles.FLY:                             # no door scene: climb straight into the cockpit
+                self._board(b)
+                return True
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
                 b.parked_idx = None
@@ -2994,6 +3058,9 @@ class Sim:
             self.mode = "foot"
             self.ev("alight")
             return
+        if b.kind in vehicles.FLY and b.az is not None and b.az - self.w.ground_y(b.x, b.y) > 1.0:
+            self.ev("heli_land")                                   # not in mid-air: land first
+            return
         b.empty = True
         b.player_car = False
         self.last_exit = b
@@ -3031,7 +3098,10 @@ class Sim:
             ride = getattr(self, "riding", None) is not None
             for _ in range(steps):
                 sdt = dt / steps
-                if ride:
+                if c.kind in vehicles.FLY:
+                    fly(c, inp, sdt, w)
+                    thr = 0.0
+                elif ride:
                     drive(c, *(c.ctl if c.ctl is not None else (0.0, 0.0, True)), sdt, w)
                     thr = 0.0
                 else:
@@ -3044,7 +3114,8 @@ class Sim:
                         ev("fuel_low")
                     if was > 0 >= c.fuel:
                         ev("fuel_out")
-                settle(c, w, sdt, ev)
+                if c.kind not in vehicles.FLY:
+                    settle(c, w, sdt, ev)
                 for e in collide_static(c, w):
                     ev("crash", body=c, kind=e[0], impact=e[1], x=e[2], y=e[3], nx=e[4], ny=e[5])
                     bump(c, e[1] * (0.6 if e[0] != "wall" else 1.0), e[2], e[3], e[4], e[5])
@@ -3243,8 +3314,11 @@ class Sim:
                 else:
                     b.rest_n = 0
                 if getattr(b, "rest_n", 0) < 60:                  # (anything that moves it - a push, a hit, a blast - wakes it)
-                    drive(b, *(b.ctl if b.ctl is not None and not b.player_car else (0.0, 0.0, True)), dt, w)
-                    settle(b, w, dt, ev)
+                    if b.kind in vehicles.FLY:
+                        fly(b, None, dt, w)
+                    else:
+                        drive(b, *(b.ctl if b.ctl is not None and not b.player_car else (0.0, 0.0, True)), dt, w)
+                        settle(b, w, dt, ev)
                     for e in collide_static(b, w):
                         ev("crash", body=b, kind=e[0], impact=e[1], x=e[2], y=e[3], nx=e[4], ny=e[5])
                         bump(b, e[1] * 0.6, e[2], e[3], e[4], e[5])

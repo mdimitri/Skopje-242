@@ -4,7 +4,7 @@
 from texts import TXT
 _STYLE = {"hatch": (0.40, 0.95, 1.44), "sedan": (0.40, 0.98, 1.45), "taxi": (0.40, 0.98, 1.45), "mini": (0.38, 0.92, 1.36),
           "suv": (0.58, 1.10, 1.68), "van": (0.45, 1.00, 1.95), "pickup": (0.55, 1.10, 1.78), "bus": (0.50, 1.00, 3.10),
-          "bike": (0.0, 0.55, 1.05), "wagon": (0.40, 0.97, 1.48), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
+          "bike": (0.0, 0.55, 1.05), "heli": (0.55, 1.3, 3.4), "wagon": (0.40, 0.97, 1.48), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
 BLACK, WHITE_, SILVER = (30, 30, 34), (236, 236, 240), (190, 192, 198)
 
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
@@ -110,6 +110,8 @@ _V = [
     ("Kamion Tovarnik", "truck", 8.60, 2.45, 3.60, 0, None, "cargo"),
     ("Tir Rinfuz", "truck", 15.80, 2.55, 4.05, 0, None, "semi"),
     ("Cisterna Gorivo", "truck", 11.50, 2.50, 3.30, 0, SILVER, "tanker"),
+    # ---- medical helicopter: parked on hospital helipads (Sim._make_helis), never in traffic
+    ("Helikopter Brza Pomosh", "heli", 11.0, 2.6, 3.4, 0, WHITE_, "medheli"),
 ]
 N = len(_V)
 IDS = [v[0] for v in _V]
@@ -216,6 +218,7 @@ MK_CAR = {
     "JSP Dvokatnik": TXT("vehicles.0088"), "JSP Zglobni": TXT("vehicles.0089"),
     # round 30: not in text/ yet (the text folder is hand-edited): move these into text/02 when the editor is ready
     "Maritsa": "Марица", "Kamion Tovarnik": "Товарен камион", "Tir Rinfuz": "Шлепер", "Cisterna Gorivo": "Цистерна за гориво",
+    "Helikopter Brza Pomosh": "Хеликоптер Брза помош",
 }
 MK_PED = {
     "Chichko": TXT("vehicles.0090"), "Baba": TXT("vehicles.0091"), "Biznismen": TXT("vehicles.0092"), "Student": TXT("vehicles.0093"), "Navivach": TXT("vehicles.0094"), "Dete": TXT("vehicles.0095"), "Rabotnik": TXT("vehicles.0096"),
@@ -329,6 +332,8 @@ JACK_BIKE = {"Velosipedist": "Velosiped", "Dedo na Kolo": "Velosiped", "Moped To
              "E-Trotinet Hipster": "E-Trotinet"}
 JACK_KIND = {i: IDS.index(JACK_BIKE[n]) for i, n in enumerate(PED_IDS) if n in JACK_BIKE}
 BIKES = {i for i in range(N) if STYLE[i] == "bike"}
+FLY = {i for i in range(N) if STYLE[i] == "heli"}                  # helicopters: Sim/actors.fly() flies them, no wheels
+HELI = IDS.index("Helikopter Brza Pomosh")
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility
 WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS]
 
@@ -336,7 +341,7 @@ WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDE
 _PERF_STYLE = {"hatch": (35, 10.5, 0.68, 9.5, 1.0), "sedan": (40, 12.0, 0.62, 9.5, 1.1), "taxi": (38, 11.0, 0.62, 9.5, 1.1),
                "mini": (28, 8.0, 0.75, 9.0, 0.7), "suv": (36, 10.0, 0.56, 8.5, 1.5), "van": (31, 8.0, 0.62, 8.5, 1.6),
                "pickup": (33, 9.0, 0.60, 8.5, 1.5), "bus": (24, 4.5, 0.66, 8.0, 5.0), "wagon": (36, 10.5, 0.60, 9.5, 1.2),
-               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5), "bike": (9, 5.0, 0.95, 8.0, 0.2)}
+               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5), "bike": (9, 5.0, 0.95, 8.0, 0.2), "heli": (60, 14.0, 0.6, 8.0, 3.0)}
 _PERF_NAME = {
     "Zastava Yugo": (29, 7.5), "Golf Dvojka": (37, 11), "Mercedes 190": (44, 13), "Fico": (24, 6, 0.80), "Zastava 101 Skala": (32, 9),
     "Zastava Koral": (30, 8.5), "Lada Samara": (33, 9), "Lada 1500": (32, 8.5), "Moskvich 412": (29, 7), "Trabant 601": (25, 5.5),
