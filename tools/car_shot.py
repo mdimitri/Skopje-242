@@ -20,16 +20,18 @@ rl.init_window(CW, CH, "cars")
 rl.set_target_fps(60)
 rl.rl_disable_backface_culling()
 V3 = rl.Vector3
+YAWS = tuple(int(a) for a in os.environ.get("YAWS", "35,0,215").split(","))
+NV = len(YAWS)
 sheets = []
 for r, k in enumerate(ids):
     if PAGE and r % PAGE == 0:
-        sheets.append(Image.new("RGB", (CW * 3, CH * min(PAGE, len(ids) - r)), (150, 152, 156)))
+        sheets.append(Image.new("RGB", (CW * NV, CH * min(PAGE, len(ids) - r)), (150, 152, 156)))
     elif not PAGE and r == 0:
-        sheets.append(Image.new("RGB", (CW * 3, CH * len(ids)), (150, 152, 156)))
+        sheets.append(Image.new("RGB", (CW * NV, CH * len(ids)), (150, 152, 156)))
     sheet, r0 = sheets[-1], (r % PAGE if PAGE else r)
     m = gl3d.car_model(k, [0, 2, 1, 3, 4][k % 5] if vehicles.FIXED[k] is None else 0)
     L = vehicles.DIMS[k][0]
-    for c, yaw in enumerate(tuple(int(a) for a in os.environ.get("YAWS", "35,0,215").split(","))):
+    for c, yaw in enumerate(YAWS):
         a = math.radians(yaw)
         cam = rl.Camera3D(V3(math.sin(a) * 30, 30 * (0.45 if c != 1 else 0.02), math.cos(a) * 30), V3(0, 0.9, 0), V3(0, 1, 0),
                           max(L * 0.62, 3.0) / float(os.environ.get("ZOOM", "1")), rl.CAMERA_ORTHOGRAPHIC)

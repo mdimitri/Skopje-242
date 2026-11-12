@@ -5,7 +5,7 @@ Positions are fractions f of the body length measured from the FRONT (f=0 nose, 
 """
 import numpy as np
 
-LOFT_STYLES = ("hatch", "sedan", "taxi", "mini", "wagon", "suv", "van", "limo")
+LOFT_STYLES = ("hatch", "sedan", "taxi", "mini", "wagon", "suv", "van", "limo", "pickup")
 
 # profile knots: fc cowl (bonnet end / windscreen foot), fr1 roof front, fr0 roof rear, fd rear-glass foot (deck start);
 # dn nose top below the belt, dc cowl above the belt, dd deck above the belt, dt tail top below the deck; tw roof width / body width;
@@ -29,6 +29,8 @@ ARCH = {
                      gr="slim", tl="tall", nw=3, fwe=0.30),
     "van_cab": dict(nrF=0.03, nrR=0.02, fc=0.17, fr1=0.27, fr0=0.985, fd=0.995, dn=0.0, dc=0.0, dd=0.0, dt=0.0, tw=0.94, rnd=0.12, gc=0.28, hl="rect",
                     gr="blk", tl="tall", nw=4, fwe=0.30, bp="black"),
+    "pickup": dict(fc=0.235, fr1=0.335, fr0=0.50, fd=0.525, dn=0.10, dc=0.06, dd=-0.02, dt=0.0, tw=0.86, rnd=0.2, gc=0.32, hl="rect", gr="slats",
+                   tl="wide", nw=1, fwe=0.5, bp="chrome", nrF=0.05, nrR=0.0, win="all"),
     "mpv": dict(nrF=0.12, nrR=0.04, fc=0.27, fr1=0.43, fr0=0.935, fd=0.975, dn=0.10, dc=0.05, dd=0.14, dt=0.03, tw=0.84, rnd=0.35, hl="wrap", gr="slim",
                 tl="tall", nw=3, fwe=0.30),
 }
@@ -113,8 +115,34 @@ SPEC = {
     "Ford Transit Shverc": ("van_cab", 0.58, dict(fc=0.16, fr1=0.26, win="cab", pf=0.38, tr=0.345)),
     "Volvo V70 Dedov": ("wagon", 0.585, dict(dn=0.06, hl="rect", gr="chrome", tr=0.31, tw=0.84)),
     "Golf Chetvorka Bez Registracija": ("hatch_soft", 0.60, dict(dn=0.11, tr=0.30)),
+    "Pikap Tovarnik": ("pickup", 0.60, dict(tr=0.37)),
+    "Pajak Vlechna Sluzhba": ("pickup", 0.58, dict(tr=0.37, fc=0.25, fr1=0.35, fr0=0.52, fd=0.545)),
     "Maritsa": ("van_cab", 0.60, dict(fc=0.19, fr1=0.28, win="cab", pf=0.40, tr=0.345)),
 }
+
+
+# badge colour by make (first match of the model name's start / contents): a small disc on the grille, the way each make is told apart
+_BADGE = (("Zastava", (200, 30, 30)), ("Golf", (30, 70, 160)), ("Passat", (30, 70, 160)), ("Caddy", (30, 70, 160)),
+          ("Transporter", (30, 70, 160)), ("Kombi", (30, 70, 160)), ("Mercedes", (205, 208, 214)), ("Sprinter", (205, 208, 214)),
+          ("Maritsa", (205, 208, 214)), ("Taxi", (205, 208, 214)), ("BMW", (40, 90, 200)), ("Audi", (205, 208, 214)),
+          ("Opel", (240, 200, 30)), ("Renault", (230, 200, 40)), ("Peugeot", (190, 192, 200)), ("Citroen", (200, 40, 40)),
+          ("Fiat", (200, 30, 30)), ("Fico", (200, 30, 30)), ("Toyota", (205, 208, 214)), ("Skoda", (40, 150, 70)),
+          ("Policiska", (40, 150, 70)), ("Ford", (30, 70, 160)), ("Dacia", (205, 208, 214)), ("Kia", (200, 30, 30)),
+          ("Hyundai", (205, 208, 214)), ("Nissan", (205, 208, 214)), ("Seat", (200, 30, 30)), ("Volvo", (30, 70, 160)),
+          ("Lada", (210, 170, 40)), ("Moskvich", (200, 30, 30)), ("Trabant", (40, 150, 70)), ("Wartburg", (200, 30, 30)),
+          ("Tesla", (205, 208, 214)), ("Hummer", (205, 208, 214)), ("Cayenne", (220, 180, 60)), ("Range", (40, 120, 70)),
+          ("Land Cruiser", (200, 30, 30)), ("Smart", (230, 200, 40)), ("Pachuvka", (205, 208, 214)), ("Renault 4", (230, 200, 40)))
+_SPARE = ("Mercedes G Politichar", "Hummer Patriot", "Land Cruiser Lovec")
+_BULLBAR = ("Land Cruiser Lovec", "Hummer Patriot")
+_ALLOY = ("BMW E46 Tjunirana", "Golf Shestka Uvezen", "Seat Leon Kupra", "Tesla Elon", "BMW X5 Chorbadzija", "Cayenne od Germanija",
+          "Mercedes S Mafijash", "Audi A6 Nemachka", "Mercedes E Klasa W211", "Passat B6 TDI", "Range Rover Ortak", "BMW E39 520d")
+
+
+def badge(name):
+    for k, c in _BADGE:
+        if name.startswith(k) or k in name:
+            return c
+    return None
 
 
 def has(name):
@@ -159,7 +187,7 @@ def layout(name, L):
     cx = (X(s["fr1"]) + X(s["fr0"])) / 2
     cl = X(s["fr1"]) - X(s["fr0"])
     hinge = X(s["seams"][0])
-    return dict(cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
+    return dict(hub=(212, 214, 220) if name in _ALLOY else (150, 152, 158), cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
                 mirror=X(s["fc"]) - 0.02)
 
 
@@ -209,6 +237,8 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     fm = (F[:-1] + F[1:]) / 2
     cols = np.zeros((S - 1, 11, 3), np.float32)
     body = np.array(body_c, np.float32)
+    if name == "Kombi":                                              # the T2/T3 bus: white roof and upper band over the body colour
+        two, accent = True, (236, 236, 240)
     roofc = np.array(accent, np.float32) * 1.05 if two else np.clip(body * 1.08, 0, 255)
     gl = np.array(glass, np.float32)
     isglass = np.zeros((S - 1, 11), bool)
@@ -224,8 +254,12 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             elif j in (2, 8):
                 if in_win and gh > 0.12:
                     c, isglass[i, j] = gl, True
+                elif name == "Kombi" and gh > 0.12:
+                    c = roofc
             elif j in (4, 6):
-                c = roofc if in_roof else body
+                c = roofc if (in_roof or name == "Kombi") else body
+            elif j in (3, 7) and name == "Kombi":
+                c = roofc
             elif j == 5:
                 if gh > 0.15 and fc - 1e-6 <= m <= fr1 + 1e-6:
                     c, isglass[i, j] = gl, True
@@ -328,6 +362,33 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             lo, hi = sorted((sd * zt, sd * (zt - 0.36)))
             rq(ttop - 0.14, 0.14, lo, hi - lo, (214, 30, 30))
     rq(yb + 0.12, 0.12, 0.25, -0.5, (236, 236, 230), 0.002)
+    if s["arch"] == "pickup":                                        # the open load bed behind the cab: floor is the deck, walls round it
+        bx0 = X(fd) - 0.02
+        bc2 = tuple(body * 0.95)
+        quad((xb + 0.05, hd + 0.004, -W / 2 + 0.06), (bx0 - xb - 0.05, 0, 0), (0, 0, W - 0.12), (0, 1, 0), (46, 44, 42))
+        for sd in (-1, 1):
+            box((xb + bx0) / 2, hd, sd * (W / 2 - 0.05), bx0 - xb, 0.30, 0.08, bc2)
+        box(xb + 0.05, hd, 0, 0.08, 0.30, W - 0.1, bc2)
+        box(bx0 - 0.05, hd, 0, 0.08, 0.34, W - 0.1, tuple(body * 0.9))
+    # ---- make badges, spare wheel, bull bar
+    def disc(x_, y_, z_, r_, col, sgn):
+        pts = [(x_, y_ + r_ * np.sin(a), z_ + r_ * np.cos(a)) for a in np.linspace(0, 2 * np.pi, 7)]
+        v = np.array([q for k in range(6) for q in ((x_, y_, z_), pts[k], pts[k + 1])], np.float32)
+        parts.append((v, np.tile(A(col) * shade(A((sgn, 0, 0))), (len(v), 1)), True))
+
+    bcol = badge(name)
+    if bcol is not None and g != "none":
+        by = (gy0 + gy1) / 2 if g in ("blk", "slim", "chrome", "slats", "vee") else ltop - 0.1
+        disc(fxf(by) + 0.012, by, 0.0, 0.05 if W < 1.9 else 0.06, bcol, 1)
+        disc(fxr(ttop - 0.1) - 0.01, ttop - 0.1, 0.0, 0.035, bcol, -1)
+    if name in _SPARE:
+        rcy = yb + (ht - yb) * 0.48
+        box(xb - 0.13, rcy - 0.33, 0, 0.26, 0.66, 0.66, (26, 26, 28))
+        quad((xb - 0.262, rcy - 0.17, -0.17), (0, 0, 0.34), (0, 0.34, 0), (-1, 0, 0), (150, 152, 158))
+    if name in _BULLBAR:
+        box(xf + 0.12, yb + 0.28, 0, 0.07, 0.07, 2 * capw - 0.3, (190, 192, 198))
+        for sd in (-1, 1):
+            box(xf + 0.12, yb + 0.12, sd * (capw - 0.35), 0.07, 0.42, 0.06, (190, 192, 198))
     # ---- doors, handles, mirrors, wheel arches
     wr = tyre_r
     for sd in (-1, 1):

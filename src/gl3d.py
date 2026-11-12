@@ -505,7 +505,7 @@ def _shape_body(v, kind, st, L, W, y0, belt, cx, cl):
     return v
 
 
-def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=8):
+def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12):
     """Wheel with its axis along z. Returns (verts, colours)."""
     vs, cs = [], []
     for i in range(sides):
@@ -764,7 +764,7 @@ def front_wheel(kind):
     semi = V.EXTRA[kind % V.N] == "semi"
     wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
     wx += V.SEMI_SHIFT if semi else 0.0
-    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array((158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 8)
+    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 8)
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
@@ -1011,7 +1011,7 @@ def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, pa
         if steer_wheels and wi == 0:
             continue
         for s in (-1, 1):
-            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)), 16)
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16)
             parts.append((v, c, False))
     return _finish_arrays(parts, dents, burnt, belt)
 
