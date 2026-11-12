@@ -183,6 +183,7 @@ class Renderer:
         self.sun = None               # unit vector towards the sun (set by main each frame): contact shadows fall away from it
         self.car_models = {}
         self.front_wheels = {}        # kind -> (axle x, radius, track half, model)
+        self.rear_axle_models = {}    # kind -> [(axle x, radius, 0, model)] of the other axles
         self._own = {}                         # id(body) -> body with its own model
         self._frames = 0
         self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
@@ -910,6 +911,17 @@ class Renderer:
                                                                      rl.matrix_translate(wx, wr, sd)), M)
                 rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
             wm.transform = old[0]
+            if kind not in vehicles.BIKES:                   # the other axles: one model per axle, spun about its own centre
+                ra = self.rear_axle_models.get(kind)
+                if ra is None:
+                    ra = self.rear_axle_models[kind] = gl3d.rear_axles(kind)
+                for ax_, rr_, _z, am_ in ra:
+                    if am_ is None:
+                        continue
+                    old_a = _keep(am_.transform)
+                    am_.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M)
+                    rl.draw_model(am_, V3(0, 0, 0), 1.0, tint)
+                    am_.transform = old_a[0]
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
             m = self.car_models.get(key)

@@ -827,6 +827,31 @@ def front_wheel(kind):
     return wx, wr, W / 2 - 0.02, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
 
 
+def rear_axles(kind):
+    """[(axle x, radius, track half-width z, model of that axle's wheel pair with its centre at the origin)] of every axle behind the
+    front one; the renderer spins them (steer_wheels=True models leave all wheels out of the body)."""
+    kind %= V.N
+    L, W = V.DIMS[kind][:2]
+    semi = V.EXTRA[kind] == "semi"
+    name = V.IDS[kind]
+    out = []
+    for wx, wr, wd in _wheel_layout(V.STYLE[kind], V.SEMI_TRACTOR_L if semi else L, name)[1:]:
+        lay = carbody.layout(name, L) if carbody.has(name) else None
+        hub = np.array(lay["hub"] if lay else (176, 178, 184), np.float32)
+        rim = lay["rim"] if lay else ("truck", 5)
+        vs, cs = [], []
+        for s in (-1, 1):
+            v, c = _cyl(0.0, 0.0, s * (W / 2 - 0.02), wr, wd, np.array((26, 26, 28), np.float32), hub, 16 if lay else 12, rim, s)
+            vs.append(v)
+            cs.append(c)
+        v, c = np.concatenate(vs), np.concatenate(cs)
+        rgba = np.empty((len(v), 4), np.uint8)
+        rgba[:, :3] = np.clip(c, 0, 255)
+        rgba[:, 3] = 255
+        out.append((wx + (V.SEMI_SHIFT if semi else 0.0), wr, 0.0, make_model(v, np.zeros((len(v), 2), np.float32), rgba)))
+    return out
+
+
 def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
     """car_arrays plus a material tag in uv.x for the gloss shader: 1 = paint, 2 = glass, 0 = matte.  The default shader
     samples a 1x1 white texture, so the tag changes nothing when gloss is off."""
@@ -1049,7 +1074,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
             quad((wx - wr - 0.06, y0 - 0.02, zs + s * 0.002), (2 * wr + 0.12, 0, 0), (0, wr * 0.5, 0), (0, 0, s), (22, 22, 24))
     _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None)
     for wi, (wx, wr, wd_) in enumerate(wheels):                             # wheels (not deformable)
-        if steer_wheels and wi == 0:
+        if steer_wheels:
             continue                                                        # the front pair is drawn separately, turned
         for s in (-1, 1):
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), s)
@@ -1090,7 +1115,7 @@ def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, pa
             quad((rx, yb + 0.04, s * (W / 2 + 0.009)), (rng.uniform(0.3, 0.7), 0, 0), (0, rng.uniform(0.15, 0.3), 0), (0, 0, s), (112, 62, 38))
     _extras(kind, st, ex, L, W, y0, belt, roof, roof, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None)
     for wi, (wx, wr, wd_) in enumerate(wheels):
-        if steer_wheels and wi == 0:
+        if steer_wheels:
             continue
         for s in (-1, 1):
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16, lay["rim"], s)
