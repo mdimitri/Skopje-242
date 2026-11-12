@@ -320,6 +320,7 @@ class Streamer:
         self.clock = None     # set by main: decals (blood, scorch) fade out after DECAL_MIN in-game minutes
         self.born = {}        # id(decal) -> clock.minutes when it was added
         self._purge_t = 0
+        self._part = {}       # key -> unfinished mesh upload (see _load_meshes)
 
     # ---- ground mesh: the terrain under one chunk, textured with its baked ground texture
     def _ground_model(self, key, rt):
@@ -368,34 +369,49 @@ class Streamer:
         self.baked += 1
         self.bake_ms = (time.perf_counter() - t0) * 1000
 
-    def _load_meshes(self, key, lite=False):
+    def _load_meshes(self, key, lite=False, deadline=None):
+        """Uploads a chunk's meshes one material at a time; past `deadline` (perf_counter) it stops and the next call
+        carries on, so one big chunk cannot cost a whole frame.  Returns True when the chunk is complete."""
         ch = self.world.chunks.get(key)
+        part = self._part.get(key)
+        if part is not None and part[4] != lite:
+            self._drop_part(key)
+            part = None
+        if part is None:
+            part = self._part[key] = [{}, list(ch["m"].items()) if ch else [], 1e9, -1e9, lite]
+        out, todo = part[0], part[1]
         (self.lite_keys.add if lite else self.lite_keys.discard)(key)
-        out = {}
-        y0, y1 = 1e9, -1e9
-        if ch:
-            for mat, (off, n) in ch["m"].items():
-                pos, uv, col = self.world.mesh_arrays(off, n)
-                if n:
-                    ys = pos[:, 1]
-                    y0, y1 = min(y0, float(ys.min())), max(y1, float(ys.max()))
-                if self.world.broken:
-                    pos = self.world.hide_broken(pos, ch.get("bb"))
-                if mat == 6 and ("graf" not in self.tex or lite):
-                    continue                                     # atlas failed: no decals rather than facade-textured ones
-                if (mat == 18 and (lite or self.detail < 1)) or (mat == 19 and (lite or self.detail < 2)):
-                    continue                                     # facade relief / clutter (src/archkit.py TIER): detail setting, far ring
-                m = gl3d.make_model(pos, uv, col)
-                if m is not None:
-                    names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")
-                    gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
-                    if lite:
-                        pass
-                    elif mat == 3 and getattr(self.world, "roads3d", False):
-                        gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
-                    elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
-                        gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
-                    out[mat] = m
+        while todo:
+            if deadline is not None and out and time.perf_counter() > deadline:
+                return False
+            mat, (off, n) = todo.pop(0)
+            pos, uv, col = self.world.mesh_arrays(off, n)
+            if n:
+                ys = pos[:, 1]
+                part[2], part[3] = min(part[2], float(ys.min())), max(part[3], float(ys.max()))
+            if self.world.broken:
+                pos = self.world.hide_broken(pos, ch.get("bb"))
+            if mat == 6 and ("graf" not in self.tex or lite):
+                continue                                     # atlas failed: no decals rather than facade-textured ones
+            if (mat == 18 and (lite or self.detail < 1)) or (mat == 19 and (lite or self.detail < 2)):
+                continue                                     # facade relief / clutter (src/archkit.py TIER): detail setting, far ring
+            m = gl3d.make_model(pos, uv, col)
+            if m is not None:
+                names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")
+                gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
+                if lite:
+                    pass
+                elif mat == 3 and getattr(self.world, "roads3d", False):
+                    gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
+                elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
+                    gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
+                out[mat] = m
+        del self._part[key]
+        old = self.meshes.get(key)
+        if old:                                                  # low-quality set swapped for the full one only now
+            for m in old[0].values():
+                gl3d.free_model(m)
+        y0, y1 = part[2], part[3]
         self.meshes[key] = [out, self.frame]
         bb = ch.get("bb") if ch else None
         self.recent.append((self.mesh_loaded + 1, bb))         # (the sun shadow redraws only for new meshes near it)
@@ -403,6 +419,13 @@ class Streamer:
             del self.recent[:128]
         self.sph[key] = _sphere(bb[0], bb[1], bb[2], bb[3], y0, y1) if bb is not None and y1 >= y0 else None
         self.mesh_loaded += 1
+        return True
+
+    def _drop_part(self, key):
+        part = self._part.pop(key, None)
+        if part:
+            for m in part[0].values():
+                gl3d.free_model(m)
 
     def loaded_near(self, since, x0, z0, x1, z1):
         """Was a chunk mesh touching the box loaded after load number `since`?  (None when the log does not reach back.)"""
@@ -469,15 +492,15 @@ class Streamer:
                 if need_m:
                     if need_g and (time.perf_counter() - t0) * 1000 > budget_ms:       # the bake alone used the frame's budget: meshes next frame
                         break
-                    if up:
-                        for m in self.meshes.pop(key)[0].values():
-                            gl3d.free_model(m)
-                    self._load_meshes(key, key in lite)
+                    if not self._load_meshes(key, key in lite, t0 + budget_ms / 1000.0):
+                        break                                    # unfinished: carries on next frame
             except Exception as e:  # noqa: BLE001 - never let one chunk kill the game
                 self.errors += 1
                 self.bad.add(key)
                 print(f"[stream] chunk {key} failed: {e}")
             n += 1
+        for key in [k for k in self._part if k not in wanted]:
+            self._drop_part(key)                                 # walked away from a half-loaded chunk
         self._evict()
         self._purge_decals()
         self._flush_decals()
