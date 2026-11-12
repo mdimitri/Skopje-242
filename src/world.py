@@ -419,6 +419,29 @@ class World:
     ROAD_RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1,
                  "living_street": 0, "service": 0}
 
+    _xg = None
+
+    def _ramp_h(self, x, y):
+        """Height of a zebra's dropped kerb at (x, y), 1e9 when not on one: 3 cm at the road edge rising to the
+        pavement top over 0.95 m, 2.4 m long along the road (same shape as tools/roads3d.py _kerb_ramps)."""
+        if self._xg is None:
+            g = {}
+            for xw in (getattr(self, "xwalks", None) or ()):
+                g.setdefault((int(xw[0] // 16), int(xw[1] // 16)), []).append(xw)
+            self._xg = g
+        best = 1e9
+        for gx in (-1, 0, 1):
+            for gy in (-1, 0, 1):
+                for xw in self._xg.get((int(x // 16) + gx, int(y // 16) + gy), ()):
+                    cx, cy, ax, ay, w = xw[0], xw[1], xw[2], xw[3], xw[4]
+                    dx, dy = x - cx, y - cy
+                    along = dx * ax + dy * ay
+                    lat = abs(dx * ay - dy * ax)
+                    if abs(along) <= 1.2 and w / 2 - 0.1 <= lat <= w / 2 + 0.95:
+                        f = max(0.0, (lat - w / 2) / 0.95)
+                        best = min(best, 0.03 + (self.GROUND_Y[2] - 0.03) * f)
+        return best
+
     def _hsub_cell(self, ix, iy, cls):
         """Surface build-up of the 4 x 4 sub-cells (0.5 m) of one cell, as the 3D roads draw it: the highest asphalt
         ribbon within its half width, else pavement up to KERB_W beyond a city street, else bare ground. Where the road
@@ -439,7 +462,10 @@ class World:
                             top = asp                           # asphalt wins over pavement; the higher-ranked road on top
                     elif sw and d < hw + self.KERB_W:
                         pav = True
-                out.append(top if top is not None else (self.GROUND_Y[2] if pav else (self.GROUND_Y[cls] if cls == 1 else 0.0)))
+                if top is None and pav:
+                    out.append(min(self.GROUND_Y[2], self._ramp_h(x, y)))   # dropped kerb at a zebra (tools/roads3d.py _kerb_ramps)
+                else:
+                    out.append(top if top is not None else (self.GROUND_Y[cls] if cls == 1 else 0.0))
         self._hsub[iy * self.ncx + ix] = out
         return out
 

@@ -191,20 +191,52 @@ class Out:
         self.n += 6
 
     def flush(self, add, mat):
-        for k_, ((key, _did), (p, c, deck, pre)) in enumerate(self.d.items()):
-            if _TICK[0] and k_ % 8 == 0:
-                _TICK[0](k_ / max(1, len(self.d)))
+        arrs = {}
+        for (key, did), (p, c, deck, pre) in self.d.items():
             pos = np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)])      # pre: blocks from the pool workers
             c = np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])
-            pos, c = _clean_tris(pos, c)
+            arrs[(key, did)] = _clean_tris(pos, c)
+        asph = {}                                            # chunk -> its flat asphalt triangles (the clipper also looks across chunk borders)
+        for (key, did), (pos, c) in arrs.items():
+            if self.d[(key, did)][2] is None and len(pos):
+                t = pos.reshape(-1, 3, 3)
+                asph[key] = t[_asphalt_idx(t, c)]
+        for k_, ((key, did), (pos, c)) in enumerate(arrs.items()):
+            if _TICK[0] and k_ % 8 == 0:
+                _TICK[0](k_ / max(1, len(arrs)))
+            deck = self.d[(key, did)][2]
             if deck is None:
-                pos, c = _drop_covered_pavement(pos, c)
+                nb = [asph[q] for q in _neighbours(key) if q in asph and len(asph[q])]
+                pos, c = _drop_covered_pavement(pos, c, foreign=np.concatenate(nb) if nb else None)
                 pos, c = _clean_tris(pos, c)                  # slivers left by the clipper
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
             elif self.T is not None:
                 pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
             add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
+
+
+def _neighbours(key):
+    if isinstance(key, tuple) and len(key) == 2:
+        return [(key[0] + dx, key[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy]
+    return []
+
+
+def _asphalt_idx(t, col):
+    """Indices of flat, asphalt-coloured triangles below the pavement top (relative heights)."""
+    n = len(t)
+    cc = col[:n * 3].reshape(n, 3, 4)[:, 0, :3].astype(int)
+    return np.nonzero((np.abs(t[:, 0, 1] - t[:, 1, 1]) < 1e-6) & (np.abs(t[:, 1, 1] - t[:, 2, 1]) < 1e-6) & (t[:, 0, 1] < SW_H - 0.03)
+                      & (t[:, 0, 1] > 0.0) & (cc[:, 0] <= 135) & (cc[:, 2] >= cc[:, 0]))[0]
+
+
+def _stamp(grid, x0, y0, m):
+    """grid |= m placed at (x0, y0), clipped to the grid."""
+    H, W = grid.shape
+    gx0, gy0 = max(0, x0), max(0, y0)
+    gx1, gy1 = min(W, x0 + m.shape[1]), min(H, y0 + m.shape[0])
+    if gx1 > gx0 and gy1 > gy0:
+        grid[gy0:gy1, gx0:gx1] |= m[gy0 - y0:gy1 - y0, gx0 - x0:gx1 - x0]
 
 
 def _clean_tris(pos, col):
@@ -278,7 +310,7 @@ def _area2(pl):
     return sum(pl[i][0] * pl[(i + 1) % len(pl)][1] - pl[(i + 1) % len(pl)][0] * pl[i][1] for i in range(len(pl)))
 
 
-def _drop_covered_pavement(pos, col, G=0.2):
+def _drop_covered_pavement(pos, col, G=0.2, foreign=None):
     """Pavement-top triangles (all vertices at SW_H) that lie completely inside earlier pavement triangles are drawn
     twice at the same height: drop them (z-fighting, extra polygons).  Raster test on a G-metre grid per chunk."""
     n = len(pos) // 3
@@ -295,22 +327,23 @@ def _drop_covered_pavement(pos, col, G=0.2):
         return pos, col
     grid = np.zeros((H, W), bool)
     keep = np.ones(n, bool)
-    cc = col[:n * 3].reshape(n, 3, 4)[:, 0, :3].astype(int)
-    aidx = np.nonzero((np.abs(t[:, 0, 1] - t[:, 1, 1]) < 1e-6) & (np.abs(t[:, 1, 1] - t[:, 2, 1]) < 1e-6) & (t[:, 0, 1] < SW_H - 0.03)
-                      & (t[:, 0, 1] > 0.0) & (cc[:, 0] <= 135) & (cc[:, 2] >= cc[:, 0]))[0]
+    A = t[_asphalt_idx(t, col)]                             # this chunk's asphalt plus the neighbours' (no seams at chunk borders)
+    if foreign is not None and len(foreign):
+        f = foreign[(foreign[:, :, 0].max(axis=1) > x0) & (foreign[:, :, 0].min(axis=1) < x0 + W * G)
+                    & (foreign[:, :, 2].max(axis=1) > z0) & (foreign[:, :, 2].min(axis=1) < z0 + H * G)]
+        A = np.concatenate([A, f]) if len(f) else A
     bucket = {}
-    for k in aidx:
-        for bx in range(int(t[k, :, 0].min() // 8), int(t[k, :, 0].max() // 8) + 1):
-            for bz in range(int(t[k, :, 2].min() // 8), int(t[k, :, 2].max() // 8) + 1):
+    for k in range(len(A)):
+        for bx in range(int(A[k, :, 0].min() // 8), int(A[k, :, 0].max() // 8) + 1):
+            for bz in range(int(A[k, :, 2].min() // 8), int(A[k, :, 2].max() // 8) + 1):
                 bucket.setdefault((bx, bz), []).append(k)
     extra_p, extra_c = [], []
     asp = np.zeros((H, W), bool)                            # cheap pre-test: only triangles touching asphalt cells go to the exact clipper
-    for k in aidx:
-        a, b, c3 = [((t[k, j, 0] - x0) / G, (t[k, j, 2] - z0) / G) for j in range(3)]
+    for k in range(len(A)):
+        a, b, c3 = [((A[k, j, 0] - x0) / G, (A[k, j, 2] - z0) / G) for j in range(3)]
         ax0, ay0, am = _raster(a, b, c3)
         if am is not None:
-            sub = asp[ay0:ay0 + am.shape[0], ax0:ax0 + am.shape[1]]
-            sub |= am[:sub.shape[0], :sub.shape[1]]
+            _stamp(asp, ax0, ay0, am)
     for k in top:
         if not keep[k]:
             continue
@@ -332,7 +365,7 @@ def _drop_covered_pavement(pos, col, G=0.2):
         pieces = [tri]
         hit = False
         for q in cand:
-            at = [(float(t[q, j, 0]), float(t[q, j, 2])) for j in range(3)]
+            at = [(float(A[q, j, 0]), float(A[q, j, 2])) for j in range(3)]
             if max(v[0] for v in at) < min(v[0] for v in tri) or min(v[0] for v in at) > max(v[0] for v in tri) or \
                max(v[1] for v in at) < min(v[1] for v in tri) or min(v[1] for v in at) > max(v[1] for v in tri):
                 continue
