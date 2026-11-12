@@ -12,6 +12,7 @@ Pipeline (Job, in a thread; the viewer in src/photoview.py redraws after every s
   5. per building: one of ALGOS fits the numbers from all its facade views
   6. buildings nobody photographed borrow from fitted neighbours of the same kind ("inferred")
 """
+import copy
 import csv
 import json
 import math
@@ -44,7 +45,7 @@ SETTINGS = {"res": 12.0,          # ДЕТАЛИ facade resolution, pixels per m
 OPTS = {"relief": True, "windows": True, "frames": True, "blinds": True, "sills": True, "balconies": True, "ac": True,
         "bands": True, "ground": True, "steps": True, "opp": True, "cells": True, "roofs": True, "roof_extras": True,
         "eaves": True, "kit_on": True, "kit": [], "kit_auto": True, "kit_scope": "blocks", "style": "НИШТО",
-        "inferred": "lite", "sat": 1.0, "lod": 400.0, "guard": True, "kit_off": []}
+        "inferred": "lite", "sat": 1.0, "lod": 400.0, "view": 500.0, "guard": True, "kit_off": [], "autotune": True}
 RESULT_KEYS = ("res", "dist", "pose", "seg", "priors", "sym", "min_px")       # these change the per-photo results
 CODE_VER = 3                      # bump when the per-photo results change meaning
 VMAX = 90.0                    # highest facade point sampled (m)
@@ -916,8 +917,8 @@ def fit_detail(b, obs, log=None):
     walls, params = [], []
     for wi, vs in sorted(by_wall.items()):
         vs.sort(key=rank, reverse=True)
-        if isinstance(vs[0], Slim):
-            fas = [o.fa for o in vs if o.fa is not None]
+        if isinstance(vs[0], Slim):                   # copies: the fit edits them, and a building can be fitted again
+            fas = [copy.deepcopy(o.fa) for o in vs if o.fa is not None]
         else:
             fas = []
             for o in vs[:1]:
@@ -929,7 +930,14 @@ def fit_detail(b, obs, log=None):
             fas = [f for f in fas if f is not None]
         if not fas:
             continue
-        f = facade.fuse(fas[0], fas[1:], log) if SETTINGS["fuse"] and len(fas) > 1 else fas[0]
+        try:
+            f = facade.fuse(fas[0], fas[1:], log) if SETTINGS["fuse"] and len(fas) > 1 else fas[0]
+        except Exception as e:  # noqa: BLE001 - a failed fusion falls back to the best view
+            if log:
+                log(f"    ѕид {wi}: спојувањето падна ({type(e).__name__}: {e}), се зема најдобриот поглед")
+            f = fas[0]
+        if not f.get("params") or not f.get("cols"):
+            continue
         off = len(params)
         params += f.pop("params")
         for c in f["cols"]:
@@ -1056,6 +1064,35 @@ def infer(blds, algo, k=3):
     return n
 
 
+def apply_tune(blds, algo, folder, log=None):
+    """The photoview ОЦЕНИ tuning (_photogram/tune.json: building id -> height / storey / floor-line corrections that made the
+    render more like the photos) on the fresh fits, so a new run keeps what the tuning found."""
+    t = _read_json(os.path.join(folder, CACHE, "tune.json")).get(algo) or {}
+    n = 0
+    for bid, d in t.items():
+        b = blds.get(int(bid))
+        f = b.fits.get(algo) if b is not None else None
+        if f and f.get("src") == "photo":
+            b.fits[algo] = tuned(f, d)
+            n += 1
+    if n and log:
+        log(f"дотерување од ОЦЕНИ: {n} згради")
+    return n
+
+
+def tuned(f, d):
+    """A copy of fit f with the tuning d = {dh: m, kfh: storey factor, dpv: m} applied."""
+    f = copy.deepcopy(f)
+    f["h"] = max(2.5, float(f.get("h", 10.0)) + float(d.get("dh", 0.0)))
+    for w in f.get("walls") or []:
+        w["fh"] = max(2.2, float(w["fh"]) * float(d.get("kfh", 1.0)))
+        w["pv"] = float(w.get("pv", 0.0)) + float(d.get("dpv", 0.0))
+    if "floor" in f:
+        f["floor"] = max(2.2, float(f["floor"]) * float(d.get("kfh", 1.0)))
+    f["tune"] = {k: round(float(v), 3) for k, v in d.items()}
+    return f
+
+
 def write_fits(blds, algo, path):
     """The game's file: only what differs from the generated look matters, the rest is for the viewer / later rounds."""
     out = {}
@@ -1064,7 +1101,7 @@ def write_fits(blds, algo, path):
         if not f:
             continue
         e = {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
-                               "params", "surf", "rough") if k in f}
+                               "params", "surf", "rough", "tune") if k in f}
         out[str(b.id)] = e
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -1376,7 +1413,15 @@ class Job(threading.Thread):
 
         def fit_one(bid):                                # numbers only by now (ДЕТАЛИ): quick, here
             b = self.blds[bid]
-            b.fits[self.algo] = fit_building(b, b.obs, self.algo, self.texs, self.log)
+            try:
+                fb = fit_building(b, b.obs, self.algo, self.texs, self.log)
+            except Exception as e:  # noqa: BLE001 - one building must never stop the run
+                import traceback
+                self.log(f"  зграда {bid}: напасувањето падна ({type(e).__name__}: {e}), останува тековната")
+                self.log("    " + traceback.format_exc().strip().splitlines()[-2].strip())
+                self.stats["failed"] = self.stats.get("failed", 0) + 1
+                return
+            b.fits[self.algo] = fb
             f = b.fits[self.algo]
             self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
                      + (f", кат {f['floor']:.2f} м, прозорец {f['bay']:.2f} м" if "floor" in f else "")
@@ -1393,7 +1438,15 @@ class Job(threading.Thread):
                 c = cap_f.pop(fu)
                 if fu.cancelled():
                     continue
-                r = fu.result()
+                try:
+                    r = fu.result()
+                except Exception as e:  # noqa: BLE001 - one photo must never stop the run (a crashed worker included)
+                    self.log(f"{c.file[:4]}: обработката падна ({type(e).__name__}: {e}), се прескокнува")
+                    c.status = "грешка: " + type(e).__name__
+                    left[c.bid] -= 1
+                    nback[0] += 1
+                    self.stats["failed"] = self.stats.get("failed", 0) + 1
+                    continue
                 if self.algo == "detail" and not r.get("stored"):
                     _store_put(store, c.file, r)
                 for ln in r["log"]:
@@ -1477,6 +1530,8 @@ class Job(threading.Thread):
         self.log(f"изведени од соседи: {n}")
         out = os.path.join(cache, f"fit_{self.algo}" + ("_proof" if self.only is not None else "") + ".json")
         self.stats["total"] = time.time() - t_start
+        if self.algo == "detail":
+            apply_tune(self.blds, self.algo, self.folder, self.log)
         k = write_fits(self.blds, self.algo, out)
         self.log(f"готово: {k} згради -> {out}")
         self.step, self.frac = "готово", 1.0
