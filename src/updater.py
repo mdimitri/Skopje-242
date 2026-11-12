@@ -62,6 +62,62 @@ def remote_version():
         return ""
 
 
+GIT = shutil.which("git")
+REPO_URL = f"https://github.com/{REPO}.git"
+
+
+def _git(*args, timeout=30):
+    """Run git in the game folder; returns (exit code, stdout).  Never prompts for credentials (the repo is public)."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    r = subprocess.run([GIT, *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout, creationflags=flags,
+                       env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    return r.returncode, (r.stdout.strip() or r.stderr.strip())
+
+
+def is_git_checkout():
+    """True when the game folder is a git checkout on branch main with a usable git executable: then git does the update."""
+    if not GIT or not os.path.exists(os.path.join(ROOT, ".git")):
+        return False
+    try:
+        return _git("symbolic-ref", "--short", "-q", "HEAD", timeout=10) == (0, "main")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def git_versions():
+    """(local, remote) shas for a git checkout.  Fetches main from the public URL (config untouched, no sign-in needed).
+    remote == local when nothing new upstream, also when the checkout is AHEAD of GitHub (local commits) or has diverged
+    (cannot be fast-forwarded safely, so it is never offered).  ('', '') on any error."""
+    try:
+        if _git("fetch", "--quiet", REPO_URL, "main", timeout=CHECK_TIMEOUT + 6)[0] != 0:
+            return "", ""
+        _, local = _git("rev-parse", "HEAD", timeout=10)
+        _, remote = _git("rev-parse", "FETCH_HEAD", timeout=10)
+        if len(local) != 40 or len(remote) != 40:
+            return "", ""
+        if _git("merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD", timeout=10)[0] != 0:
+            return local, local          # ahead of / diverged from GitHub: nothing safe to apply
+        return local, remote
+    except Exception:  # noqa: BLE001
+        return "", ""
+
+
+def install_git(sha, prog):
+    """Fast-forward main to the fetched commit.  Git itself refuses (and changes nothing) if an uncommitted edit or an
+    untracked file would be overwritten; other local changes, text/ included, are left exactly as they are."""
+    prog["phase"] = "git"
+    try:
+        code, out = _git("merge", "--ff-only", "--quiet", sha, timeout=120)
+        if code != 0:
+            raise RuntimeError(out.splitlines()[0] if out else "git merge failed")
+        with open(VERSION_FILE, "w", encoding="utf-8") as f:
+            f.write(sha)
+    except Exception as e:  # noqa: BLE001
+        prog["err"] = str(e) or e.__class__.__name__
+    finally:
+        prog["finished"] = True
+
+
 def _keep(rel):
     parts = rel.replace("\\", "/").split("/")
     return parts[0] in KEEP_DIRS or rel in KEEP_FILES or (len(parts) == 1 and rel.lower().endswith(".bat"))
@@ -213,19 +269,21 @@ def check():
     """Call once at launch with the window open. Returns True when the game was updated and must restart."""
     if not rl.is_window_ready():
         return False
-    remote = remote_version()
-    local = local_version()
+    use_git = is_git_checkout()
+    local, remote = git_versions() if use_git else (local_version(), remote_version())
     if not remote or remote == local:
         return False
     white, grey = rl.WHITE, rl.Color(170, 174, 184, 255)
     if not _prompt(local, remote):
         return False
     prog = {"done": 0, "total": 0, "err": "", "finished": False}
-    th = threading.Thread(target=install, args=(remote, prog), daemon=True)
+    th = threading.Thread(target=install_git if use_git else install, args=(remote, prog), daemon=True)
     th.start()
     while not prog["finished"]:
         rl.poll_input_events()
-        if prog.get("phase") == "extract":                      # download = first 70 %, unpacking files = the rest
+        if prog.get("phase") == "git":
+            frac, what = 0.5, "Се ажурира преку git"
+        elif prog.get("phase") == "extract":                      # download = first 70 %, unpacking files = the rest
             frac, what = 0.7 + 0.3 * prog["n"] / max(1, prog.get("nn", 1)), f"Се ажурира: {prog['n']} / {prog.get('nn', 0)} датотеки"
         else:
             mb = prog["done"] / 1048576
