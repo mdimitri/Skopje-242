@@ -348,10 +348,11 @@ class Renderer:
         mat.shader.id, mat.shader.locs = old_id, old_locs
         m.transform = old[0]
 
-    def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll):
-        """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th."""
+    def _trailer(self, out, sh, x, y, h, th, gy, pitch, roll, tgz=None, tpitch=None, troll=None):
+        """Semi rig at (x, y, h): shadow of the short tractor and of the trailer hinged at its fifth wheel, trailer heading th.
+        tgz / tpitch / troll: the trailer's own pose at the kingpin (actors.ride), else the tractor's."""
         hx, hy = x + math.cos(h) * vehicles.SEMI_HITCH, y + math.sin(h) * vehicles.SEMI_HITCH
-        out.append((hx, hy, th, gy, pitch, roll))
+        out.append((hx, hy, th, gy if tgz is None else tgz, pitch if tpitch is None else tpitch, roll if troll is None else troll))
         if self._near(x, y):
             return
         sh.append((x + math.cos(h) * vehicles.SEMI_SHIFT, y + math.sin(h) * vehicles.SEMI_SHIFT, h, vehicles.SEMI_TRACTOR_L / 2 + 0.2, vehicles.DIMS[vehicles.SEMI][1] / 2, 70, gy, vehicles.DIMS[vehicles.SEMI][4]))
@@ -732,7 +733,7 @@ class Renderer:
             if self._in(c.x, c.y, rect):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color, id(c), c.v))
                 if c.kind == vehicles.SEMI:
-                    self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll)
+                    self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll, c.tgz, c.tpitch, c.troll)
                 elif not self._near(c.x, c.y):
                     sh.append((c.x, c.y, c.h, vehicles.DIMS[c.kind][0] / 2, vehicles.DIMS[c.kind][1] / 2, 70, c.gz, vehicles.DIMS[c.kind][4]))
         for b in sim.bodies:
@@ -751,7 +752,7 @@ class Renderer:
                 if b.door > 0.01:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
-                    self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll)
+                    self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll, getattr(b, "tgz", None), getattr(b, "tpitch", None), getattr(b, "troll", None))
                 elif not self._near(b.x, b.y):
                     sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80, gy, vehicles.DIMS[b.kind][4]))
         # peds

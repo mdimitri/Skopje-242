@@ -151,11 +151,12 @@ class World:
         self._load_quays(t)
         # bridge decks: 8 m hash of centreline segments (x1, y1, x2, y2, h1, h2, half width)
         self.dgrid = {}
-        for d in getattr(self, "decks", ()):
+        top = self._deck_tops()
+        for di, d in enumerate(getattr(self, "decks", ())):
             pts, hs, hw = d["pts"], d["h"], d["hw"]
             for k in range(len(pts) - 1):
                 (ax, ay), (bx, by) = pts[k], pts[k + 1]
-                seg = (ax, ay, bx, by, hs[k], hs[k + 1], hw)
+                seg = (ax, ay, bx, by, hs[k] + top[di], hs[k + 1] + top[di], hw)
                 m = hw + 5.6
                 for cx in range(int((min(ax, bx) - m) // 8), int((max(ax, bx) + m) // 8) + 1):
                     for cy in range(int((min(ay, by) - m) // 8), int((max(ay, by) + m) // 8) + 1):
@@ -440,6 +441,31 @@ class World:
                         pav = True
                 out.append(top if top is not None else (self.GROUND_Y[2] if pav else (self.GROUND_Y[cls] if cls == 1 else 0.0)))
         self._hsub[iy * self.ncx + ix] = out
+        return out
+
+    def _deck_tops(self):
+        """Per deck: how far its drawn carriageway lies above the deck profile -- tools/roads3d.py y_of() lays the
+        asphalt Y_BASE + Y_STEP * rank (+1 cm on a bridge) above it, footways 4 cm.  Without this cars and people
+        sank 6-15 cm into every bridge (tools/ride_audit.py).  The highest-ranked bridge edge along the deck decides."""
+        out = []
+        br = [e for e in getattr(self, "edges", ()) if e.get("bridge") and len(e["pts"]) >= 2]
+        for d in getattr(self, "decks", ()):
+            pts = d["pts"]
+            mx, my = pts[len(pts) // 2]
+            best, bd = 0.0, 4.0
+            for e in br:
+                for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
+                    dx, dy = bx - ax, by - ay
+                    l2 = dx * dx + dy * dy or 1e-9
+                    t = max(0.0, min(1.0, ((mx - ax) * dx + (my - ay) * dy) / l2))
+                    dd = math.hypot(mx - ax - dx * t, my - ay - dy * t)
+                    if dd < bd:
+                        base = e["cls"].replace("_link", "")
+                        off = 0.04 if base in self.FOOT_CLS else 0.05 + 0.016 * self.ROAD_RANK.get(base, 0) + 0.01
+                        if dd < bd - 0.5 or off > best:
+                            best = off
+                        bd = min(bd, dd)
+            out.append(best)
         return out
 
     def deck_h(self, x, y):

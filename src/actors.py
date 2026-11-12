@@ -290,6 +290,72 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         tow(p)
 
 
+_AXLES = {}
+
+
+def axles(kind):
+    """(front axle x, rear axle(s) x, track half-width) of a vehicle in its model frame (the rig centre for a semi)."""
+    a = _AXLES.get(kind)
+    if a is None:
+        L, W = vehicles.DIMS[kind][:2]
+        a = (L * 0.31, -L * 0.31, max(0.3, W / 2 - 0.15))
+        try:
+            import gl3d                                      # the wheels the model is drawn with
+            semi = kind == vehicles.SEMI
+            lay = gl3d._wheel_layout(vehicles.STYLE[kind], vehicles.SEMI_TRACTOR_L if semi else L, vehicles.IDS[kind])
+            sh = vehicles.SEMI_SHIFT if semi else 0.0
+            xr = sum(q[0] for q in lay[1:]) / max(1, len(lay) - 1)
+            if lay[0][0] - xr > 0.5:
+                a = (lay[0][0] + sh, xr + sh, a[2])
+        except Exception:  # noqa: BLE001 - headless tools without raylib: the old +-31 % of the length
+            pass
+        _AXLES[kind] = a
+    return a
+
+
+def ride(b, s, x, y, h, dt, rate=9.0, dp=0.0, dr=0.0):
+    """Pose a vehicle on the surface s(x, y): pitch / roll from its real axles and tyre tracks (smoothed at `rate`),
+    and the height at which, with the tilt as drawn, no wheel and no part of the underside (between the axles, the
+    bumpers) is below the surface -- on a slope change, a crest or while the tilt is still catching up.  Also poses
+    a semi's trailer (b.tgz / b.tpitch / b.troll at the kingpin).  dp / dr: extra pitch / roll (kerbs).  -> height."""
+    xf, xr, tw = axles(b.kind)
+    c, sn = math.cos(h), math.sin(h)
+    lx, ly = -sn, c                                          # +v: to the left
+
+    def at(u, v):
+        return s(x + c * u + lx * v, y + sn * u + ly * v)
+    fl, fr_, rl_, rr = at(xf, tw), at(xf, -tw), at(xr, tw), at(xr, -tw)
+    pt = math.atan2((fl + fr_) - (rl_ + rr), 2 * (xf - xr)) + dp
+    ro = math.atan2((fr_ + rr) - (fl + rl_), 4 * tw) + dr   # > 0: right side up (the renderer's sign)
+    k = min(1.0, dt * rate)
+    b.pitch += (pt - b.pitch) * k
+    b.roll += (ro - b.roll) * k
+    sp, sr = math.sin(b.pitch), math.sin(b.roll)
+    gz = max(fl - xf * sp + tw * sr, fr_ - xf * sp - tw * sr, rl_ - xr * sp + tw * sr, rr - xr * sp - tw * sr)
+    L, _W, y0 = vehicles.DIMS[b.kind][:3]
+    if y0 > 0.1:                                             # the underside: middle and both ends
+        clr = 0.8 * y0
+        semi = b.kind == vehicles.SEMI
+        nose = vehicles.SEMI_SHIFT + vehicles.SEMI_TRACTOR_L / 2 if semi else L / 2
+        tail = vehicles.SEMI_REAR - 0.8 if semi else -L / 2
+        for u in ((xf + xr) / 2, nose, tail):
+            g = at(u, 0.0) - u * sp - clr
+            if g > gz:
+                gz = g
+    if b.kind == vehicles.SEMI:                              # the trailer hangs on the fifth wheel; its axles sit on the road
+        th = b.trh if getattr(b, "trh", None) is not None else h
+        hx, hy = x + c * vehicles.SEMI_HITCH, y + sn * vehicles.SEMI_HITCH
+        hk = gz + vehicles.SEMI_HITCH * sp
+        La = vehicles.SEMI_AXLE
+        ct, st = math.cos(th), math.sin(th)
+        za = s(hx - ct * La, hy - st * La)
+        zm = s(hx - ct * La * 0.5, hy - st * La * 0.5)
+        q = min((hk - za) / La, (hk + 0.76 - zm) / (La * 0.5))   # axles on the road; the floor (0.95 m up) clears a crest
+        b.tpitch = math.asin(max(-0.5, min(0.5, q)))
+        b.tgz, b.troll = hk, b.roll
+    return gz
+
+
 def settle(b, w, dt, ev=None):
     """Put a car on the surface under it (terrain or bridge deck); drops it when that surface ends.  Sets pitch/roll."""
     if b.az is not None and (b.x - b.lx) ** 2 + (b.y - b.ly) ** 2 > 400.0:      # teleported
@@ -303,9 +369,9 @@ def settle(b, w, dt, ev=None):
         b.vy *= -0.2
     b.lx, b.ly = b.x, b.y
     tgt = w.level(b.x, b.y, b.az, plat)
-    if plat and not b.air and b.vz <= 0.0 and b.az > tgt + getattr(b, "lift", 0.0) + 0.12:   # left a ramp lip: keep its upward speed
+    if plat and not b.air and b.vz <= 0.0 and b.az > tgt + getattr(b, "lift", 0.0) + getattr(b, "rlift", 0.0) + 0.12:   # left a ramp lip: keep its upward speed
         b.vz = max(0.0, min(7.0, getattr(b, "vzg", 0.0)))
-    if b.air or b.az > tgt + getattr(b, "lift", 0.0) + 0.12 or b.vz > 0.0:   # off the edge of a deck: falling
+    if b.air or b.az > tgt + getattr(b, "lift", 0.0) + getattr(b, "rlift", 0.0) + 0.12 or b.vz > 0.0:   # off the edge of a deck: falling
         b.air = True
         b.vz -= w.G * dt
         b.az += b.vz * dt
@@ -329,8 +395,7 @@ def settle(b, w, dt, ev=None):
     wb = vehicles.DIMS[b.kind][0] * 0.31
     fx, fy = math.cos(b.h), math.sin(b.h)
     rx, ry = -fy, fx
-    pt = math.atan2(w.level(b.x + fx * wb, b.y + fy * wb, tgt, plat) - w.level(b.x - fx * wb, b.y - fy * wb, tgt, plat), 2 * wb)
-    rl_ = math.atan2(w.level(b.x - rx * 0.85, b.y - ry * 0.85, tgt, plat) - w.level(b.x + rx * 0.85, b.y + ry * 0.85, tgt, plat), 1.7)
+    pt = rl_ = 0.0
     lift = 0.0
     if math.hypot(b.vx, b.vy) > 0.8 and hasattr(w, "kerb"):    # wheels up on the pavement: bumpy, slower, tilted
         W2 = vehicles.DIMS[b.kind][1] * 0.42
@@ -350,10 +415,9 @@ def settle(b, w, dt, ev=None):
             b.w += (0.5 - (hash((int(b.x), int(b.y))) & 1)) * 0.25     # the jolt kicks the steering a little
         b.kerb_n = n
     b.lift = getattr(b, "lift", 0.0) + (lift - getattr(b, "lift", 0.0)) * min(1.0, dt * 12)
-    b.az = tgt + b.lift
-    k = min(1.0, dt * 9)
-    b.pitch += (pt - b.pitch) * k
-    b.roll += (rl_ - b.roll) * k
+    gz = ride(b, lambda x_, y_: w.level(x_, y_, tgt, plat), b.x, b.y, b.h, dt, 9.0, pt, rl_)
+    b.rlift = max(0.0, gz - tgt)                             # up on its wheels over a slope change / crest (not a fall)
+    b.az = max(tgt, gz) + b.lift
 
 
 def collide_static(p, world):
@@ -1330,7 +1394,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz", "goff", "tgz", "tpitch", "troll")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
@@ -1339,6 +1403,8 @@ class Car:
         self.ghost = 0.0
         self.braking = False
         self.gz = 0.0
+        self.goff = 0.0            # ride height above the surface under its centre (slope changes, crests: see ride())
+        self.tgz = self.tpitch = self.troll = None     # a semi's trailer pose at the kingpin
         self.pitch = 0.0
         self.roll = 0.0
         self.lidx = 0              # which lane (of the ones in its direction) it drives in
@@ -2185,18 +2251,14 @@ class Traffic:
                 if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0 and (c.ghost > 0 or (self.scan(c, 0.5, rx_ - c.x, ry_ - c.y, back=-vehicles.HALF_L[c.kind]) or 1.0) >= 0.0):
                     c.x, c.y, c.h = rx_, ry_, _rh                   # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back, unless another car is there
             lv = w.level if e["bridge"] else gy3                 # off a bridge level() is just ground_y()
-            c.gz = lv(c.x, c.y, 1e9)
-            if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt follows the ground: every other frame is plenty
-                fx_, fy_ = math.cos(c.h), math.sin(c.h)
-                wy_ = 1e9 if e["bridge"] else -1e9
-                hb = vehicles.DIMS[c.kind][0] * 0.31
-                pt = math.atan2(lv(c.x + fx_ * hb, c.y + fy_ * hb, wy_) - lv(c.x - fx_ * hb, c.y - fy_ * hb, wy_), 2 * hb)
-                rl_ = math.atan2(lv(c.x + fy_ * 0.85, c.y - fx_ * 0.85, wy_) - lv(c.x - fy_ * 0.85, c.y + fx_ * 0.85, wy_), 1.7)
-                kk = min(1.0, dt * 8) if dt != dt0 else min(1.0, dt * 16)
-                c.pitch += (pt - c.pitch) * kk
-                c.roll += (rl_ - c.roll) * kk
+            wy_ = 1e9 if e["bridge"] else -1e9
+            c.gz = lv(c.x, c.y, wy_)
             if c.kind == vehicles.SEMI:                           # kingpin trailer dragged along the fifth wheel's path
                 tow(c)
+            if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt and ride height follow the ground: every other frame is plenty
+                g_ = ride(c, lambda x_, y_: lv(x_, y_, wy_), c.x, c.y, c.h, dt, 8.0 if dt != dt0 else 16.0)
+                c.goff = max(0.0, g_ - c.gz)
+            c.gz += c.goff
             keep.append(c)
         self.cars = [c for c in keep if self._d2(c.x, c.y, fx, fy) < 460 ** 2]
         dt = dt0
