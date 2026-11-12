@@ -12,6 +12,8 @@ import numpy as np
 
 L_BUILDING, L_SKY = 1, 2
 LUM = np.array([.3, .59, .11])
+for _m in ("Mean of empty slice", "Degrees of freedom <= 0", "All-NaN slice encountered"):   # empty rows / columns of a view
+    warnings.filterwarnings("ignore", message=_m, category=RuntimeWarning)
 RES = 12.0                                  # facade resampling for the detail analysis (pixels per metre)
 OPT = {"priors": True, "sym": True}         # photogram.SETTINGS switches that act here
 TILE_PPM = 16.0                             # the in-memory column medians (pixels per metre)
@@ -177,7 +179,11 @@ def surface(rgb, B, wall_c):
     sat = max(wall_c) - min(wall_c)
     # fine regular grid: rows / columns of wall pixels repeat every 2-5 px (0.17-0.4 m)
     per = 0.0
-    for prof in (np.nanmean(bl, 1), np.nanmean(bl, 0)):
+    with warnings.catch_warnings():                 # rows / columns with no wall pixel at all are NaN: fine
+        warnings.simplefilter("ignore", RuntimeWarning)
+        profs = (np.nanmean(bl, 1), np.nanmean(bl, 0))
+    for prof in profs:
+        prof = np.nan_to_num(prof, nan=float(np.nanmean(prof)) if np.isfinite(prof).any() else 0.0)
         lag, st = _period(prof, 2, 5)
         per = max(per, st if lag else 0.0)
     L = 0.3 * r + 0.59 * g + 0.11 * b

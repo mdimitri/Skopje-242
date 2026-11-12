@@ -213,6 +213,7 @@ class Scene:
         self.stats = {"verts": 0, "blds": 0, "ms": 0.0, "rebuilt": 0}
         self.busy = 0.0                      # 0..1 while a rebuild runs
         self.focus, self.radius = None, 1e9
+        self.shown_ids = None
         self.detail = 2                      # preview of the game's ДЕТАЛИ setting (0 low .. 2 high)
 
     def free(self):
@@ -279,9 +280,11 @@ class Scene:
         return (a, id(f), b.version, repr(sorted((k, v) for k, v in opts.items() if k != "kit_off")) if (opts is not None and f and near) else None,
                 near, ko)
 
-    def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9):
+    def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9, view=None):
         """Ask for this look; step() does the work.  only: building ids that show the fit (proof), the rest the current look.
-        focus / radius: buildings further away are plain fitted boxes (a big city stays quick)."""
+        focus / radius: buildings further away are plain fitted boxes; view: further than that nothing is built or drawn."""
+        if focus is not None and view:
+            blds = {k: b for k, b in blds.items() if math.hypot(b.c[0] - focus[0], b.c[1] - focus[1]) <= view}
         self.want = (blds, algo, opts, only)
         self.focus, self.radius = focus, radius
         todo = [b for b in blds.values() if self.parts.get(b.id, (None,))[0] != self._key(b, algo, opts, only)]
@@ -313,7 +316,7 @@ class Scene:
         """One building again, now (the ОЦЕНИ guard tries it with and without its kit)."""
         self.focus = self.focus if hasattr(self, "focus") else None
         self.parts[b.id] = (self._key(b, algo, opts, None), self._parts(b, algo, opts, self._near(b)))
-        self.want, self.t0 = (blds, algo, opts, None), time.time()
+        self.want, self.t0 = (getattr(self, "cur", None) or blds, algo, opts, None), time.time()
         self._upload()
 
     def build(self, blds, algo, opts=None, only=None):
@@ -323,7 +326,8 @@ class Scene:
             pass
 
     def _upload(self):
-        blds = self.want[0]
+        blds = self.cur = self.want[0]
+        self.shown_ids = set(blds)
         acc = {}
         nv = 0
         skip = {18, 19} if self.detail < 1 else ({19} if self.detail < 2 else set())     # as the game's ДЕТАЛИ setting
@@ -507,7 +511,6 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     look = True                                     # show the fitted look (else the current one)
     job, t_job = None, 0.0
     scene = Scene(tex)
-    scene.build(blds, None)
     shown = None
     thumbs, quads = {}, {}
     cache = os.path.join(folder, pg.CACHE)
@@ -604,6 +607,117 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         mk = (labs == pg.L_BUILDING) & ~c.ui_mask()
         mk = np.asarray(Image.fromarray(mk.astype(np.uint8) * 255).resize((480, 270), Image.NEAREST)) > 127
         return ph, mk
+
+    def target_mask(c, b, mk):
+        """The building pixels inside the target building's projected box (its own pixels, not the neighbours')."""
+        fwd, _r, up = c.basis()
+        e = c.eye()
+        cam_ = rl.Camera3D(_v3(e), _v3(e + fwd * 10), _v3(up), float(c.fov), rl.CAMERA_PERSPECTIVE)
+        h_ = float(b.look(algo)["h"]) + 3.0
+        xs, ys = [], []
+        for x_, z_ in b.ring:
+            for y_ in (b.base - 1.0, b.base + h_):
+                q = np.array([x_, y_, z_]) - e
+                if q @ fwd < 0.5:                          # behind the camera: the box reaches the image edge
+                    continue
+                p_ = rl.get_world_to_screen_ex(_v3((x_, y_, z_)), cam_, 480, 270)
+                xs.append(p_.x)
+                ys.append(p_.y)
+        if not xs:
+            return mk & False
+        m2 = np.zeros_like(mk)
+        x0, x1 = int(max(0, min(xs))), int(min(480, max(xs) + 1))
+        y0, y1 = int(max(0, min(ys))), int(min(270, max(ys) + 1))
+        m2[y0:y1, x0:x1] = True
+        return mk & m2
+
+    def tune(which):
+        """Fit tuning by analysis-by-synthesis: for each photographed building, small changes of its height, storey height and
+        floor-line phase, each kept only when the mean SSIM over its photos (own pixels, colour-matched) goes up.  The result goes
+        to _photogram/tune.json (a new run applies it) and to the fit file (ПРИМЕНИ ВО ИГРАТА takes it)."""
+        import json as json_
+        import imgcmp
+        if not look or algo != "detail":
+            say("дотерувањето е за ДЕТАЛИ, фото изглед")
+            return
+        while scene.want is not None:
+            scene.step(1.0)
+        by_b = {}
+        for c in which:
+            b = blds.get(c.bid)
+            if b is not None and (b.fits.get(algo) or {}).get("src") == "photo":
+                by_b.setdefault(b.id, []).append(c)
+        tp = os.path.join(cache, "tune.json")
+        try:
+            tj = json_.load(open(tp, encoding="utf-8"))
+        except (OSError, ValueError):
+            tj = {}
+        tt = tj.setdefault(algo, {})
+        gains = []
+        for k_, (bid, cs) in enumerate(by_b.items()):
+            b = blds[bid]
+            views = []
+            for c in cs:
+                pm = photo_and_mask(c)
+                if pm is not None:
+                    mk = target_mask(c, b, pm[1])
+                    if mk.sum() >= 400:
+                        views.append((c, pm[0], mk))
+            if not views:
+                elog(f"зграда {bid}: нема доволно нејзини пиксели во сликите")
+                continue
+            base_f = b.fits[algo]
+
+            def score_with(d):
+                b.fits[algo] = pg.tuned(base_f, d) if d else base_f
+                b.version += 1
+                scene.rebuild_one(b, blds, algo, op)
+                sc = [imgcmp.score(grab(c), ph, mk) for c, ph, mk in views]
+                return float(np.mean([s_[1] for s_ in sc])), float(np.mean([s_[0] for s_ in sc]))
+            s0, p0 = score_with(None)
+            best, cur = (s0, p0), {"dh": 0.0, "kfh": 1.0, "dpv": 0.0}
+            h0 = float(base_f.get("h", b.gen["h"]))
+            steps = {"dh": 0.05 * h0, "kfh": 0.04, "dpv": 0.4}
+            n_ev = 1
+            for rnd_ in range(3):
+                for key_ in ("dh", "kfh", "dpv"):
+                    for sgn in (1, -1):
+                        tr_ = dict(cur)
+                        tr_[key_] = cur[key_] + sgn * steps[key_]
+                        if abs(tr_["dh"]) > 0.2 * h0 or not 0.85 <= tr_["kfh"] <= 1.15:
+                            continue
+                        splash(f"ДОТЕРУВАЊЕ {k_ + 1}/{len(by_b)}: зграда {bid}, круг {rnd_ + 1}, {key_} {tr_[key_]:+.2f}  ·  SSIM {best[0]:.3f}")
+                        sc = score_with(tr_)
+                        n_ev += 1
+                        if sc[0] > best[0] + 0.002:
+                            best, cur = sc, tr_
+                            break
+                for key_ in steps:
+                    steps[key_] /= 2
+            if best[0] > s0 + 0.003:
+                old = tt.get(str(bid)) or {}
+                tot = {"dh": old.get("dh", 0.0) + cur["dh"], "kfh": old.get("kfh", 1.0) * cur["kfh"], "dpv": old.get("dpv", 0.0) + cur["dpv"]}
+                tt[str(bid)] = {k2: round(v2, 3) for k2, v2 in tot.items()}
+                b.fits[algo] = pg.tuned(base_f, cur)
+                gains.append(best[0] - s0)
+                elog(f"зграда {bid}: SSIM {s0:.3f} -> {best[0]:.3f}, PSNR {p0:.1f} -> {best[1]:.1f} dB  (висина {cur['dh']:+.2f} м, кат ×{cur['kfh']:.3f}, "
+                     f"линии {cur['dpv']:+.2f} м; {n_ev} рендери, {len(views)} снимки)")
+            else:
+                b.fits[algo] = base_f
+                elog(f"зграда {bid}: веќе најдобро (SSIM {s0:.3f}, {n_ev} рендери)")
+            b.version += 1
+            scene.rebuild_one(b, blds, algo, op)
+        try:
+            with open(tp + ".tmp", "w", encoding="utf-8") as f_:
+                json_.dump(tj, f_, indent=1)
+            os.replace(tp + ".tmp", tp)
+            out_ = os.path.join(cache, f"fit_{algo}.json")
+            if os.path.exists(out_) and gains:
+                pg.write_fits(blds, algo, out_)
+        except OSError as e:
+            elog(f"дотерувањето не се зачува ({e})")
+        elog(f"ДОТЕРУВАЊЕ: {len(by_b)} згради, подобрени {len(gains)}" + (f", просечно +{np.mean(gains):.3f} SSIM" if gains else ""))
+        say(f"дотерани {len(gains)} од {len(by_b)} згради")
 
     def evaluate(which):
         """PSNR / SSIM of the render from each capture's camera against its colour-matched photo, building pixels only; the guard
@@ -724,14 +838,15 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 if shift:
                     proof ^= {sel.file}
         # the meshes follow the job (twice a second), the look switch and the element switches (a slice per frame)
-        lod = op.get("lod", 400.0)
-        if focus is None or math.hypot(orb.t[0] - focus[0], orb.t[2] - focus[1]) > min(lod, 1e6) / 4:
-            focus = (float(orb.t[0]), float(orb.t[2]))
-        want = (algo if look else None, job.version if job else 0, id(job), focus, lod)
+        lod, view = op.get("lod", 400.0), op.get("view", 500.0)
+        here = orb.free.eye() if orb.free is not None else orb.t          # where the camera is / looks
+        if focus is None or math.hypot(here[0] - focus[0], here[2] - focus[1]) > min(lod, view, 1e6) / 4:
+            focus = (float(here[0]), float(here[2]))
+        want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view)
         if opt_t is not None and time.time() - opt_t > 0.25:
             opt_t, shown = None, None
         if want != shown and (n % 30 == 0 or want[0] != (shown or (None,))[0] or not running) and opt_t is None:
-            scene.request(blds, want[0], op, None, focus, lod)
+            scene.request(blds, want[0], op, None, focus, lod, view if view < 1e8 else None)
             shown = want
         scene.step(0.02)
         if sel is not None and sel.file in quads and quads[sel.file][1] != (sel.dyaw, sel.dpitch):
@@ -743,9 +858,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.clear_background(rl.Color(150, 172, 196, 255))
         rl.begin_mode_3d(cam)
         scene.draw()
+        vis = scene.shown_ids
         for b in blds.values():                                   # fitted outlines: green = from photos, blue = from neighbours
             f = b.fits.get(algo) if look else None
-            if not f:
+            if not f or (vis is not None and b.id not in vis):
                 continue
             col = LOOK_COL["photo" if f.get("src") == "photo" else "inferred"]
             if f.get("src") != "photo" and orb.dist > 900:
@@ -756,6 +872,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 rl.draw_line_3d(rl.Vector3(r[i][0], hh, r[i][1]), rl.Vector3(r[(i + 1) % len(r)][0], hh, r[(i + 1) % len(r)][1]), col)
         if show_fr:
             for c in ok_caps:
+                if focus is not None and c is not sel and math.hypot(c.x - focus[0], c.z - focus[1]) > op.get("view", 500.0):
+                    continue
                 e, pts = _frustum(c)
                 col = rl.YELLOW if c is sel else (rl.Color(60, 230, 255, 255) if c.file in proof else
                                                   (rl.Color(255, 120, 200, 255) if c.status else rl.Color(255, 255, 255, 200)))
@@ -841,11 +959,20 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             y += 34
             if _button(16, y, hw, 28, "ОЦЕНИ СЛИЧНОСТ", False, 14) and not running:
                 evaluate([c for c in ok_caps if c.status or c.file in proof])
-            v = _toggle(24 + hw, y + 3, hw, "чувар на стилот", op["guard"], 13)
+            if _button(24 + hw, y, hw, 28, "ДОТЕРАЈ ПО СЛИКИТЕ", False, 14) and not running:
+                tune([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
+                evaluate([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
+            y += 32
+            v = _toggle(16, y, lw - 32, "чувар: исклучи стил што ја влошува сличноста", op["guard"], 13)
             if v != op["guard"]:
                 op["guard"] = v
                 pg.save_settings(folder, st, op)
-            y += 34
+            v = op.get("autotune", True)
+            v2 = _toggle(16, y + 22, lw - 32, "по проба: дотерај висина / катови по сликите", v, 13)
+            if v2 != v:
+                op["autotune"] = v2
+                pg.save_settings(folder, st, op)
+            y += 50
             stg = pg.enabled(osm_dir)
             lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ФОТО", False: "ТЕКОВНИ"}[stg]
             if _button(16, y, lw - 32, 28, lab, bool(stg), 14) and stg is not None:
@@ -945,9 +1072,15 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if v != scene.detail:
                 scene.detail = v
                 if scene.want is None:
-                    scene.want = (blds, None, None, None)
+                    scene.want = (getattr(scene, "cur", None) or blds, None, None, None)
                     scene.t0 = time.time()
                     scene._upload()
+            views = [250.0, 500.0, 800.0, 1500.0, 1e9]
+            v = _choice(16, y + 84, lw - 32, "вчитај згради до (од камерата)", views, min(views, key=lambda s_: abs(s_ - op["view"])),
+                        {v_: (f"{v_:.0f} м" if v_ < 1e8 else "сите") for v_ in views}, 13)
+            if v != op["view"]:
+                op["view"] = v
+                opts_changed()
             lods = [150.0, 250.0, 400.0, 700.0, 1e9]
             v = _choice(16, y + 28, lw - 32, "детали до (подалеку само кутии)", lods, min(lods, key=lambda s_: abs(s_ - op["lod"])),
                         {v_: (f"{v_:.0f} м" if v_ < 1e8 else "секаде") for v_ in lods}, 13)
@@ -959,7 +1092,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if abs(v - op["sat"]) > 1e-6:
                 op["sat"] = v
                 opts_changed()
-            y += 86
+            y += 114
             font.draw_text(f"КОМПЛЕТ ЕЛЕМЕНТИ ({len(archkit.ELEMENTS)})", 16, y, 15, INK, bold="cond")
             y += 22
             v = _toggle(16, y, cw2 - 4, "комплетот вклучен", op["kit_on"], 13)
@@ -986,7 +1119,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             group = _choice(20 + cw2, y, cw2 - 4, "група", groups, group, None, 13)
             y += 28
             items = [e for e in archkit.ELEMENTS if group == "сè" or e[3] == group]
-            font.draw_text(f"избрани {len(op['kit'])} · прикажани {len(items)} · 0-3 = ниво на детали", 16, y, 13, DIM)
+            font.draw_text(f"избрани {len(op['kit'])} · прикажани {len(items)} · 0-3 ниво", 16, y, 13, DIM)
             if _button(lw - 96, y - 2, 80, 20, "ИСЧИСТИ", False, 12) and op["kit"]:
                 op["kit"] = []
                 opts_changed()
@@ -1178,7 +1311,9 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.end_drawing()
         if job is not None and job.done and not getattr(job, "_evaluated", False) and scene.want is None:
             job._evaluated = True
-            if job.only and not job.error:                # a proof run: judge it at once
+            if job.only and not job.error:                # a proof run: tune it (if on) and judge it at once
+                if op.get("autotune", True):
+                    tune([c for c in ok_caps if c.file in job.only])
                 evaluate([c for c in ok_caps if c.file in job.only])
         if frames is not None:
             if n == 3 and job is None:
