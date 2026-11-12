@@ -236,6 +236,13 @@ class Scene:
             w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
             if w:
                 parts.append((lk["mat"], w))
+            if near and bw.OSM_KIT and h >= 4:                 # the default world's element kit, as the world build makes it
+                import archkit
+                small = bool(lk.get("small"))
+                ids = archkit.osm_ids(archkit.osm_archetype(lk["mat"], h, b.area, small, b.tags),
+                                      ((int(b.c[0] * 13.7) * 92821) ^ int(b.c[1] * 7.3)) & 0x7FFFFFFF)
+                parts += [(m_, tuple(g)) for m_, *g in bw.osm_kit(ring, h, lk["mat"], lk["wallc"], lk.get("floor", 3.2), lk.get("bay", 3.4),
+                                                                  0.0, 0, b.area, small, ids)]
         roof = lk.get("roof") if tiles else None
         if not hasattr(b, "_tri"):
             try:

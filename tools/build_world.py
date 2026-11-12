@@ -1046,6 +1046,98 @@ def photo_on(fit):
     return fit.get("src") == "photo" or (fit.get("opts") or {}).get("inferred", "lite") != "none"
 
 
+OSM_KIT = os.environ.get("SK242_OSM_KIT", "1") != "0"          # the element kit on the buildings without photos
+
+
+def _kit_faces(put, mt, cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot):
+    """One kit box as quads: on a wall without the face against the wall, with an underside when it hangs above the ground."""
+    ca, sa = math.cos(yw), math.sin(yw)
+    w4 = [(cx + ca * x - sa * z, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (sx / 2, -sz / 2), (sx / 2, sz / 2), (-sx / 2, sz / 2))]
+    if wall and sz <= 0.035:                                          # a flat piece on the wall (joint, band, stain): its front only
+        a_, b_ = w4[0], w4[1]
+        put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4, col)
+        return
+    for k_ in range(4):
+        if wall and k_ == 2:                                          # local +z = into the wall
+            continue
+        a_, b_ = w4[k_], w4[(k_ + 1) % 4]
+        nx, nz = b_[1] - a_[1], -(b_[0] - a_[0])
+        l_ = math.hypot(nx, nz) or 1.0
+        shd = float(np.clip(0.52 + 0.55 * max(0.0, (nx * SUN[0] + nz * SUN[2]) / l_), 0.45, 1.12))
+        put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4,
+            [c * shd for c in col])
+    tp = float(np.clip(0.52 + 0.55 * SUN[1], 0.45, 1.12))
+    put(mt, [(p_[0], y0 + hh, p_[1]) for p_ in w4], [(0.6, 0.2)] * 4, [c * tp for c in col])
+    if y0 > y_bot + 0.3 or not wall:
+        put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
+
+
+# mean colour of each facade texture (gl3d.build_textures, measured 2026-11-12): a textured wall shows tint x this / 255, so the
+# kit's pieces in "the wall's colour" use that, not the bare tint
+TEX_MEAN = {0: (179, 176, 169), 1: (130, 153, 164), 4: (154, 155, 153), 5: (204, 187, 171), 7: (174, 106, 87), 8: (153, 135, 121),
+            9: (142, 148, 135), 10: (188, 188, 181), 11: (176, 158, 150)}
+
+
+def osm_kit(outer, h, mat, wallc, fh, bw, y_bot, seed, ar, small, ids=None):
+    """src/archkit.py elements on a building without photos: its archetype from the world's facade material and size, one pick
+    per element group from its own seed, placed on the texture's tile grid (bays of the wall / floor lines) -> [(material, pos, uv,
+    col)].  Silhouette and rhythm go to "glaz", relief and clutter to MAT_KIT2 / MAT_KIT3 (left out by the detail setting)."""
+    import archkit
+    if ids is None:
+        ids = archkit.osm_ids(archkit.osm_archetype(mat, h, ar, small), seed)
+    if not ids:
+        return []
+    acc = {}
+
+    def put(mt, pts, uvs, col):
+        e_ = acc.setdefault(mt, ([], [], []))
+        c = (*[int(min(255, max(0, v))) for v in col], 255)
+        for k in (0, 1, 2, 0, 2, 3):
+            e_[0].append(pts[k])
+            e_[1].append(uvs[k])
+            e_[2].append(c)
+    KMAT = (MAT_SURF["glaz"], MAT_SURF["glaz"], MAT_KIT2, MAT_KIT3)
+    wallc = tuple(w_ * t_ / 255.0 for w_, t_ in zip(wallc, TEX_MEAN.get(mat, (176, 172, 166))))
+    r = np.asarray(outer, np.float64)
+    n = len(r)
+    longest = max(range(n), key=lambda j: float(np.hypot(*(r[(j + 1) % n] - r[j])))) if n else 0
+    floors = max(1, round((h - y_bot) / fh))
+    fh_ = (h - y_bot) / floors
+    fams = [(e, archkit.BY_ID[e][1]) for e in ids]
+    nbox = 0
+    for i in range(n):
+        a, b = r[i], r[(i + 1) % n]
+        ln = float(np.hypot(*(b - a)))
+        if ln < 1.5:
+            continue
+        t_ = (b - a) / ln
+        nrm = np.array([t_[1], -t_[0]])
+        yaw = math.atan2(t_[1], t_[0])
+        nb = max(1, round(ln / bw))
+        W = {"a": a, "ln": ln, "h": h, "fh": fh_, "pv": y_bot, "y_bot": y_bot, "cols": [(ln * j / nb, ln * (j + 1) / nb) for j in range(nb)],
+             "D": lambda u, y: 0.0, "wins": [None] * nb, "balc": [False] * nb, "loggia": [False] * nb, "bdep": [0.9] * nb,
+             "wallc": tuple(wallc), "longest": i == longest, "accent": [tuple(v * 0.8 for v in wallc)]}
+        for eid, fam in fams:
+            if archkit.FAMILIES[fam][2] != "wall" or nbox >= archkit.MAX_BOXES:
+                continue
+            if fam in ("shopfront", "canopy", "tower", "pilotis") and i != longest:
+                continue                                            # one street front per building
+            tr_ = archkit.TIER[fam]
+            for it in archkit.kit_wall([eid], W)[:archkit.MAX_BOXES - nbox]:
+                u_, o_, ky0, su_, sd_, hh_, rgb_ = it[:7]
+                cx, cz = a + t_ * u_ + nrm * o_
+                _kit_faces(put, KMAT[tr_], cx, cz, su_, sd_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yaw + (it[7] if len(it) > 7 else 0.0),
+                           len(it) == 7, y_bot)
+                nbox += 1
+    if not small:
+        for eid, fam in fams:
+            if archkit.FAMILIES[fam][2] != "roof":
+                continue
+            for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof([eid], r, h, wallc, None):
+                _kit_faces(put, KMAT[archkit.TIER[fam]], x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, False, y_bot)
+    return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
+
+
 def photo_facade(outer, h, fit, y_bot=0.0):
     """Walls of a photo-fitted building (src/photogram.py ДЕТАЛИ), all procedural from the fitted numbers: every wall cut into its
     bay columns x floors; each cell a wall surface (plaster / concrete / tiles / brick / metal texture in the photo's colour) with a
@@ -1094,23 +1186,7 @@ def photo_facade(outer, h, fit, y_bot=0.0):
     KMAT = (MAT_SURF["glaz"], MAT_SURF["glaz"], MAT_KIT2, MAT_KIT3)
 
     def kbox(cx, cz, sx, sz, hh, y0, col, yw, tier=1, wall=False):
-        """A kit box: on a wall without the face against the wall, with an underside when it hangs above the ground."""
-        mt = KMAT[tier]
-        ca, sa = math.cos(yw), math.sin(yw)
-        w4 = [(cx + ca * x - sa * z, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (sx / 2, -sz / 2), (sx / 2, sz / 2), (-sx / 2, sz / 2))]
-        for k_ in range(4):
-            if wall and k_ == 2:                                      # local +z = into the wall
-                continue
-            a_, b_ = w4[k_], w4[(k_ + 1) % 4]
-            nx, nz = b_[1] - a_[1], -(b_[0] - a_[0])
-            l_ = math.hypot(nx, nz) or 1.0
-            shd = float(np.clip(0.52 + 0.55 * max(0.0, (nx * SUN[0] + nz * SUN[2]) / l_), 0.45, 1.12))
-            put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4,
-                [c * shd for c in col])
-        tp = float(np.clip(0.52 + 0.55 * SUN[1], 0.45, 1.12))
-        put(mt, [(p_[0], y0 + hh, p_[1]) for p_ in w4], [(0.6, 0.2)] * 4, [c * tp for c in col])
-        if y0 > y_bot + 0.3 or not wall:
-            put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
+        _kit_faces(put, KMAT[tier], cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot)
     longest = max(range(n), key=lambda j: float(np.hypot(*(r[(j + 1) % n] - r[j])))) if n else 0
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
@@ -1755,6 +1831,12 @@ def _bld_job(job):
             badd(MAT_SOLID, *ex_)
         for ex_ in extras:
             badd(MAT_SOLID, *ex_)
+        if OSM_KIT and h >= 4:                                              # the element kit by archetype (src/archkit.py OSM_POOLS)
+            import archkit
+            ids_ = archkit.osm_ids((fit or {}).get("osm_arch") or archkit.osm_archetype(mat, h, ar, small),
+                                   ((int(cxm * 13.7) * 92821) ^ int(cym * 7.3)) & 0x7FFFFFFF)
+            for m_, *g in osm_kit(outer, h, mat, wallc, fh, bw, -skirt, 0, ar, small, ids_):
+                badd(m_, *g)
         for (px, py, sx, sz, hh) in rooftop:
             badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
         rj = random.Random(hash(key) ^ len(outer) * 977 ^ int(cxm * 13))
@@ -1873,6 +1955,9 @@ def main():
                         px, py = r.uniform(bb[0], bb[2]), r.uniform(bb[1], bb[3])
                         if pip((px, py), outer) and all(pip((px + dx, py + dy), outer) for dx, dy in ((2, 2), (-2, -2), (2, -2), (-2, 2))):
                             rooftop.append((px, py, r.uniform(1.5, 3.2), r.uniform(1.5, 3.2), r.uniform(1.0, 2.4)))
+                if not fit and OSM_KIT:                   # the archetype for the element kit, from the tags too
+                    import archkit
+                    fit = {"osm_arch": archkit.osm_archetype(mat, h, ar, small, t)}
                 pending.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
             except Exception as e:  # noqa: BLE001 - skip a malformed building
                 print(f"   skipped building {el.get('id')}: {e}")

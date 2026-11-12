@@ -516,6 +516,69 @@ def kit_ids(fit, opts):
     return [i for i in ids if i in BY_ID]
 
 
+# the OSM world without photos (tools/build_world.py osm_kit): per archetype, groups of (probability, element id); one pick
+# per group from the building's own seed.  Only elements that need no measured windows (the facades there are textures whose
+# window grid is the tile grid: bay edges and floor lines line up with it).
+OSM_POOLS = {
+    "block": [[(0.18, "joint_grid_2"), (0.12, "joint_floor"), (0.08, "frame_ims_2"), (0.08, "fin_mid_2"), (0.08, "pr_3"),
+               (0.04, "rib_12"), (0.05, "br_4")],
+              [(0.3, "att_std"), (0.1, "att_stepped"), (0.08, "att_white"), (0.05, "att_red")],
+              [(0.12, "tow_mid"), (0.08, "tow_end"), (0.04, "tow_slim"), (0.03, "tow_photo")],
+              [(0.06, "bd_red"), (0.05, "bd_ochre"), (0.04, "bd_blue"), (0.04, "bd_brown_2")],
+              [(0.25, "pl_low"), (0.12, "pl_dark"), (0.06, "pl_stone")],
+              [(0.14, "sf_full"), (0.08, "sf_shutter"), (0.06, "can_std"), (0.04, "pil_std")],
+              [(0.3, "rr_std"), (0.12, "rr_two"), (0.04, "rr_slope"), (0.04, "ng_box"), (0.03, "ng_pitched")],
+              [(0.18, "an_many"), (0.08, "an_one"), (0.08, "vt_row"), (0.05, "tk_box")],
+              [(0.3, "wt_stain")],
+              [(0.4, "wt_dirt")], [(0.15, "wt_roofstain")]],
+    "tower": [[(0.25, "joint_grid_2"), (0.15, "joint_floor"), (0.1, "frame_ims_2"), (0.1, "fin_mid_2"), (0.1, "pr_3")],
+              [(0.4, "att_std"), (0.15, "att_stepped")],
+              [(0.25, "tow_mid"), (0.15, "tow_end"), (0.1, "tow_slim")],
+              [(0.08, "bd_red"), (0.06, "bd_ochre"), (0.05, "bd_blue")],
+              [(0.3, "pl_low"), (0.15, "pl_dark")], [(0.12, "sf_full"), (0.1, "can_std"), (0.06, "pil_std")],
+              [(0.6, "rr_std"), (0.25, "rr_two")], [(0.25, "an_many"), (0.1, "an_tall"), (0.1, "vt_row"), (0.1, "tk_box")],
+              [(0.35, "wt_stain")], [(0.4, "wt_dirt")], [(0.2, "wt_roofstain")],
+              [(0.12, "fp_rows")]],
+    "house": [[(0.35, "pl_low"), (0.15, "pl_stone"), (0.08, "pl_dark")], [(0.25, "wt_stain"), (0.12, "wt_peel"), (0.05, "wt_brick")],
+              [(0.35, "wt_dirt")], [(0.18, "fl_one")], [(0.08, "rb_cols")], [(0.1, "wt_moss"), (0.05, "wt_crack")],
+              [(0.08, "att_white")], [(0.06, "sf_shutter")]],
+    "industrial": [[(0.4, "rib_corrug"), (0.1, "joint_acm")], [(0.2, "sr_std"), (0.1, "sr_fine")], [(0.3, "vt_big"), (0.1, "ps_std")],
+                   [(0.3, "wt_dirt")], [(0.2, "wt_stain")]],
+    "glass": [[(0.35, "cw_vert"), (0.2, "cw_horiz"), (0.15, "cw_fins")], [(0.35, "att_dark"), (0.15, "att_white")],
+              [(0.3, "ps_std"), (0.2, "rr_std")], [(0.15, "bb_mast"), (0.08, "bb_one")], [(0.2, "sf_full"), (0.15, "can_wide")]],
+}
+
+
+def osm_archetype(mat, h, ar, small, tags=None):
+    """The kind of an OSM building from its tags, the world build's facade material (tools/build_world.bld_style) and size."""
+    bt = (tags or {}).get("building", "yes")
+    if bt in ("industrial", "warehouse", "factory", "manufacture", "hangar") or (bt in ("garages", "service") and ar > 200):
+        return "industrial"
+    if small or mat == 5 or bt in ("house", "detached", "semidetached_house", "terrace", "bungalow"):   # MAT_HOUSE
+        return "house"
+    if bt in ("office", "commercial", "retail") and h >= 9:
+        return "glass"
+    if mat == 1 and h < 9 and ar > 400:                         # MAT_FACADE_B, low and large: a hall
+        return "industrial"
+    if h >= 27:
+        return "tower"
+    return "block" if h >= 9 else "house"
+
+
+def osm_ids(arch, seed):
+    """One deterministic pick per group of the archetype's pool."""
+    rnd = np.random.default_rng(seed % (2 ** 31))
+    out = []
+    for grp in OSM_POOLS.get(arch, []):
+        x = rnd.random()
+        for pr, eid in grp:
+            if x < pr:
+                out.append(eid)
+                break
+            x -= pr
+    return [i for i in out if i in BY_ID]
+
+
 def _col(p, W, alt=0):
     c = p.get("col", "wall")
     if c == "photo":                                            # the wall's own measured accent colours
