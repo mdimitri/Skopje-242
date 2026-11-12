@@ -24,8 +24,11 @@ WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT
            "machete": ("Мачета", 0.45, 48, 1, 0.0, 1.8, 9999), "revolver": ("Револвер", 0.6, 70, 1, 0.01, 45, 36),
            "sniper": ("Снајпер", 1.3, 180, 1, 0.0, 120, 20), "smg": ("Ингрем", 0.07, 16, 1, 0.09, 26, 400)}
 MELEE = ("bat", "knuckles", "chain", "machete")                # swung, not fired: no tracer, no ammo used
+from weaponart import swing_az   # noqa: E402
+SWINGERS = ("bat", "chain")                          # two-handed swings: swept arc hits, arms follow (render swing frames 60..67)
 SWING_T = 0.36                  # seconds of one bat swing (the renderer sweeps the bat across the body)
 WEAPON_ORDER = ["fist", "knuckles", "chain", "bat", "machete", "pistol", "revolver", "uzi", "smg", "shotgun", "kalash", "sniper", "zolja"]
+
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
 
 
@@ -2467,7 +2470,10 @@ class Sim:
         wk.atk_cd, wk.atk_t, wk.atk_kind = cd, (SWING_T if wk.weapon in MELEE else 0.2), 4
         empty = wk.ammo <= 0
         fx, fy = math.cos(wk.h), math.sin(wk.h)
-        if wk.weapon in MELEE:
+        if wk.weapon in SWINGERS:                           # hits are found along the swept arc by _swing_tick over the next 0.36 s
+            wk.sw_hit, wk.sw_u, wk.sw_k = set(), 0.0, -1
+            self.ev("swing", x=wk.x + fx, y=wk.y + fy, hit=False, weapon=wk.weapon)
+        elif wk.weapon in MELEE:
             self._ray(wk, wk.h, dmg, rng_m, False)
             self.chaos.punch(wk, True)                      # a swung bat also smashes whatever stands in front of it
         else:
@@ -2478,6 +2484,76 @@ class Sim:
             self.scare(wk.x, wk.y, 45.0 if kind != "rocket" else 70.0)
         if empty:
             wk.weapon = "fist"
+
+    def _swing_tick(self):
+        """Everything the bat passes through since the last tick is hit once: people, vehicles, other players, breakables."""
+        wk = self.walker
+        if wk is None or getattr(wk, "sw_hit", None) is None:
+            return
+        u = 1.0 if wk.atk_t <= 0 else min(1.0, 1.0 - wk.atk_t / SWING_T)
+        a0, a1 = swing_az(wk.sw_u), swing_az(u)
+        k_prev = wk.sw_k
+        wk.sw_u = u
+        hit = wk.sw_hit
+        if u >= 1.0 or wk.health <= 0:
+            wk.sw_hit = None
+        lo, hi = min(a0, a1), min(max(a0, a1), 1.6)            # (nothing is hit while the bat is still behind the batter)
+        if lo > hi:
+            return
+        _name, _cd, dmg, _p, _s, reach, _pe = WEAPONS[wk.weapon]
+
+        def in_arc(x, y, rad):
+            dx, dy = x - wk.x, y - wk.y
+            d = math.hypot(dx, dy)
+            if d < 0.2 or d > reach + rad:
+                return None
+            rel = (math.atan2(dy, dx) - wk.h + math.pi) % math.tau - math.pi
+            pad = math.atan2(rad, d)
+            return math.atan2(dy, dx) if lo - pad <= rel <= hi + pad else None
+        for p in self.peds.list:
+            if id(p) in hit or p.mode in ("dead", "air"):
+                continue
+            ang = in_arc(p.x, p.y, 0.45)
+            if ang is None:
+                continue
+            hit.add(id(p))
+            fx, fy = math.cos(ang), math.sin(ang)
+            p.hp -= dmg
+            p.vx, p.vy = fx * 3, fy * 3
+            self.ev("hit", x=p.x, y=p.y, kick=True)
+            self.ev("swing", x=p.x, y=p.y, hit=True, weapon=wk.weapon)
+            if p.hp <= 0:
+                p.mode, p.t = "dead", clear_secs(self)
+                self.stats["peds"] += 1
+                self.ev("ped_shot", x=p.x, y=p.y)
+            else:
+                p.mode, p.t = "flee", 4.0
+                p.vx, p.vy = fx * 4, fy * 4
+        for b in self.bodies:
+            if id(b) in hit or not b.alive:
+                continue
+            ang = in_arc(b.x, b.y, CIRC[b.kind][1] * 1.6)
+            if ang is None:
+                continue
+            hit.add(id(b))
+            if getattr(b, "pid", None) is not None:
+                self._pvp_hit(b.pid, "car", 6)
+            b.health -= 6
+            b.dirty = True
+            self.ev("swing", x=b.x, y=b.y, hit=True, weapon=wk.weapon)
+        for rp in self.remote_foot.values():
+            if id(rp) in hit:
+                continue
+            ang = in_arc(rp["x"], rp["y"], 0.45)
+            if ang is not None:
+                hit.add(id(rp))
+                self._pvp_hit(rp["pid"], "swing", dmg)
+                self.ev("hit", x=rp["x"], y=rp["y"], kick=True)
+        k = int(u * 6)
+        if k != k_prev:                                           # props along the arc, six looks per swing
+            wk.sw_k = k
+            mid = (lo + hi) * 0.5
+            self.chaos.punch(wk, True, ang=wk.h + mid, dist=1.2)
 
     def clear_time(self):
         return clear_secs(self)
@@ -3218,6 +3294,7 @@ class Sim:
                 continue
             keep.append(b)
         self.bodies = keep
+        self._swing_tick()
         if self.mode == "foot" and self.walker is not None and 0 < self.walker.health < 100:
             self.walker.health = min(100.0, self.walker.health + dt * 10.0 / 60.0)      # slow healing: 10 % a minute
         # ---------------- pickups (weapons reshuffle every morning at 6)

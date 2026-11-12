@@ -796,8 +796,9 @@ class Renderer:
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
             frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0) if wk.moving else 12
+            swinging = wk.atk_t > 0 and wk.weapon in actors.SWINGERS and wk.ammo > 0
             if wk.atk_t > 0:
-                frame = wk.atk_kind
+                frame = 60 + min(7, int((1.0 - wk.atk_t / actors.SWING_T) * 8)) if swinging else wk.atk_kind   # bat: arms and torso swing with it
             if wk.z > 0.35 or getattr(wk, "vz", 0.0) > 1.0:   # a real jump / fall, not a step off a kerb or a slope
                 frame = 16                                 # jumping: upright, arms up, knees tucked
             if wk.duck_t > 0.0:
@@ -813,13 +814,15 @@ class Renderer:
                 wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
                 if wm is not None:
                     sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
-                    tilt, yaw = 0.8, 0.0
-                    if wk.weapon in actors.MELEE and wk.weapon != "knuckles" and wk.atk_t > 0:      # bat swing: wound up behind the right shoulder, sweeps across the front
+                    tilt, yaw, hand = 0.8, 0.0, (0.28 + sw_, 0.8, 0.36)
+                    if swinging:                                  # bat swing: the grip travels with the hands of the swing pose (gl3d._swing_pose)
                         u = 1.0 - wk.atk_t / actors.SWING_T
-                        e = u * u * (3 - 2 * u)
-                        tilt, yaw = 0.3 + 1.1 * math.sin(math.pi * min(1.0, u * 1.3)), 1.4 - 2.9 * e
+                        u = (min(7, int(u * 8)) + 0.5) / 8.0       # (the same eight poses the arms are drawn in)
+                        psi = weaponart.swing_az(u)
+                        hand = weaponart.swing_grip(psi)
+                        tilt, yaw = 0.3 + 1.1 * math.sin(math.pi * min(1.0, u * 1.3)), -psi
                     Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(tilt)),
-                                            rl.matrix_multiply(rl.matrix_multiply(rl.matrix_translate(0.28 + sw_, 0.8, 0.36), rl.matrix_rotate_y(yaw)),
+                                            rl.matrix_multiply(rl.matrix_multiply(rl.matrix_translate(*hand), rl.matrix_rotate_y(yaw)),
                                                                rl.matrix_rotate_y(-wk.h)))
                     Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
                     old_t = _keep(wm.transform)

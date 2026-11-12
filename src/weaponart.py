@@ -23,3 +23,16 @@ BOXES = {
     "smg": [(-0.02, -0.01, 0.2, 0.07, DARK), (0.18, 0.0, 0.14, 0.03, STEEL), (0.0, -0.17, 0.045, 0.16, DARK), (-0.12, 0.0, 0.1, 0.03, STEEL)],
 }
 DEPTH = {"machete": 0.03, "revolver": 0.05, "sniper": 0.06, "smg": 0.06, "pistol": 0.05, "uzi": 0.07, "shotgun": 0.06, "kalash": 0.07, "bat": 0.07, "knuckles": 0.09, "chain": 0.04, "zolja": 0.13}
+
+
+def swing_az(u):
+    """Body-local azimuth (rad, 0 = straight ahead, + = the batter's right/back) of a two-handed swung weapon at progress u 0..1:
+    wound up behind the right shoulder, whipped across the front, followed through to the left. Shared by the hit test and the pose."""
+    e = u * u * (3 - 2 * u)
+    return 2.3 - 3.9 * e
+
+
+def swing_grip(psi):
+    """Body-local (x forward, y up, z side) point where the hands hold a weapon swung at azimuth psi."""
+    import math
+    return 0.42 * math.cos(0.8 * psi), 1.18, 0.42 * math.sin(0.8 * psi)

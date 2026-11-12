@@ -1569,11 +1569,44 @@ _HERO = [
 ]
 
 
+def _swing_pose(parts, add, x0, u, arm_c, hand, fore):
+    """Two-handed bat swing at progress u: the upper body twists with the bat, both hands grip it in front of the chest
+    (two-bone reach from each shoulder), and the grip travels with the bat's azimuth. Matches render's bat placement (swing_grip)."""
+    psi = weaponart.swing_az(u)
+    tau = 0.5 * max(-1.6, min(1.6, psi))
+    ct, st_ = math.cos(tau), math.sin(tau)
+    for k, (v, c) in enumerate(parts):                   # torso, head: twisted about the vertical axis, fading out towards the hips
+        v = np.array(v, np.float32)
+        w = np.clip((v[:, 1] - 0.74) / 0.26, 0.0, 1.0)
+        w = w * w * (3 - 2 * w)
+        ang = tau * w
+        ca, sa = np.cos(ang), np.sin(ang)
+        x, z = v[:, 0].copy(), v[:, 2].copy()
+        v[:, 0], v[:, 2] = x * ca - z * sa, x * sa + z * ca
+        parts[k] = (v, c)
+    gx, gy, gz = weaponart.swing_grip(psi)
+    for z in (-0.34, 0.34):
+        sx_, sz_ = x0 * ct - z * st_, x0 * st_ + z * ct      # the shoulder after the twist
+        dx, dz = gx - sx_, gz - sz_
+        beta = math.atan2(dz, dx)
+        a, bend = _reach(0.0, 1.36, math.hypot(dx, dz), gy, 0.36, 0.32)
+        i0 = len(parts)
+        _arm(parts, add, x0, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore)
+        cb, sb = math.cos(beta), math.sin(beta)
+        for k in range(i0, len(parts)):                  # the arm was built hanging in the x-y plane: yaw it towards the grip
+            v, c = parts[k]
+            v = np.array(v, np.float32)
+            px, pz = v[:, 0] - x0, v[:, 2] - z
+            v[:, 0], v[:, 2] = sx_ + px * cb - pz * sb, sz_ + px * sb + pz * cb
+            parts[k] = (v, c)
+
+
 def _hero(i, frame):
     d = _HERO[i % len(_HERO)]
     A = lambda c: np.array(c, np.float32)
     strike = frame if frame in (4, 5) else 0
-    if strike:
+    sw = frame - 60 if 60 <= frame < 68 else None        # swing phase 0..7 (arms are built at the end)
+    if strike or sw is not None:
         frame = 0
     parts = []
 
@@ -1588,7 +1621,7 @@ def _hero(i, frame):
     jump = frame == 16                                   # airborne: arms up, both knees tucked, body upright
     ride = frame == 13                                   # seated on a two-wheeler: feet on the pedals, hands on the bars
     frame, th, lean, ph, run = _phase(3 if jump else (12 if ride else frame))
-    if strike:
+    if strike or sw is not None:
         th = lean = 0.0
         ph = None
     # legs: thigh swings from the hip, shin from the knee (the swinging leg folds), foot with a sole
@@ -1662,7 +1695,7 @@ def _hero(i, frame):
         if "bottle" in ex:
             props[-1] += [(R + 0.04, 0.6, -0.38, 0.06, 0.24, 0.06, (40, 110, 50))]
     for sg, z in ((-1, -0.34), (1, 0.34)):
-        if strike == 4 or ride:                         # punching: both arms are drawn by _strike; riding: added below
+        if strike == 4 or ride or sw is not None:       # punching: both arms are drawn by _strike; riding / swinging: added below
             continue
         if frame == 3:
             add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
@@ -1729,6 +1762,8 @@ def _hero(i, frame):
         add(hx - 0.02, hy + 0.42, 0, 0.06, 0.1, 0.06, (240, 220, 60))
     if strike:
         _strike(add, strike, A(sk), legc, shoe, arm_c)
+    if sw is not None:
+        _swing_pose(parts, add, -st, (sw + 0.5) / 8.0, arm_c, hand, fore)
     if ride:                                            # lean the seated body over the bars, then reach both hands to them
         rl_ = 0.45
         for k, (v, c) in enumerate(parts):
@@ -1757,6 +1792,8 @@ def _hero(i, frame):
 
 def ped_arrays(arch, tone, frame, skin=0):
     """arch = archetype (see vehicles.PED_NAMES), tone 0..2 = colour variant, frame 0/1 walk, 2 lying, 3 arms up, 4 punch, 5 kick."""
+    if 60 <= frame < 68 and arch >= 100:                # 60..67: the two-handed bat / chain swing (hero only)
+        return _hero(arch - 100, frame)
     if frame >= 40:                                    # 40..47: crawling on all fours, face down, the walk cycle drives the limbs
         pos, uv, rgba = ped_arrays(arch, tone, frame - 20, skin)
         x, y = pos[:, 0].copy(), pos[:, 1].copy()

@@ -63,11 +63,12 @@ class Chaos:
             self.sim.money += amount
             self.sim.ev("pay", x=x, y=y, amount=amount)
 
-    def punch(self, wk, kick):
+    def punch(self, wk, kick, ang=None, dist=None):
         """A punch / kick lands in front of the player: small things fly, bigger ones break, posts need a kick."""
         sim, w = self.sim, self.sim.w
-        fx, fy = math.cos(wk.h), math.sin(wk.h)
-        cx, cy = wk.x + fx * (1.0 if kick else 0.9), wk.y + fy * (1.0 if kick else 0.9)
+        fx, fy = math.cos(wk.h if ang is None else ang), math.sin(wk.h if ang is None else ang)
+        d_ = dist if dist is not None else (1.0 if kick else 0.9)
+        cx, cy = wk.x + fx * d_, wk.y + fy * d_
         az = wk.az if wk.az is not None else 0.0
         done = 0
         for pt in sorted(w.points_near(cx, cy, 1.1), key=lambda q: (q[0] - cx) ** 2 + (q[1] - cy) ** 2):
