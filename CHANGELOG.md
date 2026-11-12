@@ -2,6 +2,10 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Sound rework (2026-11-12)
+- Every sound effect without a library recording is now synthesised realistically (src/sfx_synth.py): shots, explosions, crashes, glass, doors, machines, crowds, animals, birds. 116 keys that were silent before now play.
+- One loudness scale for effects, engines, footsteps, sirens, library ambiences and speech (src/loudness.py, docs/SOUND_LEVELS.md); music was already level.
+
 ## v3.1 (2026-11-05)
 - Loading splash is a slideshow: the main art plus every image in assets/splash/, random first image, 20 s each, torn-poster strip transition.
 

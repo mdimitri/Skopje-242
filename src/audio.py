@@ -13,10 +13,12 @@ from collections import OrderedDict
 import numpy as np
 
 import engine_synth
+import loudness
 import pyray as rl
 
 import soundcat
 import soundlib
+import sfx_synth
 import soundproc
 
 SR = 22050
@@ -357,7 +359,51 @@ def build():
     carr = np.sin(2 * np.pi * 4300 * t)
     gate = (np.sin(2 * np.pi * 36 * t) > 0.4) * (np.sin(2 * np.pi * 2.0 * t) > -0.3)
     S["crickets"] = _loopify((carr * gate * 0.25).astype(np.float32))
+    S.update(sfx_synth.build())                                         # every effect without a library recording: impacts, weapons, doors, machines, crowds, animals (reworked: realistic)
+    S["dog_small"], S["dog_big"] = _pitched(S["bark_a"], 1.35), _pitched(S["bark_c"], 0.72)
+    S["dog_pack_distant"] = _pack(S)
+    return loudness.level_all(S, LOOP_KEYS, SR)                         # one loudness scale for all (see loudness.py)
+
+
+def build_cached():
+    """build(), remembered on disk (temp folder) keyed by a hash of the synthesis sources: the second launch skips ~3 s of numpy work."""
+    import glob
+    import hashlib
+    try:
+        h = hashlib.md5()
+        for m_ in (__file__, sfx_synth.__file__, engine_synth.__file__, loudness.__file__):
+            h.update(open(m_, "rb").read())
+        path = os.path.join(tempfile.gettempdir(), "skopje242_sfx_%s.npz" % h.hexdigest()[:12])
+        if os.path.exists(path):
+            z = np.load(path)
+            return {k_: z[k_] for k_ in z.files}
+    except Exception:  # noqa: BLE001
+        path = None
+    S = build()
+    if path:
+        try:
+            for old in glob.glob(os.path.join(tempfile.gettempdir(), "skopje242_sfx_*.npz")):
+                os.remove(old)
+            np.savez(path + ".tmp.npz", **S)
+            os.replace(path + ".tmp.npz", path)
+        except Exception:  # noqa: BLE001
+            pass
     return S
+
+
+def _pitched(x, r):
+    return np.interp(np.arange(int(len(x) / r)) * r, np.arange(len(x)), x).astype(np.float32)
+
+
+def _pack(S):
+    """Far-off dogs answering each other: barks at random pitches, times and levels, low-passed and washed."""
+    r = np.random.default_rng(31)
+    out = np.zeros(int(3.0 * SR), np.float32)
+    for _ in range(7):
+        b = _pitched(S["bark_" + "abcd"[int(r.integers(4))]], float(r.uniform(0.7, 1.3))) * float(r.uniform(0.3, 1.0))
+        i = int(r.uniform(0, 2.4) * SR)
+        out[i:i + len(b)] += b[:len(out) - i]
+    return sfx_synth.reverb(sfx_synth.filt(out, hi=1400), 0.9, 0.6, 1500).astype(np.float32)
 
 
 def _loopify(x, fade=0.25):
@@ -366,6 +412,12 @@ def _loopify(x, fade=0.25):
     ramp = np.linspace(0, 1, n, dtype=np.float32)
     x[:n] = x[:n] * ramp + x[-n:] * (1 - ramp)
     return x[:-n]
+
+
+LOOP_KEYS = frozenset(k_ for k_ in ("siren_police", "siren_amb", "siren_fire", "siren", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind",
+                                    "tyre_roll_asphalt", "tyre_gravel", "fire_crackle", "jackhammer", "concrete_mixer", "street_lamp_buzz", "power_transformer_hum", "neon_buzz",
+                                    "car_alarm", "engine_misfire", "engine_knock", "ai_engine_misfire", "ai_engine_knock")) | frozenset(
+    p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) | {"engine"}
 
 
 class Audio:
@@ -404,7 +456,7 @@ class Audio:
             except Exception:  # noqa: BLE001
                 pass
         if dry:
-            self.snd = dict.fromkeys(build())
+            self.snd = dict.fromkeys(build_cached())
             self.ok = True
             return
         if mute:
@@ -416,7 +468,7 @@ class Audio:
             if not rl.is_audio_device_ready():
                 return
             self._tmp = tempfile.mkdtemp(prefix="skopje_snd_")
-            for name, x in build().items():
+            for name, x in build_cached().items():
                 p = os.path.join(self._tmp, name + ".wav")
                 _save(p, x)
                 self.snd[name] = rl.load_sound(p)
@@ -479,7 +531,7 @@ class Audio:
                     continue
                 y = soundproc.prepare(x, sr, self.info.get(path, {}), row[2], far)
                 pk = float(np.abs(y).max()) or 1e-4
-                g = soundproc.loudness_gain(y, sr, row[2], row[6])
+                g = soundproc.loudness_gain(y, sr, row[2], row[6], row[0])
                 y = np.clip(y * min(g, 0.98 / pk), -1.0, 1.0)
                 n += 1
                 p = os.path.join(self._tmp, f"lib_{n}.wav")
@@ -639,6 +691,8 @@ class Audio:
         try:
             p = os.path.join(self._tmp, f"sp{len(self.dyn) % 8}_{id(pcm) & 0xffff}.wav")
             x = pcm.astype(np.float32) / 32768.0
+            pv = float(np.abs(x).max())                                        # the speaker's own loudness (profile vol) survives; engine and crest differences are levelled out
+            x = loudness.level(x, sr, loudness.SPEECH_LUFS + 20 * math.log10(max(pv, 0.3)))
             if muffle and len(x) > 16:
                 fq = np.fft.rfftfreq(len(x), 1.0 / sr)
                 x = np.fft.irfft(np.fft.rfft(x) / np.sqrt(1.0 + (fq / 650.0) ** 6), len(x)).astype(np.float32)
