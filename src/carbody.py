@@ -171,9 +171,9 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     fc, fr1, fr0, fd = s["fc"], s["fr1"], s["fr0"], s["fd"]
     hn, hc, hd = belt - s["dn"], belt + s["dc"], belt + s["dd"]
     ht = hd - s["dt"]
-    knots_f = [0.0, fc, fr1, fr0, fd, 1.0]
-    knots_y = [hn, hc, roof, roof, hd, ht]
-    fs = {0.0, 0.035, 0.965, 1.0, fc, fr1, fr0, fd}
+    knots_f = [0.0, fc * 0.5, fc, fr1, fr0, fd, 1.0]
+    knots_y = [hn, hn + (hc - hn) * 0.62 + s["hood"], hc, roof, roof, hd, ht]
+    fs = {0.0, 0.02, 0.06, 0.14, 0.25, 0.75, 0.86, 0.94, 0.98, 1.0, fc, fr1, fr0, fd, fc * 0.5, (fc + fr1) / 2}
     for a, b in s["wins"]:
         fs.update((a, b))
     fs = sorted(f for f in fs if 0.0 <= f <= 1.0)
