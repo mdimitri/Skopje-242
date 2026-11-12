@@ -119,6 +119,7 @@ from speech import SpeechWorker   # noqa: E402
 import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
+import mall as mall_mod   # noqa: E402
 import signals   # noqa: E402
 import escride  # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers   # noqa: E402
@@ -723,6 +724,7 @@ def main():
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
     selfie = selfie_mod.Selfie(ROOT)
+    gtc = mall_mod.Mall(world)
     guard = Guard(lambda m: hud.set_banner(m, 5))
     apply_cfg(cfg, True)
 
@@ -1593,6 +1595,17 @@ def main():
                 inp["move"] = (0.0, 0.0)
                 inp["attack"] = frame % 14 == 0
                 inp["jump"] = frame in (300, 322)
+            if os.environ.get("SK242_TEST_MALL") and sim.walker is not None:       # walk in at a GTC door (west/east/north/south), look round
+                d_ = next(q_ for q_ in mall_mod.DOORS if q_[0] == os.environ["SK242_TEST_MALL"])
+                if frame == 2:
+                    a_, n_ = (d_[2] + d_[3] * 1.0, d_[4]) if d_[1] == "a" else (d_[4], d_[2] + d_[3] * 1.0)
+                    sim.walker.x, sim.walker.y = mall_mod.to_world(a_, n_)
+                    sim.walker.h = mall_mod.ANG + ((math.pi if d_[3] > 0 else 0.0) if d_[1] == "a" else -d_[3] * math.pi / 2)    # facing in
+                inp["move"], inp["run"] = (float(os.environ.get("SK242_TEST_MALL_TURN", "0")) if frame > 150 else 0.0, 1.0 if frame < 330 else 0.0), False
+                inp["attack"] = inp["jump"] = False
+                enter_pressed = False
+                if frame % 50 == 0:
+                    print("mall test", frame, [round(c_, 1) for c_ in mall_mod.to_local(sim.walker.x, sim.walker.y)], "indoor" if sim.walker.indoor else "outdoor", round(sim.walker.az or 0, 2))
             if os.environ.get("SK242_TEST_BIRDS") and sim.walker is not None:      # one of each, right in front of the camera
                 inp["move"], inp["run"] = (0.0, 0.0), False
                 if frame == 60:
@@ -1773,7 +1786,8 @@ def main():
             if selfie.start(sim, characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                             lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True)):
                 pois.sup_until = t_game + selfie_mod.DUR + 4.0
-        grab_ = cfg["debug_chase"] and (sim.walker is not None if sim.mode == "foot" else sim.mode == "car") and not selfie.active and not show_map and not a.test and cfg["mouse_mode"] != 0
+        indoor_ = sim.mode == "foot" and sim.walker is not None and getattr(sim.walker, "indoor", None) is not None
+        grab_ = (cfg["debug_chase"] or indoor_) and (sim.walker is not None if sim.mode == "foot" else sim.mode == "car") and not selfie.active and not show_map and not a.test and cfg["mouse_mode"] != 0
         if grab_ != mouse_grab:                               # street view on foot: the mouse is captured and turns the avatar
             (rl.disable_cursor if grab_ else rl.enable_cursor)()
             mouse_grab = grab_
@@ -1811,6 +1825,8 @@ def main():
         # ------------------------------------------------ simulation
         if guard.run("sim", sim.update, dt, inp, 2) is None and "sim" in guard.disabled:
             hud.set_banner(TXT("main.0042"), 4)
+        guard.run("mall", gtc.update, sim)
+        indoor_ = sim.mode == "foot" and sim.walker is not None and getattr(sim.walker, "indoor", None) is not None
         if mpg is not None:
             guard.run("mp", mpg.update, dt)
         guard.run("events", handle_events)
@@ -1882,7 +1898,7 @@ def main():
         jx, jy = random.uniform(-shake, shake) * cfg["shake"], random.uniform(-shake, shake) * cfg["shake"]
         cam, Hc, rect = renderer.camera(cam_x + jx, cam_y + jy, ppm, sw, sh, cam_h)
         sf_on = selfie.active and sim.walker is not None
-        ch_on = cfg["debug_chase"] and not sf_on and (sim.walker if sim.mode != "car" else sim.car) is not None
+        ch_on = (cfg["debug_chase"] or indoor_) and not sf_on and (sim.walker if sim.mode != "car" else sim.car) is not None
         if sf_on:
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0
@@ -1915,20 +1931,25 @@ def main():
         present.begin()
         try:
             rl.clear_background(rl.Color(26, 28, 32, 255))
-            if sf_on:
+            renderer.indoor = gtc if indoor_ else None           # in the mall: its hall instead of the city around
+            if indoor_:
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
+            elif sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
                 guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
                 if not ch_on:                          # the street view has the horizon near the top: the band read as a veil
                     selfie.haze(sf_hy, sim.clock.dark, sw)
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
-            if lod:
+            if lod and not indoor_:
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, sf_on)
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
+            if indoor_:
+                guard.run("mall_labels", gtc.labels, cam, sw, sh)
             guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)

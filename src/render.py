@@ -498,6 +498,14 @@ class Renderer:
             missing = not lod
             fr = self.frustum = Frustum(cam, rl.get_render_width() / max(1, rl.get_render_height()), H * 4 + 400)
             gsph = st.gsph
+            ind = getattr(self, "indoor", None)
+            if ind is not None:                            # inside the GTC mall: only its hall and the actors are drawn
+                ind.draw(cam)
+                self.drawn_chunks = self.drawn_meshes = 0
+                self._actors(rect, sim, t)
+                self._shots(rect, sim)
+                particles.draw()
+                return
             if lod:
                 x0, x1 = math.floor((rect[0]) / S), math.floor(rect[2] / S)
                 y0, y1 = math.floor((rect[1]) / S), math.floor(rect[3] / S)

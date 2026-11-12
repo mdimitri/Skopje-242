@@ -138,12 +138,17 @@ class Selfie:
         fz_ = az + 1.2
         want = (px, pz, az + up)
         s = self.clip(world, (o.x, o.y, fz_), want)
+        ind = getattr(o, "indoor", None)
+        if ind is not None:                                # in the mall: its walls, not the building's shell
+            s = ind.cam_clip((o.x, o.y), (px, pz))
         cs = getattr(self, "cs_", 1.0)
         cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)       # shrinks at once (never inside a wall), eases back out
         self.cs_ = cs
         cs = max(cs, 0.04)
         px, pz = o.x + (px - o.x) * cs, o.y + (pz - o.y) * cs
         cy_ = fz_ + (az + up - fz_) * cs + (1.0 - cs) * 3.5     # pulled in: also higher, looking down at the avatar
+        if ind is not None:
+            cy_ = min(cy_, az + 4.1)                       # under the mall's ceiling
         cam = rl.Camera3D(V3(px, cy_, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
         f = VIEW * 2.25                                    # drawn out to the low-quality ring

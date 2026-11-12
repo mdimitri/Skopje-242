@@ -769,6 +769,7 @@ class Walker:
         self.hurt_t = 0.0
         self.inv_t = 0.0
         self.cause = None            # "fight" -> knocked out, "car"/"explosion" -> dead
+        self.indoor = None           # inside the GTC mall (mall.Mall): its walls and floor replace the city's
 
     @property
     def speed(self):
@@ -844,12 +845,16 @@ class Walker:
             self.anim += self.speed * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
-        if world.pg2 and self.az - world.ground_y(self.x, self.y) > 0.5 and world.plat_wall(self.x, self.y, self.az):    # a taller roof is a wall
-            self.x, self.y = self.lx, self.ly
-            self.vx = self.vy = 0.0
-        self.push_out(world)
-        # ---- vertical: stand on the terrain / deck under the feet, fall when it ends
-        sup = world.level(self.x, self.y, self.az, True)
+        if self.indoor is not None:                              # in the mall: its own walls and one level floor
+            self.indoor.collide(self)
+            sup = self.indoor.floor
+        else:
+            if world.pg2 and self.az - world.ground_y(self.x, self.y) > 0.5 and world.plat_wall(self.x, self.y, self.az):    # a taller roof is a wall
+                self.x, self.y = self.lx, self.ly
+                self.vx = self.vy = 0.0
+            self.push_out(world)
+            # ---- vertical: stand on the terrain / deck under the feet, fall when it ends
+            sup = world.level(self.x, self.y, self.az, True)
         if self.az > sup + 0.05 or self.vz > 0.0:
             self.vz -= 16.0 * dt
             self.az += self.vz * dt
