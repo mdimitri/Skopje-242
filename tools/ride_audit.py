@@ -178,7 +178,8 @@ def run(w, kinds, every, old, speed=11.0, dt=1 / 60):
         for i in eds:
             e = w.edges[i]
             br = e["bridge"]
-            lv = (lambda x_, y_: w.level(x_, y_, 1e9)) if br else w.ground_y      # as the game's traffic (actors.Traffic.update)
+            base = [-1e9]                                  # as the game's traffic (actors.Traffic.update): off a bridge its own height decides
+            lv = (lambda x_, y_: w.level(x_, y_, 1e9)) if br else (w.ground_y if old else (lambda x_, y_: w.level(x_, y_, base[0])))
             for d in (1, -1):
                 P = e["pts"] if d == 1 else e["pts"][::-1]
                 lane = (e["w"] / 4 if not e.get("ow") else 0.0)
@@ -212,7 +213,9 @@ def run(w, kinds, every, old, speed=11.0, dt=1 / 60):
                     if old:
                         old_step(b, kind, lv, x, y, h, dt)
                     else:
-                        b.gz = max(lv(x, y), actors.ride(b, lambda x_, y_: lv(x_, y_), x, y, h, dt))
+                        g0 = lv(x, y)
+                        b.gz = max(g0, actors.ride(b, lambda x_, y_: lv(x_, y_), x, y, h, dt))
+                        base[0] = g0
                     s += speed * dt
                     fr_ += 1
                     if s < 3.0 or fr_ % 4:
@@ -224,14 +227,14 @@ def run(w, kinds, every, old, speed=11.0, dt=1 / 60):
                         th_ = b.trh if b.trh is not None else h
                         R2, tr2 = mat_np(b.tpitch, b.troll, th_, x + math.cos(h) * V.SEMI_HITCH, b.tgz, y + math.sin(h) * V.SEMI_HITCH)
                         parts.append((trl, R2, tr2))
-                    for pts, R_, t_ in parts:
+                    for pi_, (pts, R_, t_) in enumerate(parts):
                         W = pts @ R_.T + t_
                         for wx, wy, wz in W:
                             top = S.top(wx, wz, wy + 0.8, lv(wx, wz))
                             if top - wy > pen:
                                 pen = top - wy
-                                if os.environ.get("RIDE_DEBUG") and pen > 0.5:
-                                    print(f"    debug {name} edge {i} d {d} s {s:.1f} vertex ({wx:.2f},{wy:.2f},{wz:.2f}) top {top:.2f} "
+                                if os.environ.get("RIDE_DEBUG") and pen > float(os.environ["RIDE_DEBUG"]):
+                                    print(f"    debug {name} part {pi_} edge {i} d {d} s {s:.1f} vertex ({wx:.2f},{wy:.2f},{wz:.2f}) top {top:.2f} "
                                           f"gz {b.gz:.2f} pitch {b.pitch:.3f} roll {b.roll:.3f} centre-level {lv(x, y):.2f}")
                     rows.append(pen)
                     if pen > worst[0]:

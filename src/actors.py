@@ -348,13 +348,18 @@ def ride(b, s, x, y, h, dt, rate=9.0, dp=0.0, dr=0.0):
         th = b.trh if getattr(b, "trh", None) is not None else h
         hx, hy = x + c * vehicles.SEMI_HITCH, y + sn * vehicles.SEMI_HITCH
         hk = gz + vehicles.SEMI_HITCH * sp
-        La = vehicles.SEMI_AXLE
         ct, st = math.cos(th), math.sin(th)
-        za = s(hx - ct * La, hy - st * La)
-        zm = s(hx - ct * La * 0.5, hy - st * La * 0.5)
-        q = min((hk - za) / La, (hk + 0.76 - zm) / (La * 0.5))   # axles on the road; the floor (0.95 m up) clears a crest
+        tl, tv = -st, ct                             # the trailer's own left
+        T_ = vehicles.SEMI_TRAILER_L
+        tw_ = 1.1                                           # its tyre tracks (gl3d.trailer_arrays: tri-axle at -T+1.4 .. -T+3.8)
+        con = [(u, v, s(hx + ct * u + tl * v, hy + st * u + tv * v)) for u in (-T_ + 1.4, -T_ + 3.8) for v in (tw_, -tw_)]
+        tr = math.atan2((con[1][2] + con[3][2]) - (con[0][2] + con[2][2]), 4 * tw_)
+        sr_ = math.sin(tr)
+        q = min((hk - z - v * sr_) / -u for u, v, z in con)            # every trailer wheel on (not in) the road
+        zm = s(hx - ct * T_ * 0.5, hy - st * T_ * 0.5)
+        q = min(q, (hk + 0.76 - zm) / (T_ * 0.5))           # the floor (0.95 m up) clears a crest under the middle
         b.tpitch = math.asin(max(-0.5, min(0.5, q)))
-        b.tgz, b.troll = hk, b.roll
+        b.tgz, b.troll = hk, tr
     return gz
 
 
@@ -2139,8 +2144,6 @@ class Traffic:
         dt0 = dt
         self._tick += 1
         tick = self._tick
-        gy = w.ground_y
-        gy3 = lambda x_, y_, _wy: gy(x_, y_)          # level() for a car off a bridge (wy = -1e9 never reaches a deck)
         for ci, c in enumerate(self.cars):
             if _lod_far(self, c.x, c.y, self._d2(c.x, c.y, fx, fy)):         # off screen: one step in three, three times as long (nobody sees it)
                 if (ci + tick) % 3:
@@ -2304,9 +2307,9 @@ class Traffic:
                 rx_, ry_, _rh = self._ref(e, c.d, c.s, c.lane + c.shift + c.avoid + c.yld)
                 if (rx_ - c.x) ** 2 + (ry_ - c.y) ** 2 > 400.0 and (c.ghost > 0 or (self.scan(c, 0.5, rx_ - c.x, ry_ - c.y, back=-vehicles.HALF_L[c.kind]) or 1.0) >= 0.0):
                     c.x, c.y, c.h = rx_, ry_, _rh                   # lost (a 20 m detour is fine round corners) (spawned, or pushed): put it back, unless another car is there
-            lv = w.level if e["bridge"] else gy3                 # off a bridge level() is just ground_y()
-            wy_ = 1e9 if e["bridge"] else -1e9
-            c.gz = lv(c.x, c.y, wy_)
+            lv = w.level
+            wy_ = 1e9 if e["bridge"] else c.gz - c.goff           # off a bridge its own height decides: a link joining a deck end drives up onto
+            c.gz = lv(c.x, c.y, wy_)                              # the deck where it is drawn over the link, a street underneath stays below
             if c.kind == vehicles.SEMI:                           # kingpin trailer dragged along the fifth wheel's path
                 tow(c)
             if (w.hilly or e["bridge"]) and ((ci + tick) & 1 == 0 or dt != dt0):      # tilt and ride height follow the ground: every other frame is plenty

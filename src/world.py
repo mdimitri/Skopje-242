@@ -493,7 +493,9 @@ class World:
         """Surface that something whose feet are at absolute height `wy` stands on: deck if on / above it, else ground.
         plat=True (people and bikes): fire escapes, roofs and jump ramps count too."""
         d = self.deck_h(x, y) if self.dgrid else None
-        g = d if (d is not None and wy >= d - 0.7) else self.ground_y(x, y)
+        g = self.ground_y(x, y)
+        if d is not None and wy >= d - 0.7 and d > g:          # (a deck profile running on below the street at a bridge end is buried: the street wins)
+            g = d
         if plat and self.pg2:
             h = self.plat_h(x, y, wy)
             if h is not None and h > g:

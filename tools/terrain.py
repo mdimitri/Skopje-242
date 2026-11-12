@@ -183,6 +183,40 @@ def resample(pts, step=3.0):
     return out, cum
 
 
+def twin_decks(decks, T=None, keep_end=3.0, blend=4.0):
+    """Side-by-side decks (the two carriageways of a dual road, a footbridge alongside) whose bodies overlap get one
+    surface: each deck is raised (never lowered) towards the other's height wherever they overlap, faded out over
+    `blend` m of extra distance, ends on the terrain (T) left there (a joint with the next deck mid-span is not).  Without this the higher deck's underside and parapet
+    showed through the lower deck's road (up to 1.5 m apart, tools/ride_audit.py).  -> samples raised."""
+    ds = list(decks.values()) if isinstance(decks, dict) else list(decks)
+    box = []
+    for d in ds:
+        xs = [p[0] for p in d.pts]
+        ys = [p[1] for p in d.pts]
+        box.append((min(xs) - d.hw, min(ys) - d.hw, max(xs) + d.hw, max(ys) + d.hw))
+    n = 0
+    for _ in range(2):                                   # a third deck in a row: twice is enough
+        new = [list(d.h) for d in ds]
+        for i, a in enumerate(ds):
+            for j, b in enumerate(ds):
+                if i == j or box[i][0] > box[j][2] or box[j][0] > box[i][2] or box[i][1] > box[j][3] or box[j][1] > box[i][3]:
+                    continue
+                reach = a.hw + b.hw
+                for k, ((x, y), s) in enumerate(zip(a.pts, a.cum)):
+                    if (s < keep_end or s > a.len - keep_end) and (T is None or a.h[k] - T.hs(x, y) < 0.5):
+                        continue
+                    hb, sb, dl = b.at(x, y)
+                    if dl >= reach + blend or sb <= 0.0 or sb >= b.len:
+                        continue
+                    if hb > new[i][k] + 0.01:
+                        wgt = min(1.0, (reach + blend - dl) / blend)
+                        new[i][k] = max(new[i][k], a.h[k] + wgt * (hb - a.h[k]))
+        for d, h in zip(ds, new):
+            n += sum(1 for u, v in zip(d.h, h) if v > u + 0.01)
+            d.h = h
+    return n
+
+
 def make_deck(T, edge, lower, hw):
     """Deck profile for a bridge edge.
 

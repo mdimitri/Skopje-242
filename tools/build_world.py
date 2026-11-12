@@ -2276,6 +2276,7 @@ def main():
         nj, nl, nskip = __import__('quays').fix_decks(decks, T, roads)
         print(f"[build] river quays: {nj} bridge joints lifted, {nl} decks lifted over the walkways below or smoothed "
               f"({nskip} crossings too close to an end)")
+    print(f"[build] bridges: {terrain_mod.twin_decks(decks, T)} deck samples raised to the deck beside them")
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
