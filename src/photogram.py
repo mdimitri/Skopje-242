@@ -1218,7 +1218,13 @@ def _store_put(store, file, r):
     p = _store_path(store, file)
     with open(p + ".tmp", "wb") as f:
         pickle.dump(r, f, protocol=4)
-    os.replace(p + ".tmp", p)                         # never a half-written file, even if the game is killed
+    for k in range(20):                               # never a half-written file, even if the game is killed
+        try:
+            os.replace(p + ".tmp", p)
+            return
+        except PermissionError:                       # Windows: antivirus / indexer briefly holds the file; retry
+            time.sleep(0.1 * (k + 1))
+    # still locked: this photo is just not stored (a resumed run redoes it); never stop the whole build for it
 
 
 def _store_get(store, file):
