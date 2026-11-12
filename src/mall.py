@@ -123,6 +123,11 @@ class Mall:
                 return max(0.0, (i - 1) / 20.0 - 0.03)
         return 1.0
 
+    def in_hall(self, x, y):
+        """Inside the mall's hall or its corridors (up to the building's walls)."""
+        a, n = to_local(x, y)
+        return (-139.8 < a < 132.4 and abs(n) < SHOP + 1.5) or (abs(a) < 4.5 and -44.6 < n < 66.2)
+
     # ---------------------------------------------------------------- geometry
     def build(self):
         import gl3d

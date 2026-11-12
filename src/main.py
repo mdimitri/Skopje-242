@@ -725,6 +725,7 @@ def main():
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
     selfie = selfie_mod.Selfie(ROOT)
     gtc = mall_mod.Mall(world)
+    sim.peds.hall = gtc.in_hall if gtc.enabled else None
     guard = Guard(lambda m: hud.set_banner(m, 5))
     apply_cfg(cfg, True)
 
@@ -1602,10 +1603,14 @@ def main():
                     sim.walker.x, sim.walker.y = mall_mod.to_world(a_, n_)
                     sim.walker.h = mall_mod.ANG + ((math.pi if d_[3] > 0 else 0.0) if d_[1] == "a" else -d_[3] * math.pi / 2)    # facing in
                 inp["move"], inp["run"] = (float(os.environ.get("SK242_TEST_MALL_TURN", "0")) if frame > 150 else 0.0, 1.0 if frame < 330 else 0.0), False
+                if os.environ.get("SK242_TEST_MALL_OUT") and frame > 120:      # turn round and walk back out of the door
+                    inp["move"] = (1.0, 0.0) if frame < 120 + int(math.pi / 3.4 * 60) else (0.0, 1.0)
                 inp["attack"] = inp["jump"] = False
                 enter_pressed = False
-                if frame % 50 == 0:
-                    print("mall test", frame, [round(c_, 1) for c_ in mall_mod.to_local(sim.walker.x, sim.walker.y)], "indoor" if sim.walker.indoor else "outdoor", round(sim.walker.az or 0, 2))
+                if frame % 50 == 0 or 300 < frame < 316 or 240 < frame < 300 and sim.walker.health < 100 and not getattr(sim, "_mt_", 0):
+                    sim._mt_ = sim.walker.health < 100
+                    print([(p_.mode, vehicles.PED_NAMES[p_.arch]) for p_ in sim.peds.list if gtc.in_hall(p_.x, p_.y)], getattr(sim.walker, "land_v", 0))
+                    print("mall test", frame, [round(c_, 1) for c_ in mall_mod.to_local(sim.walker.x, sim.walker.y)], "indoor" if sim.walker.indoor else "outdoor", round(sim.walker.az or 0, 2), "hp", round(sim.walker.health), sim.walker.cause, sum(1 for p_ in sim.peds.list if gtc.in_hall(p_.x, p_.y)))
             if os.environ.get("SK242_TEST_BIRDS") and sim.walker is not None:      # one of each, right in front of the camera
                 inp["move"], inp["run"] = (0.0, 0.0), False
                 if frame == 60:
@@ -1649,7 +1654,7 @@ def main():
                 q_.x, q_.y, q_.h, q_.arch, q_.hp = sim.walker.x + 1.0 * math.cos(sim.walker.h), sim.walker.y + 1.0 * math.sin(sim.walker.h), 0.0, 0, 40.0
                 q_.e, q_.mode, q_.t = 0, "rage", 999.0
                 sim.peds.list.append(q_)
-            if frame == 290 and sim.walker is not None and sim.kiosks:
+            if frame == 290 and sim.walker is not None and sim.kiosks and not os.environ.get("SK242_TEST_MALL"):
                 k_ = sim.kiosks[0]
                 sim.walker.x, sim.walker.y = k_[0] + 1.6, k_[1]
                 sim.walker.health = 40

@@ -900,6 +900,7 @@ class Peds:
         self.target = target
         self.walker = None           # set by Sim each frame while the player is on foot (fighters chase it)
         self.sim = None              # the Sim (language / aggression settings, places, clock)
+        self.hall = None             # f(x, y) -> True inside the GTC mall (mall.Mall.in_hall), set by main
 
     def _place(self, p):
         e = self.w.edges[p.e]
@@ -1389,6 +1390,8 @@ class Peds:
                     ev("shout", text=talk.say(p, self.sim, rng) if self.sim else rng.choice(lines("idle", p.arch)), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
             if self._d2(p.x, p.y, fx, fy) < 300 ** 2:
                 out.append(p)
+        if self.hall is not None:                  # people who wander into the GTC hall leave: they would ignore its walls
+            out = [p for p in out if p.mode == "svc" or not self.hall(p.x, p.y)]
         self.list = out
         dt = dt0
         self._separate(dt, fx, fy)
