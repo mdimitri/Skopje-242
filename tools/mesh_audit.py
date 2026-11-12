@@ -35,7 +35,7 @@ def tri_raster(a, b, c, shrink=0.12):
     return x0, y0, (l1 > shrink) & (l2 > shrink) & (1 - l1 - l2 > shrink)
 
 
-def audit_chunk(pos):
+def audit_chunk(pos, col):
     n = len(pos) // 3
     t = pos[:n * 3].reshape(n, 3, 3).astype(np.float64)
     e1, e2 = t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]
@@ -88,7 +88,33 @@ def audit_chunk(pos):
                         worst = (nh, float(t[k, :, 0].mean()), float(t[k, :, 2].mean()))
                 sub[m & ~hit] = y
             flat_m2 = float(area[fi].sum())
-    return dict(tris=n, degen=int(degen.sum()), dup=dup, pair=pair, up=up, down=down, ov_m2=ov_m2, full=full, part=part,
+    # pavement slabs over asphalt: pavement-coloured up-facing triangle with an asphalt-coloured one 4-25 cm below
+    pav_over = 0.0
+    c0 = col[:n * 3].reshape(n, 3, 4)[:, 0, :3].astype(int)
+    is_pav = (c0[:, 0] >= 168) & (c0[:, 0] <= 190) & (np.abs(c0[:, 0] - c0[:, 1] - 4) <= 2) & (np.abs(c0[:, 0] - c0[:, 2] - 12) <= 3)
+    is_asp = (c0[:, 0] <= 135) & (c0[:, 2] >= c0[:, 0])
+    pi, ai = np.nonzero(flat & (ny > 0) & is_pav)[0], np.nonzero(flat & (ny > 0) & is_asp)[0]
+    if len(pi) and len(ai):
+        xs, zs = t[np.concatenate([pi, ai])][:, :, 0], t[np.concatenate([pi, ai])][:, :, 2]
+        X0, Z0 = float(xs.min()) - 1, float(zs.min()) - 1
+        W, H = int((xs.max() - X0) / G) + 3, int((zs.max() - Z0) / G) + 3
+        if W * H <= 6_000_000:
+            asp = np.full((H, W), np.nan, np.float32)
+            for k in ai:
+                a, b, c = [((t[k, j, 0] - X0) / G, (t[k, j, 2] - Z0) / G) for j in range(3)]
+                x0, y0, m = tri_raster(a, b, c)
+                if m is not None:
+                    sub = asp[y0:y0 + m.shape[0], x0:x0 + m.shape[1]]
+                    sub[m[:sub.shape[0], :sub.shape[1]]] = float(t[k, :, 1].mean())
+            for k in pi:
+                a, b, c = [((t[k, j, 0] - X0) / G, (t[k, j, 2] - Z0) / G) for j in range(3)]
+                x0, y0, m = tri_raster(a, b, c)
+                if m is not None:
+                    sub = asp[y0:y0 + m.shape[0], x0:x0 + m.shape[1]]
+                    m = m[:sub.shape[0], :sub.shape[1]]
+                    gap = float(t[k, :, 1].mean()) - sub
+                    pav_over += int((m & (gap > 0.04) & (gap < 0.25)).sum()) * G * G
+    return dict(pav_over=pav_over, tris=n, degen=int(degen.sum()), dup=dup, pair=pair, up=up, down=down, ov_m2=ov_m2, full=full, part=part,
                 flat_m2=flat_m2, worst=worst)
 
 
@@ -102,7 +128,7 @@ def main():
         chunks = pickle.load(f)
     chunks = chunks.get("chunks", chunks)
     mm = np.memmap(os.path.join(a.world, "meshes.bin"), dtype=np.uint8, mode="r")
-    tot = dict(tris=0, degen=0, dup=0, pair=0, up=0, down=0, ov_m2=0.0, full=0, part=0, flat_m2=0.0)
+    tot = dict(pav_over=0.0, tris=0, degen=0, dup=0, pair=0, up=0, down=0, ov_m2=0.0, full=0, part=0, flat_m2=0.0)
     bad, used = [], 0
     for key, ch in chunks.items():
         if not ch or MAT_SOLID not in ch.get("m", {}):
@@ -112,7 +138,7 @@ def main():
             continue
         off, n = ch["m"][MAT_SOLID]
         pos = np.frombuffer(mm[off: off + n * 12], dtype=np.float32).reshape(n, 3)
-        r = audit_chunk(pos)
+        r = audit_chunk(pos, np.frombuffer(mm[off + n * 20: off + n * 24], dtype=np.uint8).reshape(n, 4))
         used += 1
         for k in tot:
             tot[k] += r[k]
@@ -125,6 +151,7 @@ def main():
     print(f"flat triangles facing up / down: {tot['up']} / {tot['down']}   (minority = backfaces)")
     pct = 100.0 * tot['ov_m2'] / max(tot['flat_m2'], 1e-9)
     print(f"coplanar overlap area:           {tot['ov_m2']:.0f} m2 of {tot['flat_m2']:.0f} m2 flat ({pct:.2f} %)")
+    print(f"pavement drawn over asphalt:     {tot['pav_over']:.0f} m2")
     print(f"  fully redundant triangles:     {tot['full']}")
     print(f"  partially overlapped:          {tot['part']}")
     for ov, key, (nh, x, z) in sorted(bad, reverse=True)[:a.top]:
