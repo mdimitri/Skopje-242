@@ -38,6 +38,8 @@ class Selfie:
         self.rng = random.Random(5)
         self.clouds = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.1, 0.85), self.rng.uniform(0.8, 1.9),
                         [(self.rng.uniform(-1, 1), self.rng.uniform(-0.3, 0.3), self.rng.uniform(0.5, 1.0)) for _ in range(5)]) for _ in range(30)]
+        # cartoon shape: puffs in a row, biggest in the middle, all resting on one flat base line
+        self.clouds = [(az, el, sz, sorted((ox, 0.0, (0.6 + 0.4 * (1 - abs(ox))) * r) for ox, _oy, r in puffs)) for az, el, sz, puffs in self.clouds]
         self.stars = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.05, 0.9), self.rng.uniform(0.4, 1.0)) for _ in range(190)]
         self.phrase = ""
         self.yaw = 0.0
@@ -184,16 +186,26 @@ class Selfie:
                 rl.draw_circle(int(mx), my, r, rl.Color(244, 242, 220, a))
                 for cx, cy, cr in ((-0.35, -0.25, 0.22), (0.30, 0.1, 0.16), (-0.1, 0.38, 0.12)):   # craters
                     rl.draw_circle(int(mx + cx * r), int(my + cy * r), int(cr * r), rl.Color(214, 212, 190, a))
-        if dark < 0.8:
-            ca = int(235 * (1.0 - dark / 0.8))
-            tint = _mix((255, 255, 255), (255, 200, 170), dusk)
-            for az, el, sz, puffs in self.clouds:
-                x = sx(az + t * 0.004)
-                if x is None:
-                    continue
-                y = hy - el * hy * 1.1
-                for ox, oy, r in puffs:
-                    rl.draw_circle_gradient(rl.Vector2(int(x + ox * 90 * sz), int(y + oy * 24 * sz)), int(r * 52 * sz), rl.Color(*tint, int(ca * 0.55)), rl.Color(*tint, 0))
+        night = min(1.0, max(0.0, dark - 0.45) / 0.45)                              # cartoon clouds: outline, shaded body, bright top, flat bottom
+        top_c = _mix(_mix((255, 255, 255), (255, 226, 196), dusk), (92, 102, 140), night)
+        body_c = _mix(_mix((206, 218, 238), (236, 158, 150), dusk), (50, 58, 92), night)
+        line_c = _mix(_mix((118, 146, 192), (160, 92, 108), dusk), (26, 30, 56), night)
+        for az, el, sz, puffs in self.clouds:
+            x = sx(az + t * 0.004)
+            if x is None:
+                continue
+            base = hy - el * hy * 1.1 + 20 * sz
+            pc = [(x + ox * 90 * sz, r * 40 * sz) for ox, _oy, r in puffs]
+            x0, x1 = pc[0][0], pc[-1][0]
+            hb = min(r for _x, r in pc) * 1.2                           # height of the flat-bottomed slab under the puffs
+            for grow, col in ((3, line_c), (0, body_c)):
+                c = rl.Color(*col, 255)
+                rl.draw_rectangle_rounded(rl.Rectangle(x0 - grow, base - hb - grow, x1 - x0 + 2 * grow, hb + 2 * grow), 0.3, 4, c)
+                for px, r in pc:
+                    rl.draw_circle(int(px), int(base - r), r + grow, c)
+            c = rl.Color(*top_c, 255)
+            for px, r in pc:                                      # lit tops: smaller discs nudged up, leaving shade below
+                rl.draw_circle(int(px - r * 0.08), int(base - r * 1.22), r * 0.78, c)
         return hy
 
     def haze(self, hy, dark, sw):
