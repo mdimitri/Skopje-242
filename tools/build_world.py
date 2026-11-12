@@ -2098,7 +2098,7 @@ def main():
             except ValueError:
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
-                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes,
+                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes, "turn": (t.get("turn:lanes:forward") or (t.get("turn:lanes", "") if ow else ""), t.get("turn:lanes:backward", "")),
                           "tunnel": tunnel})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
@@ -2231,7 +2231,7 @@ def main():
                     edges.append({"a": nid(ns[start]), "b": nid(ns[i]), "pts": seg, "cum": cum, "len": cum[-1],
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
                                   "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0),
-                                  "worn": rd.get("worn", "")})
+                                  "worn": rd.get("worn", ""), "turn": rd.get("turn", ("", ""))})
                 start = i
     import lanefix
     print(f"[build] lane dips repaired: {lanefix.repair(edges)} edges")

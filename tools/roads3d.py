@@ -166,6 +166,9 @@ def _at(pts, cum, s):
     return (pts[lo][0] + (pts[hi][0] - pts[lo][0]) * t, pts[lo][1] + (pts[hi][1] - pts[lo][1]) * t)
 
 
+_CLIPPED = 0
+
+
 class Out:
     """Collects triangles per chunk and hands them to the mesh accumulator.
 
@@ -196,6 +199,7 @@ class Out:
             pos, c = _clean_tris(pos, c)
             if deck is None:
                 pos, c = _drop_covered_pavement(pos, c)
+                pos, c = _clean_tris(pos, c)                  # slivers left by the clipper
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
             elif self.T is not None:
@@ -223,6 +227,57 @@ def _clean_tris(pos, col):
     return pos[:n * 3][ki], col[:n * 3][ki]
 
 
+def _raster(a, b, c3):
+    """Interior cell centres of a triangle given in grid units -> (x0, y0, mask); mask is None for a degenerate one."""
+    mx0, mx1 = int(min(a[0], b[0], c3[0])), int(max(a[0], b[0], c3[0])) + 1
+    my0, my1 = int(min(a[1], b[1], c3[1])), int(max(a[1], b[1], c3[1])) + 1
+    gx, gy = np.meshgrid(np.arange(mx0, mx1 + 1) + 0.5, np.arange(my0, my1 + 1) + 0.5)
+    d = (b[1] - c3[1]) * (a[0] - c3[0]) + (c3[0] - b[0]) * (a[1] - c3[1])
+    if abs(d) < 1e-9:
+        return mx0, my0, None
+    l1 = ((b[1] - c3[1]) * (gx - c3[0]) + (c3[0] - b[0]) * (gy - c3[1])) / d
+    l2 = ((c3[1] - a[1]) * (gx - c3[0]) + (a[0] - c3[0]) * (gy - c3[1])) / d
+    return mx0, my0, (l1 > 0.12) & (l2 > 0.12) & (1 - l1 - l2 > 0.12)
+
+
+def _halfplane(poly, p, q, keep_inside):
+    """Sutherland-Hodgman: the part of convex polygon `poly` on one side of line p->q (inside = left of the line)."""
+    out = []
+    n = len(poly)
+    sg = 1.0 if keep_inside else -1.0
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        fa = sg * ((q[0] - p[0]) * (a[1] - p[1]) - (q[1] - p[1]) * (a[0] - p[0]))
+        fb = sg * ((q[0] - p[0]) * (b[1] - p[1]) - (q[1] - p[1]) * (b[0] - p[0]))
+        if fa >= 0:
+            out.append(a)
+        if (fa >= 0) != (fb >= 0):
+            t = fa / (fa - fb)
+            out.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    return out
+
+
+def _poly_minus_tri(poly, tri):
+    """Convex pieces of convex `poly` that lie outside triangle `tri` (both lists of (x, z))."""
+    ar = (tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1]) - (tri[1][1] - tri[0][1]) * (tri[2][0] - tri[0][0])
+    if ar < 0:
+        tri = [tri[0], tri[2], tri[1]]
+    pieces, rem = [], poly
+    for i in range(3):
+        p, q = tri[i], tri[(i + 1) % 3]
+        outside = _halfplane(rem, p, q, False)
+        if len(outside) >= 3:
+            pieces.append(outside)
+        rem = _halfplane(rem, p, q, True)
+        if len(rem) < 3:
+            return pieces
+    return pieces
+
+
+def _area2(pl):
+    return sum(pl[i][0] * pl[(i + 1) % len(pl)][1] - pl[(i + 1) % len(pl)][0] * pl[i][1] for i in range(len(pl)))
+
+
 def _drop_covered_pavement(pos, col, G=0.2):
     """Pavement-top triangles (all vertices at SW_H) that lie completely inside earlier pavement triangles are drawn
     twice at the same height: drop them (z-fighting, extra polygons).  Raster test on a G-metre grid per chunk."""
@@ -240,7 +295,74 @@ def _drop_covered_pavement(pos, col, G=0.2):
         return pos, col
     grid = np.zeros((H, W), bool)
     keep = np.ones(n, bool)
+    cc = col[:n * 3].reshape(n, 3, 4)[:, 0, :3].astype(int)
+    aidx = np.nonzero((np.abs(t[:, 0, 1] - t[:, 1, 1]) < 1e-6) & (np.abs(t[:, 1, 1] - t[:, 2, 1]) < 1e-6) & (t[:, 0, 1] < SW_H - 0.03)
+                      & (t[:, 0, 1] > 0.0) & (cc[:, 0] <= 135) & (cc[:, 2] >= cc[:, 0]))[0]
+    bucket = {}
+    for k in aidx:
+        for bx in range(int(t[k, :, 0].min() // 8), int(t[k, :, 0].max() // 8) + 1):
+            for bz in range(int(t[k, :, 2].min() // 8), int(t[k, :, 2].max() // 8) + 1):
+                bucket.setdefault((bx, bz), []).append(k)
+    extra_p, extra_c = [], []
+    asp = np.zeros((H, W), bool)                            # cheap pre-test: only triangles touching asphalt cells go to the exact clipper
+    for k in aidx:
+        a, b, c3 = [((t[k, j, 0] - x0) / G, (t[k, j, 2] - z0) / G) for j in range(3)]
+        ax0, ay0, am = _raster(a, b, c3)
+        if am is not None:
+            sub = asp[ay0:ay0 + am.shape[0], ax0:ax0 + am.shape[1]]
+            sub |= am[:sub.shape[0], :sub.shape[1]]
     for k in top:
+        if not keep[k]:
+            continue
+        a, b, c3 = [((t[k, j, 0] - x0) / G, (t[k, j, 2] - z0) / G) for j in range(3)]
+        px0, py0, pm = _raster(a, b, c3)
+        if pm is None:
+            continue
+        psub = asp[py0:py0 + pm.shape[0], px0:px0 + pm.shape[1]]
+        if not (pm[:psub.shape[0], :psub.shape[1]] & psub).any():
+            continue
+        tri = [(float(t[k, j, 0]), float(t[k, j, 2])) for j in range(3)]
+        cand = set()
+        for bx in range(int(min(v[0] for v in tri) // 8), int(max(v[0] for v in tri) // 8) + 1):
+            for bz in range(int(min(v[1] for v in tri) // 8), int(max(v[1] for v in tri) // 8) + 1):
+                cand.update(bucket.get((bx, bz), ()))
+        if not cand:
+            continue
+        orient = _area2(tri)
+        pieces = [tri]
+        hit = False
+        for q in cand:
+            at = [(float(t[q, j, 0]), float(t[q, j, 2])) for j in range(3)]
+            if max(v[0] for v in at) < min(v[0] for v in tri) or min(v[0] for v in at) > max(v[0] for v in tri) or \
+               max(v[1] for v in at) < min(v[1] for v in tri) or min(v[1] for v in at) > max(v[1] for v in tri):
+                continue
+            new_pieces = []
+            for pc in pieces:
+                out_ = _poly_minus_tri(pc, at)
+                if abs(sum(abs(_area2(o)) for o in out_)) < abs(_area2(pc)) - 1e-6:
+                    hit = True                              # the asphalt triangle really removed some area
+                else:
+                    out_ = [pc]
+                new_pieces.extend(out_)
+            pieces = new_pieces
+            if not pieces:
+                break
+        if not hit:
+            continue
+        keep[k] = False
+        cc3 = col[k * 3:k * 3 + 3]
+        for pc in pieces:
+            if abs(_area2(pc)) < 2e-3:
+                continue
+            if (_area2(pc) > 0) != (orient > 0):
+                pc = pc[::-1]
+            for i in range(1, len(pc) - 1):
+                for v in (pc[0], pc[i], pc[i + 1]):
+                    extra_p.append((v[0], SW_H, v[1]))
+                extra_c.extend(cc3[:1].tolist() * 3)
+    for k in top:
+        if not keep[k]:
+            continue
         a, b, c3 = [((t[k, j, 0] - x0) / G, (t[k, j, 2] - z0) / G) for j in range(3)]
         mx0, mx1 = int(min(a[0], b[0], c3[0])), int(max(a[0], b[0], c3[0])) + 1
         my0, my1 = int(min(a[1], b[1], c3[1])), int(max(a[1], b[1], c3[1])) + 1
@@ -260,6 +382,10 @@ def _drop_covered_pavement(pos, col, G=0.2):
         else:
             sub |= m
     ki = np.repeat(keep, 3)
+    global _CLIPPED
+    if extra_p:
+        _CLIPPED += len(extra_p) // 3
+        return (np.concatenate([pos[ki], np.array(extra_p, np.float32)]), np.concatenate([col[ki], np.array(extra_c, np.uint8).reshape(-1, 4)]))
     return pos[ki], col[ki]
 
 
@@ -1050,10 +1176,13 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         _zebra(out, x, yy, ax, ay, w)
         if _has_pavement(cov, edges, x, yy, w):
             _kerb_ramps(out, x, yy, ax, ay, w)
+    prog(0.968, "lane arrows")
+    _approach_marks(out, cov, edges, xwalks)
     _TICK[0] = lambda f: prog(0.97 + 0.025 * f, "mesh")
     if os.environ.get("ROADS_DEBUG"):
         _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
     out.flush(add, mat)
+    print('[roads] pavement triangles clipped out of asphalt:', _CLIPPED)
     _TICK[0] = None
     pout.flush(add, mat)
     bar.done()
@@ -1245,3 +1374,119 @@ def _kerb_ramps(out, x, y, ax, ay, w):
         for k in range(4):                                   # tactile bars across the walking direction
             a0 = -hl + 0.15 + k * 0.58
             both(P(e1, a0, SW_H + 0.007), P(e1, a0 + 0.34, SW_H + 0.007), P(e2, a0 + 0.34, SW_H + 0.007), P(e2, a0, SW_H + 0.007), tac)
+
+
+ARROW = (236, 234, 224)
+
+
+def _turns(e, end):
+    """Turn arrows of the lanes approaching edge end `end` (0 = node a, 1 = node b), leftmost lane first.
+    From OSM turn:lanes where the map has it, else a default: the left lane may turn left, the right lane right."""
+    fwd, bwd = e.get("turn", ("", ""))
+    if e["ow"]:
+        if end == 0:
+            return None                                       # one-way traffic only reaches node b
+        n, tag = lanes_per_way(e), fwd
+    else:
+        n, tag = lanes_per_way(e), (fwd if end == 1 else bwd)
+    if tag:
+        lanes = [set(x.split(";")) for x in tag.split("|")]
+        return lanes if 1 <= len(lanes) <= 6 else None
+    if n < 2:
+        return None
+    return [{"left", "through"}] + [{"through"}] * (n - 2) + [{"through", "right"}]
+
+
+def _arrow(out, C, u, r, y, kinds):
+    """One painted arrow: C centre, u unit vector of travel, r unit vector to the driver's right."""
+    def P(f, l):
+        return (C[0] + u[0] * f + r[0] * l, y, C[1] + u[1] * f + r[1] * l)
+
+    def quad(pts):
+        q = [P(*v) for v in pts]
+        out.quad(*q, ARROW)
+        out.quad(*q[::-1], ARROW)                             # both windings: one of them faces up
+
+    def tri(pts):
+        a, b, c = [P(*q) for q in pts]
+        out.quad(a, b, c, c, ARROW)
+        out.quad(c, b, a, a, ARROW)
+    straight = "through" in kinds or not (kinds & {"left", "right", "slight_left", "slight_right"})
+    top = 0.6 if straight else -0.3
+    quad([(-2.6, -0.08), (top, -0.08), (top, 0.08), (-2.6, 0.08)])
+    if straight:
+        tri([(0.6, -0.33), (1.8, 0.0), (0.6, 0.33)])
+    for side, names in ((-1, ("left", "slight_left")), (1, ("right", "slight_right"))):
+        if kinds & set(names):
+            quad([(-0.66, 0.0), (-0.66, side * 0.75), (-0.36, side * 0.75), (-0.36, 0.0)] if side > 0 else
+                 [(-0.66, side * 0.75), (-0.66, 0.0), (-0.36, 0.0), (-0.36, side * 0.75)])
+            tri([(-1.05, side * 0.75), (-0.51, side * 1.5), (0.03, side * 0.75)] if side > 0 else
+                [(0.03, side * 0.75), (-0.51, side * 1.5), (-1.05, side * 0.75)])
+
+
+def _approach_marks(out, cov, edges, xwalks):
+    """Lane arrows on every multi-lane (or turn-lane tagged) approach to a junction, and give-way teeth across the
+    approach of a minor road meeting a bigger one where there is no signalled crossing."""
+    inc = {}
+    for i, e in enumerate(edges):
+        if e["drive"] and len(e["pts"]) >= 2:
+            inc.setdefault(e["a"], []).append((i, 0))
+            inc.setdefault(e["b"], []).append((i, 1))
+    xg = {}
+    for xw in xwalks:
+        xg.setdefault((int(xw[0] // 20), int(xw[1] // 20)), []).append((xw[0], xw[1]))
+
+    def near_x(x, y, r):
+        return any((x - qx) ** 2 + (y - qy) ** 2 < r * r for gx in (-1, 0, 1) for gy in (-1, 0, 1)
+                   for qx, qy in xg.get((int(x // 20) + gx, int(y // 20) + gy), ()))
+    for node, lst in inc.items():
+        if len(lst) < 3:
+            continue
+        maxw = max(edges[i]["w"] for i, _ in lst)
+        top = max(rank_of(edges[i]["cls"]) for i, _ in lst)
+        for i, end in lst:
+            e = edges[i]
+            if e["bridge"] or _base(e["cls"]) not in MARK or e["w"] < 5.5:
+                continue
+            pts = e["pts"] if end == 1 else e["pts"][::-1]      # walk towards the junction
+            cum = _cum(pts)
+            L = cum[-1]
+            d_stop = maxw / 2 + 3.2 + 3.4                       # just behind the zebra's stop line
+            y = y_of(e) + 0.027
+            w = e["w"]
+
+            def frame(s):
+                p = _at(pts, cum, s)
+                q = _at(pts, cum, min(L, s + 1.0)) if s + 1.0 <= L else p
+                o = _at(pts, cum, max(0.0, s - 1.0))
+                dx, dy = q[0] - o[0], q[1] - o[1]
+                ln = math.hypot(dx, dy) or 1.0
+                u = (dx / ln, dy / ln)
+                return p, u, (-u[1], u[0])                      # right of the driver (furniture.py: r = (ay, -ax) with a = -u)
+            if e["ow"] and end == 0:
+                continue
+            lo, hi = (-w / 2, w / 2) if e["ow"] else (0.0, w / 2)
+            if L - d_stop > 4.0 and rank_of(e["cls"]) < top and not near_x(*_at(pts, cum, L - (maxw / 2 + 3.2))[:2], 7.0):
+                p, u, r = frame(L - d_stop + 1.0)                # give-way teeth across the approach lanes
+                k = lo + 0.35
+                while k + 0.3 < hi - 0.2:
+                    C = (p[0] + r[0] * (k + 0.3), p[1] + r[1] * (k + 0.3))
+                    a = (C[0] - r[0] * 0.3, y, C[1] - r[1] * 0.3)
+                    b = (C[0] - u[0] * 0.6, y, C[1] - u[1] * 0.6)    # the tooth points at the approaching driver
+                    c = (C[0] + r[0] * 0.3, y, C[1] + r[1] * 0.3)
+                    out.quad(a, b, c, c, ARROW)
+                    out.quad(c, b, a, a, ARROW)
+                    k += 0.9
+            lanes = _turns(e, end)
+            if not lanes:
+                continue
+            s_ar = L - d_stop - 4.5
+            if s_ar < 3.0:
+                continue
+            p, u, r = frame(s_ar)
+            if cov.in_core(p[0], p[1]) or (cov.near_junction(p[0], p[1]) and cov.covered(p[0], p[1], i, False)):
+                continue
+            n = len(lanes)
+            for k, kinds in enumerate(lanes):
+                off = lo + (k + 0.5) * (hi - lo) / n
+                _arrow(out, (p[0] + r[0] * off, p[1] + r[1] * off), u, r, y, kinds)
