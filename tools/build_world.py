@@ -23,6 +23,7 @@ from progress import Bar, each, phase, spread, flat, frac, span
 import par
 import terrain as terrain_mod
 import arch as arch_mod
+import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION = 66
@@ -1774,6 +1775,9 @@ def _bld_job(job):
     if (fit or {}).get("arch"):                                       # Porta Macedonia: the arch mesh replaces walls and roof
         badd(MAT_SOLID, *arch_mod.arch_mesh(fit["arch"], box, shade))
         return binf, adds
+    if (fit or {}).get("worship"):                                    # church / mosque model replaces walls and roof
+        badd(MAT_SOLID, *worship.mesh(fit["worship"], shade))
+        return binf, adds
     photo = photo_on(fit)                                             # procedural facade from the photos' numbers (ДЕТАЛИ fit)
     roof_fit = (fit or {}).get("roof") if photo else None
     if photo:
@@ -1954,6 +1958,17 @@ def main():
                     bb = (min(p[0] for p in outer), min(p[1] for p in outer), max(p[0] for p in outer), max(p[1] for p in outer))
                     pending.append((chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), MAT_SOLID, outer, holes, verts, tri, arch_mod.H,
                                     (232, 228, 216), (232, 228, 216), ar, False, [], {"arch": frame}))
+                    continue
+                ws = worship.kind(t) and worship.build(worship.kind(t), outer, t)
+                if ws:                                     # church / mosque / türbe model (tools/worship.py), never photo-fitted to a box
+                    wh = worship.height(ws)
+                    xs, ys = [p[0] for p in outer], [p[1] for p in outer]
+                    bb = (min(xs), min(ys), max(xs), max(ys))
+                    buildings.append({"ring": outer, "v": verts, "tri": tri, "h": wh, "bb": bb, "area": ar})
+                    od.polygon(cells(outer), fill=255)
+                    bd.polygon(cells(outer), fill=255)
+                    pending.append((chunk_of((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), MAT_SOLID, outer, holes, verts, tri, wh,
+                                    (230, 220, 200), (176, 90, 60), ar, False, [], {"worship": ws}))
                     continue
                 h, roofc, wallc, mat, small = bld_style(t, ar, outer, r)
                 fit = photo_fit.get(el["id"])             # the photo-fitted look (src/photogram.py), when --src has photogram.json
