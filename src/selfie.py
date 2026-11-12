@@ -36,8 +36,8 @@ class Selfie:
         self.dir = None
         self.n = 0
         self.rng = random.Random(5)
-        self.clouds = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.12, 0.5), self.rng.uniform(0.7, 1.5),
-                        [(self.rng.uniform(-1, 1), self.rng.uniform(-0.3, 0.3), self.rng.uniform(0.5, 1.0)) for _ in range(5)]) for _ in range(16)]
+        self.clouds = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.1, 0.85), self.rng.uniform(0.8, 1.9),
+                        [(self.rng.uniform(-1, 1), self.rng.uniform(-0.3, 0.3), self.rng.uniform(0.5, 1.0)) for _ in range(5)]) for _ in range(30)]
         self.stars = [(self.rng.uniform(0, math.tau), self.rng.uniform(0.05, 0.9), self.rng.uniform(0.4, 1.0)) for _ in range(190)]
         self.phrase = ""
         self.yaw = 0.0
@@ -84,10 +84,12 @@ class Selfie:
         az = o.az if o.az is not None else world.ground_y(o.x, o.y)
         back, up, ahead = (8.0, 5.5, 3.0) if sim.mode == "car" else (4.5, 3.6, 2.0)   # pitched ~25 deg down: horizon near the top edge
         h += getattr(self, "look_yaw", 0.0)                # mouse free-look orbit (0 when the mouse steers)
-        up += getattr(self, "look_pitch", 0.0) * back
+        lp = getattr(self, "look_pitch", 0.0)
+        up += max(lp, 0.0) * back
+        lift = max(-lp, 0.0) * 30.0                     # mouse up: the camera tilts up towards the sky
         px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
         self.yaw = h
-        cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
+        cam = rl.Camera3D(V3(px, az + up, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
         f = VIEW * 2.25                                    # drawn out to the low-quality ring
         return cam, (o.x - f, o.y - f, o.x + f, o.y + f)
