@@ -41,11 +41,11 @@ def scrub(g, x, z, r, seed):
     rr = random.Random(seed)
     c = DRY[seed % len(DRY)]
     h = r * rr.uniform(0.7, 1.2)
-    _prism(g, x, 0.0, z, r, h * 0.55, 7, tuple(v * 0.84 for v in c))
+    _prism(g, x, 0.0, z, r, h * 0.55, 6, tuple(v * 0.84 for v in c))      # 6 / 5 sides (was 7 / 6): -18 % vertices, same silhouette at 1 m
     for i in range(2):
         a = rr.uniform(0, 6.28)
         k = rr.uniform(0.88, 1.12)
-        _prism(g, x + math.cos(a) * r * 0.5, h * 0.3, z + math.sin(a) * r * 0.5, r * rr.uniform(0.5, 0.75), h * rr.uniform(0.5, 0.8), 6,
+        _prism(g, x + math.cos(a) * r * 0.5, h * 0.3, z + math.sin(a) * r * 0.5, r * rr.uniform(0.5, 0.75), h * rr.uniform(0.5, 0.8), 5,
                tuple(min(255, v * k) for v in c))
     if rr.random() < 0.3:                                              # wild flowers: poppy, daisy, chicory
         fc = rr.choice(((200, 60, 50), (240, 240, 235), (120, 140, 210), (236, 200, 60)))
