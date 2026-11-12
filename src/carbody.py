@@ -141,14 +141,9 @@ _ALLOY = ("BMW E46 Tjunirana", "Golf Shestka Uvezen", "Seat Leon Kupra", "Tesla 
 def _rim(name, s):
     """(design, count) of a model's wheel face: pressed-steel hubcaps on the old and plain ones (subtle), 5-spoke
     alloys on 90s-2000s cars, 7-spoke on the premium and tuned ones, 6 on SUVs and pickups."""
-    a = s["arch"]
-    if name in _ALLOY:
-        return ("multi", 7)
-    if a in ("suv_box", "suv_soft", "pickup"):
-        return ("alloy", 6)
-    if a in ("hatch_boxy", "notch_boxy", "mini", "van_cab"):
-        return ("steel", 4)
-    return ("alloy", 5)
+    if name in _ALLOY:                                   # only the tuned / premium ones wear alloys
+        return ("alloy", 5)
+    return ("steel", 4)                                  # everything else: pressed-steel wheel with a small hubcap
 
 
 def badge(name):
@@ -200,7 +195,7 @@ def layout(name, L):
     cx = (X(s["fr1"]) + X(s["fr0"])) / 2
     cl = X(s["fr1"]) - X(s["fr0"])
     hinge = X(s["seams"][0])
-    return dict(hub=(212, 214, 220) if name in _ALLOY else (150, 152, 158), rim=_rim(name, s), cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
+    return dict(hub=(176, 178, 184) if name in _ALLOY else (128, 130, 136), rim=_rim(name, s), cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
                 mirror=X(s["fc"]) - 0.02)
 
 
