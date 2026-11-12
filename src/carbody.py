@@ -11,25 +11,25 @@ LOFT_STYLES = ("hatch", "sedan", "taxi", "mini", "wagon", "suv", "van", "limo")
 # dn nose top below the belt, dc cowl above the belt, dd deck above the belt, dt tail top below the deck; tw roof width / body width;
 # rnd plan rounding; gc ground clearance; hl head lamp kind, gr grille kind, tl tail lamp kind, bp bumper kind; win side glass; nw windows
 _BASE = dict(dn=0.08, dc=0.03, dd=0.0, dt=0.0, tw=0.82, rnd=0.3, gc=0.24, hl="rect", gr="blk", tl="wide", bp="black", win="all", nw=2,
-             pf=0.46, fwe=0.45, tr=None, hood=0.0)
+             pf=0.46, fwe=0.45, tr=None, hood=0.0, nrF=0.08, nrR=0.05)
 ARCH = {
-    "hatch_boxy": dict(fc=0.30, fr1=0.475, fr0=0.835, fd=0.965, dn=0.05, dd=0.10, dt=0.05, tw=0.84, rnd=0.12, tl="tall", fwe=0.30, bp="chrome"),
-    "hatch_soft": dict(fc=0.315, fr1=0.51, fr0=0.82, fd=0.955, dn=0.15, dc=0.04, dd=0.08, dt=0.06, tw=0.80, rnd=0.45, hl="wrap",
+    "hatch_boxy": dict(nrF=0.04, nrR=0.02, fc=0.30, fr1=0.475, fr0=0.835, fd=0.965, dn=0.05, dd=0.10, dt=0.05, tw=0.84, rnd=0.12, tl="tall", fwe=0.30, bp="chrome"),
+    "hatch_soft": dict(nrF=0.17, nrR=0.07, fc=0.315, fr1=0.51, fr0=0.82, fd=0.955, dn=0.15, dc=0.04, dd=0.08, dt=0.06, tw=0.80, rnd=0.45, hl="wrap",
                        gr="slim", tl="tall", fwe=0.30),
-    "mini": dict(fc=0.255, fr1=0.42, fr0=0.82, fd=0.955, dn=0.10, dc=0.05, dd=0.06, dt=0.08, tw=0.80, rnd=0.6, hl="round", tl="tall", fwe=0.30),
-    "notch_boxy": dict(fc=0.375, fr1=0.545, fr0=0.745, fd=0.83, dn=0.05, dc=0.02, dd=0.0, dt=0.0, tw=0.85, rnd=0.12, gr="chrome",
+    "mini": dict(nrF=0.09, nrR=0.09, fc=0.255, fr1=0.42, fr0=0.82, fd=0.955, dn=0.10, dc=0.05, dd=0.06, dt=0.08, tw=0.80, rnd=0.6, hl="round", tl="tall", fwe=0.30),
+    "notch_boxy": dict(nrF=0.05, nrR=0.04, fc=0.375, fr1=0.545, fr0=0.745, fd=0.83, dn=0.05, dc=0.02, dd=0.0, dt=0.0, tw=0.85, rnd=0.12, gr="chrome",
                        tl="wide", bp="chrome", fwe=0.45),
-    "notch_soft": dict(fc=0.36, fr1=0.545, fr0=0.75, fd=0.84, dn=0.14, dc=0.03, dd=-0.02, dt=0.0, tw=0.79, rnd=0.4, hl="wrap",
+    "notch_soft": dict(nrF=0.16, nrR=0.10, fc=0.36, fr1=0.545, fr0=0.75, fd=0.84, dn=0.14, dc=0.03, dd=-0.02, dt=0.0, tw=0.79, rnd=0.4, hl="wrap",
                        gr="slim", tl="wide", fwe=0.45),
-    "wagon": dict(fc=0.335, fr1=0.51, fr0=0.935, fd=0.985, dn=0.10, dc=0.03, dd=0.12, dt=0.06, tw=0.82, rnd=0.3, hl="wrap",
+    "wagon": dict(nrF=0.13, nrR=0.03, fc=0.335, fr1=0.51, fr0=0.935, fd=0.985, dn=0.10, dc=0.03, dd=0.12, dt=0.06, tw=0.82, rnd=0.3, hl="wrap",
                   gr="slim", tl="tall", nw=3, fwe=0.30),
-    "suv_box": dict(fc=0.27, fr1=0.43, fr0=0.94, fd=0.985, dn=0.02, dc=0.10, dd=0.14, dt=0.0, tw=0.88, rnd=0.1, gc=0.30, hl="round",
+    "suv_box": dict(nrF=0.03, nrR=0.02, fc=0.27, fr1=0.43, fr0=0.94, fd=0.985, dn=0.02, dc=0.10, dd=0.14, dt=0.0, tw=0.88, rnd=0.1, gc=0.30, hl="round",
                     gr="slats", tl="tall", nw=3, fwe=0.30, bp="black"),
-    "suv_soft": dict(fc=0.33, fr1=0.515, fr0=0.915, fd=0.975, dn=0.10, dc=0.06, dd=0.14, dt=0.05, tw=0.80, rnd=0.35, gc=0.28, hl="wrap",
+    "suv_soft": dict(nrF=0.13, nrR=0.06, fc=0.33, fr1=0.515, fr0=0.915, fd=0.975, dn=0.10, dc=0.06, dd=0.14, dt=0.05, tw=0.80, rnd=0.35, gc=0.28, hl="wrap",
                      gr="slim", tl="tall", nw=3, fwe=0.30),
-    "van_cab": dict(fc=0.17, fr1=0.27, fr0=0.985, fd=0.995, dn=0.0, dc=0.0, dd=0.0, dt=0.0, tw=0.94, rnd=0.12, gc=0.28, hl="rect",
+    "van_cab": dict(nrF=0.03, nrR=0.02, fc=0.17, fr1=0.27, fr0=0.985, fd=0.995, dn=0.0, dc=0.0, dd=0.0, dt=0.0, tw=0.94, rnd=0.12, gc=0.28, hl="rect",
                     gr="blk", tl="tall", nw=4, fwe=0.30, bp="black"),
-    "mpv": dict(fc=0.27, fr1=0.43, fr0=0.935, fd=0.975, dn=0.10, dc=0.05, dd=0.14, dt=0.03, tw=0.84, rnd=0.35, hl="wrap", gr="slim",
+    "mpv": dict(nrF=0.12, nrR=0.04, fc=0.27, fr1=0.43, fr0=0.935, fd=0.975, dn=0.10, dc=0.05, dd=0.14, dt=0.03, tw=0.84, rnd=0.35, hl="wrap", gr="slim",
                 tl="tall", nw=3, fwe=0.30),
 }
 # name -> (arch, wheelbase / length, overrides)   (wheelbase ratios from the real cars' data sheets)
@@ -198,9 +198,13 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
         rail = 0.07 + 0.09 * tg
         sy, sz = shy + 0.88 * gh, w - (w - wt) * 0.88
         L_ = [(yb, w - 0.07), (yb + 0.10, w), (shy, w), (sy, sz), (t_, wt), (t_ + 0.01, wt - rail)]
+        rf = max(0.0, 1 - f * L / 0.55) * s["nrF"]                      # the nose / tail face leans back towards the top
+        rr = max(0.0, 1 - (1 - f) * L / 0.55) * s["nrR"]
         for k, (y, z) in enumerate(L_):
-            P[i, k] = (x, y, -z)
-            P[i, 11 - k] = (x, y, z)
+            tt = float(np.clip((y - yb - 0.2) / max(0.1, t_ - yb - 0.2), 0, 1))
+            xk = x - rf * tt + rr * tt
+            P[i, k] = (xk, y, -z)
+            P[i, 11 - k] = (xk, y, z)
     # ---- quads between stations -> triangles with per-quad colours
     fm = (F[:-1] + F[1:]) / 2
     cols = np.zeros((S - 1, 11, 3), np.float32)
@@ -264,7 +268,16 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     box(xb + 0.02, yb + 0.06, 0, 0.12, bh, 2 * capwr + 0.02, bpc)
     # ---- front face: lamps and grille
     ltop = hn - 0.05
-    xl = xf + 0.006
+    tfr = lambda y: float(np.clip((y - yb - 0.2) / max(0.1, hn - yb - 0.2), 0, 1))     # how far back the nose face has leaned at height y
+    fxf = lambda y: xf - s["nrF"] * tfr(y)                                                # the nose face's x at height y
+    tfb = lambda y: float(np.clip((y - yb - 0.2) / max(0.1, ht - yb - 0.2), 0, 1))
+    fxr = lambda y: xb + s["nrR"] * tfb(y)                                                # the tail face's x at height y
+
+    def fq(y0_, h_, z0_, dz_, col, off=0.006):                                            # a quad lying on the (leaning) nose face
+        quad((fxf(y0_) + off, y0_, z0_), (0, 0, dz_), (fxf(y0_ + h_) - fxf(y0_), h_, 0), (1, 0, 0), col)
+
+    def rq(y0_, h_, z0_, dz_, col, off=0.006):
+        quad((fxr(y0_) - off, y0_, z0_), (0, 0, dz_), (fxr(y0_ + h_) - fxr(y0_), h_, 0), (-1, 0, 0), col)
     hl = s["hl"]
     lw, lh = {"round": (0.22, 0.22), "rect": (0.34, 0.15), "wrap": (0.46, 0.15), "slit": (0.52, 0.09)}[hl]
     lh = min(lh, ltop - (yb + 0.32))
@@ -273,10 +286,10 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
         zi = zo - lw
         lo, hi = sorted((sd * zo, sd * zi))
         if hl == "round":
-            quad((xl, ltop - lh - 0.02, lo - 0.015), (0, 0, hi - lo + 0.03), (0, lh + 0.04, 0), (1, 0, 0), (196, 198, 204))
-        quad((xl + 0.004, ltop - lh, lo), (0, 0, hi - lo), (0, lh, 0), (1, 0, 0), (255, 244, 186))
+            fq(ltop - lh - 0.02, lh + 0.04, lo - 0.015, hi - lo + 0.03, (196, 198, 204), 0.0)
+        fq(ltop - lh, lh, lo, hi - lo, (255, 244, 186), 0.004)
         if hl == "wrap":
-            quad((xl - 0.001, ltop - lh, sd * (capw + 0.002)), (-0.12, 0, 0), (0, lh, 0), (0, 0, sd), (255, 244, 186))
+            quad((fxf(ltop - lh) - 0.001, ltop - lh, sd * (capw + 0.002)), (-0.12, 0, 0), (0, lh, 0), (0, 0, sd), (255, 244, 186))
     gz = zo - lw - 0.03
     g = s["gr"]
     gy0, gy1 = yb + 0.28, ltop - 0.01
@@ -284,23 +297,22 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
         gz = gz if g != "slim" else min(gz, 0.5)
         gc_ = (28, 28, 32)
         if g == "chrome":
-            quad((xl, gy0 - 0.03, -gz - 0.03), (0, 0, 2 * gz + 0.06), (0, gy1 - gy0 + 0.06, 0), (1, 0, 0), (200, 202, 208))
+            fq(gy0 - 0.03, gy1 - gy0 + 0.06, -gz - 0.03, 2 * gz + 0.06, (200, 202, 208), 0.0)
         if g in ("slim", "blk"):
             gy0 = max(gy0, ltop - (0.14 if g == "slim" else 0.2))
-        quad((xl + 0.002, gy0, -gz), (0, 0, 2 * gz), (0, gy1 - gy0, 0), (1, 0, 0), gc_)
+        fq(gy0, gy1 - gy0, -gz, 2 * gz, gc_, 0.002)
         if g == "slats":
             for k in range(1, 6):
                 zk = -gz + k * 2 * gz / 6
-                quad((xl + 0.004, gy0, zk - 0.012), (0, 0, 0.024), (0, gy1 - gy0, 0), (1, 0, 0), (150, 152, 158))
+                fq(gy0, gy1 - gy0, zk - 0.012, 0.024, (150, 152, 158), 0.004)
         if g == "vee":
-            quad((xl + 0.004, gy0 + 0.05, -0.03), (0, 0, 0.06), (0, 0.4, 0), (1, 0, 0), (214, 214, 218))
+            fq(gy0 + 0.05, 0.4, -0.03, 0.06, (214, 214, 218), 0.004)
     elif g == "kidney":
         for sd in (-1, 1):
-            quad((xl + 0.002, gy0 + 0.02, sd * 0.2 - 0.17 * (sd < 0) - 0.0), (0, 0, 0.17), (0, gy1 - gy0 - 0.02, 0), (1, 0, 0), (196, 198, 204))
-            quad((xl + 0.004, gy0 + 0.04, sd * 0.2 - 0.15 * (sd < 0) + 0.01 * (sd < 0)), (0, 0, 0.13), (0, gy1 - gy0 - 0.06, 0), (1, 0, 0), (26, 26, 30))
-    quad((xl + 0.002, yb + 0.07, -0.25), (0, 0, 0.5), (0, 0.12, 0), (1, 0, 0), (236, 236, 230))
+            fq(gy0 + 0.02, gy1 - gy0 - 0.02, sd * 0.2 - 0.17 * (sd < 0), 0.17, (196, 198, 204), 0.002)
+            fq(gy0 + 0.04, gy1 - gy0 - 0.06, sd * 0.2 - 0.14 * (sd < 0), 0.13, (26, 26, 30), 0.004)
+    fq(yb + 0.07, 0.12, -0.25, 0.5, (236, 236, 230), 0.002)
     # ---- tail: lamps and plate
-    xt = xb - 0.006
     ttop = ht - 0.04
     tl = s["tl"]
     zt = capwr - 0.05
@@ -308,14 +320,14 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
         if tl == "tall":
             hh = min(0.42, ttop - yb - 0.3)
             lo, hi = sorted((sd * zt, sd * (zt - 0.14)))
-            quad((xt, ttop - hh, lo), (0, 0, hi - lo), (0, hh, 0), (-1, 0, 0), (214, 30, 30))
+            rq(ttop - hh, hh, lo, hi - lo, (214, 30, 30))
         elif tl == "slim":
             lo, hi = sorted((sd * zt, sd * (zt - 0.5)))
-            quad((xt, ttop - 0.08, lo), (0, 0, hi - lo), (0, 0.08, 0), (-1, 0, 0), (214, 30, 30))
+            rq(ttop - 0.08, 0.08, lo, hi - lo, (214, 30, 30))
         else:
             lo, hi = sorted((sd * zt, sd * (zt - 0.36)))
-            quad((xt, ttop - 0.14, lo), (0, 0, hi - lo), (0, 0.14, 0), (-1, 0, 0), (214, 30, 30))
-    quad((xt - 0.002, yb + 0.12, 0.25), (0, 0, -0.5), (0, 0.12, 0), (-1, 0, 0), (236, 236, 230))
+            rq(ttop - 0.14, 0.14, lo, hi - lo, (214, 30, 30))
+    rq(yb + 0.12, 0.12, 0.25, -0.5, (236, 236, 230), 0.002)
     # ---- doors, handles, mirrors, wheel arches
     wr = tyre_r
     for sd in (-1, 1):

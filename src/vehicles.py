@@ -141,6 +141,27 @@ def _circ(L, W):
 
 
 CIRC = {i: _circ(d[0], d[1]) for i, d in enumerate(DIMS)}
+_DOOR_CAB = {"bus": (0.985, 0.0), "truck": (0.24, 0.38), "pickup": (0.36, 0.10), "tractor": (0.32, -0.12)}
+
+
+def door_geom(kind):
+    """(hinge x, door length) of the driver's door along the body (m, front +): where the door is drawn, where people get in and out."""
+    import carbody
+    L = DIMS[kind][0]
+    if STYLE[kind] in carbody.LOFT_STYLES and carbody.has(IDS[kind]):
+        lay = carbody.layout(IDS[kind], L)
+        return lay["hinge"], lay["door"]
+    if EXTRA[kind] == "semi":
+        front = SEMI_SHIFT + SEMI_TRACTOR_L / 2 - 2.45 / 2 + 0.74
+        return front, 1.0
+    cl_f, cx_f = _DOOR_CAB.get(STYLE[kind], (0.5, 0.0))
+    cl, cx = L * cl_f, L * cx_f
+    front, rear = cx + cl * 0.30, cx - cl * 0.20
+    if STYLE[kind] in ("bus", "truck", "tractor", "pickup"):
+        rear = front - min(1.0, cl * 0.5)
+    return front, max(0.6, front - rear)
+
+
 HALF_L = [d[0] / 2 for d in DIMS]                              # the body itself, no padding: what fits physically may pass
 HALF_W = [d[1] / 2 for d in DIMS]
 TRAFFIC_W = [v[5] for v in _V]

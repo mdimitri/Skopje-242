@@ -1085,19 +1085,8 @@ def _finish_arrays(parts, dents, burnt, belt):
 
 
 def door_geom(kind):
-    """Driver's door: (hinge x, door length) in car-local space, from the cabin layout used by car_arrays."""
-    L = V.DIMS[kind][0]
-    if V.STYLE[kind] in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
-        lay = carbody.layout(V.IDS[kind], L)
-        return lay["hinge"], lay["door"]
-    cl_f, cx_f = _CAB[V.STYLE[kind]][:2]
-    cl, cx = L * cl_f, L * cx_f
-    front, rear = cx + cl * 0.30, cx - cl * 0.20
-    if V.STYLE[kind] in ("bus", "truck", "tractor", "pickup"):
-        rear = front - min(1.0, cl * 0.5)
-    if V.EXTRA[kind] == "semi":
-        front, rear = V.SEMI_SHIFT + V.SEMI_TRACTOR_L / 2 - 2.45 / 2 + 0.74, V.SEMI_SHIFT + V.SEMI_TRACTOR_L / 2 - 2.45 / 2 - 0.26
-    return front, max(0.6, front - rear)
+    """Driver's door: (hinge x, door length) in car-local space (see vehicles.door_geom)."""
+    return V.door_geom(kind)
 
 
 def door_model(kind, color):

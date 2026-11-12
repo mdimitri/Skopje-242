@@ -4,6 +4,7 @@ people, parked or moving cars, building walls, trees / posts, or the ground at t
 Each hit raises an event the renderer turns into a puff, sparks, debris or an explosion, pays денари, and leaves
 a mark: cars lose health (and burn then explode), walls keep bullet holes / scorch marks (capped list)."""
 import math
+import slang
 
 import vehicles
 
@@ -121,8 +122,13 @@ class Projectiles:
                 sim.traffic.cars.remove(obj)
                 b.empty = True
                 sim.bodies.append(b)
-                lx, ly = math.sin(b.h), -math.cos(b.h)
-                sim.peds.eject(b.x + lx * 2.0, b.y + ly * 2.0, b.h + math.pi / 2, gz=b.az)
+                import actors
+                dx_, dy_ = actors.door_point(b, 1.0)
+                ax_, ay_ = dx_ - b.x, dy_ - b.y
+                al_ = math.hypot(ax_, ay_) or 1.0
+                vx_, vy_ = (ax_ / al_ * 0.6 + fx * 0.4) * 5.8, (ay_ / al_ * 0.6 + fy * 0.4) * 5.8     # away from the car and the gunman
+                q = sim.peds.eject(dx_, dy_, math.atan2(vy_, vx_), gz=b.az, flee=(vx_, vy_))
+                sim.ev("shout", text=sim.rng.choice(slang.DRIVER_RAGE), x=q.x, y=q.y)
             was = b.health
             b.health -= dmg * 0.35
             b.dirty = True

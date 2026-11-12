@@ -164,6 +164,28 @@ def bump(b, impact, wx, wy, nx, ny):
 TURN = 0.67                  # turning radius of every vehicle relative to the bicycle model: 33 % tighter
 
 
+def _threat(b, sp, px, py):
+    """+1 / -1 = the side to run to when a person at (px, py) is in the swept path of vehicle b (ahead of the nose or alongside its
+    flank, with a speed-scaled margin: its centre point is not what hits you); 0 = safe."""
+    fxb, fyb = math.cos(b.h), math.sin(b.h)
+    hl, hw = vehicles.HALF_L[b.kind], vehicles.HALF_W[b.kind]
+    ax, ay = px - b.x, py - b.y
+    fw, lt = ax * fxb + ay * fyb, -ax * fyb + ay * fxb
+    if fw < -hl - 0.4 or fw - hl > 3.0 + sp * 1.4 or abs(lt) > hw + 0.9 + 0.12 * sp:
+        return 0
+    return 1 if lt >= 0 else -1
+
+
+def door_point(b, out, side=1):
+    """The spot `out` metres outside the driver's door of body b (where the door really is: a lorry's or a bus's is far forward)."""
+    hx, dl = vehicles.door_geom(b.kind)
+    W = CIRC[b.kind][1]
+    lx, ly = math.sin(b.h), -math.cos(b.h)
+    fx, fy = math.cos(b.h), math.sin(b.h)
+    d = hx - dl * 0.5
+    return b.x + lx * side * (W + out) + fx * d, b.y + ly * side * (W + out) + fy * d
+
+
 def tow(b):
     """Semi trailer: its axle group is dragged along the path of the kingpin (on the tractor's fifth wheel) at a fixed
     distance -- the exact no-side-slip kinematics of a real trailer, forwards and reversing.  Folding stops at SEMI_JACK."""
@@ -854,12 +876,14 @@ class Peds:
         p.v = self.rng.uniform(1.0, 1.7) * vehicles.PED_SPEED[p.arch]
         return True
 
-    def eject(self, x, y, h, shirt=None, gz=None):
-        """A driver pulled out of their car: angry, then runs away."""
+    def eject(self, x, y, h, shirt=None, gz=None, flee=None):
+        """A driver pulled out of their car: angry, then runs away; flee=(vx, vy) (a shot-at driver) runs for their life at once."""
         p = Ped()
         p.mode = "rage"
         p.t = 3.2
         p.x, p.y, p.h = x, y, h
+        if flee is not None:
+            p.mode, p.t, p.vx, p.vy = "flee", 8.0, flee[0], flee[1]
         p.gz = gz
         p.arch = self.rng.choice(vehicles.WALKERS)
         p.shirt = self.rng.randrange(3) if shirt is None else shirt
@@ -1080,33 +1104,27 @@ class Peds:
                             p.y += ah_[1] * 1.6 * dt
                 if not pressed:
                     p.blk = max(0.0, p.blk - dt)
-            # ------------- panic near fast cars
+            # ------------- panic near moving vehicles: the whole body counts (nose, flanks, tail), not just its centre point
             if p.mode == "walk":
                 for b in near_b:
-                    if b.speed > 6 and abs(b.x - p.x) < 9 and abs(b.y - p.y) < 9 and not b.empty:
-                        d = math.hypot(b.x - p.x, b.y - p.y)
-                        fxb, fyb = math.cos(b.h), math.sin(b.h)
-                        if d < 9 and ((p.x - b.x) * fxb + (p.y - b.y) * fyb) > 0:
-                            p.mode, p.t = "flee", 2.4
-                            ax, ay = p.x - b.x, p.y - b.y
-                            n = math.hypot(ax, ay) or 1.0
-                            # run sideways out of the car's path
-                            sx, sy = -fyb, fxb
-                            side = 1 if (ax * sx + ay * sy) > 0 else -1
-                            p.vx, p.vy = sx * side * 4.2, sy * side * 4.2
+                    sp_ = abs(getattr(b, "speed", 0.0))
+                    if sp_ > 3.5 and not b.empty and abs(b.x - p.x) < vehicles.HALF_L[b.kind] + 12 and abs(b.y - p.y) < vehicles.HALF_L[b.kind] + 12:
+                        side = _threat(b, sp_, p.x, p.y)
+                        if side:
+                            fxb, fyb = math.cos(b.h), math.sin(b.h)
+                            p.mode, p.t = "flee", 2.6
+                            p.vx, p.vy = -fyb * side * 5.0, fxb * side * 5.0       # sideways, out of its path
                             if rng.random() < 0.5:
                                 ev("shout", text=talk.react("panic", p.arch, self.sim, lines("panic", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
                             break
-            if p.mode == "walk":                                  # traffic cars too: step out of the way of one that is coming at us
+            if p.mode == "walk":                                  # traffic cars too
                 for b in _near(g_a, p.x, p.y):
-                    if type(b) is Car and b.v > 3.0 and abs(b.x - p.x) < 14 and abs(b.y - p.y) < 14:
-                        fxb, fyb = math.cos(b.h), math.sin(b.h)
-                        ax, ay = p.x - b.x, p.y - b.y
-                        fwd, lat = ax * fxb + ay * fyb, -ax * fyb + ay * fxb
-                        if 0.0 < fwd < 4.0 + b.v * 1.4 and abs(lat) < 2.6:
-                            side = 1 if lat >= 0 else -1
-                            p.mode, p.t = "flee", 1.6
-                            p.vx, p.vy = -fyb * side * 4.0, fxb * side * 4.0
+                    if type(b) is Car and b.v > 2.5 and abs(b.x - p.x) < vehicles.HALF_L[b.kind] + 14 and abs(b.y - p.y) < vehicles.HALF_L[b.kind] + 14:
+                        side = _threat(b, b.v, p.x, p.y)
+                        if side:
+                            fxb, fyb = math.cos(b.h), math.sin(b.h)
+                            p.mode, p.t = "flee", 1.8
+                            p.vx, p.vy = -fyb * side * 5.0, fxb * side * 5.0
                             break
             if p.mode == "ko":                                    # knocked out cold
                 p.t -= dt
@@ -2661,10 +2679,7 @@ class Sim:
                      "door": b is not None and b.kind not in vehicles.BIKES, "stolen": stolen or victim is not None}
 
     def _seat_point(self, b, out):
-        L, W = CIRC[b.kind][0], CIRC[b.kind][1]
-        lx, ly = math.sin(b.h), -math.cos(b.h)
-        fx, fy = math.cos(b.h), math.sin(b.h)
-        return b.x + lx * (W + out) + fx * L * 0.1, b.y + ly * (W + out) + fy * L * 0.1
+        return door_point(b, out)
 
     def _walk_to(self, wk, j, tx, ty, k, dt):
         wk.x, wk.y = j["x0"] + (tx - j["x0"]) * k, j["y0"] + (ty - j["y0"]) * k
@@ -2789,8 +2804,8 @@ class Sim:
             return
         if getattr(self, "transit", None) is not None:
             self.transit.buses = [bus for bus in self.transit.buses if bus.body is not b]
-        lx, ly = math.sin(b.h), -math.cos(b.h)
-        p = self.peds.eject(b.x + lx * 2.4, b.y + ly * 2.4, b.h + math.pi / 2, gz=b.az)
+        dx_, dy_ = door_point(b, 1.4)
+        p = self.peds.eject(dx_, dy_, b.h + math.pi / 2, gz=b.az)
         self.ev("shout", text=self.rng.choice(slang.DRIVER_RAGE), x=p.x, y=p.y)
         b.player_car, b.empty, b.ctl = True, False, None
         self.stats["stolen"] += 1
@@ -2813,9 +2828,7 @@ class Sim:
         b = self.car
         if getattr(self, "riding", None) is not None:              # get off the bus; it carries on along its line
             self.riding = None
-            L, W = CIRC[b.kind][0], CIRC[b.kind][1]
-            fx, fy = math.cos(b.h), math.sin(b.h)
-            x, y = b.x + fx * L * 0.5 - fy * (W + 1.0), b.y + fy * L * 0.5 + fx * (W + 1.0)
+            x, y = door_point(b, 1.0, -1)
             self.walker = Walker(x, y, b.h)
             self.walker.az = b.az
             self.car = None
@@ -2828,7 +2841,7 @@ class Sim:
         L, W = CIRC[b.kind][0], CIRC[b.kind][1]
         lx, ly = math.sin(b.h), -math.cos(b.h)
         for side in (1, -1):
-            x, y = b.x + lx * side * (W + 0.9), b.y + ly * side * (W + 0.9)
+            x, y = door_point(b, 0.9, side)
             if not any(True for _ in self.w.edges_near(x, y, 0.5)):
                 break
         self.walker = Walker(x, y, b.h)
@@ -3130,8 +3143,8 @@ class Sim:
                     tmp.empty = True
                     self.bodies.append(tmp)
                     self.traffic.cars.remove(c)
-                    lx, ly = math.sin(tmp.h), -math.cos(tmp.h)
-                    p = self.peds.eject(tmp.x + lx * 2.0, tmp.y + ly * 2.0, tmp.h + math.pi / 2, gz=tmp.az)
+                    dx_, dy_ = door_point(tmp, 1.0)
+                    p = self.peds.eject(dx_, dy_, tmp.h + math.pi / 2, gz=tmp.az)
                     if rng.random() < 0.7:
                         ev("shout", text=rng.choice(slang.PED_HIT + slang.DRIVER_RAGE[1:3]), x=p.x, y=p.y)
                     ev("crash", body=b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
