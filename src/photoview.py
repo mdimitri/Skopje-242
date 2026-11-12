@@ -213,6 +213,7 @@ class Scene:
         self.stats = {"verts": 0, "blds": 0, "ms": 0.0, "rebuilt": 0}
         self.busy = 0.0                      # 0..1 while a rebuild runs
         self.focus, self.radius = None, 1e9
+        self.detail = 2                      # preview of the game's ДЕТАЛИ setting (0 low .. 2 high)
 
     def free(self):
         for m in self.models:
@@ -309,14 +310,18 @@ class Scene:
         blds = self.want[0]
         acc = {}
         nv = 0
+        skip = {18, 19} if self.detail < 1 else ({19} if self.detail < 2 else set())     # as the game's ДЕТАЛИ setting
         for bid in blds:
             for mat, pos, uv, col in self.parts.get(bid, (None, []))[1]:
+                if mat in skip:
+                    continue
                 e = acc.setdefault(mat, ([], [], []))
                 e[0].append(pos); e[1].append(uv); e[2].append(col)
                 nv += len(pos)
         self.free()
         bw = pg.tools()
-        names = {**pg.MATS, bw.MAT_ROOF: "roof", bw.MAT_SOLID: "white", **{m_: k for k, m_ in bw.MAT_SURF.items()}}
+        names = {**pg.MATS, bw.MAT_ROOF: "roof", bw.MAT_SOLID: "white", **{m_: k for k, m_ in bw.MAT_SURF.items()},
+                 bw.MAT_KIT2: "glaz", bw.MAT_KIT3: "glaz"}
         for mat, (P, U, C) in acc.items():
             m = gl3d.make_model(np.concatenate(P), np.concatenate(U), np.concatenate(C))
             if m is not None:
@@ -823,6 +828,13 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if v != op["inferred"]:
                 op["inferred"] = v
                 opts_changed()
+            v = _choice(16, y + 56, lw - 32, "приказ како во играта (ДЕТАЛИ)", [0, 1, 2], scene.detail, {0: "ниско", 1: "средно", 2: "високо"}, 13)
+            if v != scene.detail:
+                scene.detail = v
+                if scene.want is None:
+                    scene.want = (blds, None, None, None)
+                    scene.t0 = time.time()
+                    scene._upload()
             lods = [150.0, 250.0, 400.0, 700.0, 1e9]
             v = _choice(16, y + 28, lw - 32, "детали до (подалеку само кутии)", lods, min(lods, key=lambda s_: abs(s_ - op["lod"])),
                         {v_: (f"{v_:.0f} м" if v_ < 1e8 else "секаде") for v_ in lods}, 13)
@@ -834,7 +846,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if abs(v - op["sat"]) > 1e-6:
                 op["sat"] = v
                 opts_changed()
-            y += 58
+            y += 86
             font.draw_text(f"КОМПЛЕТ ЕЛЕМЕНТИ ({len(archkit.ELEMENTS)})", 16, y, 15, INK, bold="cond")
             y += 22
             v = _toggle(16, y, cw2 - 4, "комплетот вклучен", op["kit_on"], 13)
@@ -861,7 +873,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             group = _choice(20 + cw2, y, cw2 - 4, "група", groups, group, None, 13)
             y += 28
             items = [e for e in archkit.ELEMENTS if group == "сè" or e[3] == group]
-            font.draw_text(f"избрани {len(op['kit'])} · прикажани {len(items)} · тркало лизга", 16, y, 13, DIM)
+            font.draw_text(f"избрани {len(op['kit'])} · прикажани {len(items)} · 0-3 = ниво на детали", 16, y, 13, DIM)
             if _button(lw - 96, y - 2, 80, 20, "ИСЧИСТИ", False, 12) and op["kit"]:
                 op["kit"] = []
                 opts_changed()
@@ -870,7 +882,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             scr[2] = int(max(0, min(max(0, len(items) - rows_), scr[2] - wheel * 4)))
             for e in items[scr[2]:scr[2] + rows_]:
                 on_ = e[0] in op["kit"]
-                v = _toggle(16, y, lw - 32, _fit(e[2], 13, lw - 70), on_, 13)
+                v = _toggle(16, y, lw - 32, f"{archkit.TIER[e[1]]}· " + e[2], on_, 13)
                 if v != on_:
                     op["kit"] = [i for i in op["kit"] if i != e[0]] + ([e[0]] if v else [])
                     opts_changed()

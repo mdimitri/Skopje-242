@@ -492,6 +492,8 @@ MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM, MAT_MIX = 7, 8, 9, 10, 11     # photo
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 # photo-fitted facades (src/photogram.py, ДЕТАЛИ): procedural surfaces, textures from gl3d.surface_textures (same order as gl3d.SURF_NAMES)
 MAT_SURF = {"plas": 12, "concw": 13, "tilew": 14, "brkw": 15, "metw": 16, "glaz": 17}
+MAT_KIT2, MAT_KIT3 = 18, 19          # photo-facade relief (frames, sills, fins ...) and clutter (AC, dishes, wear): the game's
+                                      # detail setting and far ring leave them out (src/archkit.py TIER); drawn with "glaz"
 SUN = np.array([-0.45, 0.80, -0.40])          # direction TO the sun (x east, y up, z south): from the north-west
 SUN = SUN / np.linalg.norm(SUN)
 
@@ -1089,12 +1091,26 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         e_[1].extend([uv] * len(pos))
         e_[2].extend(map(tuple, cl))
 
-    def kbox(cx, cz, sx, sz, hh, y0, col, yw):
-        """A kit box with its underside (cantilevers are seen from the street)."""
-        put_box(MAT_SURF["glaz"], cx, cz, sx, sz, hh, y0, col, yw)
+    KMAT = (MAT_SURF["glaz"], MAT_SURF["glaz"], MAT_KIT2, MAT_KIT3)
+
+    def kbox(cx, cz, sx, sz, hh, y0, col, yw, tier=1, wall=False):
+        """A kit box: on a wall without the face against the wall, with an underside when it hangs above the ground."""
+        mt = KMAT[tier]
         ca, sa = math.cos(yw), math.sin(yw)
-        q = [(cx + ca * x - sa * z, y0, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (-sx / 2, sz / 2), (sx / 2, sz / 2), (sx / 2, -sz / 2))]
-        put(MAT_SURF["glaz"], q, [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
+        w4 = [(cx + ca * x - sa * z, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (sx / 2, -sz / 2), (sx / 2, sz / 2), (-sx / 2, sz / 2))]
+        for k_ in range(4):
+            if wall and k_ == 2:                                      # local +z = into the wall
+                continue
+            a_, b_ = w4[k_], w4[(k_ + 1) % 4]
+            nx, nz = b_[1] - a_[1], -(b_[0] - a_[0])
+            l_ = math.hypot(nx, nz) or 1.0
+            shd = float(np.clip(0.52 + 0.55 * max(0.0, (nx * SUN[0] + nz * SUN[2]) / l_), 0.45, 1.12))
+            put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4,
+                [c * shd for c in col])
+        tp = float(np.clip(0.52 + 0.55 * SUN[1], 0.45, 1.12))
+        put(mt, [(p_[0], y0 + hh, p_[1]) for p_ in w4], [(0.6, 0.2)] * 4, [c * tp for c in col])
+        if y0 > y_bot + 0.3 or not wall:
+            put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
     longest = max(range(n), key=lambda j: float(np.hypot(*(r[(j + 1) % n] - r[j])))) if n else 0
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
@@ -1173,8 +1189,8 @@ def photo_facade(outer, h, fit, y_bot=0.0):
             put(MS, [P(u0, y0), P(u1, y0), P(u1, y1), P(u0, y1)], [(u0 / 4, -y0 / 4), (u1 / 4, -y0 / 4), (u1 / 4, -y1 / 4), (u0 / 4, -y1 / 4)],
                 [c * lit / base for c in col])
 
-        def paint(pts, col, k_=1.0):
-            put(MG, pts, [(0.6, 0.2), (0.9, 0.2), (0.9, 0.8), (0.6, 0.8)], [c * lit * k_ / PAINT_BASE for c in col])
+        def paint(pts, col, k_=1.0, mt=None):
+            put(mt or MG, pts, [(0.6, 0.2), (0.9, 0.2), (0.9, 0.8), (0.6, 0.8)], [c * lit * k_ / PAINT_BASE for c in col])
 
         cuts = [y_bot] + [pv + k_ * fh for k_ in range(int(math.ceil(h / fh)) + 1) if y_bot < pv + k_ * fh < h - 0.05] + [h]
         cuts = sorted(set(cuts + [st_[2] for st_ in steps_ if y_bot < st_[2] < h - 0.05]))
@@ -1228,26 +1244,26 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 if full and on("frames"):
                     for (x0_, x1_, y0_, y1_) in ((wx0, wx0 + fw, wy0, wy1), (wx1 - fw, wx1, wy0, wy1),
                                                  (wx0, wx1, wy0, wy0 + fw), (wx0, wx1, wy1 - fw, wy1)):
-                        paint([P(x0_, y0_, fd), P(x1_, y0_, fd), P(x1_, y1_, fd), P(x0_, y1_, fd)], fc)
+                        paint([P(x0_, y0_, fd), P(x1_, y0_, fd), P(x1_, y1_, fd), P(x0_, y1_, fd)], fc, 1.0, MAT_KIT2)
                     nm = 1 if glassy else int(p.get("mull", 0))
                     for m_ in range(1, nm + 1):                                 # glazing bars
                         xm = wx0 + (wx1 - wx0) * m_ / (nm + 1)
-                        paint([P(xm - 0.025, wy0, fd + 0.02), P(xm + 0.025, wy0, fd + 0.02), P(xm + 0.025, wy1, fd + 0.02), P(xm - 0.025, wy1, fd + 0.02)], fc)
+                        paint([P(xm - 0.025, wy0, fd + 0.02), P(xm + 0.025, wy0, fd + 0.02), P(xm + 0.025, wy1, fd + 0.02), P(xm - 0.025, wy1, fd + 0.02)], fc, 1.0, MAT_KIT2)
                     if wy1 - wy0 > 1.6:                                          # transom of a tall (door) opening
                         yt = wy0 + (wy1 - wy0) * 0.72
-                        paint([P(wx0, yt - 0.025, fd + 0.02), P(wx1, yt - 0.025, fd + 0.02), P(wx1, yt + 0.025, fd + 0.02), P(wx0, yt + 0.025, fd + 0.02)], fc)
+                        paint([P(wx0, yt - 0.025, fd + 0.02), P(wx1, yt - 0.025, fd + 0.02), P(wx1, yt + 0.025, fd + 0.02), P(wx0, yt + 0.025, fd + 0.02)], fc, 1.0, MAT_KIT2)
                 if full and p.get("sill") and not glassy and on("sills"):
                     cx, cz = a + t_ * (wx0 + wx1) / 2 + N(0.03)
-                    put_box(MG, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
+                    put_box(MAT_KIT2, cx, cz, wx1 - wx0 + 0.1, 0.16, 0.05, wy0 - 0.05, [c * lit * 1.02 / PAINT_BASE for c in wc], yaw)
                 if full and on("ac"):
                     for fx, cy, aw, ah, *cc in p.get("ac", []):                # AC units with a dark fan grille
                         cu = u0 + fx * cw
                         cx, cz = a + t_ * cu + N(0.18)
                         yb_ = y0 + cy - ah / 2
-                        put_box(MG, cx, cz, aw, 0.35, ah, yb_, [c * lit / PAINT_BASE for c in cc], yaw)
+                        put_box(MAT_KIT3, cx, cz, aw, 0.35, ah, yb_, [c * lit / PAINT_BASE for c in cc], yaw)
                         gr = ah * 0.32
                         paint([P(cu - gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38), P(cu + gr - aw * 0.12, yb_ + ah / 2 - gr, 0.38),
-                               P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38)], (58, 60, 62))
+                               P(cu + gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38), P(cu - gr - aw * 0.12, yb_ + ah / 2 + gr, 0.38)], (58, 60, 62), 1.0, MAT_KIT3)
                 bc = p.get("balc")
                 if bc and not glassy and on("balconies"):                                           # balcony: slab + parapet or railing
                     dep, rc_, solid = bc[0], satc(bc[1:4]), (bc[4] if len(bc) > 4 else 1) or not full
@@ -1332,14 +1348,20 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                   "wins": [q.get("win") if q.get("win") and not glassy else None for q in pp],
                   "balc": [bool(q.get("balc")) for q in pp], "bdep": [float(q["balc"][0]) if q.get("balc") else 0.9 for q in pp], "loggia": [q.get("rec", 0) > 0.5 for q in pp],
                   "wallc": wallc, "longest": i == longest, "accent": accent or [tuple(v * 0.8 for v in wallc)]}
-            for it in archkit.kit_wall(kit, Wk)[:max(0, archkit.MAX_BOXES - nbox[0])]:
-                u_, o_, ky0, su_, sd_, hh_, rgb_ = it[:7]
-                cx, cz = a + t_ * u_ + nrm * o_
-                kbox(cx, cz, su_, sd_, hh_, ky0, [c * lit / PAINT_BASE for c in rgb_], yaw + (it[7] if len(it) > 7 else 0.0))
-                nbox[0] += 1
+            for eid_ in kit:
+                if archkit.FAMILIES[archkit.BY_ID[eid_][1]][2] != "wall" or nbox[0] >= archkit.MAX_BOXES:
+                    continue
+                tr_ = archkit.TIER[archkit.BY_ID[eid_][1]]
+                for it in archkit.kit_wall([eid_], Wk)[:max(0, archkit.MAX_BOXES - nbox[0])]:
+                    u_, o_, ky0, su_, sd_, hh_, rgb_ = it[:7]
+                    cx, cz = a + t_ * u_ + nrm * o_
+                    kbox(cx, cz, su_, sd_, hh_, ky0, [c * lit / PAINT_BASE for c in rgb_], yaw + (it[7] if len(it) > 7 else 0.0), tr_, len(it) == 7)
+                    nbox[0] += 1
     if kit and nbox[0] < archkit.MAX_BOXES:
-        for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof(kit, r, h, fit.get("wallc", (200, 200, 200)), fit.get("roof")):
-            kbox(x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_)
+        for eid_ in kit:
+            tr_ = archkit.TIER[archkit.BY_ID[eid_][1]]
+            for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof([eid_], r, h, fit.get("wallc", (200, 200, 200)), fit.get("roof")):
+                kbox(x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, tr_)
     return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
 
 

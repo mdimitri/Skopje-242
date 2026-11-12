@@ -676,6 +676,7 @@ def main():
         flags["labels"] = d >= 1 and c["labels"]
         particles.max = (250, 600, 900)[d]
         night.detail = d
+        streamer.detail = d                       # facade relief / clutter of the photo-fitted buildings (bake.py)
         if not a.test:
             if is_borderless() != bool(c["fullscreen"]):
                 set_borderless(bool(c["fullscreen"]))

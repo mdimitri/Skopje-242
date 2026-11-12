@@ -57,6 +57,17 @@ FAMILIES = {   # family -> (Macedonian name, group, where it goes)
 }
 
 # (id, family, variant name, params): the variants of every family
+# level of detail of each family (the game's ДЕТАЛИ setting and the far ring): 0 = silhouette and 1 = facade rhythm, always
+# built; 2 = relief, from the medium setting on; 3 = clutter and wear, high only.  Near/far: the far ring draws 0-1 only.
+TIER = {f: 1 for f in FAMILIES}
+TIER.update({f: 0 for f in ("tower", "erker", "cornerbal", "pilotis", "portico", "chardak", "cascade", "roofroom", "tank",
+                             "nadgradba", "sawroof", "rparapet", "screen")})
+TIER.update({f: 2 for f in ("fin", "slab", "joint", "corbel", "louvre", "shutterbox", "rail", "canopy", "surround", "dentil",
+                             "rustic", "baluster", "rib", "pergola", "roofrail", "skylight", "solar", "divider", "plinth", "pier")})
+TIER.update({f: 3 for f in ("trough", "laundry", "dish", "flue", "antenna", "vents", "weather", "billboard", "plantscreen",
+                             "rebar")})
+TIER_NAMES = {0: "силуета", 1: "ритам на фасадата", 2: "релјеф", 3: "ситни детали и дотраеност"}
+
 _V = [
     # vertical fins: t = thickness, d = depth, every = every n-th column edge, at = edge / mid, span = full / upper / ground, above
     ("fin_thin_1", "fin", "тенко 12 см, секој столб", dict(t=0.12, d=0.35, every=1)),

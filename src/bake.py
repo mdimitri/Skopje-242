@@ -301,6 +301,7 @@ class Streamer:
         self.tex = tex
         self.max_ground, self.max_mesh = max_ground, max_mesh
         self.lite_keys = set()
+        self.detail = 2                          # the ДЕТАЛИ setting (main.py): 0 leaves out facade relief, 0-1 the clutter
         self.ground = {}      # key -> [rt, last_used]
         self.meshes = {}      # key -> [{mat: model}, last_used]
         self.bad = set()
@@ -382,15 +383,17 @@ class Streamer:
                     pos = self.world.hide_broken(pos, ch.get("bb"))
                 if mat == 6 and ("graf" not in self.tex or lite):
                     continue                                     # atlas failed: no decals rather than facade-textured ones
+                if (mat == 18 and (lite or self.detail < 1)) or (mat == 19 and (lite or self.detail < 2)):
+                    continue                                     # facade relief / clutter (src/archkit.py TIER): detail setting, far ring
                 m = gl3d.make_model(pos, uv, col)
                 if m is not None:
-                    names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES
+                    names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")
                     gl3d.set_texture(m, self.tex.get(names[mat]) or self.tex["A"])
                     if lite:
                         pass
                     elif mat == 3 and getattr(self.world, "roads3d", False):
                         gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
-                    elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
+                    elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
                         gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
                     out[mat] = m
         self.meshes[key] = [out, self.frame]
