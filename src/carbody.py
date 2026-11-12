@@ -320,17 +320,17 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     wr = tyre_r
     for sd in (-1, 1):
         zs = sd * (W / 2 + 0.008)
-        for fx in seams:
+        sm = [seams[0], seams[1]] + ([seams[2]] if len(wins) > 1 else [])
+        for fx in sm:                                                    # door shut lines from the sill to the shoulder
             quad((X(fx), yb + 0.14, zs), (0.025, 0, 0), (0, belt - yb - 0.2, 0), (0, 0, sd), tuple(body * 0.5))
-        for fx in seams[:2]:
-            quad((X(fx) - 0.30, belt - 0.14, zs + sd * 0.004), (0.16, 0, 0), (0, 0.035, 0), (0, 0, sd), (40, 40, 44))
+        for fx in sm[1:]:                                                # handles sit at the rear edge of each door
+            quad((X(fx) + 0.10, belt - 0.14, zs + sd * 0.004), (0.15, 0, 0), (0, 0.03, 0), (0, 0, sd), (200, 200, 205))
         for ax in (s["ax_f"], s["ax_r"]):
             ah = max(0.2, 2 * wr - yb + 0.06)
             quad((ax - wr - 0.07, yb, zs + sd * 0.002), (2 * wr + 0.14, 0, 0), (0, ah, 0), (0, 0, sd), (20, 20, 22))
-        box(X(fc) - 0.02, belt + 0.12, sd * (W / 2 + 0.08), 0.1, 0.1, 0.16, (40, 40, 44))
-        box(X(fc) - 0.02, belt + 0.14, sd * (W / 2 + 0.01), 0.05, 0.05, 0.08, (60, 60, 64))
-        for fx in seams[:2]:
-            quad((X(fx) - 0.26, belt - 0.2, zs + sd * 0.006), (0.12, 0, 0), (0, 0.025, 0), (0, 0, sd), (200, 200, 205))
+        mxm = X(s["fw0"]) + 0.12                                         # mirror on the door's front corner, on a short stalk
+        box(mxm, belt + 0.14, sd * (W / 2 + 0.05), 0.09, 0.11, 0.12, (40, 40, 44))
+        box(mxm, belt + 0.12, sd * (W / 2 + 0.01), 0.04, 0.04, 0.06, (60, 60, 64))
         quad((X(fc) - 0.2, belt - 0.04, zs + sd * 0.003), (0.5, 0, 0), (0, 0.02, 0), (0, 0, sd), tuple(body * 0.7))
         quad((xb + 0.05, yb - 0.01, zs), (L - 0.1, 0, 0), (0, 0.07, 0), (0, 0, sd), (40, 40, 42))
     return parts

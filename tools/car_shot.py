@@ -29,10 +29,10 @@ for r, k in enumerate(ids):
     sheet, r0 = sheets[-1], (r % PAGE if PAGE else r)
     m = gl3d.car_model(k, [0, 2, 1, 3, 4][k % 5] if vehicles.FIXED[k] is None else 0)
     L = vehicles.DIMS[k][0]
-    for c, yaw in enumerate((35, 0, 215)):
+    for c, yaw in enumerate(tuple(int(a) for a in os.environ.get("YAWS", "35,0,215").split(","))):
         a = math.radians(yaw)
         cam = rl.Camera3D(V3(math.sin(a) * 30, 30 * (0.45 if c != 1 else 0.02), math.cos(a) * 30), V3(0, 0.9, 0), V3(0, 1, 0),
-                          max(L * 0.62, 3.0), rl.CAMERA_ORTHOGRAPHIC)
+                          max(L * 0.62, 3.0) / float(os.environ.get("ZOOM", "1")), rl.CAMERA_ORTHOGRAPHIC)
         for _ in range(2):
             rl.begin_drawing()
             rl.clear_background(rl.Color(150, 152, 156, 255))
