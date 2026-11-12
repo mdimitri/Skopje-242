@@ -437,6 +437,29 @@ class Renderer:
             m = self.dog_models[key] = gl3d.dog_model(coat, frame)
         return m
 
+    def _held(self, weapon, x, gy, z, h, lik, frame, su=None):
+        """A weapon in a person's right hand: it rides the hand of the pose being played (gl3d.hero_hand, so it swings with the arm in
+        walk, run, jump, crawl and punch frames), pitched with the forearm; su = progress of a two-handed swing (the swing pose's grip)."""
+        wm = self.pick_model(weapon)
+        if wm is None:
+            return
+        melee = weapon in actors.SWINGERS
+        if su is not None:
+            u = (min(7, int(su * 8)) + 0.5) / 8.0              # (the same eight poses the arms are drawn in)
+            psi = weaponart.swing_az(u)
+            hand, pitch, yaw = weaponart.swing_grip(psi), 0.1 + 0.9 * (1.0 - u) ** 2, -psi
+        else:
+            hand, fa = gl3d.hero_hand(lik, frame)
+            pitch = max(-0.8, min(1.4, (1.0 if melee else 0.05) + fa - 0.25))
+            yaw = 0.0
+        Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_z(pitch)),
+                                rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_y(yaw), rl.matrix_translate(*hand)), rl.matrix_rotate_y(-h)))
+        Mh = rl.matrix_multiply(Mh, rl.matrix_translate(x, gy, z))
+        old_t = _keep(wm.transform)
+        wm.transform = Mh
+        rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
+        wm.transform = old_t[0]
+
     def pick_model(self, kind):
         m = self.pick_models.get(kind)
         if m is None:
@@ -792,6 +815,8 @@ class Renderer:
                 fr = rp["frame"] if rp["frame"] is not None else self._gait(100 + rp["lik"], rp["anim"], rp["run"])
                 gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
                 peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3, 0.0, gy))
+                if rp.get("weapon") in weaponart.BOXES and fr != 2:
+                    self._held(rp["weapon"], rp["x"], gy, rp["y"], rp["h"], rp["lik"], fr)
                 if not self._near(rp["x"], rp["y"]):
                     sh.append((rp["x"], rp["y"], rp["h"], 0.14, 0.24, 60, gy, 1.75))
         wk = sim.walker
@@ -812,24 +837,8 @@ class Renderer:
                 peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, 0.0,
                              (wk.az - wk.z) if wk.az is not None else w.ground_y(wk.x, wk.y)))
             if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
-                wm = self.pick_model(wk.weapon)                  # the chosen weapon in the right hand (body-local: x forward, z to the side)
-                if wm is not None:
-                    sw_ = 0.12 * math.sin(wk.anim * 4.8) if wk.moving else 0.0
-                    tilt, yaw, hand = 0.8, 0.0, (0.28 + sw_, 0.8, 0.36)
-                    if swinging:                                  # bat swing: the grip travels with the hands of the swing pose (gl3d._swing_pose)
-                        u = 1.0 - wk.atk_t / actors.SWING_T
-                        u = (min(7, int(u * 8)) + 0.5) / 8.0       # (the same eight poses the arms are drawn in)
-                        psi = weaponart.swing_az(u)
-                        hand = weaponart.swing_grip(psi)
-                        tilt, yaw = 0.3 + 1.1 * math.sin(math.pi * min(1.0, u * 1.3)), -psi
-                    Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_x(tilt)),
-                                            rl.matrix_multiply(rl.matrix_multiply(rl.matrix_translate(*hand), rl.matrix_rotate_y(yaw)),
-                                                               rl.matrix_rotate_y(-wk.h)))
-                    Mh = rl.matrix_multiply(Mh, rl.matrix_translate(wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y))
-                    old_t = _keep(wm.transform)
-                    wm.transform = Mh
-                    rl.draw_model(wm, V3(0, 0, 0), 1.0, WHITE)
-                    wm.transform = old_t[0]
+                su = (1.0 - wk.atk_t / actors.SWING_T) if swinging else None
+                self._held(wk.weapon, wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, getattr(sim, "lik", 0), frame, su)
             if not self._near(wk.x, wk.y):
                 sh.append((wk.x, wk.y, wk.h, 0.14, 0.24, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0, 1.75 + wk.z))
         for kx, kz, kh in sim.kiosks:

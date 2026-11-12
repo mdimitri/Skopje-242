@@ -1690,6 +1690,24 @@ _HERO = [
 ]
 
 
+_PROBE = {"on": False, "fa": 0.0}                     # hero_hand: _hero appends the right hand as one extra vertex so it goes through every pose transform
+_HANDS = {}
+
+
+def hero_hand(i, frame):
+    """Body-local (x forward, y up, z side) point of the right hand in this hero pose, and the forearm angle (rad, 0 = hanging, + = forward).
+    Cached; built by running the model once, so it includes lean, bob, scale, lying and crawling. None if the pose has no free right hand."""
+    key = (i % len(_HERO), frame)
+    if key not in _HANDS:
+        _PROBE["on"], _PROBE["fa"] = True, 0.0
+        try:
+            pos = ped_arrays(100 + i, 0, frame)[0]
+            _HANDS[key] = (tuple(float(c) for c in pos[-1]), _PROBE["fa"])
+        finally:
+            _PROBE["on"] = False
+    return _HANDS[key]
+
+
 def _swing_pose(parts, add, x0, u, arm_c, hand, fore):
     """Two-handed bat swing at progress u: the upper body twists with the bat, both hands grip it in front of the chest
     (two-bone reach from each shoulder), and the grip travels with the bat's azimuth. Matches render's bat placement (swing_grip)."""
@@ -1815,15 +1833,21 @@ def _hero(i, frame):
             props[-1] += [(R + 0.06, 0.7, -0.4, 0.22, 0.3, 0.03, (226, 222, 210))]
         if "bottle" in ex:
             props[-1] += [(R + 0.04, 0.6, -0.38, 0.06, 0.24, 0.06, (40, 110, 50))]
+    hp_ = (0.72, 1.23, 0.3) if strike == 4 else None       # (the punching fist)
     for sg, z in ((-1, -0.34), (1, 0.34)):
         if strike == 4 or ride or sw is not None:       # punching: both arms are drawn by _strike; riding / swinging: added below
             continue
         if frame == 3:
             add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
             add(0.0, 1.8, z, 0.12, 0.12, 0.11, hand)
+            if sg == 1:
+                hp_, _PROBE["fa"] = (0.0, 1.86, 0.34), 3.0
         else:
             a = sg * th * (0.45 if props[sg] else 0.9)  # an arm holding a prop swings less, the prop with it
             bend = (0.2 + 0.4 * abs(a)) if props[sg] else _elbow(a, run)
+            if sg == 1:                                 # the right hand: elbow, then the forearm (and the hand box) from it
+                ex_, ey_ = -st + 0.36 * math.sin(a), 1.36 - 0.36 * math.cos(a)
+                hp_, _PROBE["fa"] = (ex_ + 0.38 * math.sin(a + bend), ey_ - 0.38 * math.cos(a + bend), z), a + bend
             _arm(parts, add, -st, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore, held=props[sg])
     # head: skull, nose, ears, eyes, brows, mouth
     hx, hy = 0.02 - st * 1.6, 1.46
@@ -1895,11 +1919,14 @@ def _hero(i, frame):
         for z in (-0.3, 0.3):
             a, bend = _reach(sx_, 1.36, 0.8, 0.95, 0.36, 0.32)
             _arm(parts, add, sx_, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore)
+    gnd = _ground(parts, feet) if ph is not None else 0.0
+    if _PROBE["on"]:
+        parts.append((np.array([hp_ or (0.2, 0.8, 0.34)], np.float32), np.zeros((1, 3), np.float32)))
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     col = np.concatenate([p[1] for p in parts])
     _lean(pos, lean)
     if ph is not None:
-        pos[:, 1] = np.maximum(pos[:, 1] - _ground(parts, feet), 0.0)   # the standing foot stays planted (the body bobs), nothing carried sinks in
+        pos[:, 1] = np.maximum(pos[:, 1] - gnd, 0.0)   # the standing foot stays planted (the body bobs), nothing carried sinks in
     pos *= d.get("scale", 1.0)
     if frame == 2:
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
