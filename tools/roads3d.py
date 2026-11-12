@@ -985,6 +985,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
         if k_ % 32 == 0:
             prog(0.94 + 0.03 * k_ / max(1, len(xwalks)), "crossings")
         _zebra(out, x, yy, ax, ay, w)
+        if _has_pavement(cov, edges, x, yy, w):
+            _kerb_ramps(out, x, yy, ax, ay, w)
     _TICK[0] = lambda f: prog(0.97 + 0.025 * f, "mesh")
     if os.environ.get("ROADS_DEBUG"):
         _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
@@ -1146,3 +1148,37 @@ def _zebra(out, x, y, ax, ay, w):
     c = (b[0] + rx * (w / 2 - 0.3), yy, b[2] + ry * (w / 2 - 0.3))
     d = (a[0] + rx * (w / 2 - 0.3), yy, a[2] + ry * (w / 2 - 0.3))
     out.quad(a, b, c, d, white)
+
+
+def _has_pavement(cov, edges, x, y, w):
+    """Is the crossing on a road that has raised pavements (not a bridge, not a service lane)?"""
+    c = cov.CELL
+    best, bi = 1e9, None
+    for sg in cov.segs.get((int(x // c), int(y // c)), ()):
+        d = _pdist(x, y, sg[1], sg[2], sg[3], sg[4])
+        if d < best:
+            best, bi = d, sg[0]
+    if bi is None or best > w / 2 + 1.0:
+        return False
+    e = edges[bi]
+    return not e["bridge"] and e["cls"] in SIDEWALK
+
+
+def _kerb_ramps(out, x, y, ax, ay, w):
+    """Dropped kerb where the zebra meets each pavement: a sloped pavement-coloured wedge over the kerb face with a
+    yellow tactile (blister) patch beyond it.  A handful of quads per crossing."""
+    rx, ry = ay, -ax
+    pc, tac = (178, 174, 166), (214, 184, 70)
+    hl = 1.2                                                 # half the ramp's length along the road
+    for sgn in (1, -1):
+        e0, e1 = sgn * (w / 2 - 0.06), sgn * (w / 2 + 0.95)
+        e2 = sgn * (w / 2 + 1.55)
+        def P(lat, a_, yy):
+            return (x + rx * lat + ax * a_, yy, y + ry * lat + ay * a_)
+        def both(a, b, c, d, col, sh=TOP):                   # either winding: whichever faces up survives culling
+            out.quad(a, b, c, d, col, sh)
+            out.quad(d, c, b, a, col, sh)
+        both(P(e0, -hl, 0.03), P(e0, hl, 0.03), P(e1, hl, SW_H + 0.004), P(e1, -hl, SW_H + 0.004), (196, 192, 184), 0.95)
+        for k in range(4):                                   # tactile bars across the walking direction
+            a0 = -hl + 0.15 + k * 0.58
+            both(P(e1, a0, SW_H + 0.007), P(e1, a0 + 0.34, SW_H + 0.007), P(e2, a0 + 0.34, SW_H + 0.007), P(e2, a0, SW_H + 0.007), tac)
