@@ -990,10 +990,12 @@ def kit_wall(ids, W):
             rnd = np.random.default_rng(int(abs(W["a"][0] * 7.3 + W["a"][1] * 13.1)) % (2 ** 31) + len(eid))
             k, n_ = p["k"], int(p["n"] * max(1.0, ln / 12.0))
             wc = np.array(W["wallc"], float)
-            for _ in range(min(n_, 40)):
+            for _ in range(min(n_, 40) if ln > 0.8 else 0):
                 u = float(rnd.uniform(0.4, ln - 0.4))
                 if k in ("peel", "brick", "patch", "styro", "moss"):
                     w_, hh = float(rnd.uniform(0.4, 1.8)), float(rnd.uniform(0.3, 1.4))
+                    if h - hh - 0.2 <= yb + 0.3:              # wall too low for this patch (short photo-fitted walls)
+                        continue
                     y = float(rnd.uniform(yb + 0.3, h - hh - 0.2))
                     c_ = {"peel": wc * 0.78 + np.array([8, 4, 0]), "brick": np.array(ACC["brick"]) * 0.9, "patch": np.minimum(255, wc * 1.12),
                           "styro": np.array((236, 234, 226)), "moss": np.array((86, 102, 62))}[k]
@@ -1003,6 +1005,8 @@ def kit_wall(ids, W):
                 elif k in ("stain", "topstain"):
                     w_ = float(rnd.uniform(0.15, 0.5))
                     if k == "stain":
+                        if h - 0.5 <= yb + 2.0:
+                            continue
                         y1 = float(rnd.uniform(yb + 2.0, h - 0.5))
                         hh = float(rnd.uniform(0.8, 2.5))
                     else:
@@ -1013,6 +1017,8 @@ def kit_wall(ids, W):
                     w_, hh = float(rnd.uniform(0.8, 2.6)), float(rnd.uniform(0.4, 1.1))
                     out.append((u, D(u, 1.0) + 0.012, yb + float(rnd.uniform(0.2, 0.8)), w_, 0.02, hh, c_))
                 elif k == "crack":
+                    if h - 1.5 <= yb + 0.5:
+                        continue
                     y = float(rnd.uniform(yb + 0.5, h - 1.5))
                     for s_ in range(4):                         # a zig-zag of short dark strokes
                         out.append((u + s_ * 0.12 * (1 if s_ % 2 else -1), D(u, y) + 0.012, y + s_ * 0.3, 0.03, 0.02, 0.34, tuple(wc * 0.45)))

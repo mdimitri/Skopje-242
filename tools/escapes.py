@@ -218,7 +218,9 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
                 for v in np.arange(0.2, V0 + 2 * FW + 0.6, 0.9):
                     x, y = M[0] + u[0] * s + n[0] * v, M[1] + u[1] * s + n[1] * v
                     if (v > 1.0 and not free_pt(x, y)) or _pip(x, y, ring):
-                        why = 'pip' if _pip(x, y, ring) else 'bld' if bld_a[int((y + hy) / cell), int((x + hx) / cell)] else 'occ' if occ_a[int((y + hy) / cell), int((x + hx) / cell)] else 'surf'
+                        iy_ = min(max(int((y + hy) / cell), 0), bld_a.shape[0] - 1)   # edge-of-map buildings: stay on the grid
+                        ix_ = min(max(int((x + hx) / cell), 0), bld_a.shape[1] - 1)
+                        why = 'pip' if _pip(x, y, ring) else 'bld' if bld_a[iy_, ix_] else 'occ' if occ_a[iy_, ix_] else 'surf'
                         ok = False
                         break
                 if not ok:
