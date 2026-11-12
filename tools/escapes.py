@@ -102,11 +102,16 @@ def _stairs(g, M, u, n, nf, fh, hg0, L):
     """Mesh of one fire escape.  P(s, v) = M + u*s + n*v on the plan (M on the wall at s = 0); heights absolute."""
     def P(s, v, h):
         return (M[0] + u[0] * s + n[0] * v, h, M[1] + u[1] * s + n[1] * v)
+    path = [P(0.0, V0 + FW / 2, hg0)]                                # the ride line: toe -> flights / landings -> roof
     for j in range(nf):
         z0, z1 = hg0 + j * fh, hg0 + (j + 1) * fh
         vc = V0 + FW / 2 + (FW if j % 2 else 0.0)
         s0, s1 = (L, 0.0) if j % 2 else (0.0, L)
         a, b = P(s0, vc, z0), P(s1, vc, z1)
+        if j:
+            path.append(a)
+        path.append(b)
+        path.append(P((L + LD / 2) if j % 2 == 0 else -LD / 2, V0 + FW, z1))
         _prism(g, a, b, FW / 2, 0.07, STEEL)
         for sd in (-1, 1):                                         # stringer, rail and a post at each end of the flight
             off = sd * (FW / 2 - 0.04)
@@ -133,6 +138,9 @@ def _stairs(g, M, u, n, nf, fh, hg0, L):
         for s_c in (sl - outer * LD / 2 * 0.9, sl + outer * LD / 2 * 0.9):   # legs down to the ground
             q = P(s_c, far - 0.1, z1 - 0.1)
             _prism(g, (q[0], hg0 - 0.2, q[2]), (q[0], q[1], q[2]), 0.05, 0.1, STEEL_D, up=(1.0, 0.0, 0.0))
+    last = path[-1]
+    path.append(P(((L + LD / 2) if (nf - 1) % 2 == 0 else -LD / 2), -1.8, last[1]))              # onto the roof
+    return [(q[0], q[2], q[1]) for q in path]                           # (x, y, height)
 
 
 def _ramp(g, pA, d, base, rise):
@@ -219,7 +227,7 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
                 rej['free:' + why] += 1
                 continue
             g = G()
-            _stairs(g, M, u, n, nf, fh, hg0, L)
+            path = _stairs(g, M, u, n, nf, fh, hg0, L)
             add(chunk_of(mx, my), mat, *g.out())
             for j in range(nf):                                            # walkable surfaces
                 vc = V0 + FW / 2 + (FW if j % 2 else 0.0)
@@ -238,7 +246,8 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
             eq.append((i, ring, roof, att))
             plats.append((1, [(float(x), float(y)) for x, y in ring], float(roof)))
             info["stairs"].append({"toe": [M[0] + n[0] * (V0 + FW / 2), M[1] + n[1] * (V0 + FW / 2)], "floors": nf, "roof": roof,
-                                   "u": list(u), "n": list(n), "b": i})
+                                   "u": list(u), "n": list(n), "b": i,
+                                   "path": [[float(a), float(b), float(c)] for a, b, c in path]})
             break
     log(f"[build] fire escapes: {len(eq)} of {len(cand)} eligible buildings ({len(buildings)} total)")
 

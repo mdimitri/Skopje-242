@@ -120,7 +120,8 @@ import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import signals   # noqa: E402
-from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint   # noqa: E402
+import escride  # noqa: E402
+from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers   # noqa: E402
 from render import LOD_PPM, Renderer, gait_cycle   # noqa: E402
 from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
@@ -1800,7 +1801,9 @@ def main():
             enter_pressed = False
         if selfie.active:
             sf_due_ = selfie.advance(dt)
-        if enter_pressed:
+        if enter_pressed and escride.start(sim):
+            pass                                             # F at a fire escape: the ride starts (or stops)
+        elif enter_pressed:
             if sim.mode == "car":
                 sim.exit_car()
             else:
@@ -1929,6 +1932,7 @@ def main():
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
+            guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""
@@ -1946,6 +1950,8 @@ def main():
                 prompt = TXT("main.0047")
             if sim.stations.prompt and sim.mode == "car":
                 prompt = sim.stations.prompt
+            if sim.esc_prompt:
+                prompt = sim.esc_prompt
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)

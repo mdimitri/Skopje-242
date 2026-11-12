@@ -6,6 +6,7 @@ import random
 import bible_lines
 import bump_lines
 import clock
+import escride
 import peds_lines
 import talk
 import trains
@@ -2242,6 +2243,8 @@ class Sim:
         self.pickups = []
         self.money = 250
         self.jack = None                     # carjack in progress (see _start_jack)
+        self.esc = None                      # fire-escape ride in progress (escride.py)
+        self.esc_prompt = ""
         self.riding = None                   # the city bus you ride as a passenger (Ctrl takes it over)
         self.train_ride = None               # the trains.Train you ride on foot (F at a station boards / gets off)
         self.shots = projectiles.Projectiles(self)
@@ -2869,6 +2872,7 @@ class Sim:
         if getattr(self, "jack", None) is not None:              # the carjack plays out; the controls wait
             self._tick_jack(dt)
             inp = dict(inp, move=(0, 0), attack=False, jump=False)
+        inp = escride.tick(self, dt, inp)                        # F at a fire escape: automatic climb (and its prompt)
         # ---------------- player
         if self.mode == "car" and getattr(self, "riding", None) is not None:
             if self.riding not in self.bodies or not self.riding.alive:

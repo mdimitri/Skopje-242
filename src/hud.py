@@ -102,6 +102,36 @@ def waypoint_screen_dir(cam, gx, gz):
     return (sx, sy) if (sx or sy) else (gx, gz)
 
 
+def draw_escape_markers(sim, cam, sw, sh):
+    """A pulsing pin above the foot of each fire escape within 45 m (and above its roof end): "F" climbs / climbs down."""
+    import escride
+    if sim.walker is None and sim.mode != "car":
+        return
+    fx, fy = sim.focus()[:2]
+    pul = 0.5 + 0.5 * math.sin(rl.get_time() * 4.0)
+    for s in escride.near(sim, fx, fy, 45.0):
+        pts = s["path"]
+        for end, up in ((0, True), (-1, False)):
+            x, y, h = pts[end]
+            d = math.hypot(x - fx, y - fy)
+            if d > 45.0:
+                continue
+            sp = rl.get_world_to_screen(rl.Vector3(x, h + 2.4 + 0.25 * pul, y), cam)
+            if not (10 < sp.x < sw - 10 and 10 < sp.y < sh - 10):
+                continue
+            near_ = d < escride.REACH
+            col = rl.Color(255, 214, 40, 255) if near_ else rl.Color(255, 214, 40, 150)
+            r = 17 if near_ else 13
+            rl.draw_circle(int(sp.x), int(sp.y), r + 3, rl.Color(0, 0, 0, 150))
+            rl.draw_circle(int(sp.x), int(sp.y), r, col)
+            tri = (rl.Vector2(sp.x, sp.y - r * 0.6), rl.Vector2(sp.x - r * 0.55, sp.y + r * 0.35), rl.Vector2(sp.x + r * 0.55, sp.y + r * 0.35)) if up else \
+                  (rl.Vector2(sp.x, sp.y + r * 0.6), rl.Vector2(sp.x + r * 0.55, sp.y - r * 0.35), rl.Vector2(sp.x - r * 0.55, sp.y - r * 0.35))
+            rl.draw_triangle(*tri, rl.Color(30, 30, 34, 255))
+            rl.draw_triangle(tri[0], tri[2], tri[1], rl.Color(30, 30, 34, 255))
+            if near_:
+                font.draw_text("F", int(sp.x - 5), int(sp.y - r - 24), 20, rl.WHITE, bold=True)
+
+
 def draw_waypoint(hud, sim, cam, sw, sh):
     """Navigation waypoint: a straight-line arrow at the screen edge (a pin when on screen) with the distance; clears itself within 50 m."""
     if not hud.wp:
