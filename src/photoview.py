@@ -224,7 +224,7 @@ class Scene:
         bw = pg.tools()
         lk = b.look(algo)
         if opts is not None:
-            lk["opts"] = opts
+            lk["opts"] = dict(opts, kit_on=False) if b.id in (opts.get("kit_off") or ()) else opts
         h = float(lk["h"])
         ring = [tuple(p) for p in b.ring]
         parts = []
@@ -275,7 +275,9 @@ class Scene:
         a = algo if (only is None or b.id in only) else None
         f = b.fits.get(a) if a else None
         near = self._near(b)
-        return (a, id(f), b.version, repr(sorted(opts.items())) if (opts is not None and f and near) else None, near)
+        ko = opts is not None and b.id in (opts.get("kit_off") or ())
+        return (a, id(f), b.version, repr(sorted((k, v) for k, v in opts.items() if k != "kit_off")) if (opts is not None and f and near) else None,
+                near, ko)
 
     def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9):
         """Ask for this look; step() does the work.  only: building ids that show the fit (proof), the rest the current look.
@@ -306,6 +308,13 @@ class Scene:
             return False
         self._upload()
         return True
+
+    def rebuild_one(self, b, blds, algo, opts):
+        """One building again, now (the ОЦЕНИ guard tries it with and without its kit)."""
+        self.focus = self.focus if hasattr(self, "focus") else None
+        self.parts[b.id] = (self._key(b, algo, opts, None), self._parts(b, algo, opts, self._near(b)))
+        self.want, self.t0 = (blds, algo, opts, None), time.time()
+        self._upload()
 
     def build(self, blds, algo, opts=None, only=None):
         """All at once (tests)."""
@@ -553,6 +562,96 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         pg.save_settings(folder, st, op)
         opt_t = time.time()
 
+    ev_log = []                                      # the ОЦЕНИ results (the log tab shows them with the job's)
+
+    def elog(s_):
+        ev_log.append(s_)
+        if job is not None:
+            job.log(s_)
+
+    def grab(c):
+        """The scene from the capture's own camera -> (270, 480, 3) uint8."""
+        rl.begin_texture_mode(rt)
+        rl.clear_background(rl.Color(150, 172, 196, 255))
+        fwd, _r, up = c.basis()
+        e = c.eye()
+        rl.begin_mode_3d(rl.Camera3D(_v3(e), _v3(e + fwd * 10), _v3(up), float(c.fov), rl.CAMERA_PERSPECTIVE))
+        scene.draw()
+        rl.end_mode_3d()
+        rl.end_texture_mode()
+        im = rl.load_image_from_texture(rt.texture)
+        rl.image_format(im, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        a_ = np.frombuffer(rl.ffi.buffer(im.data, im.width * im.height * 4), np.uint8).reshape(im.height, im.width, 4)[::-1, :, :3].copy()
+        rl.unload_image(im)
+        return a_
+
+    def photo_and_mask(c):
+        """The photo (thumbnail) and the building pixels at the render's size, or None (no labels yet)."""
+        import glob as glob_
+        import segment
+        labs = job.labels.get(c.file) if job is not None else None
+        if labs is None:
+            for lp in glob_.glob(os.path.join(cache, glob_.escape(os.path.splitext(c.file)[0]) + ".*.png")):
+                if lp.endswith((".thumb.jpg", ".labels.png")):
+                    continue
+                labs = segment._cached(lp)
+                if labs is not None:
+                    break
+        tp = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
+        if labs is None or not os.path.exists(tp):
+            return None
+        ph = np.asarray(Image.open(tp).convert("RGB").resize((480, 270)), np.float64)
+        mk = (labs == pg.L_BUILDING) & ~c.ui_mask()
+        mk = np.asarray(Image.fromarray(mk.astype(np.uint8) * 255).resize((480, 270), Image.NEAREST)) > 127
+        return ph, mk
+
+    def evaluate(which):
+        """PSNR / SSIM of the render from each capture's camera against its colour-matched photo, building pixels only; the guard
+        switches a building's kit off when the kit makes it less like its photos."""
+        import archkit
+        import imgcmp
+        algo_ = algo if look else None
+        while scene.want is not None:                 # the scene as it is set now
+            scene.step(1.0)
+        res = []
+        for k_, c in enumerate(which):
+            splash(f"ОЦЕНИ {k_ + 1}/{len(which)}: {c.file[:40]}")
+            pm = photo_and_mask(c)
+            if pm is None:
+                elog(f"{c.file[:4]}: нема ознаки (прво изгради)")
+                continue
+            ph, mk = pm
+            if mk.sum() < 500:
+                elog(f"{c.file[:4]}: премалку згради во сликата")
+                continue
+            p0, s0, rm_ = imgcmp.score(grab(c), ph, mk)
+            if os.environ.get("SK242_EVDBG"):              # debug: photo | matched render | mask
+                Image.fromarray(np.concatenate([ph, rm_, np.repeat(mk[..., None] * 255.0, 3, 2)], 1).astype(np.uint8)).save(
+                    os.path.join(os.environ["SK242_EVDBG"], c.file[:4] + "_ev.png"))
+            note = ""
+            b = blds.get(c.bid)
+            f = b.fits.get(algo_) if (b is not None and algo_) else None
+            if op.get("guard", True) and f and op.get("kit_on", True) and b.id not in op["kit_off"] \
+                    and archkit.kit_ids(dict(f, h=b.look(algo_)["h"]), op):
+                op["kit_off"].append(b.id)
+                scene.rebuild_one(b, blds, algo_, op)
+                p1, s1, _ = imgcmp.score(grab(c), ph, mk)
+                if s1 > s0 + 0.005:
+                    note = f" · стилот ја влошуваше ({s1:.3f} без него): исклучен за зградата"
+                    p0, s0 = p1, s1
+                else:
+                    op["kit_off"].remove(b.id)
+                    scene.rebuild_one(b, blds, algo_, op)
+                    note = f" · стилот останува (без него {s1:.3f})"
+            c.score = (p0, s0)
+            res.append((p0, s0))
+            elog(f"{c.file[:4]}: PSNR {p0:.1f} dB · SSIM {s0:.3f}" + (" · СЛАБО" if s0 < 0.25 else "") + note)
+        if res:
+            elog(f"ОЦЕНА: {len(res)} снимки · просек PSNR {np.mean([r_[0] for r_ in res]):.1f} dB · SSIM {np.mean([r_[1] for r_ in res]):.3f}"
+                 f" · слаби {sum(1 for r_ in res if r_[1] < 0.25)} · стил исклучен на {len(op['kit_off'])} згради")
+            pg.save_settings(folder, st, op)
+        say(f"оценети {len(res)} снимки" + (f" · SSIM {np.mean([r_[1] for r_ in res]):.3f}" if res else ""))
+
     while not rl.window_should_close():
         n += 1
         if music is not None:
@@ -740,6 +839,13 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 except OSError as e:
                     say(f"нема готов резултат за {algo} ({e.strerror})")
             y += 34
+            if _button(16, y, hw, 28, "ОЦЕНИ СЛИЧНОСТ", False, 14) and not running:
+                evaluate([c for c in ok_caps if c.status or c.file in proof])
+            v = _toggle(24 + hw, y + 3, hw, "чувар на стилот", op["guard"], 13)
+            if v != op["guard"]:
+                op["guard"] = v
+                pg.save_settings(folder, st, op)
+            y += 34
             stg = pg.enabled(osm_dir)
             lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ФОТО", False: "ТЕКОВНИ"}[stg]
             if _button(16, y, lw - 32, 28, lab, bool(stg), 14) and stg is not None:
@@ -915,7 +1021,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             y += 32
             if _button(16, y, lw - 32, 34, f"ПРОБАЈ НА {len(proof)} СНИМКИ (Shift+R)", bool(proof), 17) and proof and not running:
                 start_job(set(proof))
-            y += 42
+            y += 40
+            if _button(16, y, lw - 32, 26, f"ОЦЕНИ ГИ ИЗБРАНИТЕ (PSNR / SSIM со сликата)", False, 13) and proof and not running:
+                evaluate([c for c in ok_caps if c.file in proof])
+            y += 32
             rows_ = max(1, (bottom - y) // 21)
             scr[3] = int(max(0, min(max(0, len(ok_caps) - rows_), scr[3] - wheel * 4)))
             for c in ok_caps[scr[3]:scr[3] + rows_]:
@@ -928,7 +1037,9 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 if _hot(210, y, lw - 226, 21) and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
                     sel = c
                     orb.t = np.array([c.x, c.y, c.z])
-                font.draw_text(_fit(c.status or "—", 12, lw - 230), 212, y + 4, 12, LOOK_COL["photo"] if c.status else DIM)
+                sc_ = getattr(c, "score", None)
+                font.draw_text(_fit((f"SSIM {sc_[1]:.2f} · {sc_[0]:.1f} dB" if sc_ else c.status) or "—", 12, lw - 230), 212, y + 4, 12,
+                               (PINK if sc_[1] < 0.25 else LOOK_COL["photo"]) if sc_ else (LOOK_COL["photo"] if c.status else DIM))
                 y += 21
         else:                                                   # ---- log + timings
             font.draw_text("ДНЕВНИК", 16, y, 16, INK, bold="cond")
@@ -950,7 +1061,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 font.draw_text("  ".join(f"{nm_} {s_.get(k, 0.0):.1f} с" for k, nm_ in (("colour", "боја"), ("pose", "камера"), ("walls", "ѕидови"),
                                                                                         ("analyse", "анализа"))) + "  (процесорско време)", 16, y, 12, DIM)
                 y += 18
-            lines = job.log_lines if job is not None else []
+            lines = job.log_lines if job is not None else ev_log
             rows_ = max(1, (bottom - y) // 15)
             follow = scr[4] >= max(0, len(lines) - rows_) - 1
             scr[4] = int(max(0, min(max(0, len(lines) - rows_), scr[4] - wheel * 5)))
@@ -1023,7 +1134,9 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     rl.draw_texture_pro(th, rl.Rectangle(0, 0, th.width, th.height), rl.Rectangle(x0 + 10, yy, iw, ih), rl.Vector2(0, 0), 0,
                                         rl.Color(255, 255, 255, int(255 * alpha * 0.6)))
             yy += ih + 8
-            font.draw_text(sel.status or "уште не е обработена", x0 + 10, yy, 15, INK)
+            sc_ = getattr(sel, "score", None)
+            font.draw_text((sel.status or "уште не е обработена") + (f"   ·   SSIM {sc_[1]:.3f} · PSNR {sc_[0]:.1f} dB" if sc_ else ""),
+                           x0 + 10, yy, 15, INK)
             yy += 24
             b = blds.get(sel.bid)
             if b is not None:
@@ -1063,6 +1176,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         if music is not None:
             music.widget()
         rl.end_drawing()
+        if job is not None and job.done and not getattr(job, "_evaluated", False) and scene.want is None:
+            job._evaluated = True
+            if job.only and not job.error:                # a proof run: judge it at once
+                evaluate([c for c in ok_caps if c.file in job.only])
         if frames is not None:
             if n == 3 and job is None:
                 if "proof" in test and sel is not None:

@@ -44,7 +44,7 @@ SETTINGS = {"res": 12.0,          # ДЕТАЛИ facade resolution, pixels per m
 OPTS = {"relief": True, "windows": True, "frames": True, "blinds": True, "sills": True, "balconies": True, "ac": True,
         "bands": True, "ground": True, "steps": True, "opp": True, "cells": True, "roofs": True, "roof_extras": True,
         "eaves": True, "kit_on": True, "kit": [], "kit_auto": True, "kit_scope": "blocks", "style": "НИШТО",
-        "inferred": "lite", "sat": 1.0, "lod": 400.0}
+        "inferred": "lite", "sat": 1.0, "lod": 400.0, "guard": True, "kit_off": []}
 RESULT_KEYS = ("res", "dist", "pose", "seg", "priors", "sym", "min_px")       # these change the per-photo results
 CODE_VER = 3                      # bump when the per-photo results change meaning
 VMAX = 90.0                    # highest facade point sampled (m)
@@ -1493,7 +1493,11 @@ def apply_to_game(folder, algo, osm_dir=None, opts=None):
     else:                                                       # the element switches / kit go with the fit
         with open(src, encoding="utf-8") as f:
             d = json.load(f)
-        d["opts"] = opts
+        d["opts"] = {k: v for k, v in opts.items() if k != "kit_off"}
+        for bid in opts.get("kit_off") or ():                   # the ОЦЕНИ guard: the kit made these less like their photos
+            e = d["buildings"].get(str(bid))
+            if e is not None:
+                e["opts"] = dict(d["opts"], kit_on=False)
         with open(dst + ".tmp", "w", encoding="utf-8") as f:
             json.dump(d, f, indent=0)
         os.replace(dst + ".tmp", dst)
