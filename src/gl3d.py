@@ -505,9 +505,59 @@ def _shape_body(v, kind, st, L, W, y0, belt, cx, cl):
     return v
 
 
-def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12, rim=(6, 0.62, 0.58)):
-    """Wheel with its axis along z. Returns (verts, colours).  rim = (spokes, dark share of the gaps, hub radius / tyre radius): the
-    wheel face is a fan of 2 x spokes wedges alternating bright / dark, so a turning wheel visibly turns for no extra triangles."""
+def _wheel_face(vs, cs, cx, cy, z, R, rim, hub):
+    """One wheel face, built from a handful of triangles in layers (z steps of 4 mm): ('steel', n) a pressed-steel wheel with a hubcap and n
+    ventilation slots, ('alloy', n) n tapered spokes over a dark dish with a centre cap, ('multi', n) the same with a bright outer lip,
+    ('truck', n) a flat disc with n hand holes and a centre nut.  Every pattern is rotation-visible and cheap (25-55 triangles)."""
+    kind, n = rim[0], rim[1]
+    hub = np.asarray(hub, np.float32)
+    r = R * 0.80
+
+    def tri(p0, p1, p2, zz, col):
+        vs.extend(((p0[0], p0[1], zz), (p1[0], p1[1], zz), (p2[0], p2[1], zz)))
+        cs.extend([col] * 3)
+
+    def pt(rr, a):
+        return (cx + rr * math.cos(a), cy + rr * math.sin(a))
+
+    def quad(r0, r1, a0, a1, b0, b1, zz, col):                 # inner edge r0 from a0..a1, outer edge r1 from b0..b1
+        p00, p01, p10, p11 = pt(r0, a0), pt(r0, a1), pt(r1, b0), pt(r1, b1)
+        tri(p00, p10, p11, zz, col)
+        tri(p00, p11, p01, zz, col)
+
+    def disc(rr, col, zz, m=12):
+        for k in range(m):
+            tri((cx, cy), pt(rr, 2 * math.pi * k / m), pt(rr, 2 * math.pi * (k + 1) / m), zz, col)
+
+    tau = 2 * math.pi
+    if kind == "steel":
+        disc(r, hub * 0.62, z)
+        disc(r * 0.52, hub * 1.08, z + 0.004, 8)
+        for k in range(n):
+            a = tau * (k + 0.5) / n
+            quad(r * 0.66, r * 0.93, a - 0.11, a + 0.11, a - 0.14, a + 0.14, z + 0.004, hub * 0.2)
+    elif kind in ("alloy", "multi"):
+        disc(r, hub * 0.22, z)
+        if kind == "multi":
+            for k in range(12):                                  # the bright outer lip
+                a0, a1 = tau * k / 12, tau * (k + 1) / 12
+                quad(r * 0.9, r, a0, a1, a0, a1, z + 0.002, hub * 0.95)
+        wi, wo = (0.35, 0.62) if kind == "alloy" else (0.26, 0.40)
+        for k in range(n):
+            a, s = tau * k / n, tau / n
+            quad(r * 0.2, r * 0.9, a - s * wi / 2, a + s * wi / 2, a - s * wo / 2, a + s * wo / 2, z + 0.004, hub)
+        disc(r * 0.24, hub * 0.8, z + 0.008, 6)
+    else:                                                        # truck / bus
+        disc(r, hub * 0.8, z)
+        for k in range(n):
+            a = tau * (k + 0.5) / n
+            quad(r * 0.46, r * 0.8, a - 0.16, a + 0.16, a - 0.2, a + 0.2, z + 0.004, hub * 0.18)
+        disc(r * 0.26, hub * 1.0, z + 0.008, 6)
+
+
+def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12, rim=("alloy", 5), face=0):
+    """Wheel with its axis along z. Returns (verts, colours).  face = +1 / -1: only that side gets the wheel-face design (the other
+    one is against the car); 0 = both (a front wheel model that is drawn on either side)."""
     vs, cs = [], []
     za, zb = cz - wd / 2, cz + wd / 2
     for i in range(sides):
@@ -518,16 +568,16 @@ def _cyl(cx, cy, cz, R, wd, tyre, hub, sides=12, rim=(6, 0.62, 0.58)):
         sh = 0.55 + 0.5 * max(0.0, math.cos(am) * 0.4 + math.sin(am) * 0.9)
         vs += [(p0[0], p0[1], za), (p1[0], p1[1], za), (p1[0], p1[1], zb), (p0[0], p0[1], za), (p1[0], p1[1], zb), (p0[0], p0[1], zb)]
         cs += [tyre * sh] * 6
-        for z in (za, zb):                                                 # tyre sidewalls
+        for z in ((za, zb) if face == 0 else ((zb,) if face > 0 else (za,))):        # tyre sidewalls
             vs += [(cx, cy, z), p0 + (z,), p1 + (z,)]
             cs += [tyre * 0.8] * 3
-    ns, dk, rf = rim
-    r = R * rf
-    for z in (zb + 0.012, za - 0.012):                                     # the wheel face
-        for k in range(2 * ns):
-            a0, a1 = math.pi * k / ns, math.pi * (k + 1) / ns
-            vs += [(cx, cy, z), (cx + r * math.cos(a0), cy + r * math.sin(a0), z), (cx + r * math.cos(a1), cy + r * math.sin(a1), z)]
-            cs += [hub if k % 2 == 0 else hub * dk] * 3
+    for z, sg in ((zb + 0.012, 1), (za - 0.012, -1)):
+        if face in (0, sg):
+            n0 = len(vs)
+            _wheel_face(vs, cs, cx, cy, 0.0, R, rim, hub)
+            for i in range(n0, len(vs)):                         # lift the layers off the tyre, away from the wheel centre plane
+                x_, y_, zz = vs[i]
+                vs[i] = (x_, y_, z + sg * zz)
     return np.array(vs, np.float32), np.array(cs, np.float32)
 
 
@@ -770,7 +820,7 @@ def front_wheel(kind):
     semi = V.EXTRA[kind % V.N] == "semi"
     wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
     wx += V.SEMI_SHIFT if semi else 0.0
-    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 12, carbody.layout(V.IDS[kind % V.N], L)["rim"] if carbody.has(V.IDS[kind % V.N]) else (5, 0.55, 0.58))
+    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 12, carbody.layout(V.IDS[kind % V.N], L)["rim"] if carbody.has(V.IDS[kind % V.N]) else ("truck", 5))
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
@@ -1002,7 +1052,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
         if steer_wheels and wi == 0:
             continue                                                        # the front pair is drawn separately, turned
         for s in (-1, 1):
-            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)))
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), s)
             parts.append((v, c, False))
 
     if semi:                                                                # move the short tractor to the front of the rig's footprint
@@ -1043,7 +1093,7 @@ def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, pa
         if steer_wheels and wi == 0:
             continue
         for s in (-1, 1):
-            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16, lay["rim"])
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A(lay["hub"]), 16, lay["rim"], s)
             parts.append((v, c, False))
     return _finish_arrays(parts, dents, burnt, belt)
 
@@ -1077,7 +1127,7 @@ def trailer_arrays():
     box(-T + 0.2, 0.62, 0, 0.1, 0.12, W * 0.92, (60, 62, 68))                         # underride bar
     for ax in (-T + 1.4, -T + 2.6, -T + 3.8):                                         # tri-axle
         for sd in (-1, 1):
-            v, c = _cyl(ax, 0.5, sd * (W / 2 - 0.02), 0.5, 0.3, A((26, 26, 28)), A((158, 158, 164)))
+            v, c = _cyl(ax, 0.5, sd * (W / 2 - 0.02), 0.5, 0.3, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), sd)
             parts.append((v, c, False))
     return _finish_arrays(parts, (), 0.0, y0)
 

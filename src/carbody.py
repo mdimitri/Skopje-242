@@ -139,16 +139,16 @@ _ALLOY = ("BMW E46 Tjunirana", "Golf Shestka Uvezen", "Seat Leon Kupra", "Tesla 
 
 
 def _rim(name, s):
-    """(spokes, dark share, hub radius share) of a model's wheel face: pressed-steel hubcaps on the old and plain ones (subtle), 5-spoke
+    """(design, count) of a model's wheel face: pressed-steel hubcaps on the old and plain ones (subtle), 5-spoke
     alloys on 90s-2000s cars, 7-spoke on the premium and tuned ones, 6 on SUVs and pickups."""
     a = s["arch"]
     if name in _ALLOY:
-        return (7, 0.45, 0.80)
+        return ("multi", 7)
     if a in ("suv_box", "suv_soft", "pickup"):
-        return (6, 0.55, 0.74)
+        return ("alloy", 6)
     if a in ("hatch_boxy", "notch_boxy", "mini", "van_cab"):
-        return (4, 0.80, 0.66)
-    return (5, 0.50, 0.76)
+        return ("steel", 4)
+    return ("alloy", 5)
 
 
 def badge(name):
