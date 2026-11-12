@@ -86,6 +86,8 @@ def tick(sim, dt, inp):
     """Every frame (before the player moves): advance the ride, or work out the prompt.  -> the input to use."""
     e = sim.esc
     sub = _subject(sim)
+    if sub is not None and sim.mode != "car":
+        sub.esc_on = e is not None
     if e is not None:
         mv = inp.get("move", (0, 0))
         if sub is None or mv[1] < -0.5 or inp.get("attack") or inp.get("brake"):

@@ -685,6 +685,7 @@ class Walker:
         self.anim = 0.0
         self.health = 100.0
         self.moving = False
+        self.esc_on = False          # climbing a fire escape (escride.py): legs and arms play the walk cycle
         self.run = False
         self.dead_t = 0.0
         self.z = 0.0                 # height above the surface under the feet (jumping / falling)
@@ -774,7 +775,7 @@ class Walker:
         tx, ty = math.cos(self.h) * fwd * (sp if fwd > 0 else sp * 0.6), math.sin(self.h) * fwd * (sp if fwd > 0 else sp * 0.6)
         self.vx += (tx - self.vx) * k
         self.vy += (ty - self.vy) * k
-        self.moving = abs(fwd) > 0.01
+        self.moving = abs(fwd) > 0.01 or self.esc_on             # (a fire-escape climb is driven by escride, not by input)
         if self.moving:
             self.anim += self.speed * dt
         self.x += self.vx * dt
