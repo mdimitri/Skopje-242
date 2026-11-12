@@ -193,6 +193,7 @@ class Out:
                 _TICK[0](k_ / max(1, len(self.d)))
             pos = np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)])      # pre: blocks from the pool workers
             c = np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])
+            pos, c = _clean_tris(pos, c)
             if deck is None:
                 pos, c = _drop_covered_pavement(pos, c)
             if deck is not None:
@@ -200,6 +201,26 @@ class Out:
             elif self.T is not None:
                 pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
             add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
+
+
+def _clean_tris(pos, col):
+    """Drops zero-area triangles and exact duplicates (same three vertices to 1 mm in the same winding)."""
+    n = len(pos) // 3
+    if n < 1:
+        return pos, col
+    t = pos[:n * 3].reshape(n, 3, 3).astype(np.float64)
+    keep = np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1) * 0.5 >= 1e-5
+    k = np.round(t * 1000).astype(np.int64)
+    rows = np.stack([k.reshape(n, 9), np.roll(k, -1, axis=1).reshape(n, 9), np.roll(k, -2, axis=1).reshape(n, 9)], axis=1)
+    can = rows[np.arange(n), np.argmin(rows.reshape(n, 3, 9)[:, :, 0] * 1_000_000_007 + rows.reshape(n, 3, 9)[:, :, 1] * 1_009 + rows.reshape(n, 3, 9)[:, :, 2], axis=1)]
+    _, idx = np.unique(can, axis=0, return_index=True)
+    uniq = np.zeros(n, bool)
+    uniq[idx] = True
+    keep &= uniq
+    if keep.all():
+        return pos, col
+    ki = np.repeat(keep, 3)
+    return pos[:n * 3][ki], col[:n * 3][ki]
 
 
 def _drop_covered_pavement(pos, col, G=0.2):
