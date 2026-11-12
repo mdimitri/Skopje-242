@@ -772,6 +772,32 @@ def front_wheel(kind):
 
 
 def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
+    """car_arrays plus a material tag in uv.x for the gloss shader: 1 = paint, 2 = glass, 0 = matte.  The default shader
+    samples a 1x1 white texture, so the tag changes nothing when gloss is off."""
+    pos, uv, col = _car_arrays(kind, color, dents, burnt, player, steer_wheels)
+    if burnt > 0 or len(pos) == 0:
+        return pos, uv, col
+    kind = kind % V.N
+    fixed = V.FIXED[kind]
+    two = color >= 12 and fixed is None
+    ci = (color * 5 + 3) % 12 if two else color % 12
+    body = np.array((206, 36, 36) if player else (fixed if fixed else CAR_COLORS[ci]), np.float32)
+    c = col[:, :3].astype(np.float32)
+    n = np.linalg.norm(c, axis=1) + 1e-3
+    d = c / n[:, None]
+
+    def near(ref, tol):
+        r = np.asarray(ref, np.float32)
+        return d @ (r / np.linalg.norm(r)) > 1 - tol
+
+    paint = near(body, 0.002) & (n > 0.35 * np.linalg.norm(body))
+    if two:
+        paint |= near((236, 236, 240) if color % 2 == 0 else (30, 30, 34), 0.002) & (n > 25)
+    uv[:, 0] = np.where(near(GLASS, 0.003) & (n < 200), 2.0, np.where(paint, 1.0, 0.0))
+    return pos, uv, col
+
+
+def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
     """Vertices/colours of a car in local space (x forward, y up, z right); dents = [(lx, lz, nx, nz, mag)]."""
     kind = kind % V.N
     L, W, y0, belt, roof = V.DIMS[kind]
@@ -1111,7 +1137,96 @@ def door_model(kind, color):
 
 def car_model(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
     pos, uv, col = car_arrays(kind, color, dents, burnt, player, steer_wheels)
-    return make_model(pos, uv, col)
+    return gloss_apply(make_model(pos, uv, col))
+
+
+# ------------------------------------------------------------------ glossy cars: clear-coat / metallic paint and reflective glass
+# One extra shader, no extra draw calls: sky reflection (fresnel), sun/moon highlight.  Off = the default raylib shader, as before.
+CAR_VS = """#version 330
+in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
+uniform mat4 mvp; uniform mat4 matModel;
+out vec4 fragColor; out vec3 wp; out float mat;
+void main(){ fragColor = vertexColor; mat = vertexTexCoord.x; wp = (matModel * vec4(vertexPosition, 1.0)).xyz;
+             gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
+CAR_FS = """#version 330
+in vec4 fragColor; in vec3 wp; in float mat;
+uniform vec4 colDiffuse;
+uniform vec3 SUNL; uniform vec3 viewPos;
+uniform vec4 gloss;              // x = strength (0 = exactly the plain look), y = light-source strength
+uniform vec3 skyZ; uniform vec3 skyH; uniform vec3 grnd; uniform vec3 lightC; uniform vec3 lightD;
+out vec4 finalColor;
+void main(){
+  vec4 base = colDiffuse * fragColor;
+  float k = gloss.x * step(0.5, mat);
+  if (k <= 0.0) { finalColor = base; return; }
+  vec3 N = normalize(cross(dFdx(wp), dFdy(wp)));
+  vec3 V = normalize(viewPos - wp);
+  if (dot(N, V) < 0.0) N = -N;
+  float nv = clamp(dot(N, V), 0.0, 1.0);
+  vec3 R = reflect(-V, N);
+  vec3 env = R.y > 0.0 ? mix(skyH, skyZ, sqrt(R.y)) : mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));
+  float fr = pow(1.0 - nv, 5.0);
+  float lit = clamp(dot(N, lightD) * 4.0, 0.0, 1.0) * gloss.y;
+  vec3 spec = lightC * (pow(max(dot(R, lightD), 0.0), 220.0) * 3.0) * lit;
+  vec3 c;
+  if (mat > 1.5) {                                                // glass: a mirror at grazing angles, see-through-dark head on
+    float r = clamp(k * (0.38 + 0.62 * fr), 0.0, 0.95);
+    c = mix(base.rgb, env, r) + spec * k;
+  } else {                                                        // paint: metallic flake tinted by the paint + clear coat
+    float r = clamp(k * (0.10 + 0.65 * fr), 0.0, 0.9);
+    vec3 flake = base.rgb * lightC * pow(max(dot(N, normalize(lightD + V)), 0.0), 24.0) * 0.55 * lit;
+    c = base.rgb * (1.0 - 0.35 * r) + env * r + (flake + spec * 0.8) * k;
+  }
+  finalColor = vec4(c, base.a);
+}"""
+_gloss = {"on": False, "sh": None, "loc": None}
+
+
+def _gloss_shader():
+    if _gloss["sh"] is None:
+        sh = rl.load_shader_from_memory(CAR_VS, CAR_FS)
+        _gloss["sh"] = sh
+        _gloss["loc"] = {n: rl.get_shader_location(sh, n) for n in ("viewPos", "gloss", "skyZ", "skyH", "grnd", "lightC", "lightD")}
+        _sun_register(sh)
+    return _gloss["sh"]
+
+
+def gloss_apply(model):
+    """Give a freshly made car model the gloss shader when the setting is on (models made while off keep the default)."""
+    if model is not None and _gloss["on"]:
+        model.materials[0].shader = _gloss_shader()
+    return model
+
+
+def _mix(a, b, t):
+    return [x + (y - x) * t for x, y in zip(a, b)]
+
+
+def gloss_frame(cam_pos, hour, dark, sun, on, strength):
+    """Once a frame: camera position, sky colours and the light (sun by day, moon by night) for the car shader."""
+    _gloss["on"] = bool(on)
+    if _gloss["sh"] is None and not on:
+        return
+    sh, loc = _gloss_shader(), _gloss["loc"]
+    sun = np.asarray(SUN if sun is None else sun, np.float64)
+    elev = max(0.0, float(sun[1]))
+    low = 1.0 - min(1.0, elev / 0.35)                                  # 1 near sunrise / sunset
+    zen = _mix((0.36, 0.55, 0.82), (0.30, 0.33, 0.52), low)
+    hor = _mix((0.76, 0.84, 0.92), (0.98, 0.62, 0.38), low)
+    sunc = _mix((1.0, 0.97, 0.9), (1.0, 0.62, 0.35), low)
+    zen = _mix(zen, (0.03, 0.05, 0.10), dark)
+    hor = _mix(hor, (0.10, 0.12, 0.18), dark)
+    moon = np.array([0.35, 0.75, -0.55]) / np.linalg.norm([0.35, 0.75, -0.55])
+    ld = sun if dark < 0.5 else moon
+    lc = _mix(sunc, (0.55, 0.62, 0.8), dark)
+    li = (1.0 - dark) if dark < 0.5 else 0.35 * dark
+    vals = {"viewPos": (cam_pos.x, cam_pos.y, cam_pos.z), "skyZ": zen, "skyH": hor, "grnd": _mix((0.33, 0.32, 0.3), (0.05, 0.05, 0.06), dark),
+            "lightC": lc, "lightD": ld}
+    for n, v in vals.items():
+        if loc[n] >= 0:
+            rl.set_shader_value(sh, loc[n], ffi.new("float[3]", [float(x) for x in v]), rl.SHADER_UNIFORM_VEC3)
+    if loc["gloss"] >= 0:
+        rl.set_shader_value(sh, loc["gloss"], ffi.new("float[4]", [float(strength) if on else 0.0, float(li), 0.0, 0.0]), rl.SHADER_UNIFORM_VEC4)
 
 
 # ------------------------------------------------------------------ pedestrians

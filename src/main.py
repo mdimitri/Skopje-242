@@ -1908,6 +1908,7 @@ def main():
             renderer.sun = sunshadow.L
             renderer.sun_k = sunshadow.strength / 0.92
             guard.run("nightprep", night.prepare, cam, rect, ppm, sim, sim.clock.dark, sh, sf_on)
+        guard.run("gloss", gl3d.gloss_frame, cam.position, sim.clock.hour, sim.clock.dark, renderer.sun, cfg.get("car_gloss", 1), cfg.get("car_gloss_k", 1.0))
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()

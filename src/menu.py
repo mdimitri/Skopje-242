@@ -221,6 +221,8 @@ def _rows(in_game, slots=(), settings_only=False):
         (3, H("Квалитет")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
         (3, Row("choice", "Измазнување на рабови", "aa", S.AA, note="се применува по рестарт на играта")),
+        (3, Row("toggle", "Сјајни возила", "car_gloss", note="рефлексии на стаклата и металик боја; исклучено = како досега")),
+        (3, Row("slider", "Јачина на сјајот", "car_gloss_k", lo=0.0, hi=2.0, fmt=pct, note="100% е нормално")),
         (3, H("Околина")),
         (3, Row("toggle", TXT("menu.0014"), "labels")),
         (3, Row("toggle", TXT("menu.0012"), "smog", note=TXT("menu.0013"))),

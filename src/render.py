@@ -448,7 +448,7 @@ class Renderer:
         for key, arrs in self.mb.ready():
             store, k = {"ped": self.ped_models, "car": self.car_models, "carlod": self.car_lods}[key[0]], key[1:]
             if store.get(k) is None:
-                store[k] = gl3d.make_model(*arrs)
+                store[k] = gl3d.make_model(*arrs) if key[0] == "ped" else gl3d.gloss_apply(gl3d.make_model(*arrs))
 
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
