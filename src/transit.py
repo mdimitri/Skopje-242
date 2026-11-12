@@ -383,6 +383,21 @@ def attach_stops(lines, stops):
         ln.stops = sorted((c, k) for (k, _cy), (d, c) in best.items())
 
 
+def _cache_key(w, osm_dir):
+    """(cache file, key) for the matched bus lines: the world build, the bus data and this file's code must all be unchanged."""
+    wp = getattr(w, "path", None)
+    if not wp or not os.path.isdir(wp):
+        return None, None
+    key = []
+    for p in (os.path.join(wp, "manifest.json"), os.path.join(osm_dir, "transit.json"), os.path.abspath(__file__)):
+        try:
+            st = os.stat(p)
+            key.append((os.path.basename(p), st.st_size, int(st.st_mtime)))
+        except OSError:
+            return None, None
+    return os.path.join(wp, "transit_lines.pkl"), tuple(key)
+
+
 class Bus:
     def __init__(self, line, body, i):
         self.line, self.body, self.i = line, body, i
@@ -408,6 +423,32 @@ class Transit:
         self.t = 0.0
         self.kinds = [i for i, n in enumerate(vehicles.IDS) if n.startswith("JSP ")] or [vehicles.BUS]
         self.stops = list(getattr(sim.w, "bus_stops", None) or [])
+        self.queue = {}                   # stop index -> [ped]  (people waiting at the shelter)
+        self.refill = {}                  # stop index -> seconds until new people turn up
+        self.served = [0, 0]              # people who got on / off (stats, tests)
+        self.movers = []                  # peds walking to a bus door ("board") or away from it ("alight")
+        cache, key = _cache_key(sim.w, osm_dir)
+        if cache:                         # the route matching takes ~5 s on the full city: reuse the last result for the same world
+            try:
+                import pickle
+                with open(cache, "rb") as f:
+                    k_, lines_ = pickle.load(f)
+                if k_ == key:
+                    self.lines = lines_
+                    return
+            except Exception:  # noqa: BLE001 - no / stale / broken cache: match the routes again
+                pass
+        self._match(sim)
+        if cache:
+            try:
+                import pickle
+                with open(cache + ".tmp", "wb") as f:
+                    pickle.dump((key, self.lines), f, protocol=pickle.HIGHEST_PROTOCOL)
+                os.replace(cache + ".tmp", cache)
+            except Exception:  # noqa: BLE001 - read-only folder: just no cache
+                pass
+
+    def _match(self, sim):
         groups = {}
         for ln in self.lines:
             groups.setdefault(ln.rid, []).append(ln)
@@ -428,10 +469,6 @@ class Transit:
         orient_to_traffic(rest, sim.w)
         self.lines = rebuilt + join_runs(rest, sim.w)
         attach_stops(self.lines, self.stops)
-        self.queue = {}                   # stop index -> [ped]  (people waiting at the shelter)
-        self.refill = {}                  # stop index -> seconds until new people turn up
-        self.served = [0, 0]              # people who got on / off (stats, tests)
-        self.movers = []                  # peds walking to a bus door ("board") or away from it ("alight")
 
     def update(self, dt):
         if not self.lines:

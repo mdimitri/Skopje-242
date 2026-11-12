@@ -127,7 +127,13 @@ def _gccb(phase, info):
 gc.callbacks.append(_gccb)
 
 prof = cProfile.Profile() if a.prof else None
-state = {"n": 0, "t": None, "cpu": None, "w0": None, "c0": None}
+state = {"n": 0, "t": None, "cpu": None, "w0": None, "c0": None, "ready": None, "f0": 0}
+_log0 = M.log
+def _log(msg):
+    if "[game] ready" in str(msg) and state["ready"] is None:
+        state["ready"] = state["n"]                  # --warm counts frames from here: the loading screen draws frames too
+    return _log0(msg)
+M.log = _log
 _ed = rl.end_drawing
 def end_drawing():
     t0 = time.perf_counter()
@@ -142,22 +148,29 @@ def end_drawing():
     cur.clear()
     calls["draw"] = 0
     state["n"] += 1
-    if state["n"] == a.warm:
+    if state["ready"] is not None and state["n"] == state["ready"] + a.warm:
+        state["f0"] = len(frames)
         state["w0"], state["c0"] = time.perf_counter(), time.process_time()
         if prof:
             prof.enable()
     return r
 rl.end_drawing = end_drawing
 
+def _no_hard_exit(code=0):
+    raise SystemExit(code)                   # the game ends --test with os._exit, which would skip the summary below
+os._exit = _no_hard_exit
+
 t_start = time.time()
 try:
     M.main()
+except SystemExit:
+    pass                                    # --test ends the game with sys.exit: still print the summary
 finally:
     if prof:
         prof.disable()
 wall = time.perf_counter() - (state["w0"] or time.perf_counter())
 cpu = time.process_time() - (state["c0"] or time.process_time())
-F = frames[max(0, a.warm - 1):]
+F = frames[state["f0"]:]
 ft = [f["frame"] for f in F] or [0.0]
 keys = sorted({k for f in F for k in f if k not in ("frame",)})
 sub = {k: round(sum(f.get(k, 0.0) for f in F) / max(1, len(F)), 2) for k in keys}

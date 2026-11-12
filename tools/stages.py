@@ -163,8 +163,51 @@ def _data_parts(names, src, extras):
     return parts
 
 
+def _stat_key(src, path, version):
+    """Sizes and times of everything a fingerprint can read (the build tools, the game code they import, the OSM data folder)."""
+    import glob
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    files = sorted(glob.glob(os.path.join(root, "tools", "*.py")) + glob.glob(os.path.join(root, "src", "*.py"))
+                   + [os.path.join(src, f) for f in (os.listdir(src) if os.path.isdir(src) else ())])
+    out = [FORMAT, str(version), os.path.abspath(path), os.path.abspath(src)]
+    for f in files:
+        try:
+            st = os.stat(f)
+            out.append(f"{f}|{st.st_size}|{st.st_mtime_ns}")
+        except OSError:
+            out.append(f + "|-")
+    return _md5(*out)
+
+
+_FP_MEMO = {}
+
+
 def fingerprints(src, path=SOURCE, version=None):
-    """-> [(stage name, fingerprint)] for a world built from `src` with the tools as they are now."""
+    """-> [(stage name, fingerprint)] for a world built from `src` with the tools as they are now.  Hashing the stage code takes
+    ~5 s, so the result is kept (in memory and in data/cache/stage_fp.json) until a tool, game or OSM file changes."""
+    key = _stat_key(src, path, version)
+    if key in _FP_MEMO:
+        return _FP_MEMO[key]
+    cf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cache", "stage_fp.json")
+    try:
+        d = json.load(open(cf, encoding="utf-8"))
+        if d.get("key") == key:
+            _FP_MEMO[key] = [tuple(x) for x in d["fps"]]
+            return _FP_MEMO[key]
+    except Exception:  # noqa: BLE001 - no / old cache
+        pass
+    out = _fingerprints(src, path, version)
+    _FP_MEMO[key] = out
+    try:
+        with open(cf + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"key": key, "fps": out}, f)
+        os.replace(cf + ".tmp", cf)
+    except OSError:
+        pass
+    return out
+
+
+def _fingerprints(src, path=SOURCE, version=None):
     tree, prelude, hoisted, stages = layout(path)
     code = _Code(tree, hoisted)
     extras = {n for _, kw, _ in stages for n in kw.get("data", ()) if n.endswith(".json")}

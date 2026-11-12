@@ -26,6 +26,8 @@ def _job(spec):
 
 
 def _warm():
+    import cpusched
+    cpusched.worker()                                  # efficiency cores: the frame loop keeps the performance cores
     import gl3d  # noqa: F401
     return True
 

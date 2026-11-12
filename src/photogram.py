@@ -1127,6 +1127,8 @@ def apply_settings(st, algo):
 
 def _w_init(folder, osm_dir, algo, st):
     """A worker process: its own copy of the captures and the city (read once), the job's settings."""
+    import cpusched
+    cpusched.worker()
     apply_settings(st, algo)
     caps = read_manifest(folder)
     _W.update(caps={c.file: c for c in caps}, blds=load_city(osm_dir, caps, log=lambda s: None), algo=algo)
