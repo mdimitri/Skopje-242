@@ -434,6 +434,7 @@ def box_faces(cx, cy, cz, sx, sy, sz, nx=1, ny=1, nz=1, bottom=False):
 
 # ------------------------------------------------------------------ car model
 import vehicles as V
+import carbody
 
 CAR_DIMS = V.DIMS
 CAR_COLORS = [(190, 40, 40), (40, 80, 170), (230, 230, 232), (30, 30, 34), (150, 152, 158), (215, 190, 40),
@@ -742,8 +743,12 @@ _TYRE_R = {"mini": 0.27, "hatch": 0.30, "sedan": 0.31, "taxi": 0.31, "wagon": 0.
            "suv": 0.38, "pickup": 0.38}
 
 
-def _wheel_layout(st, L):
+def _wheel_layout(st, L, name=None):
     """(x, radius, width) of every wheel pair, the front axle first."""
+    if name is not None and st in carbody.LOFT_STYLES and carbody.has(name):          # the real car's axle positions and tyre size
+        lay = carbody.layout(name, L)
+        r = lay["tr"] or _TYRE_R.get(st, 0.34)
+        return [(lay["ax_f"], r, 0.7 * r), (lay["ax_r"], r, 0.7 * r)]
     if L > 11:
         return [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
     r = _TYRE_R.get(st, 0.34)                                      # real tyre radii: 13" Yugo ~0.28 m, SUV ~0.38 m
@@ -757,7 +762,7 @@ def front_wheel(kind):
     turns by the steering angle (car_arrays(steer_wheels=True) leaves them out of the body)."""
     L, W = V.DIMS[kind % V.N][:2]
     semi = V.EXTRA[kind % V.N] == "semi"
-    wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L)[0]
+    wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
     wx += V.SEMI_SHIFT if semi else 0.0
     v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array((158, 158, 164), np.float32))
     rgba = np.empty((len(v), 4), np.uint8)
@@ -807,6 +812,9 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     if st == "bike":
         _bike_parts(ex, body_c, A, box, quad, parts)
         return _finish_arrays(parts, dents, burnt, belt)
+    if st in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
+        return _loft_arrays(kind, color, dents, burnt, player, steer_wheels, (L, W, y0, belt, roof, st, ex), (body_c, accent, two, rng),
+                            parts, A, quad, box)
 
     # ---- lower body
     def body_col(name, v, n):
@@ -970,6 +978,44 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
     return _finish_arrays(parts, dents, burnt, belt)
 
 
+def _loft_arrays(kind, color, dents, burnt, player, steer_wheels, dims, look, parts, A, quad, box):
+    """Car-like vehicles built from carbody's real profile; roof furniture, extras and wheels as for every other model."""
+    L, W, y0, belt, roof, st, ex = dims
+    body_c, accent, two, rng = look
+    name = V.IDS[kind]
+    lay = carbody.layout(name, L)
+    wheels = _wheel_layout(st, L, name)
+    parts += carbody.build(name, L, W, belt, roof, body_c, accent, two, _shade, (58, 76, 98), wheels[0][1])
+    cx, cl, cw = lay["cx"], lay["cl"], W * 0.9
+    yb = carbody.spec(name, L)["gc"]
+    if player:
+        quad((cx - cl / 2, roof + 0.006, -0.16 * W), (cl, 0, 0), (0, 0, 0.32 * W), (0, 1, 0), (240, 240, 240), 2, 1)
+    if st == "taxi":
+        box(cx, roof, 0, 0.42, 0.16, 0.6, (240, 240, 235))
+        box(cx, roof + 0.16, 0, 0.30, 0.05, 0.5, (30, 30, 34))
+        for s in (-1, 1):
+            zz = s * (W / 2 + 0.01)
+            for k in range(14):
+                quad((-L / 2 + 0.35 + k * (L - 0.7) / 14, belt - 0.34, zz), ((L - 0.7) / 14, 0, 0), (0, 0.14, 0), (0, 0, s),
+                     (20, 20, 22) if k % 2 else (240, 240, 235))
+    if st == "suv":
+        for zz in (-0.62, 0.62):
+            box(cx, roof, zz * 0.9 * W / 1.4, cl * 0.9, 0.05, 0.05, (28, 28, 30))
+    if rng.rand() < 0.35:                                                    # a bit of rust / dirt
+        for _ in range(2):
+            rx = rng.uniform(-L * 0.35, L * 0.35)
+            s = rng.choice((-1, 1))
+            quad((rx, yb + 0.04, s * (W / 2 + 0.009)), (rng.uniform(0.3, 0.7), 0, 0), (0, rng.uniform(0.15, 0.3), 0), (0, 0, s), (112, 62, 38))
+    _extras(kind, st, ex, L, W, y0, belt, roof, roof, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None)
+    for wi, (wx, wr, wd_) in enumerate(wheels):
+        if steer_wheels and wi == 0:
+            continue
+        for s in (-1, 1):
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((158, 158, 164)))
+            parts.append((v, c, False))
+    return _finish_arrays(parts, dents, burnt, belt)
+
+
 def trailer_arrays():
     """Semi trailer, origin at the kingpin, extending towards -x; hinged to the tractor's fifth wheel by the renderer."""
     A = lambda c: np.array(c, np.float32)
@@ -1041,6 +1087,9 @@ def _finish_arrays(parts, dents, burnt, belt):
 def door_geom(kind):
     """Driver's door: (hinge x, door length) in car-local space, from the cabin layout used by car_arrays."""
     L = V.DIMS[kind][0]
+    if V.STYLE[kind] in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
+        lay = carbody.layout(V.IDS[kind], L)
+        return lay["hinge"], lay["door"]
     cl_f, cx_f = _CAB[V.STYLE[kind]][:2]
     cl, cx = L * cl_f, L * cx_f
     front, rear = cx + cl * 0.30, cx - cl * 0.20
