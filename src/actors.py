@@ -186,6 +186,18 @@ def door_point(b, out, side=1):
     return b.x + lx * side * (W + out) + fx * d, b.y + ly * side * (W + out) + fy * d
 
 
+def reach(b, x, y):
+    """How far (x, y) is from the way into vehicle b: along the side of a car, but at the cab door for a long vehicle (a semi, a
+    bus, a lorry), whose middle is nowhere near its door."""
+    if vehicles.HALF_L[b.kind] > 3.5:
+        dx_, dy_ = door_point(b, 0.4)
+        return math.hypot(x - dx_, y - dy_) - 0.5
+    L = CIRC[b.kind][0]
+    fx, fy = math.cos(b.h), math.sin(b.h)
+    t = max(-L, min(L, (x - b.x) * fx + (y - b.y) * fy))
+    return math.hypot(x - (b.x + fx * t), y - (b.y + fy * t))
+
+
 def tow(b):
     """Semi trailer: its axle group is dragged along the path of the kingpin (on the tractor's fifth wheel) at a fixed
     distance -- the exact no-side-slip kinematics of a real trailer, forwards and reversing.  Folding stops at SEMI_JACK."""
@@ -2603,14 +2615,11 @@ class Sim:
                 continue
             if getattr(b, "remote", False) and getattr(b, "drop_pid", None) is None and not (getattr(b, "puppet", False) and getattr(b, "bus_line", None)):
                 continue                                           # another player's occupied car, or a host puppet: not for the taking
-            L = CIRC[b.kind][0]
-            fx, fy = math.cos(b.h), math.sin(b.h)
-            t = max(-L, min(L, (wk.x - b.x) * fx + (wk.y - b.y) * fy))
-            d = math.hypot(wk.x - (b.x + fx * t), wk.y - (b.y + fy * t))
+            d = reach(b, wk.x, wk.y)
             if d < 2.5 and d < bd:
                 best, bd, kind = b, d, "body"
         for c in self.traffic.cars:
-            d = math.hypot(wk.x - c.x, wk.y - c.y)
+            d = reach(c, wk.x, wk.y) if vehicles.HALF_L[c.kind] > 3.5 else math.hypot(wk.x - c.x, wk.y - c.y)
             if d < 3.4 and d < bd:
                 best, bd, kind = c, d, "ai"
         for p in self.peds.list:                                   # cyclists, mopeds, scooters

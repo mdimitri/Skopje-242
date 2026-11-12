@@ -162,6 +162,16 @@ def door_geom(kind):
     return front, max(0.6, front - rear)
 
 
+def rear_axle_x(kind):
+    """x of the (driven) rear axle along the body (m, front +): where the tyres leave skid marks."""
+    import carbody
+    if EXTRA[kind] == "semi":
+        return SEMI_REAR
+    if STYLE[kind] in carbody.LOFT_STYLES and carbody.has(IDS[kind]):
+        return carbody.layout(IDS[kind], DIMS[kind][0])["ax_r"]
+    return -DIMS[kind][0] * (0.30 if STYLE[kind] == "bus" else 0.31)
+
+
 HALF_L = [d[0] / 2 for d in DIMS]                              # the body itself, no padding: what fits physically may pass
 HALF_W = [d[1] / 2 for d in DIMS]
 TRAFFIC_W = [v[5] for v in _V]

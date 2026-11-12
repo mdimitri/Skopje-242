@@ -107,6 +107,7 @@ import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
 import soundlib   # noqa: E402
+import actors   # noqa: E402
 from actors import Body, Sim   # noqa: E402
 from bake import PPM, Streamer, bake_overview   # noqa: E402
 import fx as fx_mod   # noqa: E402
@@ -1160,19 +1161,29 @@ def main():
                 vl = abs(-b.vx * fy_ + b.vy * fx_)
                 slipping = vl > 2.3 or (b.braking and sp > 9.0) or (b.empty is False and b.slip > 2.3)
                 if slipping:
-                    off, wd = vehicles.DIMS[b.kind][0] * 0.31, vehicles.DIMS[b.kind][1] / 2 - 0.12
+                    off, wd = -vehicles.rear_axle_x(b.kind), vehicles.DIMS[b.kind][1] / 2 - 0.12
                     pts = [(b.x - fx_ * off - fy_ * s * wd * -1, b.y - fy_ * off + fx_ * s * wd * -1) for s in (-1, 1)]
                     if b.skid:
                         for (px, py), (qx, qy) in zip(b.skid, pts):
                             if (px - qx) ** 2 + (py - qy) ** 2 < 25:
                                 streamer.add_decal(("l", px, py, qx, qy, 0.13, (8, 8, 10, 110)))
                     b.skid = pts
+                    if b.tra is not None:                          # a semi's trailer wheels leave their own marks, at the trailer's axle group
+                        th_ = b.trh if b.trh is not None else b.h
+                        tx_, ty_ = math.cos(th_), math.sin(th_)
+                        tw_ = 2.55 / 2 - 0.12
+                        pts2 = [(b.tra[0] - ty_ * s * tw_ * -1, b.tra[1] + tx_ * s * tw_ * -1) for s in (-1, 1)]
+                        if getattr(b, "skid2", None):
+                            for (px, py), (qx, qy) in zip(b.skid2, pts2):
+                                if (px - qx) ** 2 + (py - qy) ** 2 < 25:
+                                    streamer.add_decal(("l", px, py, qx, qy, 0.13, (8, 8, 10, 110)))
+                        b.skid2 = pts2
                     if vl > 3.5 and rng.random() < 0.6:
                         particles.smoke(pts[0][0], pts[0][1], 0.0, 1, 0.3)
                 else:
-                    b.skid = None
+                    b.skid = b.skid2 = None
             else:
-                b.skid = None
+                b.skid = b.skid2 = None
             if b.out:
                 if b.exploded and rng.random() < 0.05:
                     particles.smoke(b.x, b.y, 0.3, 1, 0.8)
@@ -1923,12 +1934,12 @@ def main():
             prompt = ""
             if sim.mode == "foot" and sim.walker and sim.walker.health > 0:
                 for b in sim.bodies:
-                    if b.alive and math.hypot(b.x - fx, b.y - fy) < 4.0:
+                    if b.alive and (actors.reach(b, fx, fy) < 2.5 if vehicles.HALF_L[b.kind] > 3.5 else math.hypot(b.x - fx, b.y - fy) < 4.0):
                         prompt = (TXT("main.0044") + f'{b.name}') + (TXT("main.0045") if b.parked_idx is not None else "")
                         break
                 else:
                     for c in sim.traffic.cars:
-                        if math.hypot(c.x - fx, c.y - fy) < 3.4:
+                        if (actors.reach(c, fx, fy) if vehicles.HALF_L[c.kind] > 3.5 else math.hypot(c.x - fx, c.y - fy)) < 3.4:
                             prompt = (TXT("main.0046") + f'{vehicles.NAMES[c.kind]})')
                             break
             elif sim.mode == "car" and sim.car.speed < 2.0:
