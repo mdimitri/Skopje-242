@@ -173,7 +173,7 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     ht = hd - s["dt"]
     knots_f = [0.0, fc * 0.5, fc, fr1, fr0, fd, 1.0]
     knots_y = [hn, hn + (hc - hn) * 0.62 + s["hood"], hc, roof, roof, hd, ht]
-    fs = {0.0, 0.02, 0.06, 0.14, 0.25, 0.75, 0.86, 0.94, 0.98, 1.0, fc, fr1, fr0, fd, fc * 0.5, (fc + fr1) / 2}
+    fs = {0.0, 0.02, 0.06, 0.04, 0.96, 0.45, 0.55, 0.65, 0.7, 0.10, 0.14, 0.2, 0.25, 0.32, 0.5, 0.6, 0.68, 0.75, 0.8, 0.86, 0.9, 0.94, 0.98, 1.0, fc, fr1, fr0, fd, fc * 0.5, (fc + fr1) / 2}
     for a, b in s["wins"]:
         fs.update((a, b))
     fs = sorted(f for f in fs if 0.0 <= f <= 1.0)
@@ -328,6 +328,10 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             ah = max(0.2, 2 * wr - yb + 0.06)
             quad((ax - wr - 0.07, yb, zs + sd * 0.002), (2 * wr + 0.14, 0, 0), (0, ah, 0), (0, 0, sd), (20, 20, 22))
         box(X(fc) - 0.02, belt + 0.12, sd * (W / 2 + 0.08), 0.1, 0.1, 0.16, (40, 40, 44))
+        box(X(fc) - 0.02, belt + 0.14, sd * (W / 2 + 0.01), 0.05, 0.05, 0.08, (60, 60, 64))
+        for fx in seams[:2]:
+            quad((X(fx) - 0.26, belt - 0.2, zs + sd * 0.006), (0.12, 0, 0), (0, 0.025, 0), (0, 0, sd), (200, 200, 205))
+        quad((X(fc) - 0.2, belt - 0.04, zs + sd * 0.003), (0.5, 0, 0), (0, 0.02, 0), (0, 0, sd), tuple(body * 0.7))
         quad((xb + 0.05, yb - 0.01, zs), (L - 0.1, 0, 0), (0, 0.07, 0), (0, 0, sd), (40, 40, 42))
     return parts
 
