@@ -1725,7 +1725,7 @@ class Traffic:
         if vehicles.LARGE[c.kind] and e["w"] < (7 if c.kind in vehicles.HEAVY else 8):
             c.kind = 1
         c.color = rng.randrange(vehicles.N_COLORS)
-        c.pace = rng.uniform(0.85, 1.1) * vehicles.SPEED[c.kind]
+        c.pace = rng.uniform(0.85, 1.02) * vehicles.SPEED[c.kind]
         c.v = 0.0
         c.x, c.y, c.h = self._place(c)
         c.gz = w.level(c.x, c.y, 1e9 if e["bridge"] else -1e9)
@@ -1763,7 +1763,7 @@ class Traffic:
         c.d = 1 if (e["ow"] or dot >= 0) else -1
         c.lidx = 0
         self._set_lane(c, e)
-        c.pace = self.rng.uniform(0.85, 1.1) * vehicles.SPEED[c.kind]
+        c.pace = self.rng.uniform(0.85, 1.02) * vehicles.SPEED[c.kind]
         c.nxt, c.blk, c.arr, c.rq, c.stn, c.dwell = None, None, None, None, None, None
         c.stuck = c.shift = c.shift_t = c.avoid = c.yld = 0.0
         c.x, c.y, c.h = self._place(c)
@@ -1782,6 +1782,7 @@ class Traffic:
             if c.nxt is None and c.kind in vehicles.HEAVY:
                 return False                                          # a lorry with only side streets ahead turns back
         plan, c.nx2 = c.nx2, None
+        n_old, turn_r = len(self.lanes_of(e)), c.turn if c.nxt in good else 0.0
         c.e, c.d = c.nxt if c.nxt in good else self.rng.choice(good)
         if abs(c.turn) > 2.6:
             c.man = 5.0                                           # a U-turn: full lock, as a driver would in a narrow street
@@ -1789,7 +1790,10 @@ class Traffic:
         if plan and plan[0][0] in w.out.get(self.w.edges[c.e]["b"] if c.d == 1 else self.w.edges[c.e]["a"], ()):
             (c.nxt, c.turn), c.nx2 = plan[0], plan[1:] or None    # the turns along the path were already planned
         c.shift, c.shift_t = 0.0, 0.0
-        self._set_lane(c, self.w.edges[c.e])
+        e2 = self.w.edges[c.e]
+        if turn_r >= self.TURN_LANE and n_old >= 2:                # a right turn keeps its distance from the kerb: kerb lane -> kerb lane, second -> second ...
+            c.lidx = max(0, len(self.lanes_of(e2)) - 1 - (n_old - 1 - min(c.lidx, n_old - 1)))
+        self._set_lane(c, e2)
         return True
 
     SQUEEZE = 0.10                   # a car held up for a while may slip past another with their bodies overlapping by up to this share of the narrower one's width
@@ -2243,10 +2247,10 @@ class Traffic:
                 dt = dt0
             e = w.edges[c.e]
             L = e["len"]
-            vmax = min(e["speed"] * c.pace * (1.05, 1.12, 1.2, 1.3)[ag], vehicles.PERF[c.kind][0] * 0.9)      # at about the limit, more in a nervous city
+            vmax = min(e["speed"] * c.pace * (1.0, 1.03, 1.06, 1.1)[ag], e["speed"] * 1.1, vehicles.PERF[c.kind][0] * 0.9)      # at about the limit, at most 10 % over in a nervous city
             if w.hilly:                                           # engines labour uphill, brakes hold downhill
                 sl = c.pitch
-                vmax *= max(0.4, 1.0 - 4.5 * sl) if sl > 0 else min(1.2, 1.0 - 1.2 * sl)
+                vmax *= max(0.4, 1.0 - 4.5 * sl) if sl > 0 else min(1.05, 1.0 - 1.2 * sl)
             end_node = e["b"] if c.d == 1 else e["a"]
             deg = len(w.out.get(end_node, ()))
             if deg >= 3:                                          # straight on is quick, a turn is slow
