@@ -32,6 +32,7 @@ void main() {
 }
 """
 
+MARGIN = 1
 
 _orig_w, _orig_h, _orig_w2s = rl.get_screen_width, rl.get_screen_height, rl.get_world_to_screen
 vw = vh = 0                      # 0 = off: the helpers answer with the window
@@ -64,6 +65,9 @@ def off():
 class Present:
     def __init__(self):
         self.rt = None
+        self.ui = None                   # HUD layer (transparent), drawn after the world is shifted by the camera's sub-pixel remainder
+        self.stage = 0                   # 0: drawing the world, 1: drawing the HUD layer
+        self.shift = None                # (sx, sy) buffer pixels, or None: plain full-frame blit
         self.sh = None
         self.loc = 0
         self.dest = (0.0, 0.0, 1.0, 1.0)
@@ -81,7 +85,10 @@ class Present:
         if self.rt is None or (vw, vh) != (w, h) and (self.rt.texture.width, self.rt.texture.height) != (w, h):
             if self.rt is not None:
                 rl.unload_render_texture(self.rt)
+                rl.unload_render_texture(self.ui)
             self.rt = rl.load_render_texture(w, h)
+            self.ui = rl.load_render_texture(w, h)
+        self.shift = None
         vw, vh = w, h
         ww, wh = _orig_w(), _orig_h()
         s = min(ww / w, wh / h)
@@ -92,16 +99,38 @@ class Present:
         rl.set_mouse_offset(-int(ox), -int(oy))
 
     def begin(self):
+        self.stage = 0
         rl.begin_texture_mode(self.rt)
+
+    def set_shift(self, sx, sy):
+        """The camera was snapped to whole buffer pixels; the world layer is shown moved by (sx, sy) buffer pixels (|s| <= 0.5) at window
+        resolution, so the buffer never gets resampled while the motion stays smooth.  Call before ui()."""
+        self.shift = (sx, sy)
+
+    def ui_layer(self):
+        """Everything drawn after this call is the HUD: it goes into its own transparent buffer and is not shifted."""
+        rl.end_texture_mode()
+        rl.begin_texture_mode(self.ui)
+        rl.clear_background(rl.BLANK)
+        rl.rl_set_blend_factors_separate(0x0302, 0x0303, 1, 0x0303, 0x8006, 0x8006)     # premultiplied colour, true alpha
+        rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)
+        self.stage = 1
 
     def end(self, nearest, fxaa):
         """Close the buffer and draw it onto the window (call before end_drawing)."""
+        if self.stage == 1:
+            rl.end_blend_mode()
         rl.end_texture_mode()
         if vw <= 0 or vh <= 0:   # window minimised: nothing to draw
             return
-        rl.set_texture_filter(self.rt.texture, rl.TEXTURE_FILTER_POINT if nearest else rl.TEXTURE_FILTER_BILINEAR)
+        flt = rl.TEXTURE_FILTER_POINT if nearest else rl.TEXTURE_FILTER_BILINEAR
+        rl.set_texture_filter(self.rt.texture, flt)
         rl.clear_background(rl.BLACK)
-        src = rl.Rectangle(0, 0, vw, -vh)
+        if self.shift is not None and vw > 2 * MARGIN and vh > 2 * MARGIN:     # one buffer pixel is cut off all round, the shift moves the window over it
+            sx, sy = self.shift
+            src = rl.Rectangle(MARGIN - sx, MARGIN + sy, vw - 2 * MARGIN, -(vh - 2 * MARGIN))
+        else:
+            src = rl.Rectangle(0, 0, vw, -vh)
         dst = rl.Rectangle(*self.dest)
         if fxaa:
             sh = self._shader()
@@ -110,3 +139,8 @@ class Present:
         rl.draw_texture_pro(self.rt.texture, src, dst, rl.Vector2(0, 0), 0.0, rl.WHITE)
         if fxaa:
             rl.end_shader_mode()
+        if self.stage == 1:
+            rl.set_texture_filter(self.ui.texture, flt)
+            rl.begin_blend_mode(rl.BLEND_ALPHA_PREMULTIPLY)
+            rl.draw_texture_pro(self.ui.texture, rl.Rectangle(0, 0, vw, -vh), dst, rl.Vector2(0, 0), 0.0, rl.WHITE)
+            rl.end_blend_mode()

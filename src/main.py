@@ -123,7 +123,7 @@ import mall as mall_mod   # noqa: E402
 import signals   # noqa: E402
 import escride  # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers   # noqa: E402
-from render import LOD_PPM, Renderer, gait_cycle   # noqa: E402
+from render import LOD_PPM, TILT, Renderer, gait_cycle   # noqa: E402
 from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
 
@@ -1947,9 +1947,17 @@ def main():
             foc_h = sim.walker.az if (sim.walker is not None and sim.walker.az is not None) else world.ground_y(fx, fy)
         cam_h = foc_h if cam_h is None else cam_h + (foc_h - cam_h) * min(1.0, 4.0 * dt)
         jx, jy = random.uniform(-shake, shake) * cfg["shake"], random.uniform(-shake, shake) * cfg["shake"]
-        cam, Hc, rect = renderer.camera(cam_x + jx, cam_y + jy, ppm, sw, sh, cam_h)
         sf_on = selfie.active and sim.walker is not None
         ch_on = (cfg["debug_chase"] or indoor_) and not sf_on and (sim.walker if sim.mode != "car" else sim.car) is not None
+        cx_, cz_ = cam_x + jx, cam_y + jy
+        snapped = cfg["scale"] == 0 and not sf_on and not ch_on and not indoor_
+        if snapped:                                # pixelated view: the camera moves in whole buffer pixels (the image never gets resampled),
+            kx_ = ppm / math.sqrt(1.0 + TILT ** 2)             # buffer pixels per metre of ground at the focus, along x and along z
+            kz_ = ppm / (1.0 + TILT ** 2)                      # (the rest of the move is a sub-pixel shift of the finished frame)
+            cx_s, cz_s = round(cx_ * kx_) / kx_, round(cz_ * kz_) / kz_
+            present.set_shift((cx_s - cx_) * kx_, (cz_s - cz_) * kz_)
+            cx_, cz_ = cx_s, cz_s
+        cam, Hc, rect = renderer.camera(cx_, cz_, ppm, sw, sh, cam_h)
         if sf_on:
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0
@@ -2033,6 +2041,7 @@ def main():
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
+            present.ui_layer()                          # from here on the HUD: its own layer, never shifted
             if sf_on and selfie.active:
                 selfie.overlay(sw, sh)
                 if sf_due_:
