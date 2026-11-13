@@ -265,6 +265,12 @@ class Hud:
             font.draw_text(text, x + ox, y + oy, size, rl.Color(0, 0, 0, 200))
         font.draw_text(text, x, y, size, col)
 
+    def _heli_mark(self, qx, qy, r, fs):
+        """Medical helicopter on the map: white disc, red ring, red H."""
+        rl.draw_circle(int(qx), int(qy), r + 2, rl.Color(200, 30, 36, 255))
+        rl.draw_circle(int(qx), int(qy), r, rl.Color(250, 250, 252, 255))
+        font.draw_text("H", int(qx - fs * 0.3), int(qy - fs * 0.5), fs, rl.Color(200, 30, 36, 255))
+
     def map_rect(self, sw, sh):
         """Big map rectangle (x, y, w, h), keeping the world's aspect ratio."""
         mw = sw - 80
@@ -534,6 +540,10 @@ class Hud:
                     qx, qy = to_big(pk[0], pk[1])
                     rl.draw_circle(int(qx), int(qy), 4, rl.Color(220, 30, 30, 255))
                     font.draw_text(WEAPONS[pk[2]][0][:1], int(qx) + 5, int(qy) - 9, 15, rl.Color(150, 10, 10, 255))
+            for b in sim.bodies:                                           # medical helicopters
+                if b.kind in vehicles.FLY and b.alive:
+                    hq = to_big(b.x, b.y)
+                    self._heli_mark(hq[0], hq[1], 7, 15)
             for name, lat, lon, _n in slang.LANDMARKS:
                 x, y = project(lat, lon)
                 if abs(x) < HX and abs(y) < HY:
