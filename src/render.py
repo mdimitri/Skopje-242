@@ -655,11 +655,16 @@ class Renderer:
         rl.draw_cube(V3(0, 2.62, 0), 0.9, 0.34, 0.12, rl.Color(250, 214, 80, 255))           # sign
         rl.rl_pop_matrix()
 
-    def _in(self, x, z, rect, pad=6.0):
+    def _in(self, x, z, rect, pad=6.0, gy=None):
+        """gy: the thing's own height when it is known (cars, people): saves a ground_y lookup."""
         if not (rect[0] - pad < x < rect[2] + pad and rect[1] - pad < z < rect[3] + pad):
             return False
         fr = self.frustum
-        return fr is None or fr.sphere(x, self.w.ground_y(x, z) + 2.0, z, pad + 4.0)      # behind / beside the camera (street views)
+        if fr is None:
+            return True
+        if gy is None or gy != gy:
+            gy = self.w.ground_y(x, z)
+        return fr.sphere(x, gy + 2.0, z, pad + 4.0)      # behind / beside the camera (street views)      # behind / beside the camera (street views)
 
     def _shadow_batch(self, items):
         """Far-away shadows (off screen / beyond the full-model range): the footprint box swept along the sun direction by
@@ -775,14 +780,14 @@ class Renderer:
         # cars
         cars, doors, trailers = [], [], []
         for c in sim.traffic.cars:
-            if self._in(c.x, c.y, rect):
+            if self._in(c.x, c.y, rect, gy=c.gz):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color, id(c), c.v))
                 if c.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll, c.tgz, c.tpitch, c.troll, id(c))
                 elif not self._near(c.x, c.y):
                     sh.append((c.x, c.y, c.h, vehicles.DIMS[c.kind][0] / 2, vehicles.DIMS[c.kind][1] / 2, 70, c.gz, vehicles.DIMS[c.kind][4]))
         for b in sim.bodies:
-            if self._in(b.x, b.y, rect):
+            if self._in(b.x, b.y, rect, gy=b.az):
                 tint = WHITE if not b.exploded else rl.Color(70, 70, 70, 255)
                 gy = b.az if b.az is not None else w.ground_y(b.x, b.y)
                 m = self.car_model(b)
@@ -805,7 +810,7 @@ class Renderer:
         far2 = 90.0 ** 2 if self._ppm < 4.0 else 1e18                  # zoomed far out, people beyond 90 m from the view centre are 1-2 pixel dots: not worth a draw call each
         mcx, mcz = (rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5
         for p in sim.peds.list:
-            if self._in(p.x, p.y, rect) and ((p.x - mcx) ** 2 + (p.y - mcz) ** 2 < far2 or p.mode in ("dead", "ko", "fight")):
+            if self._in(p.x, p.y, rect, gy=p.gz) and ((p.x - mcx) ** 2 + (p.y - mcz) ** 2 < far2 or p.mode in ("dead", "ko", "fight")):
                 if p.mode in ("dead", "air"):
                     frame, y = 2, p.hy
                 elif p.mode == "ko":
