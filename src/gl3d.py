@@ -814,10 +814,10 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
             box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
 
 
-_HELI_ST = [   # fuselage stations (x, half width, bottom y, top y), nose to the start of the tail boom (EC135-like)
-    (2.78, 0.52, 0.44, 1.60), (2.68, 0.74, 0.34, 1.88), (2.48, 0.88, 0.30, 2.06), (2.12, 0.95, 0.30, 2.15),
-    (1.60, 0.97, 0.32, 2.18), (0.80, 0.98, 0.36, 2.20), (0.00, 0.97, 0.38, 2.24), (-0.70, 0.93, 0.44, 2.40), (-1.40, 0.84, 0.56, 2.42),
-    (-2.00, 0.68, 0.78, 2.30), (-2.55, 0.48, 1.08, 2.10), (-3.00, 0.30, 1.32, 1.92)]
+_HELI_ST = [   # fuselage stations (x, half width, bottom y, top y), nose to the clamshell doors (MBB/Kawasaki BK117)
+    (2.70, 0.50, 0.62, 1.50), (2.60, 0.72, 0.50, 1.80), (2.40, 0.86, 0.44, 2.00), (2.05, 0.94, 0.42, 2.12),
+    (1.50, 0.96, 0.42, 2.16), (0.70, 0.97, 0.42, 2.18), (-0.20, 0.97, 0.44, 2.18), (-1.00, 0.96, 0.48, 2.17), (-1.70, 0.94, 0.56, 2.15),
+    (-2.20, 0.90, 0.70, 2.12), (-2.45, 0.84, 0.86, 2.08), (-2.60, 0.70, 1.10, 2.02), (-2.70, 0.40, 1.45, 1.98)]
 
 
 def _tri_parts(tris, colfn, parts, centre=None, quads=False):
@@ -873,7 +873,7 @@ def _tube(p0, p1, r, k=8):
 
 def _heli_parts(body_c, A, box, quad, parts):
     """Medical helicopter (x forward, y up, z right), rotors left out (see rotor_model): lofted white fuselage with a red
-    stripe, red crosses, tinted glazing, tapered tail boom with a fenestron and fin, tubular skids. ~2600 triangles."""
+    stripe, red crosses, tinted glazing, high tail boom, 2-blade tail rotor, end-plate stabiliser, engine hump (BK117), tubular skids. ~2600 triangles."""
     wh, red, dark, glass, grey = (240, 240, 244), (204, 30, 36), (44, 46, 52), (58, 86, 116), (176, 178, 186)
     st = _HELI_ST
     # finer stations in between (smooth hull)
@@ -914,37 +914,35 @@ def _heli_parts(body_c, A, box, quad, parts):
     _tri_parts(hull, hull_col, parts, centre, True)
     rear = rings[-1]
     _tri_parts([(rear[0], rear[i], rear[i + 1]) for i in range(1, len(rear) - 1)], lambda q: wh, parts, lambda q: (q[0] + 1, q[1], 0))
-    # tail boom, tapering, slightly rising
-    bx = [(-3.0, 0.30, 1.62), (-4.2, 0.25, 1.68), (-5.4, 0.21, 1.74), (-6.25, 0.19, 1.78)]
+    # high slim tail boom off the cabin roof, rising slightly to the tail rotor
+    bx = [(-2.5, 0.34, 1.80), (-3.8, 0.26, 1.88), (-5.2, 0.21, 1.96), (-6.6, 0.18, 2.04), (-7.2, 0.16, 2.08)]
     brings = [_ring(r, y - r, y + r, x, 14, 2.0) for x, r, y in bx]
-    _tri_parts(_loft(brings), lambda q: red if abs(q[1] - 1.62) < 0.05 and q[0] < -3.2 else wh, parts, lambda q: (q[0], 1.7, 0.0))
-    # fenestron shroud: a thick ring round the tail rotor (axis z)
-    fc, fr, k = (-6.9, 1.9), 0.62, 20
-    sh = []
-    for i in range(k):
-        a0, a1 = 2 * math.pi * i / k, 2 * math.pi * (i + 1) / k
-        for r0, r1, z0, z1 in ((fr, fr, -0.22, 0.22), (fr, fr + 0.22, 0.22, 0.22), (fr, fr + 0.22, -0.22, -0.22), (fr + 0.22, fr + 0.22, -0.22, 0.22)):
-            p = lambda r, a, z: (fc[0] + r * math.cos(a), fc[1] + r * math.sin(a), z)
-            sh += [(p(r0, a0, z0), p(r1, a0, z1), p(r1, a1, z1)), (p(r0, a0, z0), p(r1, a1, z1), p(r0, a1, z0))]
-    _tri_parts(sh, lambda q: wh, parts, lambda q: (fc[0] + (q[0] - fc[0]) * 0.9, fc[1] + (q[1] - fc[1]) * 0.9, 0.0))
-    # fin above the fenestron and a horizontal stabiliser with end plates
-    box(-7.0, 2.5, 0, 0.75, 0.9, 0.1, red)
-    box(-6.95, 2.3, 0, 0.9, 0.2, 0.12, red)
-    box(-5.5, 1.72, 0, 0.55, 0.07, 1.9, wh)
+    _tri_parts(_loft(brings), lambda q: red if abs(q[1] - 1.78) < 0.05 and q[0] < -3.0 else wh, parts, lambda q: (q[0], 1.95, 0.0))
+    # swept vertical fin with the tail rotor gearbox, and the horizontal stabiliser with canted end plates
+    box(-7.05, 2.55, 0, 0.7, 0.85, 0.09, red)
+    box(-7.35, 2.95, 0, 0.45, 0.3, 0.08, red)
+    box(-7.25, 1.85, 0, 0.5, 0.35, 0.08, red)
+    box(-7.0, 2.15, -0.14, 0.22, 0.22, 0.2, grey)
+    box(-5.4, 2.0, 0, 0.6, 0.07, 2.2, wh)
     for sd in (-1, 1):
-        box(-5.5, 1.55, sd * 0.95, 0.6, 0.45, 0.05, red)
+        box(-5.45, 2.05, sd * 1.1, 0.62, 0.62, 0.05, red)
+    # engine cowling hump on the roof (two turbines side by side), oil-cooler grille at its back
+    cw = [(1.0, 0.30, 2.14, 2.24), (0.5, 0.50, 2.14, 2.48), (-0.6, 0.58, 2.14, 2.62), (-1.8, 0.56, 2.12, 2.58), (-2.5, 0.40, 2.0, 2.36), (-2.75, 0.2, 1.98, 2.2)]
+    crings = [_ring(hw, yb, yt, x, 16, 3.0) for x, hw, yb, yt in cw]
+    _tri_parts(_loft(crings), lambda q: wh, parts, lambda q: (q[0], 2.3, 0.0), True)
+    box(-2.1, 2.42, 0, 0.1, 0.18, 0.7, dark)
     # rotor mast, hub fairing, exhausts
-    _tri_parts(_tube((-1.0, 2.35, 0), (-1.0, 2.72, 0), 0.16, 12), lambda q: dark, parts, lambda q: (-1.0, q[1], 0.0))
+    _tri_parts(_tube((-0.6, 2.55, 0), (-0.6, 2.85, 0), 0.16, 12), lambda q: dark, parts, lambda q: (-1.0, q[1], 0.0))
     for sd in (-1, 1):
-        _tri_parts(_tube((-1.9, 2.25, sd * 0.32), (-2.35, 2.2, sd * 0.42), 0.11, 10), lambda q: dark, parts, lambda q: (q[0], 2.2, sd * 0.37))
+        _tri_parts(_tube((-2.2, 2.4, sd * 0.3), (-2.7, 2.42, sd * 0.36), 0.11, 10), lambda q: dark, parts, lambda q: (q[0], 2.41, sd * 0.33))
     # red crosses on both sides of the cabin and on the cowling
     for sd in (-1, 1):
         zs = sd * 0.985
         quad((-0.05, 1.42, zs), (0.8, 0, 0), (0, 0.22, 0), (0, 0, sd), red)
         quad((0.24, 1.13, zs), (0.22, 0, 0), (0, 0.8, 0), (0, 0, sd), red)
         quad((-0.3, 0.9, zs - sd * 0.005), (0.7, 0, 0), (0, 0.35, 0), (0, 0, sd), (225, 225, 230))   # sliding-door outline
-    box(0.6, 2.235, 0, 1.1, 0.03, 0.32, red)           # red cross on the cabin roof: what you see from above
-    box(0.6, 2.235, 0, 0.32, 0.03, 1.1, red)
+    box(1.6, 2.2, 0, 0.9, 0.03, 0.28, red)           # red cross on the cabin roof: what you see from above
+    box(1.6, 2.2, 0, 0.28, 0.03, 0.9, red)
     # skids: two tubes with upturned toes, two cross tubes, steps
     for sd in (-1, 1):
         z = sd * 1.05
@@ -957,25 +955,25 @@ def _heli_parts(body_c, A, box, quad, parts):
     _tri_parts(_tube((-0.9, 0.42, -0.7), (-0.9, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (-0.9, 0.42, q[2]))
     # lights: landing light under the nose, beacons, nav lights, searchlight
     box(2.55, 0.3, 0, 0.18, 0.1, 0.24, (255, 244, 180))
-    box(-0.9, 2.42, 0.45, 0.14, 0.12, 0.14, (240, 40, 40))
-    box(-6.95, 3.0, 0, 0.12, 0.08, 0.12, (240, 40, 40))
-    box(-5.5, 1.79, 0.95, 0.08, 0.06, 0.08, (40, 220, 60))
-    box(-5.5, 1.79, -0.95, 0.08, 0.06, 0.08, (240, 40, 40))
+    box(-1.6, 2.6, 0.0, 0.14, 0.12, 0.14, (240, 40, 40))
+    box(-7.5, 3.12, 0, 0.12, 0.08, 0.12, (240, 40, 40))
+    box(-5.45, 2.4, 1.1, 0.08, 0.06, 0.08, (40, 220, 60))
+    box(-5.45, 2.4, -1.1, 0.08, 0.06, 0.08, (240, 40, 40))
     box(2.4, 0.3, 0.55, 0.3, 0.22, 0.22, dark)
 
 
 def rotor_model(kind, tail=False):
-    """Spinning blades of the helicopter: 4 tapered, twisted blades and a hub about y at the mast, or the 10-blade
-    fenestron fan about z."""
+    """Spinning blades of the helicopter: 4 tapered, twisted blades and a hub about y at the mast, or the 2-blade
+    tail rotor about z."""
     parts = []
     dark, hub = np.array((38, 38, 42), np.float32), np.array((90, 92, 100), np.float32)
     tris = []
     if tail:
-        for i in range(10):
-            a = 2 * math.pi * i / 10
+        for i in range(2):                               # two-blade see-saw tail rotor (BK117)
+            a = math.pi * i
             c, s_ = math.cos(a), math.sin(a)
             pa = lambda r, w: (r * c - w * s_, r * s_ + w * c, 0.0)
-            tris += [(pa(0.08, -0.05), pa(0.58, -0.07), pa(0.58, 0.07)), (pa(0.08, -0.05), pa(0.58, 0.07), pa(0.08, 0.05))]
+            tris += [(pa(0.06, -0.09), pa(0.98, -0.07), pa(0.98, 0.07)), (pa(0.06, -0.09), pa(0.98, 0.07), pa(0.06, 0.09))]
         _tri_parts(tris, lambda q: dark, parts)
         _tri_parts(_tube((0, 0, -0.06), (0, 0, 0.06), 0.1, 10), lambda q: hub, parts)
     else:

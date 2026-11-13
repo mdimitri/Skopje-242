@@ -1069,9 +1069,9 @@ class Renderer:
                     if rm is None:
                         continue
                     if tail:
-                        L_ = rl.matrix_multiply(rl.matrix_rotate_z(rot * 1.7), rl.matrix_translate(-6.9, 1.9, 0.0))
+                        L_ = rl.matrix_multiply(rl.matrix_rotate_z(rot * 1.7), rl.matrix_translate(-7.0, 2.15, -0.32))
                     else:
-                        L_ = rl.matrix_multiply(rl.matrix_rotate_y(rot), rl.matrix_translate(-1.0, 2.78, 0.0))
+                        L_ = rl.matrix_multiply(rl.matrix_rotate_y(rot), rl.matrix_translate(-0.6, 2.9, 0.0))
                     oldr = _keep(rm.transform)
                     rm.transform = rl.matrix_multiply(L_, M)
                     rl.draw_model(rm, V3(0, 0, 0), 1.0, tint)
