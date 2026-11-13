@@ -936,3 +936,78 @@ class Renderer:
             fw = self.front_wheels.get(kind)
             if fw is None:
                 fw = self.front_wheels[kind] = gl3d.front_wheel(kind) if kind not in vehicles.FLY else (0, 0, 0, None)
+            wx, wr, hz, wm = fw
+            if wm is None:
+                continue
+            old = _keep(wm.transform)
+            sp_ = spin_[ckey] = (spin_.get(ckey, 0.0) + cspd * sdt_ / max(0.1, wr)) % 6.2831853       # rolled distance / radius: the rim turns
+            for sd in ((-hz, hz) if hz else (0.0,)):                             # front wheels turned about their own centres by the steering angle
+                wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang)),
+                                                                     rl.matrix_translate(wx, wr, sd)), M)
+                rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
+            wm.transform = old[0]
+            if True:                                         # the other axles: one model per axle, spun about its own centre
+                ra = self.rear_axle_models.get(kind)
+                if ra is None:
+                    ra = self.rear_axle_models[kind] = gl3d.rear_axles(kind)
+                for ax_, rr_, _z, am_ in ra:
+                    if am_ is None:
+                        continue
+                    old_a = _keep(am_.transform)
+                    am_.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M)
+                    rl.draw_model(am_, V3(0, 0, 0), 1.0, tint)
+                    am_.transform = old_a[0]
+        for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
+            key = ("door", b.kind, b.color)
+            m = self.car_models.get(key)
+            if m is None:
+                m = self.car_models[key] = gl3d.door_model(b.kind, b.color)
+            if m is None:
+                continue
+            hx, _dl = gl3d.door_geom(b.kind)
+            W = vehicles.DIMS[b.kind][1]
+            ang = -1.25 * b.door * (1.0 - 0.15 * (1.0 - b.door))
+            M = rl.matrix_multiply(rl.matrix_rotate_y(ang), rl.matrix_translate(hx, 0.0, -(W / 2 + 0.03)))
+            M = rl.matrix_multiply(M, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(b.roll), rl.matrix_rotate_z(b.pitch)),
+                                                                          rl.matrix_rotate_y(-b.h)), rl.matrix_translate(b.x, gy, b.y)))
+            old = _keep(m.transform)
+            m.transform = M
+            rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
+            m.transform = old[0]
+        for x, y, z, h, arch, tone, frame, skin, *ex in peds:
+            pm = self.ped_model(arch, tone, frame, skin)
+            if pm is not None:
+                if frame != 2 and len(ex) > 1 and self._near(x, z):
+                    Mp = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    self._proj_shadow(pm, Mp, ex[1], 60)
+                if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
+                    M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    old = _keep(pm.transform)
+                    pm.transform = M
+                    rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
+                    pm.transform = old[0]
+                else:
+                    rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
+        for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
+            if self._in(f[0], f[1], rect):
+                rl.rl_push_matrix()
+                rl.rl_translatef(f[0], f[2], f[1])
+                rl.rl_rotatef(f[6], 0.6, 0.3, 0.74)
+                rl.draw_cube(V3(0, 0, 0), f[8], f[9], f[8], rl.Color(f[10][0], f[10][1], f[10][2], 255))
+                rl.rl_pop_matrix()
+
+        # the player's marker shines through the bridge deck when they are underneath it
+        if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:
+            mx, mz, maz = sim.walker.x, sim.walker.y, sim.walker.az
+        elif sim.mode == "car" and sim.car is not None and sim.car.az is not None:
+            mx, mz, maz = sim.car.x, sim.car.y, sim.car.az
+        else:
+            return
+        dk = w.deck_h(mx, mz)
+        if dk is not None and maz < dk - 0.7:
+            rl.rl_draw_render_batch_active()
+            rl.rl_disable_depth_test()
+            rl.draw_cylinder(V3(mx, maz + 0.1, mz), 0.9, 0.9, 0.04, 20, rl.Color(255, 220, 60, 120))
+            rl.draw_circle_3d(V3(mx, maz + 0.16, mz), 1.2, V3(1, 0, 0), 90.0, rl.Color(255, 240, 120, 255))
+            rl.rl_draw_render_batch_active()
+            rl.rl_enable_depth_test()
