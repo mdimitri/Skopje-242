@@ -1307,7 +1307,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             rl.draw_rectangle((W - tw) // 2 - 12, H - 60, tw + 24, 34, rl.Color(0, 0, 0, 200))
             font.draw_text(msg, (W - tw) // 2, H - 54, 20, rl.WHITE)
         if music is not None:
-            music.widget()
+            music.widget(station_keys=False)
         rl.end_drawing()
         if job is not None and job.done and not getattr(job, "_evaluated", False) and scene.want is None:
             job._evaluated = True

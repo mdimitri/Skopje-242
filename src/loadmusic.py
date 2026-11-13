@@ -60,6 +60,8 @@ class LoadMusic:
         self.static = None
         self.job = None
         self.files = []
+        self.stations = []            # [(name, [paths])]: one per genre folder, like the car radio
+        self.sel = 0                  # station playing now
         self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
         self.pos = -1                 # index in hist of the song playing now
         self.paused = False
@@ -72,7 +74,8 @@ class LoadMusic:
             return
         try:
             stations, _ = radio.scan()
-            self.files = [p for _name, ps in stations for p in ps]
+            self.stations = stations
+            self.files = list(stations[0][1]) if stations else []
             if not self.files:
                 return
             if not rl.is_audio_device_ready():
@@ -189,6 +192,24 @@ class LoadMusic:
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
+    def station(self, d):
+        """Q / E: previous / next station (genre folder).  The old song plays on until the new station's first one is ready."""
+        if not self.ok or len(self.stations) < 2:
+            return
+        try:
+            self.sel = (self.sel + d) % len(self.stations)
+            self.files = list(self.stations[self.sel][1])
+            self.hist, self.pos, self.want = [], -1, None
+            self.stopped = False
+            self.job = None
+            self._next()
+            self.swap = True
+            rl.set_sound_volume(self.static, 0.2 * self.volume)
+            rl.play_sound(self.static)
+        except Exception as e:  # noqa: BLE001
+            print(f"[loadmusic] off: {e}", flush=True)
+            self.ok = False
+
     def toggle(self):
         """Pause / resume (after ■ it starts a new song)."""
         if not self.ok:
@@ -217,7 +238,7 @@ class LoadMusic:
         self._drop()
         self.title = ""
 
-    def widget(self, x=12, y=10, keys=True, room=360):
+    def widget(self, x=12, y=10, keys=True, room=360, station_keys=True):
         """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
         if not self.ok:
             return
@@ -257,6 +278,15 @@ class LoadMusic:
             rl.draw_rectangle(tip[0], y + b + 10, tx + 12, 26, rl.Color(10, 8, 16, 220))
             font.draw_text(tip[1], tip[0] + 6, y + b + 12, 20, rl.WHITE, bold="cond")
         font.draw_text(name, x + lw + 12, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
+        if len(self.stations) > 1:                               # station name + keys, in a small line under the bar
+            font.draw_text(font.fit(f"{self.stations[self.sel][0]}   [Q/E] станица", 18, max(80, room)), x + 4, y + b + 12, 18,
+                           rl.Color(255, 255, 255, 200), bold="cond")
+            if not station_keys:
+                pass
+            elif rl.is_key_pressed(rl.KEY_E):
+                self.station(1)
+            elif rl.is_key_pressed(rl.KEY_Q):
+                self.station(-1)
         if not keys:                                             # (screens where the arrows already move the selection)
             return
         if rl.is_key_pressed(rl.KEY_LEFT):
