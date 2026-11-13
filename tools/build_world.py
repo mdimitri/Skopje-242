@@ -1276,7 +1276,9 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         def setback(u0, u1, y0):
             return next((st_[3] for st_ in steps_ if st_[0] <= (u0 + u1) / 2 < st_[1] and y0 >= st_[2] - 0.01), 0.0)
         gcols = set(gf["cols"]) if gf else set()
-        Dg = [[(d_ + (gf["d"] if ci in gcols and y1 <= gf["y"] + 0.05 else 0.0) + setback(_u0, _u1, y0)) for y0, y1 in zip(cuts[:-1], cuts[1:])]
+        # Skopje has no hollow volumes: above the ground storey a wall may stand back by a reveal or a shallow loggia only (a deeper
+        # recess leaves the roof slab overhanging empty air, the glass-facade-over-void look); the arcade below keeps its depth
+        Dg = [[(max(-1.5, d_ + setback(_u0, _u1, y0)) + (gf["d"] if ci in gcols and y1 <= gf["y"] + 0.05 else 0.0)) for y0, y1 in zip(cuts[:-1], cuts[1:])]
               for ci, (_u0, _u1, _pi, _g, d_) in enumerate(cols)]
         for ci, (u0, u1, pi, gpi, _d) in enumerate(cols):
             if pi >= len(params) or u1 - u0 < 0.05:

@@ -164,7 +164,14 @@ class World:
 
         # fire escapes / roofs / jump ramps: 8 m hash of walkable surfaces for foot and bike riders (see tools/escapes.py)
         self.pg2 = {}
-        for pl in getattr(self, "plats", ()):
+        plats = list(getattr(self, "plats", ()))
+        have = {(round(pl[1][0][0], 1), round(pl[1][0][1], 1)) for pl in plats if pl[0] == 1}
+        for b in getattr(self, "buildings", ()):                    # every other roof is solid too: a fall from a taller roof lands on it, not in it
+            ring = b["ring"]
+            if b["h"] >= 2.5 and len(ring) >= 3 and (round(ring[0][0], 1), round(ring[0][1], 1)) not in have:
+                gy = sum(self.th(x, y) for x, y in ring) / len(ring)
+                plats.append((1, [(float(x), float(y)) for x, y in ring], float(gy + b["h"])))
+        for pl in plats:
             if pl[0] == 0:
                 r = math.hypot(pl[5], pl[6])
                 x0, x1, y0, y1 = pl[1] - r, pl[1] + r, pl[2] - r, pl[2] + r
