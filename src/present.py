@@ -32,9 +32,10 @@ void main() {
 }
 """
 
-MARGIN = 1
+MARGIN = 2
 
 _orig_w, _orig_h, _orig_w2s = rl.get_screen_width, rl.get_screen_height, rl.get_world_to_screen
+_orig_w2s_ex = rl.get_world_to_screen_ex
 vw = vh = 0                      # 0 = off: the helpers answer with the window
 pending_quit = False             # the exit button was pressed while the frame buffer was active
 
@@ -60,6 +61,37 @@ def off():
     vw = vh = 0
     rl.set_mouse_scale(1.0, 1.0)
     rl.set_mouse_offset(0, 0)
+
+
+def snap_cam(cam, w, h):
+    """Free (street, chase, indoor) camera -> (camera snapped to the pixel lattice, (sx, sy) shift in buffer pixels).
+    The view direction is rounded to whole pixels of the picture centre and the position to whole pixels at the distance of the
+    look-at point (sideways and up only); the shift is where the true camera would show that point relative to the snapped one."""
+    import math
+    P, T = cam.position, cam.target
+    fx, fy, fz = T.x - P.x, T.y - P.y, T.z - P.z
+    D = math.sqrt(fx * fx + fy * fy + fz * fz)
+    if D < 1e-3:
+        return cam, (0.0, 0.0)
+    f = (h / 2) / math.tan(math.radians(cam.fovy) / 2)
+    q = 1.0 / f
+    yq = round(math.atan2(fx, fz) / q) * q
+    pq = round(math.asin(max(-0.999, min(0.999, fy / D))) / q) * q
+    cp = math.cos(pq)
+    F = (math.sin(yq) * cp, math.sin(pq), math.cos(yq) * cp)
+    R = (F[2] / cp, 0.0, -F[0] / cp)                                   # F x up, normalised
+    U = (R[1] * F[2] - R[2] * F[1], R[2] * F[0] - R[0] * F[2], R[0] * F[1] - R[1] * F[0])
+    U = (-U[0], -U[1], -U[2]) if U[1] < 0 else U
+    step = D / f
+    a = P.x * R[0] + P.z * R[2]
+    b = P.x * U[0] + P.y * U[1] + P.z * U[2]
+    da, db = round(a / step) * step - a, round(b / step) * step - b
+    P2 = rl.Vector3(P.x + da * R[0] + db * U[0], P.y + db * U[1], P.z + da * R[2] + db * U[2])
+    T2 = rl.Vector3(P2.x + F[0] * D, P2.y + F[1] * D, P2.z + F[2] * D)
+    cam2 = rl.Camera3D(P2, T2, cam.up, cam.fovy, cam.projection)
+    p = _orig_w2s_ex(T, cam2, w, h)
+    m = MARGIN - 0.1
+    return cam2, (max(-m, min(m, w / 2 - p.x)), max(-m, min(m, h / 2 - p.y)))
 
 
 class Present:

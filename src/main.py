@@ -1971,6 +1971,9 @@ def main():
             cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
         sf_on = sf_on or ch_on
+        if cfg["scale"] == 0 and sf_on:             # the free cameras too: orientation and sideways position on the pixel lattice, the rest as a shift
+            cam, shf_ = present_mod.snap_cam(cam, sw, sh)
+            present.set_shift(*shf_)
         near_sv = 0.1
         if sf_on:                    # the street views' near plane: as far out as the avatar allows (0.1 m gave ~10 cm depth steps at 400 m: walls flickered)
             o_ = sim.car if sim.mode == "car" and sim.car is not None else sim.walker
