@@ -815,8 +815,8 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
 
 
 _HELI_ST = [   # fuselage stations (x, half width, bottom y, top y), nose to the clamshell doors (MBB/Kawasaki BK117)
-    (2.70, 0.50, 0.62, 1.50), (2.60, 0.72, 0.50, 1.80), (2.40, 0.86, 0.44, 2.00), (2.05, 0.94, 0.42, 2.12),
-    (1.50, 0.96, 0.42, 2.16), (0.70, 0.97, 0.42, 2.18), (-0.20, 0.97, 0.44, 2.18), (-1.00, 0.96, 0.48, 2.17), (-1.70, 0.94, 0.56, 2.15),
+    (3.10, 0.34, 0.74, 1.22), (3.00, 0.55, 0.58, 1.42), (2.80, 0.72, 0.48, 1.62), (2.50, 0.85, 0.43, 1.83), (2.10, 0.93, 0.42, 2.00),
+    (1.60, 0.96, 0.42, 2.11), (1.10, 0.97, 0.42, 2.16), (0.70, 0.97, 0.42, 2.18), (-0.20, 0.97, 0.44, 2.18), (-1.00, 0.96, 0.48, 2.17), (-1.70, 0.94, 0.56, 2.15),
     (-2.20, 0.90, 0.70, 2.12), (-2.45, 0.84, 0.86, 2.08), (-2.60, 0.70, 1.10, 2.02), (-2.70, 0.40, 1.45, 1.98)]
 
 
@@ -885,11 +885,14 @@ def _heli_parts(body_c, A, box, quad, parts):
     rings = [_ring(hw, yb, yt, x) for x, hw, yb, yt in xs]
     x0, hw0, yb0, yt0 = st[0]                           # blunt, rounded bubble nose: a shrunken cap ring, then the centre
     ym = (yb0 + yt0) / 2
-    cap = _ring(hw0 * 0.75, ym - (yt0 - yb0) * 0.38, ym + (yt0 - yb0) * 0.38, x0 + 0.05)
-    tip = [(x0 + 0.07, ym, 0.0)] * len(rings[0])
-    hull = _loft([tip, cap] + rings)
+    hh0 = (yt0 - yb0) / 2
+    caps = [_ring(hw0 * k, ym - 0.02 - hh0 * k, ym - 0.02 + hh0 * k, x0 + 0.16 * math.sqrt(1 - k * k)) for k in (0.3, 0.6, 0.85)]
+    tip = [(x0 + 0.16, ym - 0.02, 0.0)] * len(rings[0])    # rounded radome dome
+    hull = _loft([tip] + caps + rings)
 
     def at(x):                                         # hull section at x (linear between stations)
+        if x >= xs[0][0]:
+            return xs[0][1:]
         for (x0, *a0), (x1, *a1) in zip(xs, xs[1:]):
             if x1 <= x <= x0:
                 t = (x0 - x) / (x0 - x1)
@@ -900,9 +903,13 @@ def _heli_parts(body_c, A, box, quad, parts):
         x, y, z = q
         hw, yb, yt = at(x)
         f = (y - yb) / max(0.01, yt - yb)
-        if x > 1.85 and f > 0.14 and not (f > 0.92 and x < 2.4) and not (x > 2.74 and 0.3 < f < 0.7):
-            return glass                                   # big bubble windscreen down to deep chin windows
-        if (0.95 < x < 1.85 or -0.75 < x < -0.15) and 0.58 < f < 0.84 and abs(z) > hw * 0.8:
+        if x > 3.02:
+            return wh                                      # radome nose cap
+        if 1.15 < x and f > 0.44 and not (f > 0.93 and x < 1.9):
+            return glass                                   # long sloping windscreen running down to the low nose
+        if x > 2.15 and 0.14 < f < 0.38 and abs(z) > 0.18:
+            return glass                                   # chin windows either side of the nose
+        if (0.6 < x < 1.15 or -0.75 < x < -0.15) and 0.58 < f < 0.84 and abs(z) > hw * 0.8:
             return glass                                   # cockpit door and rear cabin windows
         if 0.30 < f < 0.42 and x > -2.4:
             return red                                     # livery stripe
@@ -954,12 +961,12 @@ def _heli_parts(body_c, A, box, quad, parts):
     _tri_parts(_tube((1.2, 0.42, -0.7), (1.2, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (1.2, 0.42, q[2]))
     _tri_parts(_tube((-0.9, 0.42, -0.7), (-0.9, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (-0.9, 0.42, q[2]))
     # lights: landing light under the nose, beacons, nav lights, searchlight
-    box(2.55, 0.3, 0, 0.18, 0.1, 0.24, (255, 244, 180))
+    box(2.7, 0.44, 0, 0.18, 0.1, 0.24, (255, 244, 180))
     box(-1.6, 2.6, 0.0, 0.14, 0.12, 0.14, (240, 40, 40))
     box(-7.5, 3.12, 0, 0.12, 0.08, 0.12, (240, 40, 40))
     box(-5.45, 2.4, 1.1, 0.08, 0.06, 0.08, (40, 220, 60))
     box(-5.45, 2.4, -1.1, 0.08, 0.06, 0.08, (240, 40, 40))
-    box(2.4, 0.3, 0.55, 0.3, 0.22, 0.22, dark)
+    box(2.3, 0.34, 0.55, 0.3, 0.2, 0.22, dark)
 
 
 def rotor_model(kind, tail=False):
