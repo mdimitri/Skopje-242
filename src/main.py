@@ -995,6 +995,8 @@ def main():
             elif kind == "station":                                  # petrol station / car wash service (stations.py)
                 aud.play(d.get("snd", "cash"), 0.6, 0.9)
                 hud.set_banner(d["text"], 3.0)
+            elif kind == "heli_land":                                # F in mid-air: not in text/ yet (hand-edited folder)
+                hud.set_banner("Прво слетај, па излези!", 2.5)
             elif kind == "fuel_low":
                 aud.play("fuel_warning", 0.6, 0.9)
                 hud.set_banner(TXT("main.0016"), 3.0)
@@ -1435,7 +1437,17 @@ def main():
         aud.update()
         aud.set_zoom(max(0.0, min(1.0, (math.log(max(ppm, 1.0)) - math.log(3.0)) / (math.log(40.0) - math.log(3.0)))))        # camera height -> how much street / how much city bed
         tf = min(1.5, sim.clock.traffic) / 1.5
-        if sim.mode == "car":
+        hb_, hv_ = None, 0.0                                     # helicopter rotor: the loudest spinning one around
+        for b_ in sim.bodies:
+            if b_.kind in vehicles.FLY and b_.rpm > 0.02:
+                v_ = b_.rpm * max(0.0, 1.0 - math.hypot(b_.x - fx_, b_.y - fy_) / 400.0) ** 2
+                if v_ > hv_:
+                    hb_, hv_ = b_, v_
+        aud.loop("rotor", 0.9 * hv_, 0.55 + 0.45 * hb_.rpm if hb_ is not None else 1.0, "engine")
+        if sim.mode == "car" and sim.car.kind in vehicles.FLY:
+            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+                aud.loop(nm, 0.0)
+        elif sim.mode == "car":
             c = sim.car
             fr = min(1.0, c.speed / vehicles.PERF[c.kind][0])
             prof = vehicles.ENGINE_SOUND[c.kind]

@@ -371,7 +371,7 @@ HELI_PADS = [   # (lat, lon, name): hospital helipads, one medical helicopter ea
 def fly(p, inp, dt, w):
     """Helicopter: W/S speed, A/D turn, Space climb, Shift descend. Unpiloted ones settle onto the ground."""
     VMAX, ACC, STEER, _G, _M = vehicles.PERF[p.kind]
-    ground = w.ground_y(p.x, p.y)
+    ground = _heli_floor(p, w)
     if p.az is None:
         p.az, p.vz = ground, 0.0
     pilot = p.player_car and inp is not None and p.alive
@@ -400,11 +400,48 @@ def fly(p, inp, dt, w):
     else:
         vf *= math.exp(-3.0 * dt)
     p.vx, p.vy = math.cos(p.h) * vf, math.sin(p.h) * vf
+    ox, oy = p.x, p.y
     p.x += p.vx * dt
     p.y += p.vy * dt
+    hit = 0.0
+    if abs(vf) > 0.01:                                          # a building taller than the skids: it stops dead
+        L = vehicles.HALF_L[p.kind]
+        c, s_ = math.cos(p.h), math.sin(p.h)
+        if any((_bld_top(w, p.x + c * k, p.y + s_ * k) or -1e9) > p.az + 0.3 for k in (L * 0.55, 0.0, -L * 0.85)):
+            p.x, p.y = ox, oy
+            hit = abs(vf)
+            p.vx = p.vy = 0.0
     p.pitch += (-0.22 * vf / VMAX - p.pitch) * min(1.0, 3 * dt)
     p.roll += (p.steer * 0.3 * min(1.0, abs(vf) / 20.0) - p.roll) * min(1.0, 3 * dt)
     p.air = alt > 0.5
+    return hit
+
+
+def _heli_floor(p, w):
+    """Ground or the roof under the helicopter (it may land on flat roofs)."""
+    g = w.ground_y(p.x, p.y)
+    r = _bld_top(w, p.x, p.y)
+    if r is not None and p.az is not None and g < r <= p.az + 0.7:
+        return r
+    return g
+
+
+def _bld_top(w, x, y):
+    """Absolute roof height of the building at (x, y), or None. A 16 m grid of footprints, built once per world."""
+    g = getattr(w, "_heli_bg", None)
+    if g is None:
+        g = w._heli_bg = {}
+        for b in getattr(w, "buildings", ()):
+            x0, y0, x1, y1 = b["bb"]
+            top = w.ground_y((x0 + x1) / 2, (y0 + y1) / 2) + b["h"]
+            for cx in range(int(x0 // 16), int(x1 // 16) + 1):
+                for cy in range(int(y0 // 16), int(y1 // 16) + 1):
+                    g.setdefault((cx, cy), []).append((b["bb"], b["ring"], top))
+    best = None
+    for (x0, y0, x1, y1), ring, top in g.get((int(x // 16), int(y // 16)), ()):
+        if x0 <= x <= x1 and y0 <= y <= y1 and (best is None or top > best) and w._in_ring(x, y, ring):
+            best = top
+    return best
 
 
 def settle(b, w, dt, ev=None):
@@ -2399,9 +2436,11 @@ class Sim:
             x, y = geo.project(lat, lon)
             if abs(x) > self.w.hx - 30 or abs(y) > self.w.hy - 30:
                 continue
-            self.helipads.append((x, y))
+            top = _bld_top(self.w, x, y)                       # inside a hospital footprint: the pad is on its roof
+            z = max(self.w.ground_y(x, y), top if top is not None else -1e9)
+            self.helipads.append((x, y, z))
             b = Body(x, y, -math.pi / 2, vehicles.HELI, 0)
-            b.az = self.w.ground_y(x, y)
+            b.az = z
             b.fuel = 1.0
             self.bodies.append(b)
 
@@ -3103,8 +3142,11 @@ class Sim:
             for _ in range(steps):
                 sdt = dt / steps
                 if c.kind in vehicles.FLY:
-                    fly(c, inp, sdt, w)
+                    hit = fly(c, inp, sdt, w)
                     thr = 0.0
+                    if hit > 2.0:
+                        ev("crash", body=c, kind="wall", impact=hit, x=c.x, y=c.y, nx=-math.cos(c.h), ny=-math.sin(c.h))
+                        bump(c, hit, c.x + math.cos(c.h) * vehicles.HALF_L[c.kind], c.y + math.sin(c.h) * vehicles.HALF_L[c.kind], -math.cos(c.h), -math.sin(c.h))
                 elif ride:
                     drive(c, *(c.ctl if c.ctl is not None else (0.0, 0.0, True)), sdt, w)
                     thr = 0.0

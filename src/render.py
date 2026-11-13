@@ -737,9 +737,9 @@ class Renderer:
                     m = self.wreck_models[key] = gl3d.wreck_model(bk, seed)
                 if m is not None:
                     rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
-        for hx_, hy_ in getattr(sim, "helipads", ()):        # hospital helipads: grey disc with a white ring and H
+        for hx_, hy_, hz_ in getattr(sim, "helipads", ()):        # hospital helipads: grey disc with a white ring and H
             if self._in(hx_, hy_, rect):
-                g_ = w.ground_y(hx_, hy_) + 0.06
+                g_ = hz_ + 0.06
                 rl.draw_cylinder(V3(hx_, g_, hy_), 8.0, 8.0, 0.05, 28, rl.Color(96, 98, 104, 255))
                 rl.draw_cylinder(V3(hx_, g_ + 0.04, hy_), 6.6, 6.6, 0.03, 28, rl.Color(236, 236, 240, 255))
                 rl.draw_cylinder(V3(hx_, g_ + 0.06, hy_), 6.2, 6.2, 0.03, 28, rl.Color(96, 98, 104, 255))
