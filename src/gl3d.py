@@ -815,8 +815,8 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
 
 
 _HELI_ST = [   # fuselage stations (x, half width, bottom y, top y), nose to the start of the tail boom (EC135-like)
-    (3.50, 0.44, 0.70, 1.40), (3.40, 0.66, 0.52, 1.66), (3.18, 0.82, 0.43, 1.88), (2.85, 0.91, 0.39, 2.04), (2.30, 0.96, 0.37, 2.15),
-    (1.60, 0.97, 0.36, 2.18), (0.80, 0.98, 0.36, 2.20), (0.00, 0.97, 0.38, 2.24), (-0.70, 0.93, 0.44, 2.40), (-1.40, 0.84, 0.56, 2.42),
+    (2.78, 0.52, 0.44, 1.60), (2.68, 0.74, 0.34, 1.88), (2.48, 0.88, 0.30, 2.06), (2.12, 0.95, 0.30, 2.15),
+    (1.60, 0.97, 0.32, 2.18), (0.80, 0.98, 0.36, 2.20), (0.00, 0.97, 0.38, 2.24), (-0.70, 0.93, 0.44, 2.40), (-1.40, 0.84, 0.56, 2.42),
     (-2.00, 0.68, 0.78, 2.30), (-2.55, 0.48, 1.08, 2.10), (-3.00, 0.30, 1.32, 1.92)]
 
 
@@ -885,8 +885,8 @@ def _heli_parts(body_c, A, box, quad, parts):
     rings = [_ring(hw, yb, yt, x) for x, hw, yb, yt in xs]
     x0, hw0, yb0, yt0 = st[0]                           # blunt, rounded bubble nose: a shrunken cap ring, then the centre
     ym = (yb0 + yt0) / 2
-    cap = _ring(hw0 * 0.55, ym - (yt0 - yb0) * 0.28, ym + (yt0 - yb0) * 0.28, x0 + 0.07)
-    tip = [(x0 + 0.1, ym, 0.0)] * len(rings[0])
+    cap = _ring(hw0 * 0.75, ym - (yt0 - yb0) * 0.38, ym + (yt0 - yb0) * 0.38, x0 + 0.05)
+    tip = [(x0 + 0.07, ym, 0.0)] * len(rings[0])
     hull = _loft([tip, cap] + rings)
 
     def at(x):                                         # hull section at x (linear between stations)
@@ -900,10 +900,8 @@ def _heli_parts(body_c, A, box, quad, parts):
         x, y, z = q
         hw, yb, yt = at(x)
         f = (y - yb) / max(0.01, yt - yb)
-        if x > 3.42:
-            return wh                                      # nose cap (radar / avionics bay)
-        if x > 2.05 and f > 0.5 and not (f > 0.93 and x < 2.5):
-            return glass                                   # wrap-round windscreen
+        if x > 1.85 and f > 0.14 and not (f > 0.92 and x < 2.4) and not (x > 2.74 and 0.3 < f < 0.7):
+            return glass                                   # big bubble windscreen down to deep chin windows
         if (0.95 < x < 1.85 or -0.75 < x < -0.15) and 0.58 < f < 0.84 and abs(z) > hw * 0.8:
             return glass                                   # cockpit door and rear cabin windows
         if 0.30 < f < 0.42 and x > -2.4:
@@ -958,7 +956,7 @@ def _heli_parts(body_c, A, box, quad, parts):
     _tri_parts(_tube((1.2, 0.42, -0.7), (1.2, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (1.2, 0.42, q[2]))
     _tri_parts(_tube((-0.9, 0.42, -0.7), (-0.9, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (-0.9, 0.42, q[2]))
     # lights: landing light under the nose, beacons, nav lights, searchlight
-    box(3.1, 0.42, 0, 0.18, 0.1, 0.24, (255, 244, 180))
+    box(2.55, 0.3, 0, 0.18, 0.1, 0.24, (255, 244, 180))
     box(-0.9, 2.42, 0.45, 0.14, 0.12, 0.14, (240, 40, 40))
     box(-6.95, 3.0, 0, 0.12, 0.08, 0.12, (240, 40, 40))
     box(-5.5, 1.79, 0.95, 0.08, 0.06, 0.08, (40, 220, 60))
