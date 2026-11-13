@@ -569,6 +569,14 @@ class Transit:
         nx, ny = -ddy / dd, ddx / dd
         w = self.sim.w
         right, hw = self._lane(ln, j)                               # centre of the rightmost lane, half the road
+        kb = bus.i                                                  # the vertex just behind the bus: where the road is now
+        while kb > 0 and ln.cum[kb] > s_bus:
+            kb -= 1
+        while kb < len(ln.pts) - 2 and ln.cum[kb + 1] <= s_bus:
+            kb += 1
+        if kb < j:                                                  # a road that widens or forks gives the wider lane only from
+            r_b, hw_b = self._lane(ln, kb)                          # its own vertex on: don't drift out before it (onto the pavement);
+            right, hw = min(right, r_b), min(hw, hw_b)              # narrowing is still anticipated from the look-ahead
         off = max(right, hw - vehicles.DIMS[b.kind][1] / 2 - 0.4) if bus.next_stop - s_bus < 40.0 else right
         while off > 0.5 and hasattr(w, "kerb") and w.kerb(tx + nx * (off + 1.3), ty + ny * (off + 1.3)):
             off -= 0.5                                              # narrow street: don't scrape the pavement
