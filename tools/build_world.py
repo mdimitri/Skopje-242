@@ -1936,7 +1936,7 @@ def _bld_job(job):
     if proof is not None:
         for m_, *g in proof:
             badd(m_, *g)
-    if proof is not None and roof_fit.get("kind") == "flat":
+    if proof is not None and (roof_fit.get("kind") == "flat" or not any(m_ == MAT_ROOF and len(g_[0]) for m_, *g_ in proof)):   # (a pitched fit with no roof pieces, e.g. rise < 0.3 m, is a flat roof: never an open top)
         for hole in holes:
             hw_ = walls(hole[::-1], h, wallc, np.full(len(hole), -skirt, np.float32), fh, bw)
             if hw_:
