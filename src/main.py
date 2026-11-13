@@ -1010,6 +1010,8 @@ def main():
             elif kind == "station":                                  # petrol station / car wash service (stations.py)
                 aud.play(d.get("snd", "cash"), 0.6, 0.9)
                 hud.set_banner(d["text"], 3.0)
+            elif kind == "heli_board":                               # each time you get in: how to fly it (also on the left while flying)
+                hud.set_banner("Почекај роторот, Space искачи, Shift спушти, W/S напред, A/D сврти", 6.0)
             elif kind == "heli_land":                                # F in mid-air: not in text/ yet (hand-edited folder)
                 hud.set_banner("Прво слетај, па излези!", 2.5)
             elif kind == "fuel_low":
@@ -1925,6 +1927,8 @@ def main():
         speed = math.hypot(fvx, fvy)
         if sim.mode == "car":
             tgt_ppm = (sw / 100.0) * (10.5 - 2.3 * min(speed / 32.0, 1.0)) / 10.5 * user_zoom * cfg["zoom_car"]   # zoom 1 = 100 m of ground across the frame (sw = the frame buffer width, not the window)
+            if sim.car is not None and sim.car.kind in vehicles.FLY:
+                tgt_ppm *= 0.7                                   # the helicopter is big and fast: see more round it
         else:
             tgt_ppm = (sw / 60.0) * user_zoom * cfg["zoom_walk"]                                                 # zoom 1 = 60 m across
         tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)

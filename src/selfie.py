@@ -10,6 +10,7 @@ import time
 import pyray as rl
 
 import font
+import vehicles
 import poi
 
 V3 = rl.Vector3
@@ -130,7 +131,8 @@ class Selfie:
         self.cy_ = getattr(self, "cy_", tgt) + d * min(1.0, 5.0 * dt)
         h = self.cy_
         az = o.az if o.az is not None else world.ground_y(o.x, o.y)
-        back, up, ahead = (8.0, 5.5, 3.0) if sim.mode == "car" else (4.5, 3.6, 2.0)   # pitched ~25 deg down: horizon near the top edge
+        heli = sim.mode == "car" and sim.car is not None and sim.car.kind in vehicles.FLY
+        back, up, ahead = (17.0, 8.5, 5.0) if heli else (8.0, 5.5, 3.0) if sim.mode == "car" else (4.5, 3.6, 2.0)   # pitched ~25 deg down: horizon near the top edge
         h += getattr(self, "look_yaw", 0.0)                # mouse free-look orbit (0 when the mouse steers)
         lp = getattr(self, "look_pitch", 0.0)
         up += max(lp, 0.0) * back
@@ -153,7 +155,7 @@ class Selfie:
             cy_ = min(cy_, az + 4.1)                       # under the mall's ceiling
         cam = rl.Camera3D(V3(px, cy_, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
-        f = VIEW * 2.25                                    # drawn out to the low-quality ring
+        f = VIEW * 2.25 * (2.0 if heli else 1.0)           # drawn out to the low-quality ring (twice as far from a helicopter)
         return cam, (o.x - f, o.y - f, o.x + f, o.y + f)
 
     def sky(self, cam, dark, hour, t, sw, sh):

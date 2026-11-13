@@ -400,6 +400,41 @@ class Renderer:
         """On screen: its shadow is the projected mesh (see _proj_shadow), not the parallelogram."""
         return self.shadows and (x - self._sh_c[0]) ** 2 + (z - self._sh_c[1]) ** 2 < self._sh_r2
 
+    def _heli_wind(self, sim):
+        """Flying: air streaks fixed in the world round the helicopter, so they stream past against the travel direction
+        (climb and descent included); more and longer the faster you go."""
+        c = sim.car
+        pts = getattr(self, "_wind", None)
+        if pts is None:
+            pts = self._wind = []
+        if sim.mode != "car" or c is None or c.kind not in vehicles.FLY or c.az is None:
+            pts.clear()
+            return
+        vx, vy, vz = c.vx, c.vy, getattr(c, "vz", 0.0)
+        sp = math.sqrt(vx * vx + vy * vy + vz * vz)
+        now = time.time()
+        n_want = int(min(140, sp * 4.0)) if sp > 2.0 else 0
+        rnd = np.random.random
+        while len(pts) < n_want:                              # new streaks ahead of / round the machine, where it is going
+            lead = 0.6
+            pts.append([c.x + vx * lead + (rnd() - 0.5) * 50, c.y + vy * lead + (rnd() - 0.5) * 50,
+                        c.az + 1.5 + vz * lead + (rnd() - 0.5) * 18, now + 0.5 + rnd() * 0.9, now])
+        del pts[n_want:]
+        if sp < 0.1:
+            return
+        L = min(6.0, 0.12 * sp + 0.4)                          # streak length grows with speed
+        ux, uy, uz = vx / sp, vy / sp, vz / sp
+        keep = []
+        for q in pts:
+            if now > q[3] or (q[0] - c.x) ** 2 + (q[1] - c.y) ** 2 > 45 ** 2:
+                continue
+            keep.append(q)
+            a = int(210 * min(1.0, (now - q[4]) / 0.2) * min(1.0, (q[3] - now) / 0.3))
+            col_ = rl.Color(240, 246, 255, a)
+            for o_ in (0.0, 0.06):                                # two lines side by side: visible from high up
+                rl.draw_line_3d(V3(q[0] + o_, q[2], q[1]), V3(q[0] + o_ - ux * L, q[2] - uz * L, q[1] - uy * L), col_)
+        pts[:] = keep
+
     def _proj_shadow(self, m, M, gy, a):
         """Shadow of the real mesh: every vertex slid along the sun direction down onto the ground plane (a shear), drawn flat dark.
         Depth writes stay on, so where limbs / body / trailer overlap the shadow is not darkened twice."""
@@ -838,6 +873,7 @@ class Renderer:
                 rl.draw_cube(V3(hx_, g_ + 0.1, hy_), 0.8, 0.04, 4.0, rl.Color(236, 236, 240, 255))
                 rl.draw_cube(V3(hx_ - 1.4, g_ + 0.1, hy_), 0.8, 0.04, 4.0, rl.Color(236, 236, 240, 255))
                 rl.draw_cube(V3(hx_ - 0.7, g_ + 0.1, hy_), 2.2, 0.04, 0.8, rl.Color(236, 236, 240, 255))
+        self._heli_wind(sim)
         st_ = getattr(sim, "heli_stairs", None)
         if st_:                                                       # steel stairs up to the roof helipads
             if getattr(self, "_stairs_m", None) is None:
@@ -871,7 +907,8 @@ class Renderer:
                 if b.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll, getattr(b, "tgz", None), getattr(b, "tpitch", None), getattr(b, "troll", None), id(b))
                 elif not self._near(b.x, b.y):
-                    sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80, gy, vehicles.DIMS[b.kind][4]))
+                    sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80,
+                               actors._heli_floor(b, w) if b.kind in vehicles.FLY else gy, vehicles.DIMS[b.kind][4]))
         # peds
         peds = []
         far2 = 90.0 ** 2 if self._ppm < 4.0 else 1e18                  # zoomed far out, people beyond 90 m from the view centre are 1-2 pixel dots: not worth a draw call each
@@ -999,8 +1036,15 @@ class Renderer:
                 continue
             M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(roll), rl.matrix_rotate_z(pitch)),
                                                       rl.matrix_rotate_y(-h)), rl.matrix_translate(x, gy, z))
+            hf_ = None
+            if kind in vehicles.FLY:                             # helicopter: the shadow falls on the ground or roof below it
+                hb_ = next((b_ for b_ in sim.bodies if id(b_) == ckey), None)
+                hf_ = self.w.ground_y(x, z)
+                rt_ = actors._bld_top(self.w, x, z)
+                if rt_ is not None and rt_ <= gy + 0.7:
+                    hf_ = max(hf_, rt_)
             if self._near(x, z):
-                self._proj_shadow(m, M, self.w.ground_y(x, z) if kind in vehicles.FLY else gy, 75)
+                self._proj_shadow(m, M, hf_ if hf_ is not None else gy, 75)
             if col is not None and fr is not None and kind not in vehicles.BIKES and kind not in vehicles.FLY:
                 px, py, pz = fr.p
                 if vehicles.DIMS[kind][0] * fr.fpx < self.LOD_PX * math.sqrt((x - px) ** 2 + (gy - py) ** 2 + (z - pz) ** 2):
@@ -1025,12 +1069,14 @@ class Renderer:
                     if rm is None:
                         continue
                     if tail:
-                        L_ = rl.matrix_multiply(rl.matrix_rotate_z(rot * 1.7), rl.matrix_translate(-6.9, 1.9, 0.2))
+                        L_ = rl.matrix_multiply(rl.matrix_rotate_z(rot * 1.7), rl.matrix_translate(-6.9, 1.9, 0.0))
                     else:
-                        L_ = rl.matrix_multiply(rl.matrix_rotate_y(rot), rl.matrix_translate(-1.0, 2.5, 0.0))
+                        L_ = rl.matrix_multiply(rl.matrix_rotate_y(rot), rl.matrix_translate(-1.0, 2.78, 0.0))
                     oldr = _keep(rm.transform)
                     rm.transform = rl.matrix_multiply(L_, M)
                     rl.draw_model(rm, V3(0, 0, 0), 1.0, tint)
+                    if hf_ is not None and self._near(x, z):
+                        self._proj_shadow(rm, rm.transform, hf_, 55)
                     rm.transform = oldr[0]
             fw = self.front_wheels.get(kind)
             if fw is None:

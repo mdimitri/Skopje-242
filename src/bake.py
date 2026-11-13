@@ -389,7 +389,7 @@ class Streamer:
             if n:
                 ys = pos[:, 1]
                 part[2], part[3] = min(part[2], float(ys.min())), max(part[3], float(ys.max()))
-            if self.world.broken:
+            if self.world.broken or getattr(self.world, "broken_extra", None):     # (helipad clearings use broken_extra only)
                 pos = self.world.hide_broken(pos, ch.get("bb"))
             if mat == 6 and ("graf" not in self.tex or lite):
                 continue                                     # atlas failed: no decals rather than facade-textured ones

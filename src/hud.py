@@ -265,6 +265,30 @@ class Hud:
             font.draw_text(text, x + ox, y + oy, size, rl.Color(0, 0, 0, 200))
         font.draw_text(text, x, y, size, col)
 
+    HELI_TIPS = (("Space", "искачи"), ("Shift", "спушти / слетај"), ("W / S", "напред / назад"), ("A / D", "сврти"),
+                 ("F", "излези (само на земја)"))
+
+    def _heli_tips(self, sim, sw, sh):
+        """Flight controls, always on the left while you fly; rotor and altitude under them."""
+        c = sim.car
+        x, y, rh = 14, int(sh * 0.36), 30
+        n = len(self.HELI_TIPS)
+        rl.draw_rectangle_rounded(rl.Rectangle(x - 6, y - 40, 300, 40 + n * rh + 62), 0.08, 6, rl.Color(10, 10, 14, 170))
+        font.draw_text("Хеликоптер", x + 4, y - 32, 22, rl.Color(255, 230, 90, 255), bold=True)
+        for i, (k, v) in enumerate(self.HELI_TIPS):
+            yy = y + i * rh
+            rl.draw_rectangle_rounded(rl.Rectangle(x + 2, yy, 74, 24), 0.3, 4, rl.Color(60, 62, 70, 255))
+            kw = font.measure_text(k, 17)
+            font.draw_text(k, x + 39 - kw // 2, yy + 3, 17, rl.WHITE)
+            font.draw_text(v, x + 86, yy + 3, 18, rl.Color(230, 230, 230, 255))
+        yy = y + n * rh + 6
+        g = sim.w.ground_y(c.x, c.y)
+        alt = max(0.0, (c.az if c.az is not None else g) - g)
+        rpm = int(c.rpm * 100)
+        font.draw_text(f"Ротор {rpm}%" + ("  (се врти, почекај)" if rpm < 85 else ""), x + 4, yy, 18,
+                       rl.Color(140, 230, 140, 255) if rpm >= 85 else rl.Color(255, 190, 90, 255))
+        font.draw_text(f"Висина {alt:.0f} м", x + 4, yy + 24, 18, rl.Color(230, 230, 230, 255))
+
     def _heli_mark(self, qx, qy, r, fs):
         """Medical helicopter on the map: white disc, red ring, red H."""
         rl.draw_circle(int(qx), int(qy), r + 2, rl.Color(200, 30, 36, 255))
@@ -408,6 +432,8 @@ class Hud:
                 k = sim.near_kiosk(wk.x, wk.y) if wk.health > 0 else None
                 if k is not None:
                     self._menu(sim, sw, sh)
+        if sim.mode == "car" and sim.car is not None and sim.car.kind in vehicles.FLY:
+            self._heli_tips(sim, sw, sh)
         if prompt:
             wpx = font.measure_text(prompt, 24)
             rl.draw_rectangle_rounded(rl.Rectangle(sw // 2 - wpx // 2 - 14, sh - 120, wpx + 28, 40), 0.3, 6, rl.Color(10, 10, 14, 200))

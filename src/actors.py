@@ -103,6 +103,20 @@ class Body:
         return self.health > 0 and not self.exploded
 
 
+class Heli(Body):
+    """Helicopter body: an armoured airframe, it takes a third of the damage a car would (same 0..100 health scale)."""
+    ARMOR = 0.33
+
+    @property
+    def health(self):
+        return self.__dict__.get("_hp", 100.0)
+
+    @health.setter
+    def health(self, v):
+        old = self.__dict__.get("_hp")
+        self.__dict__["_hp"] = v if old is None or v >= old else old - (old - v) * self.ARMOR
+
+
 def offsets(kind):
     """Centres of the collision circles along the car: spaced at most one radius apart, so long buses and trucks
     have no gaps a wall corner or lamp post can slip into."""
@@ -415,6 +429,13 @@ def fly(p, inp, dt, w):
     p.roll += (p.steer * 0.3 * min(1.0, abs(vf) / 20.0) - p.roll) * min(1.0, 3 * dt)
     p.air = alt > 0.5
     return hit
+
+
+def _apart(a, za, b, zb):
+    """A helicopter and something else at clearly different heights (flying over it): they do not touch."""
+    if a.kind not in vehicles.FLY and getattr(b, "kind", -1) not in vehicles.FLY:
+        return False
+    return za is not None and zb is not None and abs(za - zb) > 2.2
 
 
 def _heli_floor(p, w):
@@ -1324,6 +1345,8 @@ class Peds:
                 pressed = False
                 for b in _near(g_a, p.x, p.y):
                     if abs(b.x - p.x) > 7 or abs(b.y - p.y) > 7:
+                        continue
+                    if b.kind in vehicles.FLY and b.az is not None and p.gz is not None and abs(b.az - p.gz) > 2.2:
                         continue
                     hit_ = push_from_box(b, p.x, p.y, 0.3)
                     if hit_ is not None and p.mode == "walk" and getattr(b, "speed", 9.0) < 1.0 and not getattr(b, "exploded", False):
@@ -2579,7 +2602,7 @@ class Sim:
                 _pg2_add(self.w, (1, deck, z, (x - 8.5, y - 8.5, x + 8.5, y + 8.5)), x - 8.5, y - 8.5, x + 8.5, y + 8.5)
                 self.heli_stairs.extend(_roof_stairs(self.w, hit[0], hit[1]))
             self._clear_pad(x, y)
-            b = Body(x, y, -math.pi / 2, vehicles.HELI, 0)
+            b = Heli(x, y, -math.pi / 2, vehicles.HELI, 0)
             b.az = z
             b.fuel = 1.0
             self.bodies.append(b)
@@ -3081,6 +3104,7 @@ class Sim:
                 self.ev("rent", item=name, price=fare)
             if b.kind in vehicles.FLY:                             # no door scene: climb straight into the cockpit
                 self._board(b)
+                self.ev("heli_board")
                 return True
             if b.parked_idx is not None:
                 self.gone.add(b.parked_idx)
@@ -3420,6 +3444,8 @@ class Sim:
                     if (b.x - wk.x) ** 2 + (b.y - wk.y) ** 2 > rr_ * rr_:
                         continue
                     top = vehicles.DIMS[b.kind][4] * 0.6
+                    if b.kind in vehicles.FLY and b.az is not None and wk.az is not None and abs(b.az - wk.az) > 2.2:
+                        continue                           # a helicopter above you / you on a roof above it
                     if wk.z > top:                         # jumped onto / over the car
                         continue
                     if wk.duck_t > 0.0 and getattr(wk, "duck_b", None) is b:
@@ -3556,6 +3582,8 @@ class Sim:
         # body <-> body
         for i, j in body_pairs(self.bodies):
             a, b = self.bodies[i], self.bodies[j]
+            if _apart(a, a.az, b, b.az):
+                continue
             r = collide_bodies(a, b, vehicles.PERF[a.kind][4], vehicles.PERF[b.kind][4])
             if r and r[0] > 1.5:
                 ev("crash", body=a if a.player_car else b, kind="car", impact=r[0], x=r[1], y=r[2], nx=r[3], ny=r[4])
@@ -3572,6 +3600,8 @@ class Sim:
             for b in near_:
                 rr_ = _RAD[b.kind] + _RAD[c.kind]
                 if (c.x - b.x) ** 2 + (c.y - b.y) ** 2 > rr_ * rr_:
+                    continue
+                if b.kind in vehicles.FLY and b.az is not None and b.az - c.gz > 2.2:     # helicopter overhead
                     continue
                 tmp = self.traffic.make_body(c)
                 tmp.parked_idx = None
