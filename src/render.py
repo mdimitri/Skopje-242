@@ -101,6 +101,73 @@ def _gl():
     return _GL
 
 
+INST_VS = """#version 330
+in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor; in mat4 instanceTransform;
+uniform mat4 mvp;
+out vec2 fragTexCoord; out vec4 fragColor;
+void main(){ fragTexCoord = vertexTexCoord; fragColor = vertexColor;
+             gl_Position = mvp * instanceTransform * vec4(vertexPosition, 1.0); }
+"""
+INST_FS = """#version 330
+in vec2 fragTexCoord; in vec4 fragColor;
+uniform sampler2D texture0; uniform vec4 colDiffuse;
+out vec4 finalColor;
+void main(){ finalColor = texture(texture0, fragTexCoord) * colDiffuse * fragColor; }
+"""
+_INST = {"mat": False}
+INSTANCE = os.environ.get("SK242_INSTANCE", "1") != "0"
+
+
+def _inst_material():
+    """A material with raylib's default look (vertex colour x tint) that draws many copies of a mesh in one call
+    (DrawMeshInstanced: the per-copy matrix is the instanceTransform attribute).  None when it cannot be made."""
+    if _INST["mat"] is False:
+        _INST["mat"] = None
+        try:
+            sh = rl.load_shader_from_memory(INST_VS, INST_FS)
+            if rl.is_shader_valid(sh):
+                sh.locs[rl.SHADER_LOC_MATRIX_MVP] = rl.get_shader_location(sh, "mvp")
+                sh.locs[rl.SHADER_LOC_MATRIX_MODEL] = rl.get_shader_location_attrib(sh, "instanceTransform")
+                m = rl.load_material_default()
+                m.shader = sh
+                _INST["mat"] = RL.ffi.new("Material *", m)
+        except Exception as e:  # noqa: BLE001 - no instancing: every copy is drawn on its own as before
+            print(f"[render] instancing off: {e}")
+    return _INST["mat"]
+
+
+class Batch:
+    """Copies of the same model collected over a frame and drawn in one call per (model, tint) at flush()."""
+
+    def __init__(self):
+        self.groups = {}
+
+    def add(self, m, M, tint):
+        if not INSTANCE or _inst_material() is None or m.meshCount != 1:
+            old = _keep(m.transform)                      # no instancing: draw it now, as before
+            m.transform = M
+            rl.draw_model(m, ZERO, 1.0, tint)
+            m.transform = old[0]
+            return
+        tc = tuple(tint) if isinstance(tint, tuple) else (tint.r, tint.g, tint.b, tint.a)
+        k = (int(RL.ffi.cast("uintptr_t", m.meshes)), tc)
+        g = self.groups.get(k)
+        if g is None:
+            g = self.groups[k] = (m, tc, [])
+        g[2].append(RL.ffi.new("Matrix *", M))           # (owned copy: M is often a temporary)
+
+    def flush(self):
+        mp = _inst_material()
+        for m, tint, mats in self.groups.values():
+            n = len(mats)
+            arr = RL.ffi.new("Matrix[]", n)
+            for i, M in enumerate(mats):
+                arr[i] = M[0]
+            mp.maps[0].color = tint
+            RL.DrawMeshInstanced(m.meshes[0], mp[0], arr, n)
+        self.groups.clear()
+
+
 def _flat_shader():
     """Flat-colour shader for projected shadows (None if it fails to compile: shadows then fall back to rectangles' absence, never a crash)."""
     global _FLAT
@@ -926,6 +993,7 @@ class Renderer:
                     rl.draw_model(twm, V3(0, 0, 0), 1.0, WHITE)
                 twm.transform = old_w[0]
             tm.transform = old[0]
+        wheels = Batch()
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col, ckey, cspd in cars:
             if m is None:
                 continue
@@ -970,13 +1038,10 @@ class Renderer:
             wx, wr, hz, wm = fw
             if wm is None:
                 continue
-            old = _keep(wm.transform)
             sp_ = spin_[ckey] = (spin_.get(ckey, 0.0) + cspd * sdt_ / max(0.1, wr)) % 6.2831853       # rolled distance / radius: the rim turns
             for sd in ((-hz, hz) if hz else (0.0,)):                             # front wheels turned about their own centres by the steering angle
-                wm.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang)),
-                                                                     rl.matrix_translate(wx, wr, sd)), M)
-                rl.draw_model(wm, V3(0, 0, 0), 1.0, tint)
-            wm.transform = old[0]
+                wheels.add(wm, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang)),
+                                                                     rl.matrix_translate(wx, wr, sd)), M), tint)     # all wheels of a kind: one draw call
             if True:                                         # the other axles: one model per axle, spun about its own centre
                 ra = self.rear_axle_models.get(kind)
                 if ra is None:
@@ -984,10 +1049,8 @@ class Renderer:
                 for ax_, rr_, _z, am_ in ra:
                     if am_ is None:
                         continue
-                    old_a = _keep(am_.transform)
-                    am_.transform = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M)
-                    rl.draw_model(am_, V3(0, 0, 0), 1.0, tint)
-                    am_.transform = old_a[0]
+                    wheels.add(am_, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M), tint)
+        wheels.flush()
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
             m = self.car_models.get(key)

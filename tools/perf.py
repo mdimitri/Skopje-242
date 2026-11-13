@@ -71,7 +71,7 @@ import main as M  # noqa: E402
 frames, cur = [], {}
 calls = {"draw": 0}
 import raylib  # noqa: E402  (hot loops call the raw cffi functions directly)
-for mod, names in ((rl, ("draw_model", "draw_mesh", "draw_model_ex")), (raylib, ("DrawModel", "DrawMesh", "DrawModelEx"))):
+for mod, names in ((rl, ("draw_model", "draw_mesh", "draw_model_ex", "draw_mesh_instanced")), (raylib, ("DrawModel", "DrawMesh", "DrawModelEx", "DrawMeshInstanced"))):
     for nm in names:
         f0 = getattr(mod, nm)
         def wrap(*x, _f=f0):
