@@ -66,6 +66,7 @@ class _Sim:
         self.trains = _Trains(trains.Trains(world).by_edge)
         self.peds = _Peds()
         self.fx = self.fy = 0.0
+        self.view_rect = None              # the camera's ground rectangle (actors._lod_far: off-screen cars step less often)
         self.traffic = None
 
     def focus(self):
@@ -132,6 +133,7 @@ def _serve(conn, path, seed):
             sim.clock.hour, sim.clock.speed = msg["hour"], msg["cspeed"]
             sim.trains.closed = msg["closed"]
             sim.fx, sim.fy = msg["fx"], msg["fy"]
+            sim.view_rect = msg.get("view")
             tr.signals.t, tr.signals.pre = msg["sig_t"], msg["sig_pre"]
             bl = []
             for k, (x, y, h, vx, vy, kind, trh, air, service, out) in enumerate(msg["bodies"]):
@@ -328,7 +330,7 @@ class TrafficProc:
                "hour": sim.clock.hour, "cspeed": sim.clock.speed,
                "closed": trn.closed if trn is not None else set(),
                "sig_t": lights.t if lights is not None else 0.0, "sig_pre": lights.pre if lights is not None else {},
-               "bodies": bl, "peds": pl, "walker": wk}
+               "bodies": bl, "peds": pl, "walker": wk, "view": getattr(sim, "view_rect", None)}
         self.pokes = []
         try:
             self.conn.send(msg)

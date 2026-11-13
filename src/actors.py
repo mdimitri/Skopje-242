@@ -1516,8 +1516,12 @@ class Peds:
             e = w.edges[p.e]
             vv = p.v * 1.25                                      # +25% walking pace
             if w.hilly:                                           # Tobler's hiking function
-                gr = w.slope_at(p.x, p.y, math.cos(p.h), math.sin(p.h), p.gz if p.gz is not None else -1e9, 1.0)
-                vv *= max(0.2, min(1.25, math.exp(-3.5 * (abs(gr + 0.05) - 0.05))))
+                p.gr_t = getattr(p, "gr_t", (id(p) >> 4) % 33 * 0.01) - dt
+                if p.gr_t <= 0.0 or not hasattr(p, "gr_k"):       # the slope under a walker changes slowly: look it up 3 times a second
+                    p.gr_t = 0.33
+                    gr = w.slope_at(p.x, p.y, math.cos(p.h), math.sin(p.h), p.gz if p.gz is not None else -1e9, 1.0)
+                    p.gr_k = max(0.2, min(1.25, math.exp(-3.5 * (abs(gr + 0.05) - 0.05))))
+                vv *= p.gr_k
             p.s += vv * dt
             p.anim += vv * dt
             if p.s >= e["len"]:
