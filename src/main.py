@@ -607,7 +607,15 @@ def main():
 
     rng = random.Random(a.seed)
     loader.tick(0.92, "simulation")
-    sim = Sim(world, rng, a.cars, a.peds)
+    try:
+        sim = Sim(world, rng, a.cars, a.peds)
+    except Exception as e:  # noqa: BLE001 - an old built world the new code cannot use: rebuild it instead of crashing
+        real_ = os.path.join(ROOT, "data", "cache", "world")
+        if a.rebuild or a.world or a.demo or not _stale(real_, os.path.join(ROOT, "data", "osm")):
+            raise
+        log(f"[build] the saved world is out of date and unusable ({e!r}); restarting with a rebuild")
+        rl.close_window()
+        os.execv(sys.executable, [sys.executable] + sys.argv + ["--rebuild"])
     loader.tick(0.95, "pavement grid")
     world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
     sim.car.color = -1                                   # the player's own car gets racing stripes

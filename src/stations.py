@@ -32,7 +32,9 @@ class Stations:
         self.sim = sim
         w = sim.w
         self.sites = []
-        for x, y, kind, ei, s, visit, name, ox, oy in (getattr(w, "fuelsites", None) or []):
+        for site in (getattr(w, "fuelsites", None) or []):
+            x, y, kind, ei, s, visit, name = site[:7]
+            ox, oy = (site[7], site[8]) if len(site) >= 9 else (x, y)      # worlds built before the shop point was stored
             ok = visit and 0 <= ei < len(w.edges)
             if ok:
                 px, py, _dx, _dy = w.edge_point(w.edges[ei], s)
