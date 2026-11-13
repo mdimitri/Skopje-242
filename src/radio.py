@@ -23,6 +23,12 @@ FRAG = (28.0, 80.0)                                # random fragment length (s) 
 SPLIT = 4                                          # loose files in music/ become up to this many stations
 NAMES = [TXT("radio.0001"), TXT("radio.0002"), TXT("radio.0003"), TXT("radio.0004"), TXT("radio.0005"), TXT("radio.0006"), TXT("radio.0007")]
 HINT = (TXT("radio.0008"))
+# New strings (kept here so text/ stays untouched; the editor can move them into text/ later)
+LOOSE_NAME = "Мешано"                              # station for loose files that sit next to genre folders
+OFF_LINE = "Радио: исклучено"
+STATION_WORD = "Радио"
+KEYS_HINT = "[Q/E] станица   [, / .] песна"
+NO_TRACK = "…"
 
 
 def _static(sr=audio_mod.SR, dur=0.3):
@@ -93,7 +99,9 @@ def scan(base=MUSIC):
                 p = os.path.join(dp, f)
                 (loose if rel == "." else groups.setdefault(rel.split(os.sep)[0], [])).append(p)
     st = [(k, v) for k, v in sorted(groups.items())]
-    if loose:
+    if loose and st:                                   # genre folders are the stations; strays share one extra station
+        st.append((LOOSE_NAME, sorted(loose)))
+    elif loose:
         k = max(1, min(SPLIT, len(loose) // 3))
         random.Random(len(loose)).shuffle(loose)
         names = list(NAMES)
@@ -121,6 +129,11 @@ class Radio:
         self.skipped = 0
         self.hint = ""
         self.user_off = False
+        self.orders = []               # per station: its tracks in a fixed shuffled order
+        self.resume = {}               # per station: playlist index to continue from
+        self.cur_pos = 0               # playlist index of the track playing / being tuned in
+        self.next_pos = 0              # playlist index the next fragment is cut from
+        self.gen = 0                   # bumped on every station change / skip: older fragment jobs are dropped
         self._scan_t = 0.0
         self._dir = None
         self._job = None               # running worker: dict(station, thread, out, title, path, ok)
@@ -155,6 +168,15 @@ class Radio:
         except Exception:  # noqa: BLE001
             self.stations = []
         self.sel = min(self.sel, len(self.stations))
+        old = {n: o for (n, _p), o in zip(getattr(self, "_names", []), self.orders)}
+        self._names = self.stations
+        self.orders = []
+        for n, ps in self.stations:
+            o = [p for p in old.get(n, []) if p in ps]
+            o += [p for p in ps if p not in o]
+            if len(o) != len(old.get(n, [])):
+                random.shuffle(o)
+            self.orders.append(o)
         self.hint = "" if self.stations else TXT("radio.0009")
 
     def _rl(self):
@@ -169,9 +191,12 @@ class Radio:
         if self.hint:
             return self.hint
         if self.off:
-            return TXT("radio.0010")
+            return OFF_LINE
         nm = self.stations[self.sel][0]
-        return (TXT("radio.0011") + f'{nm}') + (f" – {self.now}" if self.now else "") + "   [Q/E]"
+        return f"{STATION_WORD}: {nm} – {self.now or NO_TRACK}"
+
+    def keys_line(self):
+        return "" if self.hint else KEYS_HINT
 
     def step(self, d):
         """Change station by d (wraps, with an 'off' slot at the end).  Returns a banner text."""
@@ -179,32 +204,46 @@ class Radio:
             self.rescan()
             return self.hint
         n = len(self.stations) + 1
+        if self.sel < len(self.stations):
+            self.resume[self.sel] = self.cur_pos
         self.sel = (self.sel + d) % n
         self.user_off = self.sel >= len(self.stations)
         self._ready = None
+        self.gen += 1
         if self.user_off:
             self._silence()
-            return TXT("radio.0012")
+            return OFF_LINE
+        self.cur_pos = self.next_pos = self.resume.get(self.sel, 0) % max(1, len(self.orders[self.sel]))
         self._burst()
-        return TXT("radio.0013") + self.stations[self.sel][0]
+        return f"{STATION_WORD}: {self.stations[self.sel][0]}"
+
+    def skip(self, d):
+        """Next (d=1) / previous (d=-1) track in this station's shuffled playlist.  Returns a banner text or ''."""
+        if self.off or not self.orders:
+            return ""
+        n = len(self.orders[self.sel])
+        self.cur_pos = self.next_pos = (self.cur_pos + d) % n
+        self.gen += 1
+        self._ready = None
+        self._burst()
+        return ""
 
     # ---- fragment preparation (worker thread)
     def _prepare(self):
         """Start cutting the next fragment for the current station unless one is ready / running."""
         if self._ready is not None or self._job is not None or self.off or not self._dir:
             return
-        pool = list(self.stations[self.sel][1])
-        random.shuffle(pool)
-        if self.cur in pool and len(pool) > 1:
-            pool.remove(self.cur)
+        order = self.orders[self.sel]
+        n = len(order)
+        pool = [((self.next_pos + i) % n, order[(self.next_pos + i) % n]) for i in range(min(6, n))]
         self._seq += 1
-        job = {"station": self.sel, "out": os.path.join(self._dir, f"frag{self._seq % 3}.wav"), "ok": False, "done": False, "path": None}
+        job = {"station": self.sel, "gen": self.gen, "pos": self.next_pos, "out": os.path.join(self._dir, f"frag{self._seq % 3}.wav"), "ok": False, "done": False, "path": None}
 
         def work():
-            for p in pool[:6]:
+            for pos, p in pool:
                 try:
                     if cut_fragment(p, job["out"], random.uniform(*FRAG)):
-                        job["ok"], job["path"] = True, p
+                        job["ok"], job["path"], job["pos"] = True, p, pos
                         print(f"[radio] playing a part of {p}", flush=True)
                         break
                 except Exception as e:  # noqa: BLE001
@@ -219,7 +258,9 @@ class Radio:
 
     def _collect(self):
         j = self._job
-        if j is not None and j["done"]:
+        if j is not None and j["gen"] != self.gen:        # station changed / track skipped meanwhile: forget it
+            self._job = None
+        elif j is not None and j["done"]:
             self._job = None
             if j["station"] == self.sel and not self.off:
                 if j["ok"]:
@@ -236,6 +277,8 @@ class Radio:
             if not rl.is_sound_valid(snd):
                 return False
             self.snd, self.cur, self.t = snd, j["path"], 0.0
+            self.cur_pos = j["pos"]
+            self.next_pos = (j["pos"] + 1) % len(self.orders[self.sel])
             self.now = os.path.splitext(os.path.basename(j["path"]))[0].replace("_", " ")
             rl.set_sound_volume(snd, self.volume * self.aud.master)
             rl.play_sound(snd)

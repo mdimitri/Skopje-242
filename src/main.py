@@ -1898,11 +1898,17 @@ def main():
         guard.run("places", handle_places, fx, fy)
         guard.run("audio", handle_audio, fx, fy)
         if sim.mode == "car" and not a.test and not busy_:
-            for k_, d_ in ((rl.KEY_E, 1), (rl.KEY_PERIOD, 1), (rl.KEY_Q, -1), (rl.KEY_COMMA, -1)):
+            for k_, d_ in ((rl.KEY_E, 1), (rl.KEY_Q, -1)):                  # Q / E: previous / next station (genre)
                 if rl.is_key_pressed(k_):
                     hud.set_banner(car_radio.step(d_), 2.0)
                     break
-        hud.radio_line = car_radio.label() if sim.mode == "car" and car_radio.aud.ok else ""
+            for k_, d_ in ((rl.KEY_PERIOD, 1), (rl.KEY_COMMA, -1)):         # , / .: previous / next track in the station
+                if rl.is_key_pressed(k_):
+                    car_radio.skip(d_)
+                    break
+        in_radio_ = sim.mode == "car" and car_radio.aud.ok
+        hud.radio_line = car_radio.label() if in_radio_ else ""
+        hud.radio_keys = car_radio.keys_line() if in_radio_ else ""
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
             hud.set_banner(TXT("main.0043") + song, 2.0)
