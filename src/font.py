@@ -223,8 +223,11 @@ def exit_button(x=None, y=10):
 
 
 
+MUSIC_EXTRA = 0          # set by the music widget: extra height of its station drop-down above the song bar
+
+
 def draw_version(W, H):
     """Small major.minor version label, top left right under the music selector (splash and menus)."""
     from updater import GAME_VERSION
     vt = "v" + GAME_VERSION
-    draw_text(vt, 14, 52, 25, rl.Color(232, 226, 232, 200), bold="cond")
+    draw_text(vt, 14, 52 + MUSIC_EXTRA, 25, rl.Color(232, 226, 232, 200), bold="cond")

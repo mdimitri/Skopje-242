@@ -62,6 +62,7 @@ class LoadMusic:
         self.files = []
         self.stations = []            # [(name, [paths])]: one per genre folder, like the car radio
         self.sel = 0                  # station playing now
+        self.menu_open = False        # station drop-down is open
         self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
         self.pos = -1                 # index in hist of the song playing now
         self.paused = False
@@ -244,13 +245,23 @@ class LoadMusic:
             return
         sz = 27
         b = 30
+        multi = len(self.stations) > 1
+        head = None
+        font.MUSIC_EXTRA = 0
+        if multi:                                                # station drop-down above the song bar
+            dh = 30
+            head = (x, y, max(120, min(room, 320)), dh)
+            y += dh + 4
+            if x < 150:
+                font.MUSIC_EXTRA = 5000 if self.menu_open else dh + 4     # version label moves below the bar (hidden while the list is open)
         name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, room - 2 * (b + 4)), "cond")
         tw = font.measure_text(name, sz, "cond")
         lw = 3 * (b + 4)                                         # ◀  ❚❚  ■ on the left, ▶ on the right
         w = lw + b + 4 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
         m = rl.get_mouse_position()
-        click = font.clicked()
+        click_in = font.clicked()
+        click = click_in and not self.menu_open                  # an open list swallows the click
         tip = None
         for k, bx in ((0, x + 4), (1, x + 4 + b + 4), (2, x + 4 + 2 * (b + 4)), (3, x + w - b - 4)):
             by = y + 4
@@ -278,21 +289,52 @@ class LoadMusic:
             rl.draw_rectangle(tip[0], y + b + 10, tx + 12, 26, rl.Color(10, 8, 16, 220))
             font.draw_text(tip[1], tip[0] + 6, y + b + 12, 20, rl.WHITE, bold="cond")
         font.draw_text(name, x + lw + 12, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
-        if len(self.stations) > 1:                               # station name + keys, in a small line under the bar
-            font.draw_text(font.fit(f"{self.stations[self.sel][0]}   [Q/E] станица", 18, max(80, room)), x + 4, y + b + 12, 18,
-                           rl.Color(255, 255, 255, 200), bold="cond")
-            if not station_keys:
-                pass
-            elif rl.is_key_pressed(rl.KEY_E):
-                self.station(1)
-            elif rl.is_key_pressed(rl.KEY_Q):
-                self.station(-1)
+        if head is not None:
+            self._dropdown(head, station_keys, m, click_in)
         if not keys:                                             # (screens where the arrows already move the selection)
             return
         if rl.is_key_pressed(rl.KEY_LEFT):
             self.skip(back=True)
         elif rl.is_key_pressed(rl.KEY_RIGHT):
             self.skip()
+
+    def _dropdown(self, head, station_keys, m, click):
+        """Closed: current station + arrow.  Open: the list of stations below it (drawn last, over the bar)."""
+        hx, hy, hw, dh = head
+        over = hx <= m.x < hx + hw and hy <= m.y < hy + dh
+        rl.draw_rectangle(hx, hy, hw, dh, PINK if over else rl.Color(10, 8, 16, 190))
+        rl.draw_rectangle_lines(hx, hy, hw, dh, rl.Color(226, 32, 104, 255))
+        font.draw_text(font.fit(self.stations[self.sel][0], 22, hw - 44, "cond"), hx + 10, hy + 3, 22, rl.WHITE, bold="cond")
+        cx, cy, r = hx + hw - 18, hy + dh / 2, 6
+        if self.menu_open:
+            rl.draw_triangle(rl.Vector2(cx - r, cy + r / 2), rl.Vector2(cx + r, cy + r / 2), rl.Vector2(cx, cy - r / 2), rl.WHITE)
+        else:
+            rl.draw_triangle(rl.Vector2(cx - r, cy - r / 2), rl.Vector2(cx, cy + r / 2), rl.Vector2(cx + r, cy - r / 2), rl.WHITE)
+        if click and over:
+            self.menu_open = not self.menu_open
+        elif self.menu_open:
+            rows = len(self.stations)
+            rl.draw_rectangle(hx, hy + dh, hw, rows * dh, rl.Color(10, 8, 16, 245))
+            hit = False
+            for k, (nm, ps) in enumerate(self.stations):
+                ry = hy + dh + k * dh
+                ov = hx <= m.x < hx + hw and ry <= m.y < ry + dh
+                if ov or k == self.sel:
+                    rl.draw_rectangle(hx, ry, hw, dh, PINK if ov else rl.Color(60, 40, 70, 230))
+                font.draw_text(font.fit(f"{nm}  ({len(ps)})", 22, hw - 20, "cond"), hx + 10, ry + 3, 22, rl.WHITE, bold="cond")
+                if ov and click:
+                    hit = True
+                    if k != self.sel:
+                        self.station(k - self.sel)
+            if click:
+                self.menu_open = False
+                if hit:
+                    font.clear_latch()
+        if station_keys:
+            if rl.is_key_pressed(rl.KEY_E):
+                self.station(1)
+            elif rl.is_key_pressed(rl.KEY_Q):
+                self.station(-1)
 
     def _drop(self):
         if self.snd is not None:
