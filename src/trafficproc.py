@@ -98,6 +98,7 @@ def _serve(conn, path, seed):
         conn.send(("err", traceback.format_exc()))
         return
     by_uid = {}
+    sent = {}                                                     # uid -> the state last sent: only changes go over
     uid_next = 1                                                  # worker uids are odd, the game's even
     bodies, peds = {}, {}
     while True:
@@ -114,12 +115,14 @@ def _serve(conn, path, seed):
                 tr.cars = [c for c in tr.cars if c.uid not in kills]
                 for u in kills:
                     by_uid.pop(u, None)
+                    sent.pop(u, None)
             for u, vals in adds:
                 c = actors.Car.__new__(actors.Car)
                 _set(c, vals)
                 c.uid, c.blk = u, None
                 by_uid[u] = c
                 tr.cars.append(c)
+            pokes_u = {u for u, _k, _v in pokes}
             for u, k, v in pokes:
                 c = by_uid.get(u)
                 if c is not None:
@@ -158,12 +161,21 @@ def _serve(conn, path, seed):
                 live = {c.uid for c in tr.cars}
                 for u in [u for u in by_uid if u not in live]:
                     del by_uid[u]
+                    sent.pop(u, None)
             shop = []
             for j in tr.stn.shoppers:                             # drivers who got out at a petrol station (Stations._shop)
                 shop.append((j["car"].uid, j["ped"], {k: v for k, v in j.items() if k not in ("car", "ped")}))
             tr.stn.shoppers = []
             sim.peds.list.clear()
-            conn.send(("ok", [(c.uid, _state(c)) for c in tr.cars], tr.signals.pre, shop, tr.despawned,
+            out = []
+            for c in tr.cars:
+                st, old = _state(c), sent.get(c.uid)
+                if old is None or c.uid in pokes_u:
+                    out.append((c.uid, st))
+                else:
+                    out.append((c.uid, [(i, v) for i, (v, o) in enumerate(zip(st, old)) if v is not o and v != o]))
+                sent[c.uid] = st
+            conn.send(("ok", out, tr.signals.pre, shop, tr.despawned,
                        (time.perf_counter() - t0) * 1000.0))
         except Exception:  # noqa: BLE001
             conn.send(("err", traceback.format_exc()))
@@ -283,7 +295,11 @@ class TrafficProc:
                     c = actors.Car.__new__(actors.Car)
                     c.uid, c.blk = u, None
                     self.by_uid[u] = c
-                _set(c, vals)
+                if type(vals) is tuple:
+                    _set(c, vals)                                 # new to the game (or poked): the whole state
+                else:
+                    for i, v in vals:                             # else only what changed since the last frame
+                        setattr(c, SYNC[i], v)
                 keep.append(c)
             for u, _vals in adds:
                 if u not in new_ids:
