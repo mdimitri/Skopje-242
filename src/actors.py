@@ -1490,8 +1490,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz", "goff", "tgz", "tpitch", "troll", "uid")
-
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz", "lcd", "nx2", "goff", "tgz", "tpitch", "troll", "uid")
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
         self.stuck = 0.0
@@ -1504,6 +1503,8 @@ class Car:
         self.pitch = 0.0
         self.roll = 0.0
         self.lidx = 0              # which lane (of the ones in its direction) it drives in
+        self.nx2 = None            # the choice after a short link c.nxt: ((edge, dir), turn)
+        self.lcd = 0.0             # seconds until it may change lane again for its coming turn
         self.shift = 0.0           # extra sideways offset while it works its way out of a jam
         self.shift_t = 0.0
         self.rev = 0.0             # seconds of reversing left
@@ -1606,19 +1607,42 @@ class Traffic:
         return math.atan2(dy, dx) if d == 1 else math.atan2(-dy, -dx)
 
     def _pick(self, c):
-        """Choose the edge a car takes after its current one (so its path can be followed round the corner): the bigger
-        road and straight on are likelier, a queue ahead puts it off (more so in the rush hours, when drivers cut through
-        side streets), and the connected network wins over a closed-off pocket."""
-        w = self.w
-        e = w.edges[c.e]
-        opts = w.out.get(e["b"] if c.d == 1 else e["a"], [])
-        good = [o for o in opts if o[0] != c.e] or opts
-        if not good:
+        """Choose the edge a car takes after its current one (so its path can be followed round the corner), and when that
+        edge is only a short link, the one after it too (c.nx2), so the lane for the turn can be taken before the link."""
+        r = self._choose(c, c.e, c.d)
+        c.nx2 = None
+        if r is None:
             c.nxt = None
             return
+        good, turns, k = r
+        c.nxt, c.turn = good[k], turns[k]
+        if self.stn is not None:
+            self.stn.steer(c, good, turns)
+        plan, cur, dist, t = [], c.nxt, self.w.edges[c.nxt[0]]["len"], c.turn
+        while dist < self.PLAN_M and abs(t) < self.TURN_LANE and len(plan) < 4:      # straight on over short links: plan up to the next real turn
+            r2 = self._choose(c, cur[0], cur[1])
+            if r2 is None:
+                break
+            cur, t = r2[0][r2[2]], r2[1][r2[2]]
+            plan.append((cur, t))
+            dist += self.w.edges[cur[0]]["len"]
+        c.nx2 = plan or None
+
+    PLAN_M = 130.0                   # m of path ahead whose turns are planned together (lane choice has to start before short links)
+
+    def _choose(self, c, ei, d):
+        """Pick the edge after edge ei driven in direction d: the bigger road and straight on are likelier, a queue ahead
+        puts it off (more so in the rush hours, when drivers cut through side streets), and the connected network wins over
+        a closed-off pocket.  Returns (options, turns, index chosen) or None."""
+        w = self.w
+        e = w.edges[ei]
+        opts = w.out.get(e["b"] if d == 1 else e["a"], [])
+        good = [o for o in opts if o[0] != ei] or opts
+        if not good:
+            return None
         main = [o for o in good if w.edges[o[0]]["a"] in w.main and w.edges[o[0]]["b"] in w.main]
         good = main or good
-        h0 = self._head(e, c.d, True)
+        h0 = self._head(e, d, True)
         hr = getattr(getattr(self.sim, "clock", None), "hour", 12.0) if self.sim else 12.0
         qk = 1.2 if (7.0 <= hr < 9.5 or 16.0 <= hr < 18.5) else 0.5
         turns, wts = [], []
@@ -1637,12 +1661,36 @@ class Traffic:
                     good, turns, wts = [good[i] for i in ok], [turns[i] for i in ok], [wts[i] for i in ok]
                     break
             else:
-                c.nxt = None                                          # nothing fit for it: _next_edge turns it round
-                return
+                return None                                           # nothing fit for it: _next_edge turns it round
         k = self.rng.choices(range(len(good)), wts)[0]
-        c.nxt, c.turn = good[k], turns[k]
-        if self.stn is not None:
-            self.stn.steer(c, good, turns)
+        return good, turns, k
+
+    TURN_LANE = 0.5                  # heading change (rad) from which a turn wants the kerb lane (right) or the centre lane (left)
+
+    def _lane_for_turn(self, c, e, rem, dt):
+        """Well before a junction a car that will turn right moves over to the kerb-side lane and one that will turn left to
+        the lane beside the centre line (index 0 is the leftmost, as in the painted arrows), one lane at a time and only
+        into a gap, so a right turn is never cut across the lanes of the cars going straight on."""
+        c.lcd -= dt
+        ls = self.lanes_of(e)
+        k = min(c.lidx, len(ls) - 1)
+        if c.lane != ls[k]:                                       # slide over to the chosen lane rather than jump
+            c.lane += max(-self.LANE_V * dt, min(self.LANE_V * dt, ls[k] - c.lane))
+            return
+        if c.lcd > 0 or abs(c.turn) > self.UTURN or len(ls) < 2:
+            return
+        t = c.turn
+        if abs(t) < self.TURN_LANE and c.nx2 is not None:
+            t = next((q for _o, q in c.nx2 if abs(q) >= self.TURN_LANE), t)      # straight on over short links, then the turn
+        want = len(ls) - 1 if t >= self.TURN_LANE else 0 if t <= -self.TURN_LANE else k
+        if k == want or rem < 20.0:
+            return
+        k2 = k + (1 if want > k else -1)
+        if self._free(c, ls[k2] - c.lane, 20.0, 9.0 + c.v):
+            c.lidx = k2
+        c.lcd = 1.0
+
+    LANE_V = 1.3                     # m/s sideways while changing lane
 
     def _target(self, c, e, la):
         """Pure-pursuit aim point `la` metres ahead on the car's lane, continuing onto the next edge round a corner."""
@@ -1733,10 +1781,13 @@ class Traffic:
             self._pick(c)                                         # the same choice as ever, so a stray pick can't be a U-turn either
             if c.nxt is None and c.kind in vehicles.HEAVY:
                 return False                                          # a lorry with only side streets ahead turns back
+        plan, c.nx2 = c.nx2, None
         c.e, c.d = c.nxt if c.nxt in good else self.rng.choice(good)
         if abs(c.turn) > 2.6:
             c.man = 5.0                                           # a U-turn: full lock, as a driver would in a narrow street
         c.nxt, c.turn, c.arr = None, 0.0, None
+        if plan and plan[0][0] in w.out.get(self.w.edges[c.e]["b"] if c.d == 1 else self.w.edges[c.e]["a"], ()):
+            (c.nxt, c.turn), c.nx2 = plan[0], plan[1:] or None    # the turns along the path were already planned
         c.shift, c.shift_t = 0.0, 0.0
         self._set_lane(c, self.w.edges[c.e])
         return True
@@ -2078,10 +2129,10 @@ class Traffic:
             return True
         return False
 
-    def _free(self, c, off, ahead):
+    def _free(self, c, off, ahead, behind=1.6):
         """Is the strip beside/in front of car c, moved sideways by `off` (to its left), empty for `ahead` metres?"""
         nx, ny = -math.sin(c.h) * off, math.cos(c.h) * off
-        back = -(vehicles.HALF_L[c.kind] + 1.6)
+        back = -(vehicles.HALF_L[c.kind] + behind)
         g = self.scan(c, ahead, nx, ny, back=back)
         return g is None or g > 6.0 + c.v * 1.0
 
@@ -2231,8 +2282,10 @@ class Traffic:
                 a = tr.stop_at(c.e, c.d, c.s, L)
                 if a is not None:                                  # barriers down: wait for the train
                     vlim, at_red = min(vlim, math.sqrt(2 * 3.5 * max(a, 0.0))), True
-            if c.nxt is None and L - c.s < 60.0:
+            if c.nxt is None and L - c.s < 130.0:
                 self._pick(c)
+            if c.nxt is not None and L - c.s < 120.0 and c.rev <= 0 and not c.shift:
+                self._lane_for_turn(c, e, L - c.s, dt)
             vlim, bgap = self._courtesy(c, e, vlim, ems, ph, dt)
             self.lead = None
             gap = self.scan(c, 10.0 + c.v * 3.0) if c.ghost <= 0 else None
