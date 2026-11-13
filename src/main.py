@@ -274,6 +274,8 @@ def plan_needs(a):
     extras = all(os.path.exists(os.path.join(osm, f)) for f in ("rail.json", "signals.json"))   # trains + real lights
     n = {"osm": a.refresh or not have or not box_ok or retry or (not extras and bool(box) and box.get("complete", True)),
          "dem": not terrain_ok(osm)}
+    if os.path.exists(os.path.join(real, "pack.json")) and not a.refresh and not a.rebuild:
+        return {"osm": False, "dem": False, "build": False}      # the downloaded world ships without its OSM sources: nothing to compare with
     n["build"] = n["osm"] or n["dem"] or not os.path.isdir(real) or _stale(real, osm)
     return n
 
@@ -316,7 +318,7 @@ class DownloadError(Exception):
     pass
 
 
-def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
+def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, use_pack=True):
     """Load the world; download what is missing; on corruption rebuild; if that fails fall back to the demo city."""
     import shutil
     need = need or {}
@@ -357,6 +359,19 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None):
                 raise WorldError("could not build any world (see logs/game.log)")
             loader.build_finished(record=False)
         return attempt(demo)
+    if use_pack and not refresh and not arg_world and not os.path.isdir(real) and os.path.exists(os.path.join(ROOT, "tools", "world_pack.json")):
+        loader.ensure_stage("build", 30)
+        loader.ensure_stage("pack", 1)                          # the ready-made world (one download); any failure falls back to the OSM build below
+        loader.begin("pack")
+        if run_tool(["tools/fetch_world.py"], loader, "pack", max_sec=3 * 3600) == 0:
+            for k in ("osm", "dem", "build"):
+                loader.skip(k)
+            try:
+                return attempt(real)
+            except WorldError as e:
+                log(f"[world] downloaded world unusable: {e}")
+                shutil.rmtree(real, ignore_errors=True)
+        loader.skip("pack")
     # the real map only: a missing piece is fetched again (both downloaders resume from their caches), never replaced by a fake city
     osm_src = os.environ.get("SK242_SOURCE") or settings_mod.MAP_SOURCE_IDS[settings_mod.Settings()["osm_source"] % 3]
     order = [osm_src] + [s for s in ("geofabrik", "overpass", "auto") if s != osm_src]
@@ -544,7 +559,7 @@ def main():
         start_radio_fetch(loader)
     while True:
         try:
-            world = ensure_world(a.world, loader, a.demo, a.refresh, need)
+            world = ensure_world(a.world, loader, a.demo, a.refresh, need, use_pack=not a.rebuild)
             break
         except DownloadError as e:                     # never a fake city: say what is wrong and offer another try
             log(f"[world] {e}")

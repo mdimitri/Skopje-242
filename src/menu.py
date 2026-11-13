@@ -238,6 +238,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, H("Дебаг")),
         (4, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
+        (4, Row("toggle", "Алатки за развивачи", "debug_tools", note="го прикажува копчето ФОТОГРАМЕТРИЈА на почетното мени (не се зачувува)")),
         (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
         (5, H("Јачина")),
         (5, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
@@ -642,7 +643,7 @@ def _confirm_rebuild():
     return False
 
 
-def title_menu(aud=None, music=None):
+def title_menu(aud=None, music=None, cfg=None):
     """Нова игра / Продолжи / Поставки / Излез over the splash art.  -> 'new' | 'cont<N>' | 'settings' | 'quit'"""
     present.off()
     latest = _latest_save()
@@ -700,8 +701,9 @@ def title_menu(aud=None, music=None):
         pbx, pby = 16, H - bbh - 16
         if pbx + pbw > x0 - 12:                                        # a narrow window: top left
             pby = 56
-        over_p = pbx <= m.x < pbx + pbw and pby <= m.y < pby + bbh
-        if armed and ((over_p and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_P)):
+        dev = bool(cfg and cfg["debug_tools"])                         # hidden unless the debug toggle in the settings is on
+        over_p = dev and pbx <= m.x < pbx + pbw and pby <= m.y < pby + bbh
+        if armed and dev and ((over_p and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_P)):
             go = False
             import photoview
             if photoview.run(aud, music) == "changed" and WORLD["built"] and _confirm_rebuild():
@@ -747,7 +749,8 @@ def title_menu(aud=None, music=None):
             else:
                 font.draw_text(label, tx + 2, ty + 2, sz, rl.Color(0, 0, 0, 170), bold="cond")    # drop shadow over the art
                 font.draw_text(label, tx, ty, sz, rl.Color(150, 140, 150, 255) if off else rl.Color(232, 226, 232, 255), bold="cond")
-        _btn(pbx, pby, pbw, bbh, plab, over_p, bsz)
+        if dev:
+            _btn(pbx, pby, pbw, bbh, plab, over_p, bsz)
         _btn(bbx, bby, bbw, bbh, blab, over_b or (not WORLD["built"] and int(time.time() * 2) % 2 == 0), bsz)   # blinks while there is no world
         font.draw_version(W, H)
         if time.time() - flash_t < 2.0:
@@ -767,7 +770,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     tab, flash, flash_t = getattr(run, "tab0", 0), "", 0.0
     if not in_game and not settings_only:     # start: the title menu over the splash art
         while True:
-            ch = title_menu(aud, music)
+            ch = title_menu(aud, music, cfg)
             if ch in ("quit", "rebuild"):
                 return ch
             if ch.startswith("cont"):

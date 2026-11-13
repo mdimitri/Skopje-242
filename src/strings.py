@@ -40,6 +40,7 @@ LAYER = {
 
 STAGE = {
     "osm": TXT("strings.0040"),
+    "pack": "Го преземам светот",                    # (new label: not in text/ yet)
     "dem": TXT("strings.0041"),
     "build": TXT("strings.0042"),
     "world": TXT("strings.0043"),

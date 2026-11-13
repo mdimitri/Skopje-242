@@ -35,7 +35,7 @@ AGGRO = [TXT("settings.0007"), TXT("settings.0008"), TXT("settings.0009"), TXT("
 LANGUAGE = [TXT("settings.0011"), TXT("settings.0012"), TXT("settings.0013")]
 VOICES = [TXT("settings.0014"), TXT("settings.0015")]
 
-SESSION_ONLY = ("debug_chase", "debug")   # never saved: every launch starts in the top-down view
+SESSION_ONLY = ("debug_chase", "debug", "debug_tools")   # never saved: every launch starts in the top-down view
 
 MOUSE_MODE = ["Следење", "Управување", "Слободно гледање"]
 
@@ -44,7 +44,7 @@ DEFAULTS = {
     "vol_master": 0.8, "vol_sfx": 1.0, "vol_engine": 0.8, "vol_ambient": 0.8, "vol_speech": 1.0, "vol_radio": 0.7,
     "lik": 0, "hour": 17.0, "time_speed": 3, "traffic": 3, "peds": 3,
     "ambulance": True, "fire": True, "voice": 1, "speech_speed": 2, "speech_freq": 3, "aggro": 1, "lang": 1, "osm_source": 0, "smog": True, "smog_level": 1.0, "pollution": 1.0, "car_gloss": True, "car_gloss_k": 1.0,
-    "zoom_walk": 1.0, "zoom_car": 1.0, "shake": 1.0, "labels": True, "debug_chase": False, "debug": False, "mouse_sens": 1.0, "mouse_mode": 0, "theme": 5,
+    "zoom_walk": 1.0, "zoom_car": 1.0, "shake": 1.0, "labels": True, "debug_chase": False, "debug": False, "debug_tools": False, "mouse_sens": 1.0, "mouse_mode": 0, "theme": 5,
 }
 
 
