@@ -471,6 +471,28 @@ def _bld_at(w, x, y):
     return best
 
 
+def _mesh_top(w, x, y, r, cap):
+    """Highest vertex of the built world meshes within r of (x, y) (photogrammetric roofs have relief, parapets, ridges),
+    ignoring anything above `cap` (masts, antennas). None when the world has no chunk meshes."""
+    S = getattr(w, "chunk", None)
+    chs = getattr(w, "chunks", None)
+    if not S or not chs:
+        return None
+    best = None
+    for cx in range(int((x - r) // S) - 1, int((x + r) // S) + 2):
+        for cy in range(int((y - r) // S) - 1, int((y + r) // S) + 2):
+            ch = chs.get((cx, cy))
+            for _mat, (off, n) in (ch["m"].items() if ch else ()):
+                if not n:
+                    continue
+                pos = w.mesh_arrays(off, n)[0]
+                m = ((pos[:, 0] - x) ** 2 + (pos[:, 2] - y) ** 2 < r * r) & (pos[:, 1] < cap)
+                if m.any():
+                    t = float(pos[m, 1].max())
+                    best = t if best is None or t > best else best
+    return best
+
+
 def _pg2_add(w, pl, x0, y0, x1, y1):
     if not hasattr(w, "pg2") or w.pg2 is None:
         w.pg2 = {}
@@ -2596,11 +2618,20 @@ class Sim:
             g = self.w.ground_y(x, y)
             roof = hit is not None and hit[1] > g + 1.0
             z = hit[1] + 0.5 if roof else g
+            if roof:                                          # clear of every roof polygon under the deck (relief, parapets, ridges)
+                mt = _mesh_top(self.w, x, y, 8.6, hit[1] + 9.0)
+                if mt is not None and mt + 0.4 > z:
+                    z = mt + 0.4
             self.helipads.append((x, y, z, hit[1] if roof else None))
             if roof:
                 deck = [(x - 8.5, y - 8.5), (x + 8.5, y - 8.5), (x + 8.5, y + 8.5), (x - 8.5, y + 8.5)]
                 _pg2_add(self.w, (1, deck, z, (x - 8.5, y - 8.5, x + 8.5, y + 8.5)), x - 8.5, y - 8.5, x + 8.5, y + 8.5)
                 self.heli_stairs.extend(_roof_stairs(self.w, hit[0], hit[1]))
+                if z - hit[1] > 0.6:                          # deck well above the roof: a short stair up onto it
+                    L = max(2.0, (z - hit[1]) / 0.6)
+                    up = (0, x + 8.5 + L / 2, y, -1.0, 0.0, L / 2, 0.65, hit[1], z)
+                    _pg2_add(self.w, up, x + 8.5, y - 1, x + 8.5 + L, y + 1)
+                    self.heli_stairs.append(up)
             self._clear_pad(x, y)
             b = Heli(x, y, -math.pi / 2, vehicles.HELI, 0)
             b.az = z
