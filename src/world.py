@@ -44,7 +44,10 @@ def _read_with_progress(fn, progress, label, base, span):
 
 
 class World:
-    def __init__(self, path, progress=None, on_part=None):
+    LEAN_SKIP = ("areas", "buildings", "chunks")       # not needed by the AI traffic worker (trafficproc.py)
+
+    def __init__(self, path, progress=None, on_part=None, lean=False):
+        """lean: only what the road graph and the ground heights need (no buildings, chunks, collision grids): a worker's copy."""
         P = progress or (lambda f, note="": None)
         err = validate(path)
         if err:
@@ -53,6 +56,8 @@ class World:
         n = len(PARTS)
         try:
             for i, name in enumerate(PARTS):
+                if lean and name in self.LEAN_SKIP:
+                    continue
                 d = _read_with_progress(os.path.join(path, name + ".pkl"), P, name, i / n * 0.6, 0.6 / n)
                 self.__dict__.update(d)
                 if on_part:
@@ -71,7 +76,8 @@ class World:
         self.ncx = int(2 * self.hx / self.cell)
         self.ncy = int(2 * self.hy / self.cell)
         self._load_terrain()
-        self._build_collision(lambda f, note="": P(0.6 + 0.2 * f, note))
+        if not lean:
+            self._build_collision(lambda f, note="": P(0.6 + 0.2 * f, note))
         self._build_graph(lambda f, note="": P(0.8 + 0.2 * f, note))
 
     # ---- GPU mesh blob -------------------------------------------------------------

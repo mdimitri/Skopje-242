@@ -86,7 +86,7 @@ def _serve(conn, path, seed):
         import world as world_mod
         import signals
         import stations
-        w = world_mod.World(path)
+        w = world_mod.World(path, lean=True)              # the road graph and ground heights only: less memory
         sim = _Sim(w, seed)
         tr = actors.Traffic(w, sim.rng, 0)
         tr.sim = sim
