@@ -838,6 +838,47 @@ def _heli_parts(body_c, A, box, quad, parts):
     box(3.6, 0.7, 0, 0.1, 0.18, 0.18, (255, 244, 180))         # landing light
 
 
+def stairs_model(flights):
+    """Steel stairs in world space from Sim.heli_stairs ramps (0, cx, cy, ux, uy, half_len, half_w, h0, h1): steps, stringers, rails."""
+    parts = []
+    steel, rail = np.array((88, 92, 100), np.float32), np.array((150, 40, 40), np.float32)
+
+    def add(lx, ly, lz, sx, sy, sz, col, f):
+        _z, cx, cy, ux, uy = f[:5]
+        for name, (v, n) in box_faces(lx, ly, lz, sx, sy, sz).items():
+            w = np.empty_like(v)
+            w[:, 0] = cx + v[:, 0] * ux - v[:, 2] * uy
+            w[:, 2] = cy + v[:, 0] * uy + v[:, 2] * ux
+            w[:, 1] = v[:, 1]
+            nn = np.array((n[0] * ux - n[2] * uy, n[1], n[0] * uy + n[2] * ux), np.float32)
+            parts.append((w, np.tile(col * _shade(nn), (len(v), 1))))
+
+    for f in flights:
+        hl, hw, h0, h1 = f[5], f[6], f[7], f[8]
+        if abs(h1 - h0) < 0.01:                                  # landing / bridge: a flat plate
+            add(0, h0 - 0.12, 0, hl * 2, 0.12, hw * 2, steel, f)
+            continue
+        k = max(2, int((h1 - h0) / 0.22))
+        for i in range(k):
+            t = (i + 0.5) / k
+            add(-hl + 2 * hl * t, h0 + (h1 - h0) * t - 0.06, 0, 2 * hl / k + 0.02, 0.06, hw * 2, steel, f)
+        for sd in (-1, 1):                                       # stringers and a hand rail on each side, as stepped boxes
+            for i in range(k):
+                t = (i + 0.5) / k
+                y = h0 + (h1 - h0) * t
+                add(-hl + 2 * hl * t, y - 0.3, sd * hw, 2 * hl / k + 0.02, 0.3, 0.06, steel, f)
+                add(-hl + 2 * hl * t, y + 0.95, sd * hw, 2 * hl / k + 0.02, 0.05, 0.05, rail, f)
+            add(-hl + 0.05, h0, sd * hw, 0.05, 1.0, 0.05, rail, f)
+    if not parts:
+        return None
+    pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
+    col = np.concatenate([p[1] for p in parts])
+    rgba = np.empty((len(pos), 4), np.uint8)
+    rgba[:, :3] = np.clip(col, 0, 255)
+    rgba[:, 3] = 255
+    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+
+
 def rotor_model(kind, tail=False):
     """Spinning blades of the helicopter: main rotor about y at the mast, or the tail rotor about z."""
     A = lambda c: np.array(c, np.float32)

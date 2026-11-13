@@ -427,7 +427,13 @@ def _heli_floor(p, w):
 
 
 def _bld_top(w, x, y):
-    """Absolute roof height of the building at (x, y), or None. A 16 m grid of footprints, built once per world."""
+    """Absolute roof height of the building at (x, y), or None."""
+    h = _bld_at(w, x, y)
+    return h[1] if h is not None else None
+
+
+def _bld_at(w, x, y):
+    """(ring, absolute roof height) of the tallest building at (x, y), or None. A 16 m grid of footprints, built once per world."""
     g = getattr(w, "_heli_bg", None)
     if g is None:
         g = w._heli_bg = {}
@@ -439,9 +445,74 @@ def _bld_top(w, x, y):
                     g.setdefault((cx, cy), []).append((b["bb"], b["ring"], top))
     best = None
     for (x0, y0, x1, y1), ring, top in g.get((int(x // 16), int(y // 16)), ()):
-        if x0 <= x <= x1 and y0 <= y <= y1 and (best is None or top > best) and w._in_ring(x, y, ring):
-            best = top
+        if x0 <= x <= x1 and y0 <= y <= y1 and (best is None or top > best[1]) and w._in_ring(x, y, ring):
+            best = (ring, top)
     return best
+
+
+def _pg2_add(w, pl, x0, y0, x1, y1):
+    if not hasattr(w, "pg2") or w.pg2 is None:
+        w.pg2 = {}
+    for cx in range(int(x0 // 8), int(x1 // 8) + 1):
+        for cy in range(int(y0 // 8), int(y1 // 8) + 1):
+            w.pg2.setdefault((cx, cy), []).append(pl)
+
+
+def _roof_stairs(w, ring, top):
+    """A zigzag steel stair up the outside of one wall, on the side facing away from the street (the player has to look for it).
+    Adds walkable ramps + the roof to w.pg2 (feet and bikes use it, see world.plat_h); returns the flights for the renderer."""
+    m = len(ring)
+    inside = lambda px, py: w._in_ring(px, py, ring)
+    best = None
+    for i in range(m):
+        (ax, ay), (bx, by) = ring[i], ring[(i + 1) % m]
+        L = math.hypot(bx - ax, by - ay)
+        if L < 6.0:
+            continue
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        nx, ny = uy, -ux
+        mx, my = (ax + bx) / 2, (ay + by) / 2
+        if inside(mx + nx * 1.5, my + ny * 1.5):
+            nx, ny = -nx, -ny
+        r = w.nearest_drive_point(mx + nx * 3, my + ny * 3, 120)
+        d = math.hypot(r[0] - mx, r[1] - my) if r else 999.0
+        if best is None or d > best[0]:
+            best = (d, ax, ay, ux, uy, nx, ny, L)
+    if best is None:
+        return []
+    _d, ax, ay, ux, uy, nx, ny, L = best
+    Lf = min(L - 2.0, 9.0)
+    s0 = (L - Lf) / 2
+    off = 1.3                                                   # stair centre line out from the wall
+    g0 = w.ground_y(ax + ux * (s0 + Lf / 2) + nx * off, ay + uy * (s0 + Lf / 2) + ny * off)
+    rise = top - g0
+    if rise < 1.0:
+        return []
+    n = max(1, math.ceil(rise / (Lf * 0.75)))
+    dh = rise / n
+    flights = []
+    for k in range(n):
+        fwd = k % 2 == 0
+        cx = ax + ux * (s0 + Lf / 2) + nx * off
+        cy = ay + uy * (s0 + Lf / 2) + ny * off
+        sx, sy = (ux, uy) if fwd else (-ux, -uy)
+        h0, h1 = g0 + k * dh, g0 + (k + 1) * dh
+        pl = (0, cx, cy, sx, sy, Lf / 2, 0.65, h0, h1)
+        rr = math.hypot(Lf / 2, 0.65)
+        _pg2_add(w, pl, cx - rr, cy - rr, cx + rr, cy + rr)
+        flights.append(pl)
+        ex, ey = cx + sx * (Lf / 2 + 0.6), cy + sy * (Lf / 2 + 0.6)  # landing at the top end of the flight
+        land = (0, ex, ey, sx, sy, 0.6, 0.65, h1, h1)
+        _pg2_add(w, land, ex - 1, ey - 1, ex + 1, ey + 1)
+        flights.append(land)
+    # the last landing reaches over to the roof edge
+    ex, ey = flights[-1][1] - nx * 0.9, flights[-1][2] - ny * 0.9
+    br = (0, ex, ey, nx, ny, 1.0, 0.65, top, top)
+    _pg2_add(w, br, ex - 1.2, ey - 1.2, ex + 1.2, ey + 1.2)
+    flights.append(br)
+    xs, ys = [q[0] for q in ring], [q[1] for q in ring]
+    _pg2_add(w, (1, ring, top, (min(xs), min(ys), max(xs), max(ys))), min(xs), min(ys), max(xs), max(ys))
+    return flights
 
 
 def settle(b, w, dt, ev=None):
@@ -2489,17 +2560,42 @@ class Sim:
         """One medical helicopter on each hospital helipad (works for the OSM and the photogrammetric world alike)."""
         import geo
         self.helipads = []
+        self.heli_stairs = []
         for lat, lon, _n in HELI_PADS:
             x, y = geo.project(lat, lon)
             if abs(x) > self.w.hx - 30 or abs(y) > self.w.hy - 30:
                 continue
-            top = _bld_top(self.w, x, y)                       # inside a hospital footprint: the pad is on its roof
-            z = max(self.w.ground_y(x, y), top if top is not None else -1e9)
-            self.helipads.append((x, y, z))
+            hit = _bld_at(self.w, x, y)                        # inside a hospital footprint: the pad is on its roof, on a raised deck
+            g = self.w.ground_y(x, y)
+            roof = hit is not None and hit[1] > g + 1.0
+            z = hit[1] + 0.5 if roof else g
+            self.helipads.append((x, y, z, hit[1] if roof else None))
+            if roof:
+                deck = [(x - 8.5, y - 8.5), (x + 8.5, y - 8.5), (x + 8.5, y + 8.5), (x - 8.5, y + 8.5)]
+                _pg2_add(self.w, (1, deck, z, (x - 8.5, y - 8.5, x + 8.5, y + 8.5)), x - 8.5, y - 8.5, x + 8.5, y + 8.5)
+                self.heli_stairs.extend(_roof_stairs(self.w, hit[0], hit[1]))
+            self._clear_pad(x, y)
             b = Body(x, y, -math.pi / 2, vehicles.HELI, 0)
             b.az = z
             b.fuel = 1.0
             self.bodies.append(b)
+
+    def _clear_pad(self, x, y, r=15.0):
+        """Nothing right next to a helipad: trees and props there are hidden (no collision), parked cars never spawn."""
+        w = self.w
+        cg = w.cg
+        for e in list(w.points_near(x, y, r)):
+            if (e[0] - x) ** 2 + (e[1] - y) ** 2 > r * r:
+                continue
+            cell = w.pgrid.get((int(e[0] // cg), int(e[1] // cg)))
+            if cell and e in cell:
+                cell.remove(e)
+            g0 = w.ground_y(e[0], e[1])
+            w.broken_extra.append((e[0], e[1], max(4.5, e[2] + 0.6), g0 - 2.0, e[4] + 8.0))
+        w.broken_ver += 1
+        for i, q in enumerate(getattr(w, "parked", ()) or ()):
+            if (q[0] - x) ** 2 + (q[1] - y) ** 2 < (r + 3) ** 2:
+                self.gone.add(i)
 
     # ---------------------------------------------------------------- helpers
     def ev(self, _kind, **kw):
@@ -3535,7 +3631,7 @@ class Sim:
         # cleanup far away, burnt out or useless bodies
         keep = []
         for b in self.bodies:
-            if b is self.car or getattr(b, "remote", False):
+            if b is self.car or getattr(b, "remote", False) or (b.kind in vehicles.FLY and not b.exploded):   # helicopters stay on their pads
                 keep.append(b)
                 continue
             d2 = (b.x - fx) ** 2 + (b.y - fy) ** 2
