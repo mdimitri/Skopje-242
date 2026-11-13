@@ -2622,6 +2622,8 @@ class Sim:
                 mt = _mesh_top(self.w, x, y, 8.6, hit[1] + 9.0)
                 if mt is not None and mt + 0.4 > z:
                     z = mt + 0.4
+                elif mt is None:                              # no roof mesh to measure: stand well clear of any roof shape
+                    z = hit[1] + 2.5
             self.helipads.append((x, y, z, hit[1] if roof else None))
             if roof:
                 deck = [(x - 8.5, y - 8.5), (x + 8.5, y - 8.5), (x + 8.5, y + 8.5), (x - 8.5, y + 8.5)]
