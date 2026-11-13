@@ -159,7 +159,8 @@ class Selfie:
     def sky(self, cam, dark, hour, t, sw, sh):
         """Gradient + clouds / stars, drawn before the 3D pass; returns the horizon screen y."""
         far = V3(cam.position.x + math.cos(self.yaw) * 4000, cam.position.y, cam.position.z + math.sin(self.yaw) * 4000)
-        hy = int(max(sh * 0.15, min(sh * 0.9, rl.get_world_to_screen(far, cam).y)))
+        hz = max(-3.0 * sh, min(4.0 * sh, rl.get_world_to_screen(far, cam).y))   # true horizon: sky objects hang off it
+        hy = int(max(sh * 0.15, min(sh * 0.9, hz)))
         dusk = 1.0 - abs(dark - 0.5) * 2.0 if 0.0 < dark < 1.0 else 0.0
         top = _mix(_mix((60, 120, 215), (230, 120, 90), dusk * 0.5), (6, 8, 26), dark)
         hor = _mix(_mix((190, 220, 245), (255, 175, 120), dusk * 0.8), (28, 34, 70), dark)
@@ -170,17 +171,19 @@ class Selfie:
         def sx(az):
             d = (az - self.yaw + math.pi) % math.tau - math.pi
             return None if abs(d) > hfov * 0.7 else sw / 2 + math.tan(d) * ppr
+        def ey(el):                                               # screen y of an elevation (el*0.6 rad above the horizon)
+            return hz - math.tan(el * 0.6) * ppr
         if dark > 0.35:
             a = int(255 * min(1.0, (dark - 0.35) * 2.0))
             for az, el, br in self.stars:
                 x = sx(az)
                 if x is not None:
-                    y = hy - el * hy * 1.1
+                    y = ey(el)
                     tw = 0.6 + 0.4 * math.sin(t * 2.0 + az * 9)
                     rl.draw_circle(int(x), int(y), 1.4 if br > 0.8 else 1.0, rl.Color(255, 255, 235, int(a * br * tw)))
             mx = sx(MOON_AZ)                                      # fixed spot in the world sky: only turning the camera moves it on screen
             if mx is not None:
-                my = int(hy * 0.45)
+                my = int(ey(0.6))
                 r = int(sh * 0.11)                                # cartoonishly big
                 rl.draw_circle_gradient(rl.Vector2(int(mx), my), r * 2.6, rl.Color(200, 215, 255, int(70 * a / 255)), rl.Color(200, 215, 255, 0))
                 rl.draw_circle(int(mx), my, r, rl.Color(244, 242, 220, a))
@@ -194,7 +197,7 @@ class Selfie:
             x = sx(az + t * 0.004)
             if x is None:
                 continue
-            base = hy - el * hy * 1.1 + 20 * sz
+            base = ey(el) + 20 * sz
             pc = [(x + ox * 90 * sz, r * 40 * sz) for ox, _oy, r in puffs]
             x0, x1 = pc[0][0], pc[-1][0]
             hb = min(r for _x, r in pc) * 1.2                           # height of the flat-bottomed slab under the puffs
