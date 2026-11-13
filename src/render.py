@@ -79,6 +79,9 @@ void main(){
 """
 
 
+DETAIL_MATS = (17, 18, 19)                 # tools/build_world.py "glaz", MAT_KIT2, MAT_KIT3: pieces on walls and roofs
+
+
 def _gl():
     """glDepthFunc, which raylib does not wrap, looked up once; {} when unavailable."""
     global _GL
@@ -89,6 +92,10 @@ def _gl():
             p = RL.rlGetProcAddress(b"glDepthFunc")
             if p != f.NULL:
                 _GL = {"depthfunc": f.cast("void(*)(unsigned)", p)}
+            q, en, di = (RL.rlGetProcAddress(n_) for n_ in (b"glPolygonOffset", b"glEnable", b"glDisable"))
+            if f.NULL not in (q, en, di):
+                _GL.update(polyoffset=f.cast("void(*)(float, float)", q), enable=f.cast("void(*)(unsigned)", en),
+                           disable=f.cast("void(*)(unsigned)", di))
         except Exception:
             _GL = {}
     return _GL
@@ -526,15 +533,26 @@ class Renderer:
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
-                decals = []
+                decals, detail = [], []
+                gl_ = _gl()
                 for key, e in self._visible_meshes(st, fr, rect):
                     for mat, m in e[0].items():
                         if mat == 6:
                             decals.append(m)                 # graffiti: after every wall, without writing depth
+                        elif mat in DETAIL_MATS and "polyoffset" in gl_:
+                            detail.append(m)
                         else:
                             RL.DrawModel(m, ZERO, 1.0, WHITE)
                     nm += 1
                     e[1] = st.frame
+                if detail:                                   # frames, sills, relief, clutter: pulled a hair towards the camera so
+                    rl.rl_draw_render_batch_active()         # a piece in the plane of a wall or slab wins instead of flickering
+                    gl_["enable"](0x8037)                    # GL_POLYGON_OFFSET_FILL
+                    gl_["polyoffset"](-1.0, -2.0)
+                    for m in detail:
+                        RL.DrawModel(m, ZERO, 1.0, WHITE)
+                    rl.rl_draw_render_batch_active()
+                    gl_["disable"](0x8037)
                 if decals:
                     rl.rl_draw_render_batch_active()
                     rl.rl_disable_depth_mask()

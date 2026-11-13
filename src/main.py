@@ -1938,6 +1938,11 @@ def main():
             cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
         sf_on = sf_on or ch_on
+        near_sv = 0.1
+        if sf_on:                    # the street views' near plane: as far out as the avatar allows (0.1 m gave ~10 cm depth steps at 400 m: walls flickered)
+            o_ = sim.car if sim.mode == "car" and sim.car is not None else sim.walker
+            if o_ is not None:
+                near_sv = min(0.5, max(0.1, 0.3 * math.sqrt((cam.position.x - o_.x) ** 2 + (cam.position.z - o_.y) ** 2 + (cam.position.y - cam_h - 1.0) ** 2)))
         sim.view_rect = None if sf_on else (rect[0] - 20, rect[1] - 20, rect[2] + 20, rect[3] + 20)      # actors off this ground rectangle step at a third of the rate
         popups.street = ch_on
         # ------------------------------------------------ streaming
@@ -1965,10 +1970,10 @@ def main():
             rl.clear_background(rl.Color(26, 28, 32, 255))
             renderer.indoor = gtc if indoor_ else None           # in the mall: its hall instead of the city around
             if indoor_:
-                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, near_sv, True)
             elif sf_on:
                 sf_hy = selfie.sky(cam, sim.clock.dark, sim.clock.hour, t_game, sw, sh)
-                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, 0.1, True)
+                guard.run("render", renderer.draw, cam, Hc, rect, 26.0, sim, particles, t_game, True, near_sv, True)
                 if not ch_on:                          # the street view has the horizon near the top: the band read as a veil
                     selfie.haze(sf_hy, sim.clock.dark, sw)
             else:

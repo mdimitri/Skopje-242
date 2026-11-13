@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw
 import mapbox_earcut as earcut
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(1, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from geo import HX, HY, project
 from progress import Bar, each, phase, spread, flat, frac, span
 import par
@@ -26,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 66
+VERSION = 67
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1051,12 +1052,49 @@ def photo_on(fit):
 OSM_KIT = os.environ.get("SK242_OSM_KIT", "1") != "0"          # the element kit on the buildings without photos
 
 
-def _kit_faces(put, mt, cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot):
-    """One kit box as quads: on a wall without the face against the wall, with an underside when it hangs above the ground."""
+def _sep(p, q):
+    """True when convex polygons p, q (x, z lists) do not overlap by more than 2 cm (separating axis)."""
+    for poly in (p, q):
+        for i in range(len(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            nx, nz = b[1] - a[1], a[0] - b[0]
+            l_ = math.hypot(nx, nz) or 1.0
+            pa = [(x * nx + z * nz) / l_ for x, z in p]
+            pb = [(x * nx + z * nz) / l_ for x, z in q]
+            if min(pa) > max(pb) - 0.02 or min(pb) > max(pa) - 0.02:
+                return True
+    return False
+
+
+def _kit_flush(put, fl):
+    """The deferred undersides of one building's kit boxes: dropped where another box's top lies in the same plane (a lid on a
+    roof room, stacked tiers), which would z-fight with it."""
+    by_y = {}
+    for ty, tw in fl["top"]:
+        by_y.setdefault(int(round(ty * 50)), []).append(tw)
+    for mt, w4, y0, col in fl["bot"]:
+        k = int(round(y0 * 50))
+        if not any(not _sep(w4, tw) for kk in (k - 1, k, k + 1) for tw in by_y.get(kk, ())):
+            put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, col)
+    sides = {}
+    for f in fl["side"]:
+        sides.setdefault(f[0], []).append(f)
+    for (ka, ko), lst in sides.items():
+        near_ = [g for kk in ((ka, ko - 1), (ka, ko), (ka, ko + 1)) for g in sides.get(kk, ())]
+        for f in lst:
+            _k, sg, u0, u1, y0, y1, mt, pts, col = f
+            if not any(g[1] != sg and g[2] <= u0 + 0.01 and g[3] >= u1 - 0.01 and g[4] <= y0 + 0.01 and g[5] >= y1 - 0.01 for g in near_):
+                put(mt, pts, [(0.6, 0.2)] * 4, col)                   # a side against an opposite side covering it: inside the pair
+    fl["bot"], fl["top"], fl["side"] = [], [], []
+
+
+def _kit_faces(put, mt, cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot, fl=None):
+    """One kit box as quads: on a wall without the face against the wall, with an underside when it hangs above y_bot (the
+    ground for wall pieces, the roof for roof pieces).  fl: {"top": [], "bot": []} defers the undersides to _kit_flush."""
     ca, sa = math.cos(yw), math.sin(yw)
     w4 = [(cx + ca * x - sa * z, cz + sa * x + ca * z) for x, z in ((-sx / 2, -sz / 2), (sx / 2, -sz / 2), (sx / 2, sz / 2), (-sx / 2, sz / 2))]
-    if wall and sz <= 0.035:                                          # a flat piece on the wall (joint, band, stain): its front only
-        a_, b_ = w4[0], w4[1]
+    if wall and sz <= 0.035:                                          # a flat piece on the wall (joint, band, stain): its front only,
+        a_, b_ = [(p_[0] + sa * 0.02, p_[1] - ca * 0.02) for p_ in w4[:2]]     # 2 cm further out: at 1-3 cm it z-fought the wall far off
         put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4, col)
         return
     for k_ in range(4):
@@ -1066,12 +1104,25 @@ def _kit_faces(put, mt, cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot):
         nx, nz = b_[1] - a_[1], -(b_[0] - a_[0])
         l_ = math.hypot(nx, nz) or 1.0
         shd = float(np.clip(0.52 + 0.55 * max(0.0, (nx * SUN[0] + nz * SUN[2]) / l_), 0.45, 1.12))
-        put(mt, [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])], [(0.6, 0.2)] * 4,
-            [c * shd for c in col])
+        pts = [(a_[0], y0, a_[1]), (b_[0], y0, b_[1]), (b_[0], y0 + hh, b_[1]), (a_[0], y0 + hh, a_[1])]
+        if fl is None:
+            put(mt, pts, [(0.6, 0.2)] * 4, [c * shd for c in col])
+            continue
+        nx, nz = nx / l_, nz / l_                                     # side faces wait for _kit_flush: abutting boxes' touching sides go
+        sg = 1 if (nx > 1e-6 or (abs(nx) <= 1e-6 and nz > 0)) else -1
+        cnx, cnz = nx * sg, nz * sg
+        ua, ub = a_[0] * cnz - a_[1] * cnx, b_[0] * cnz - b_[1] * cnx
+        fl["side"].append(((round(math.atan2(cnz, cnx) * 500), round((a_[0] * cnx + a_[1] * cnz) * 100)), sg, min(ua, ub), max(ua, ub),
+                           y0, y0 + hh, mt, pts, [c * shd for c in col]))
     tp = float(np.clip(0.52 + 0.55 * SUN[1], 0.45, 1.12))
     put(mt, [(p_[0], y0 + hh, p_[1]) for p_ in w4], [(0.6, 0.2)] * 4, [c * tp for c in col])
-    if y0 > y_bot + 0.3 or not wall:
-        put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
+    if fl is not None:
+        fl["top"].append((y0 + hh, w4))
+    if y0 > y_bot + (0.3 if wall else 0.02):                          # not on the roof's plane either: that z-fights
+        if fl is not None:
+            fl["bot"].append((mt, w4, y0, [c * 0.55 for c in col]))
+        else:
+            put(mt, [(p_[0], y0, p_[1]) for p_ in w4[::-1]], [(0.6, 0.2)] * 4, [c * 0.55 for c in col])
 
 
 # mean colour of each facade texture (gl3d.build_textures, measured 2026-11-12): a textured wall shows tint x this / 255, so the
@@ -1080,7 +1131,7 @@ TEX_MEAN = {0: (179, 176, 169), 1: (130, 153, 164), 4: (154, 155, 153), 5: (204,
             9: (142, 148, 135), 10: (188, 188, 181), 11: (176, 158, 150)}
 
 
-def osm_kit(outer, h, mat, wallc, fh, bw, y_bot, seed, ar, small, ids=None):
+def osm_kit(outer, h, mat, wallc, fh, bw, y_bot, seed, ar, small, ids=None, hide=None):
     """src/archkit.py elements on a building without photos: its archetype from the world's facade material and size, one pick
     per element group from its own seed, placed on the texture's tile grid (bays of the wall / floor lines) -> [(material, pos, uv,
     col)].  Silhouette and rhythm go to "glaz", relief and clutter to MAT_KIT2 / MAT_KIT3 (left out by the detail setting)."""
@@ -1107,10 +1158,11 @@ def osm_kit(outer, h, mat, wallc, fh, bw, y_bot, seed, ar, small, ids=None):
     fh_ = (h - y_bot) / floors
     fams = [(e, archkit.BY_ID[e][1]) for e in ids]
     nbox = 0
+    fl = {"top": [], "bot": [], "side": []}
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
         ln = float(np.hypot(*(b - a)))
-        if ln < 1.5:
+        if ln < 1.5 or _hide_edge(hide, i, ln, 0.5) > y_bot + 0.3:     # a party wall (party_walls): nothing on it
             continue
         t_ = (b - a) / ln
         nrm = np.array([t_[1], -t_[0]])
@@ -1129,18 +1181,19 @@ def osm_kit(outer, h, mat, wallc, fh, bw, y_bot, seed, ar, small, ids=None):
                 u_, o_, ky0, su_, sd_, hh_, rgb_ = it[:7]
                 cx, cz = a + t_ * u_ + nrm * o_
                 _kit_faces(put, KMAT[tr_], cx, cz, su_, sd_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yaw + (it[7] if len(it) > 7 else 0.0),
-                           len(it) == 7, y_bot)
+                           len(it) == 7, y_bot, fl)
                 nbox += 1
     if not small:
         for eid, fam in fams:
             if archkit.FAMILIES[fam][2] != "roof":
                 continue
             for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof([eid], r, h, wallc, None):
-                _kit_faces(put, KMAT[archkit.TIER[fam]], x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, False, y_bot)
+                _kit_faces(put, KMAT[archkit.TIER[fam]], x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, False, h, fl)
+    _kit_flush(put, fl)
     return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
 
 
-def photo_facade(outer, h, fit, y_bot=0.0):
+def photo_facade(outer, h, fit, y_bot0=0.0, hide=None):
     """Walls of a photo-fitted building (src/photogram.py ДЕТАЛИ), all procedural from the fitted numbers: every wall cut into its
     bay columns x floors; each cell a wall surface (plaster / concrete / tiles / brick / metal texture in the photo's colour) with a
     recessed window (reveals, glass, frame, glazing bars, blind, sill) or a loggia, balcony slab and parapet or railing, AC units.
@@ -1187,14 +1240,17 @@ def photo_facade(outer, h, fit, y_bot=0.0):
 
     KMAT = (MAT_SURF["glaz"], MAT_SURF["glaz"], MAT_KIT2, MAT_KIT3)
 
-    def kbox(cx, cz, sx, sz, hh, y0, col, yw, tier=1, wall=False):
-        _kit_faces(put, KMAT[tier], cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot)
+    kfl = {"top": [], "bot": [], "side": []}
+
+    def kbox(cx, cz, sx, sz, hh, y0, col, yw, tier=1, wall=False, yb=None):
+        _kit_faces(put, KMAT[tier], cx, cz, sx, sz, hh, y0, col, yw, wall, y_bot if yb is None else yb, kfl)
     longest = max(range(n), key=lambda j: float(np.hypot(*(r[(j + 1) % n] - r[j])))) if n else 0
     for i in range(n):
         a, b = r[i], r[(i + 1) % n]
         d = b - a
         ln = float(math.hypot(*d))
-        if ln < 0.15:
+        y_bot = max(y_bot0, _hide_edge(hide, i, ln))               # a party wall (party_walls): only above the neighbour
+        if ln < 0.15 or y_bot >= h - 0.3:
             continue
         t_ = d / ln
         nrm = np.array([t_[1], -t_[0]])                            # outward
@@ -1410,12 +1466,12 @@ def photo_facade(outer, h, fit, y_bot=0.0):
                 cx, cz = a + t_ * (u0 + u1) / 2 + nrm * (Dg[ci][bi] + dep / 2)
                 put_box(MG, cx, cz, u1 - u0, dep, by1 - by0 if kind_ != "plinth" else by1 - y_bot, by0 if kind_ != "plinth" else y_bot,
                         [c * lit / PAINT_BASE for c in satc(bc)], yaw)
-        if gf and gf.get("pil"):                                         # arcade pillars on the line of the wall above
+        if gf and gf.get("pil") and y_bot <= y_bot0 + 0.01:                                         # arcade pillars on the line of the wall above
             for pu in gf["pil"]:
                 ci = next((j for j, c_ in enumerate(cols) if c_[0] <= pu < c_[1]), 0)
                 cx, cz = a + t_ * pu + nrm * (cols[ci][4] - 0.22)
                 put_box(MG, cx, cz, 0.42, 0.42, gf["y"] - y_bot, y_bot, [c * lit / PAINT_BASE for c in wallc], yaw)
-        if kit and nbox[0] < archkit.MAX_BOXES:                        # the element kit (src/archkit.py) on this wall
+        if kit and nbox[0] < archkit.MAX_BOXES and y_bot <= y_bot0 + 0.3:   # the element kit (src/archkit.py) on this wall
             def D_(u, y, cols=cols, Dg=Dg, cuts=cuts):
                 ci = next((j for j, c_ in enumerate(cols) if u < c_[1]), len(cols) - 1)
                 bi = max(0, min(len(cuts) - 2, sum(1 for c_ in cuts[1:-1] if c_ <= y)))
@@ -1441,7 +1497,8 @@ def photo_facade(outer, h, fit, y_bot=0.0):
         for eid_ in kit:
             tr_ = archkit.TIER[archkit.BY_ID[eid_][1]]
             for x_, z_, ky0, sx_, sz_, hh_, rgb_, yw_ in archkit.kit_roof([eid_], r, h, fit.get("wallc", (200, 200, 200)), fit.get("roof")):
-                kbox(x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, tr_)
+                kbox(x_, z_, sx_, sz_, hh_, ky0, [c / PAINT_BASE for c in rgb_], yw_, tr_, yb=h)
+    _kit_flush(put, kfl)
     return [(m_, np.array(P_, np.float32), np.array(U_, np.float32), np.array(C_, np.uint8)) for m_, (P_, U_, C_) in acc.items() if P_]
 
 
@@ -1750,6 +1807,83 @@ def _lamp_job(a):
 _BT = [None]                                  # the pool worker's copy of the terrain
 
 
+def party_walls(jobs, T):
+    """Walls two buildings share (outline edges on the same line, 5 cm, facing each other: OSM's shared nodes or a neighbour's
+    longer edge): each building's wall there is drawn only above the neighbour's roof, otherwise the two back-to-back walls
+    fight in the depth buffer (the game draws without backface culling).  -> per job None (a free building) or per outline
+    edge a list of (u0, u1, height above the building's own base under which the wall is hidden), u in metres along the edge."""
+    G_ = 8.0
+    tops, bases, segs, grid = [], [], [], {}
+    for j, job in enumerate(jobs):
+        ring = np.asarray(job[2], np.float64)
+        tz = T.h(ring[:, 0], ring[:, 1])
+        base = float(np.mean(tz)) if len(tz) else 0.0
+        bases.append(base)
+        tops.append(base + float(job[6]))
+        n = len(ring)
+        for i in range(n):
+            a, b = ring[i], ring[(i + 1) % n]
+            ln = float(np.hypot(*(b - a)))
+            if ln < 0.15:
+                continue
+            si = len(segs)
+            segs.append((j, i, a, b, ln))
+            for gx in range(int(math.floor(min(a[0], b[0]) / G_)), int(math.floor(max(a[0], b[0]) / G_)) + 1):
+                for gy in range(int(math.floor(min(a[1], b[1]) / G_)), int(math.floor(max(a[1], b[1]) / G_)) + 1):
+                    grid.setdefault((gx, gy), []).append(si)
+    out = [None] * len(jobs)
+    seen = set()
+    for cell in grid.values():
+        for p in range(len(cell)):
+            for q in range(p + 1, len(cell)):
+                s1, s2 = cell[p], cell[q]
+                if (s1, s2) in seen or segs[s1][0] == segs[s2][0]:
+                    continue
+                seen.add((s1, s2))
+                j1, i1, a1, b1, l1 = segs[s1]
+                j2, i2, a2, b2, l2 = segs[s2]
+                t1, t2 = (b1 - a1) / l1, (b2 - a2) / l2
+                if float(t1 @ t2) > -0.999:                    # walls back to back run opposite ways
+                    continue
+                nv = np.array([-t1[1], t1[0]])
+                if abs(float((a2 - a1) @ nv)) > 0.05 or abs(float((b2 - a1) @ nv)) > 0.05:
+                    continue
+                u_a, u_b = float((a2 - a1) @ t1), float((b2 - a1) @ t1)
+                lo, hi = max(0.0, min(u_a, u_b)), min(l1, max(u_a, u_b))
+                if hi - lo < 0.3:
+                    continue
+                for j, i, l_, u0, u1, oth in ((j1, i1, l1, lo, hi, j2), (j2, i2, l2, u_a - hi, u_a - lo, j1)):
+                    if out[j] is None:
+                        out[j] = [[] for _ in jobs[j][2]]
+                    out[j][i].append((max(0.0, u0), min(l_, u1), tops[oth] - bases[j]))
+    return out
+
+
+def _hide_edge(hide, i, ln, frac=0.9):
+    """Height under which the whole edge i is hidden (its party-wall pieces cover >= frac of it), else -inf."""
+    iv = hide[i] if hide else ()
+    if not iv or sum(u1 - u0 for u0, u1, _c in iv) < frac * ln:
+        return -1e9
+    return min(c for _u0, _u1, c in iv)
+
+
+def _split_party(outer, hide, y0):
+    """The outline with each edge cut at its party-wall pieces, and the wall foot per new edge (the neighbour's roof where hidden)."""
+    r = np.asarray(outer, np.float64)
+    pts, yb = [], []
+    for i in range(len(r)):
+        a, b = r[i], r[(i + 1) % len(r)]
+        ln = float(np.hypot(*(b - a)))
+        cuts = sorted({0.0, ln, *[min(ln, max(0.0, u)) for u0, u1, _c in (hide[i] or ()) for u in (u0, u1)]})
+        for u0, u1 in zip(cuts[:-1], cuts[1:]):
+            if u1 - u0 < 1e-3:
+                continue
+            m = (u0 + u1) / 2
+            pts.append(a + (b - a) * (u0 / max(ln, 1e-9)))
+            yb.append(max([y0] + [c for v0, v1, c in (hide[i] or ()) if v0 - 1e-3 <= m <= v1 + 1e-3]))
+    return np.array(pts), np.array(yb, np.float32)
+
+
 def _bld_init(T):
     _BT[0] = T
 
@@ -1757,7 +1891,8 @@ def _bld_init(T):
 def _bld_job(job):
     """One building's meshes on the terrain (walls, roof, facade extras, graffiti, roof junk) -> (binfo entry, [(material, pos, uv, col)]).
     Runs in a pool worker; the building's own random streams make the result independent of the other buildings."""
-    (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit) = job
+    (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit, *hide) = job
+    hide = hide[0] if hide else None                                  # party walls: per edge, hidden below this (party_walls)
     fh, bw = (fit or {}).get("floor", 3.2), (fit or {}).get("bay", 3.4)
     T = _BT[0]
     adds = []
@@ -1783,10 +1918,11 @@ def _bld_job(job):
     photo = photo_on(fit)                                             # procedural facade from the photos' numbers (ДЕТАЛИ fit)
     roof_fit = (fit or {}).get("roof") if photo else None
     if photo:
-        for m_, *g in photo_facade(outer, h, fit, -skirt):
+        for m_, *g in photo_facade(outer, h, fit, -skirt, hide):
             badd(m_, *g)
     else:
-        w = walls(outer, h, wallc, skirt_a, fh, bw)
+        sr_, sy_ = _split_party(outer, hide, -skirt) if hide else (outer, skirt_a)
+        w = walls(sr_, h, wallc, sy_, fh, bw)
         if w:
             badd(mat, *w)
     rg = random.Random(len(outer) * 7919 ^ int(cxm * 131) ^ int(cym * 17))
@@ -1845,7 +1981,7 @@ def _bld_job(job):
             import archkit
             ids_ = archkit.osm_ids((fit or {}).get("osm_arch") or archkit.osm_archetype(mat, h, ar, small),
                                    ((int(cxm * 13.7) * 92821) ^ int(cym * 7.3)) & 0x7FFFFFFF)
-            for m_, *g in osm_kit(outer, h, mat, wallc, fh, bw, -skirt, 0, ar, small, ids_):
+            for m_, *g in osm_kit(outer, h, mat, wallc, fh, bw, -skirt, 0, ar, small, ids_, hide):
                 badd(m_, *g)
         for (px, py, sx, sz, hh) in rooftop:
             badd(MAT_SOLID, *box(px, py, sx, sz, hh, h, (150, 150, 156)))
@@ -2157,6 +2293,8 @@ def main():
                 ys_ = [p[1] for p in o2]
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
         jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
+    hide_ = party_walls(jobs_, T)
+    jobs_ = [j_ + (hd_,) for j_, hd_ in zip(jobs_, hide_)]
     bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
     for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
