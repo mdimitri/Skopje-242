@@ -85,6 +85,9 @@ def restore(sim, cfg, d):
         w = d["walker"]
         wk = actors.Walker(w["x"], w["y"], w["h"])
         wk.health, wk.weapon, wk.guns = w["health"], w["weapon"], dict(w["guns"])
+        wk.guns.pop("sniper", None)                     # the sniper rifle was removed from the game
+        if wk.weapon == "sniper":
+            wk.weapon = "fist"
         sim.walker = wk
         sim.mode = "foot"
         c.empty, c.player_car = True, False

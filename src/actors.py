@@ -22,12 +22,12 @@ WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT
            "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14),
            "knuckles": ("Боксирач", 0.3, 28, 1, 0.0, 1.2, 9999), "chain": ("Ланец", 0.5, 26, 1, 0.0, 2.6, 9999),
            "machete": ("Мачета", 0.45, 48, 1, 0.0, 1.8, 9999), "revolver": ("Револвер", 0.6, 70, 1, 0.01, 45, 36),
-           "sniper": ("Снајпер", 1.3, 180, 1, 0.0, 120, 20), "smg": ("Ингрем", 0.07, 16, 1, 0.09, 26, 400)}
+           "smg": ("Ингрем", 0.07, 16, 1, 0.09, 26, 400)}
 MELEE = ("bat", "knuckles", "chain", "machete")                # swung, not fired: no tracer, no ammo used
 from weaponart import swing_az   # noqa: E402
 SWINGERS = ("bat", "chain")                          # two-handed swings: swept arc hits, arms follow (render swing frames 60..67)
 SWING_T = 0.36                  # seconds of one bat swing (the renderer sweeps the bat across the body)
-WEAPON_ORDER = ["fist", "knuckles", "chain", "bat", "machete", "pistol", "revolver", "uzi", "smg", "shotgun", "kalash", "sniper", "zolja"]
+WEAPON_ORDER = ["fist", "knuckles", "chain", "bat", "machete", "pistol", "revolver", "uzi", "smg", "shotgun", "kalash", "zolja"]
 
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
 
@@ -2524,7 +2524,7 @@ class Sim:
         for e in rng.sample(walk, min(self.WEAPON_PICKUPS, len(walk))):
             x, y, dx, dy = self.w.edge_point(e, rng.uniform(5, e["len"] - 5))
             self.pickups.append([x, y, rng.choice(("pistol", "pistol", "bat", "bat", "knuckles", "chain", "uzi", "uzi", "shotgun", "kalash",
-                                                    "kalash", "zolja", "machete", "revolver", "sniper", "smg")), True, 0.0])
+                                                    "kalash", "zolja", "machete", "revolver", "smg")), True, 0.0])
 
     def _make_pickups(self):
         rng = random.Random(99)
