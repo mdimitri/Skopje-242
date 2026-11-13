@@ -624,6 +624,8 @@ def main():
     sim.auto_respawn = bool(a.test)
     lights = signals.Signals(world)
     sim.traffic.signals = sim.lights = lights
+    import trafficproc
+    sim.tproc = trafficproc.start(sim, world)             # AI traffic on its own core: the worker loads the world meanwhile
     loader.tick(0.97, "traffic lights")
     print(f"[game] traffic lights: {len(lights.items)} signal heads")                     # test runs have nobody to press R
     loader.tick(0.99, "sound")
@@ -785,6 +787,8 @@ def main():
     gc.collect()
     import modelpool
     modelpool.start()                              # car / person models on spare cores (SK242_MODELPOOL=0: in the frame)
+    if sim.tproc is not None and not sim.tproc.wait_ready():
+        sim.tproc = None                           # the worker failed: traffic runs in this process as before
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     gc.set_threshold(50000, 20, 100)
     res_ = ""
@@ -813,6 +817,9 @@ def main():
         if _ms is not None and _ms.state == "playing":
             import atexit
             import mpgame
+            if sim.tproc is not None:              # multiplayer moves cars between PCs: traffic stays in this process
+                sim.tproc.stop()
+                sim.tproc = None
             mpg = mpgame.Game(sim, _ms)
             mpgame.spawn(sim, world, _ms)
             atexit.register(_ms.leave)
@@ -2070,6 +2077,8 @@ def main():
         print(f"[test] ped modes {dict(_c.Counter(p.mode for p in sim.peds.list))} queues {sum(len(q) for q in sim.transit.queue.values())} "
               f"buses {len(sim.transit.buses)} on/off {sim.transit.served} riding {sim.riding is not None} broken {len(getattr(world, 'broken', []))}")
     modelpool.stop()
+    if sim.tproc is not None:
+        sim.tproc.stop()
     rl.close_window()
     # normal exit: hard-exit so no lingering non-daemon thread or child process keeps python (and the console window) alive
     try:

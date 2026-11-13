@@ -171,7 +171,12 @@ class Stations:
                         j["phase"], j["t"] = 2, self.sim.rng.uniform(5.0, 12.0)
                     else:
                         peds.remove(p)
-                        c.dwell = min(c.dwell, 1.0) if c.dwell is not None else None
+                        v_ = min(c.dwell, 1.0) if c.dwell is not None else None
+                        tp = getattr(sim, "tproc", None)          # the traffic worker owns the car's state: tell it
+                        if tp is not None:
+                            tp.poke(c, "dwell", v_)
+                        else:
+                            c.dwell = v_
                         continue
                 else:
                     a = math.atan2(ty - p.y, tx - p.x)

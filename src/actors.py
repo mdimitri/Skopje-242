@@ -1453,7 +1453,7 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz", "goff", "tgz", "tpitch", "troll")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "rq", "stn", "dwell", "stn_t", "trh", "tra", "sqz", "goff", "tgz", "tpitch", "troll", "uid")
 
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
@@ -1486,6 +1486,7 @@ class Car:
         self.stn_t = 0.0           # give up on the visit after this long
         self.trh = None            # semi: heading of the trailer, which follows the tractor round bends (None: straight behind)
         self.tra = None            # semi: the trailer's axle group (x, y), see tow()
+        self.uid = None            # its number in the traffic worker process (trafficproc.py)
 
 
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}   # as tools/roads3d
@@ -3411,7 +3412,10 @@ class Sim:
         elif tr is not None:
             self.train_ride = None
         if not self.client:
-            self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, self.walker if self.mode == "foot" else None)
+            tp = getattr(self, "tproc", None)                              # AI traffic in its own process (trafficproc.py)
+            wk_ = self.walker if self.mode == "foot" else None
+            if tp is None or not tp.step(dt, fx, fy, self.bodies, self.peds.list, wk_):
+                self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, wk_)
         self._cull_t -= dt
         if self._cull_t <= 0 and not self.client:                       # thin the crowd / traffic when the clock says it is quiet
             self._cull_t = 0.2

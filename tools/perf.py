@@ -102,7 +102,7 @@ def _sub(modname, cls, meth):
         f0 = getattr(C, meth)
     except Exception:  # noqa: BLE001 - an older tree without it
         return
-    tagn = f"{modname}.{meth}"
+    tagn = f"{modname}.{cls}.{meth}" if meth == "update" else f"{modname}.{meth}"
     def w(*x, **kw):
         t0, c0 = time.perf_counter(), calls["draw"]
         try:
@@ -113,7 +113,8 @@ def _sub(modname, cls, meth):
     setattr(C, meth, w)
 for spec in (("render", "Renderer", "_actors"), ("render", "Renderer", "_decals"), ("render", "Renderer", "_overview"),
              ("bake", "Streamer", "_load_meshes"), ("bake", "Streamer", "_load_block"), ("bake", "Streamer", "_bake"),
-             ("night", "Night", "draw"), ("sunshadow", "SunShadow", "_draw_depth")):
+             ("night", "Night", "draw"), ("sunshadow", "SunShadow", "_draw_depth"),
+             ("actors", "Traffic", "update"), ("actors", "Peds", "update"), ("trafficproc", "TrafficProc", "step")):
     _sub(*spec)
 
 import gc  # noqa: E402
