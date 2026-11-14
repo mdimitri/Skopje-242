@@ -123,6 +123,7 @@ class Compound:
 
 
 BAKED = "compounds.json"            # the layout, written next to the built world so every player has the same one
+LAYOUT_V = 2                        # bump when placement changes: an older saved layout is placed again
 _FIELDS = ("fence", "gates", "booths", "bunkers", "spots", "posts", "route", "signs", "flat", "out_pt", "building")
 
 
@@ -130,7 +131,7 @@ def save(lst, path):
     out = [dict({"kind": c.kind, "name": c.name, "ring": c.ring}, **{f: getattr(c, f) for f in _FIELDS}) for c in lst]
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"version": 1, "compounds": out}, f, ensure_ascii=False)
+        json.dump({"version": LAYOUT_V, "compounds": out}, f, ensure_ascii=False)
     os.replace(tmp, path)
 
 
@@ -138,6 +139,8 @@ def load(path):
     try:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
+        if d.get("version") != LAYOUT_V:
+            raise ValueError("an older layout")
         out = []
         for q in d["compounds"]:
             c = Compound(q["kind"], q["name"], [tuple(p) for p in q["ring"]])
