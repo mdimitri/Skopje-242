@@ -752,6 +752,11 @@ def main():
     except Exception as e_:  # noqa: BLE001 - the game runs without them
         log(f"[game] compounds failed: {e_!r}")
         sim.compounds = None
+    try:                                                   # map: a few legend areas instead of the POI dots
+        import maplegend
+        hud.sites = maplegend.build(sim, hud.pois, sim.compounds)
+    except Exception as e_:  # noqa: BLE001
+        log(f"[game] map legend failed: {e_!r}")
     log(f"[game] stray dog hubs (kiosks, food places): {sum(len(v) for v in sim.dogs.hubs.values())}")
     labels += [(nm_, x_, world.ground_y(x_, y_) + 3.2, y_, "poi:" + c_) for x_, y_, c_, nm_ in hud.pois if nm_]
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]

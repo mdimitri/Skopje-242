@@ -8,6 +8,7 @@ import pyray as rl
 import font   # noqa: E402
 
 import slang
+import maplegend
 import weaponart
 import vehicles
 from actors import CAR_NAMES, WEAPONS
@@ -234,6 +235,7 @@ class Hud:
         self.tip = ""
         self.markers = []            # (name, x, y) neighbourhoods drawn on the big map
         self._poi_key, self._poi_xy = None, None
+        self.sites = []              # map legend sites (maplegend.build)
         self.pois = []               # [x, y, category, name] faint points of interest (data/osm/map_pois.json)
         self.radio_logo = None        # texture of the station's logo image, drawn left of the radio line
         self.radio_keys = ""          # key hint under the radio line
@@ -528,10 +530,7 @@ class Hud:
                         rl.draw_circle_v(rl.Vector2(qx, qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
                         if pk[2] in WEAPONS:                              # weapons carry their first letter
                             font.draw_text(WEAPONS[pk[2]][0][:1], int(qx) + 4, int(qy) - 8, 12, rl.Color(150, 10, 10, 255))
-            for x, y, cat, _nm in self._pois_near(fx, fy):
-                qx, qy = to_mm(x, y)
-                if inside(qx, qy):
-                    rl.draw_circle_v(rl.Vector2(qx, qy), 1.5, POI_COL.get(cat, POI_COL["shop"]))
+            maplegend.draw(self.sites, to_mm, False, lambda q: inside(q[0], q[1]))
             for name, x, y, _yaw in getattr(sim.w, "stations", ()) or ():     # railway stations, named
                 qx, qy = to_mm(x, y)
                 if inside(qx, qy):
@@ -611,9 +610,8 @@ class Hud:
                 tx_, ty_, _z, _h = t_.line.at(t_.s)
                 qx, qy = to_big(tx_, ty_)
                 rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(30, 30, 30, 255))
-            for x, y, cat, _nm in self.pois:                    # faint POI dots, coloured by kind
-                qx, qy = to_big(x, y)
-                rl.draw_circle(int(qx), int(qy), 1.6, POI_COL.get(cat, POI_COL["shop"]))
+            maplegend.draw(self.sites, to_big, True)
+            maplegend.draw_legend(font, sw, sh, mx + 12, my + mh - 12 - (12 + 24 * len(maplegend.KINDS)))
             for name, x, y in self.markers:
                 qx, qy = to_big(x, y)
                 rl.draw_circle(int(qx), int(qy), 4, rl.Color(120, 30, 30, 255))
