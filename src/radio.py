@@ -86,6 +86,20 @@ def cut_fragment(path, out_wav, frag, muffle=False, fx=None):
         rl.unload_wave(w)
 
 
+IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
+
+def logo_for(name, base=MUSIC):
+    """Path of the station's logo: an image in its folder (one called *logo* first, else the only image), or None."""
+    d = os.path.join(base, name)
+    try:
+        imgs = sorted(f for f in os.listdir(d) if os.path.splitext(f)[1].lower() in IMG_EXTS)
+    except OSError:
+        return None
+    pick = [f for f in imgs if "logo" in f.lower()] or (imgs if len(imgs) == 1 else [])
+    return os.path.join(d, pick[0]) if pick else None
+
+
 def scan(base=MUSIC):
     """-> (stations [(name, [paths])], skipped unsupported count).  Recursive; sub-folders are stations."""
     groups, loose, skipped = {}, [], 0
@@ -177,6 +191,11 @@ class Radio:
             if len(o) != len(old.get(n, [])):
                 random.shuffle(o)
             self.orders.append(o)
+        for i, o in enumerate(self.orders):               # every station starts at a random place of its own shuffle
+            if i not in self.resume and o:
+                self.resume[i] = random.randrange(len(o))
+                if i == self.sel:
+                    self.cur_pos = self.next_pos = self.resume[i]
         self.hint = "" if self.stations else TXT("radio.0009")
 
     def _rl(self):
@@ -194,6 +213,29 @@ class Radio:
             return OFF_LINE
         nm = self.stations[self.sel][0]
         return f"{STATION_WORD}: {nm} – {self.now or NO_TRACK}"
+
+    def logo(self):
+        """Texture of the current station's logo image, or None (loaded once per station)."""
+        if self.off or not self.aud.ok:
+            return None
+        nm = self.stations[self.sel][0]
+        cache = self.__dict__.setdefault("_logos", {})
+        if nm not in cache:
+            tex = None
+            try:
+                p = logo_for(nm)
+                if p:
+                    rl = self._rl()
+                    with open(p, "rb") as f:
+                        raw = f.read()
+                    img = rl.load_image_from_memory(os.path.splitext(p)[1].lower(), raw, len(raw))
+                    tex = rl.load_texture_from_image(img)
+                    rl.unload_image(img)
+                    rl.set_texture_filter(tex, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+            except Exception:  # noqa: BLE001
+                tex = None
+            cache[nm] = tex
+        return cache[nm]
 
     def keys_line(self):
         return "" if self.hint else KEYS_HINT
@@ -213,7 +255,9 @@ class Radio:
         if self.user_off:
             self._silence()
             return OFF_LINE
-        self.cur_pos = self.next_pos = self.resume.get(self.sel, 0) % max(1, len(self.orders[self.sel]))
+        if self.sel not in self.resume:                   # first visit: start somewhere in the shuffled order
+            self.resume[self.sel] = random.randrange(max(1, len(self.orders[self.sel])))
+        self.cur_pos = self.next_pos = self.resume[self.sel] % max(1, len(self.orders[self.sel]))
         self._burst()
         return f"{STATION_WORD}: {self.stations[self.sel][0]}"
 
@@ -278,7 +322,15 @@ class Radio:
                 return False
             self.snd, self.cur, self.t = snd, j["path"], 0.0
             self.cur_pos = j["pos"]
-            self.next_pos = (j["pos"] + 1) % len(self.orders[self.sel])
+            order = self.orders[self.sel]
+            self.next_pos = j["pos"] + 1
+            if self.next_pos >= len(order):               # end of the playlist: a fresh shuffle, never the same song twice in a row
+                last = order[j["pos"]]
+                random.shuffle(order)
+                if len(order) > 1 and order[0] == last:
+                    k = random.randrange(1, len(order))
+                    order[0], order[k] = order[k], order[0]
+                self.next_pos = 0
             self.now = os.path.splitext(os.path.basename(j["path"]))[0].replace("_", " ")
             rl.set_sound_volume(snd, self.volume * self.aud.master)
             rl.play_sound(snd)

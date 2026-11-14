@@ -235,6 +235,7 @@ class Hud:
         self.markers = []            # (name, x, y) neighbourhoods drawn on the big map
         self._poi_key, self._poi_xy = None, None
         self.pois = []               # [x, y, category, name] faint points of interest (data/osm/map_pois.json)
+        self.radio_logo = None        # texture of the station's logo image, drawn left of the radio line
         self.radio_keys = ""          # key hint under the radio line
         self.radio_line = ""          # car radio station / song, drawn in the vehicle panel
         self.place = ("", "", 0.0)   # neighbourhood tooltip: title, line, seconds left
@@ -405,6 +406,11 @@ class Hud:
             font.draw_text(TXT("hud.0011"), sw - 78, sh - 52, 20, rl.Color(250, 220, 80, 255))
             if self.radio_line:
                 font.draw_text(font.fit(self.radio_line, 17, 520), sw - 540, sh - 24, 17, rl.Color(190, 235, 255, 230))
+                lg = self.radio_logo
+                if lg is not None and lg.width > 0:
+                    sc = 36 / max(lg.width, lg.height)
+                    rl.draw_texture_pro(lg, rl.Rectangle(0, 0, lg.width, lg.height),
+                                        rl.Rectangle(sw - 584, sh - 44, lg.width * sc, lg.height * sc), rl.Vector2(0, 0), 0.0, rl.WHITE)
                 if self.radio_keys:
                     font.draw_text(font.fit(self.radio_keys, 14, 430), sw - 540, sh - 42, 14, rl.Color(150, 190, 210, 200))
             hp = max(0.0, c.health) / 100.0

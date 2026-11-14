@@ -1913,6 +1913,7 @@ def main():
         in_radio_ = sim.mode == "car" and car_radio.aud.ok
         hud.radio_line = car_radio.label() if in_radio_ else ""
         hud.radio_keys = car_radio.keys_line() if in_radio_ else ""
+        hud.radio_logo = car_radio.logo() if in_radio_ else None
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
         if song:
             hud.set_banner(TXT("main.0043") + song, 2.0)

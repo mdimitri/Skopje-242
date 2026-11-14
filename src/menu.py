@@ -803,6 +803,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     drag = None
     scr = 0
     frames = 0
+    just_opened = False
+    dd, dd_scr = None, 0                                       # open drop-down list: row index, first visible option
     while True:
         frames += 1
         if rl.window_should_close():
@@ -828,7 +830,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if new_tab != tab:
             tab = new_tab
             rows = [r for t, r in allrows if t == tab]
-            sel, drag, scr = _first(rows), None, 0
+            sel, drag, scr, dd = _first(rows), None, 0, None
             continue
         # ---- scrolling: the rows are large, so the list moves inside its window (wheel, or keeps the selected row in view)
         offs, yy = [], 0
@@ -837,7 +839,9 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 yy += 6
             offs.append(yy)
             yy += rh
-        scr -= int(rl.get_mouse_wheel_move()) * rh * 2
+        wheel = int(rl.get_mouse_wheel_move())
+        if dd is None:
+            scr -= wheel * rh * 2
         top_i = offs[sel] - (rh + 6 if sel > 0 and rows[sel - 1].kind == "head" else 0)
         scr = min(scr, top_i) if top_i < scr else scr
         scr = max(scr, offs[sel] + rh - avail)
@@ -848,6 +852,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             y = y0 - scr + offs[i]
             if r.kind != "head" and x0 <= m.x <= x0 + pw and y <= m.y < y + rh and y0 <= m.y < y0 + avail:
                 hover = i
+        if dd is not None:
+            hover = None                                       # the open list owns the mouse
         if hover is not None and (m.x != getattr(run, "_mx", -1) or rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)):
             sel = hover
         run._mx = m.x
@@ -882,6 +888,26 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if aud is not None and act:
             aud.play("ui_confirm", 0.6)
         clicked = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and hover is not None
+        dd_geo = None
+        if dd is not None and (dd >= len(rows) or rows[dd].kind != "choice"):
+            dd = None
+        if dd is not None:                                     # ---- drop-down list of a choice row (mouse: click an option, wheel scrolls)
+            opts, ih = rows[dd].options, 40
+            vis = min(len(opts), 8)
+            ry = y0 - scr + offs[dd]
+            ly = ry + rh if ry + rh + vis * ih <= H - 20 else max(8, ry - vis * ih)
+            lw = max(bw + 60, max(font.measure_text(str(o), 30, CD) for o in opts) + 50)
+            dd_scr = max(0, min(dd_scr - wheel, len(opts) - vis))
+            dd_geo = (vx, ly, lw, ih, vis, opts, rows[dd].key)
+            if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and not just_opened:
+                if vx <= m.x < vx + lw and ly <= m.y < ly + vis * ih:
+                    cfg[rows[dd].key] = dd_scr + int((m.y - ly) // ih)
+                    changed = True
+                dd = None
+            elif rl.is_key_pressed(rl.KEY_ESCAPE):
+                dd = None
+            clicked = False
+        just_opened = False
         r = rows[sel]
         slider_like = r.kind == "slider" or (r.kind == "choice" and r.bar)
         if clicked and slider_like:
@@ -896,6 +922,9 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             else:
                 cfg[rr.key] = int(round(f * (len(rr.options) - 1)))
             changed = True
+        elif clicked and r.kind == "choice" and not r.bar:      # a list: pick any option, forward or back
+            dd, just_opened = sel, True
+            dd_scr = max(0, min(cfg[r.key] - 4, len(r.options) - 8))
         elif clicked and r.kind in ("choice", "toggle"):
             step(1)
             changed = True
@@ -932,7 +961,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 slots = [savegame.summary(i) for i in range(1, savegame.SLOTS + 1)]
                 allrows = _rows(in_game, slots, settings_only)
                 rows = [x for t, x in allrows if t == tab]
-        if rl.is_key_pressed(rl.KEY_ESCAPE) and (in_game or settings_only) and frames > 1:   # the Esc that opened the menu must not close it
+        if rl.is_key_pressed(rl.KEY_ESCAPE) and (in_game or settings_only) and frames > 1 and dd_geo is None:   # the Esc that opened the menu must not close it
             cfg.save()
             return "play"
         if changed:
@@ -986,6 +1015,21 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                     _slider(vx, y + rh // 2 - 15, bw, f)
                     font.draw_text(txt, vx + bw + 18, y + 6, 30, col, bold=CD)
         rl.end_scissor_mode()
+        if dd_geo is not None:
+            lx, ly, lw, ih, vis, opts, dkey = dd_geo
+            rl.draw_rectangle(lx - 3, ly - 3, lw + 6, vis * ih + 6, _th["a1"])
+            rl.draw_rectangle(lx, ly, lw, vis * ih, _th["paper"])
+            for k in range(vis):
+                o_i = dd_scr + k
+                ry_ = ly + k * ih
+                over_ = lx <= m.x < lx + lw and ry_ <= m.y < ry_ + ih
+                cur_ = o_i == cfg[dkey]
+                if over_ or cur_:
+                    rl.draw_rectangle(lx, ry_, lw, ih, _th["a1"] if over_ else _th["a2"])
+                font.draw_text(str(opts[o_i]), lx + 12, ry_ + 3, 30, _th["hlt"] or _th["fg"] if (over_ or cur_) else _th["fg"], bold=CD)
+            if len(opts) > vis:
+                bh_ = max(20, int(vis * ih * vis / len(opts)))
+                rl.draw_rectangle(lx + lw - 6, ly + int((vis * ih - bh_) * dd_scr / (len(opts) - vis)), 5, bh_, _th["a1"])
         if yy > avail:                                          # scroll bar
             bh = max(24, int(avail * avail / yy))
             rl.draw_rectangle(x0 + pw + 8, y0, 6, avail, _th["p2"])

@@ -63,6 +63,8 @@ class LoadMusic:
         self.stations = []            # [(name, [paths])]: one per genre folder, like the car radio
         self.sel = 0                  # station playing now
         self.menu_open = False        # station drop-down is open
+        self.bag = []                 # songs of this station not yet played in the current shuffle
+        self.logos = {}               # station name -> texture (or None)
         self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
         self.pos = -1                 # index in hist of the song playing now
         self.paused = False
@@ -97,9 +99,14 @@ class LoadMusic:
     def _next(self, path=None):
         self.seq += 1
         job = {"out": os.path.join(self.dir, f"m{self.seq}.wav"), "ok": False, "done": False, "path": None}
-        pool = [path] if path else random.sample(self.files, min(6, len(self.files)))
-        if not path and self.cur in pool and len(pool) > 1:
-            pool.remove(self.cur)
+        if path:
+            pool = [path]
+        else:                                                    # a shuffled "bag": every song once, then a new shuffle (no immediate repeat)
+            if not self.bag:
+                self.bag = random.sample(self.files, len(self.files))
+                if len(self.bag) > 1 and self.bag[-1] == self.cur:
+                    self.bag[0], self.bag[-1] = self.bag[-1], self.bag[0]
+            pool = self.bag[::-1][:3]                            # next up first; the others only if it will not decode
 
         def work():
             for p in pool:
@@ -151,6 +158,8 @@ class LoadMusic:
                 rl.set_sound_volume(self.snd, LEVEL * self.volume)
                 rl.play_sound(self.snd)
                 self.cur = job["path"]
+                if self.cur in self.bag:
+                    self.bag.remove(self.cur)
                 self.title = os.path.splitext(os.path.basename(self.cur))[0].replace("_", " ")
                 if job.get("idx") is not None:
                     self.pos = job["idx"]
@@ -200,7 +209,7 @@ class LoadMusic:
         try:
             self.sel = (self.sel + d) % len(self.stations)
             self.files = list(self.stations[self.sel][1])
-            self.hist, self.pos, self.want = [], -1, None
+            self.hist, self.pos, self.want, self.bag = [], -1, None, []
             self.stopped = False
             self.job = None
             self._next()
@@ -248,6 +257,17 @@ class LoadMusic:
         multi = len(self.stations) > 1
         head = None
         font.MUSIC_EXTRA = 0
+        tex = self._logo() if self.stations else None
+        if tex is not None and tex.width > 0 and room > 200:     # the station's logo, left of the drop-down and the song bar
+            side = (34 if multi else 0) + b + 8
+            sc = min((side - 6) / tex.width, (side - 6) / tex.height)
+            lw_, lh_ = tex.width * sc, tex.height * sc
+            rl.draw_rectangle(x, y, side, side, rl.Color(10, 8, 16, 190))
+            rl.draw_texture_pro(tex, rl.Rectangle(0, 0, tex.width, tex.height),
+                                rl.Rectangle(x + (side - lw_) / 2, y + (side - lh_) / 2, lw_, lh_), rl.Vector2(0, 0), 0.0, rl.WHITE)
+            rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, side, side), 2, PINK)
+            x += side + 8
+            room -= side + 8
         if multi:                                                # station drop-down above the song bar
             dh = 30
             head = (x, y, max(120, min(room, 320)), dh)
@@ -297,6 +317,26 @@ class LoadMusic:
             self.skip(back=True)
         elif rl.is_key_pressed(rl.KEY_RIGHT):
             self.skip()
+
+    def _logo(self):
+        """Texture of the current station's logo image (music/<station>/logo.png ...), loaded once; None without one."""
+        nm = self.stations[self.sel][0]
+        if nm not in self.logos:
+            tex = None
+            try:
+                p = radio.logo_for(nm)
+                if p:
+                    with open(p, "rb") as f:                     # from memory: raylib's own fopen mangles Cyrillic paths on Windows
+                        raw = f.read()
+                    img = rl.load_image_from_memory(os.path.splitext(p)[1].lower(), raw, len(raw))
+                    tex = rl.load_texture_from_image(img)
+                    rl.unload_image(img)
+                    rl.set_texture_filter(tex, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+            except Exception as e:  # noqa: BLE001 - a bad image just means no logo
+                print(f"[loadmusic] logo of {nm}: {e}", flush=True)
+                tex = None
+            self.logos[nm] = tex
+        return self.logos[nm]
 
     def _dropdown(self, head, station_keys, m, click):
         """Closed: current station + arrow.  Open: the list of stations below it (drawn last, over the bar)."""
