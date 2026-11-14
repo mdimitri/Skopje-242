@@ -281,6 +281,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     L_ = vehicles.DIMS[p.kind][0]
     semi = p.kind == vehicles.SEMI
     wb = vehicles.SEMI_WB if semi else L_ * 0.62 if L_ < 6 else 3.7 + (L_ - 6) * 0.35   # long vehicles: wheelbase, not length; a semi: the tractor's own
+    if p.kind == vehicles.BTR:
+        wb = 3.74                                 # БТР-80: axles 1-2 steer, it turns about the middle of axles 3-4
     dmg = 1.0 if p.health > 35 else 0.7           # a wrecked engine is slower
     fx, fy = math.cos(p.h), math.sin(p.h)
     vf = p.vx * fx + p.vy * fy
@@ -3374,7 +3376,7 @@ class Sim:
             a = c.h + c.turret
             import gl3d
             tx_, ty_ = c.x + math.cos(c.h) * gl3d.APC_TURRET[0], c.y + math.sin(c.h) * gl3d.APC_TURRET[0]
-            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.3
+            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.66   # bore height of the 2A72
             dmg = WEAPONS["kalash"][2] * 6
             self.shots.fire(tx_ + math.cos(a) * 3.1, ty_ + math.sin(a) * 3.1, a + self.rng.uniform(-0.004, 0.004), "shell30", dmg, 220.0, gz, src=c)
             self.ev("gunfire", x=tx_, y=ty_, kind="btr")

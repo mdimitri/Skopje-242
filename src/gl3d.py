@@ -1014,63 +1014,282 @@ def _camo_parts(parts, body_c):
         parts[i] = (v, cc, d)
 
 
-APC_TURRET = (0.55, 2.02)          # BTR-80 turret ring: x along the hull, height of the roof (local metres)
+A_ARMY = np.array((70, 82, 48), np.float32)
+APC_TURRET = (0.62, 2.0)           # BTR-80 turret ring: x along the hull, height of the roof (local metres)
+APC_TRACK = 1.21                   # half track of the BTR-80's wheels (track 2.41 m)
+APC_STYLE = {"turret": "80a", "camo": True, "covers": "open"}     # look of the БТР-80 (turret "80a" = 30 mm 2A72 outside, "80" = cone turret)
+
+
+def _poly(pts, col, parts, centre=(0.0, 1.25, 0.0)):
+    """Convex flat plate through `pts` (fan), shaded, facing away from `centre`."""
+    c = np.asarray(centre, np.float32)
+    _tri_parts([(pts[0], pts[k], pts[k + 1]) for k in range(1, len(pts) - 1)], lambda q: np.asarray(col, np.float32), parts, centre=lambda q: c)
+
+
+def _disc(x, y, z, r, h, col, parts, k=16, axis="y"):
+    """Short cylinder (hatch, port, lens): axis y (on a roof) or x (facing forward / back)."""
+    if axis == "y":
+        p0, p1 = (x, y, z), (x, y + h, z)
+    else:
+        p0, p1 = (x, y, z), (x + h, y, z)
+    _tri_parts(_tube(p0, p1, r, k), lambda q: np.asarray(col, np.float32), parts, centre=lambda q: p0)
+    ring = [tuple(np.asarray(p1) + (np.array((0, 0, r * math.cos(2 * math.pi * i / k)), np.float32) +
+            (np.array((r * math.sin(2 * math.pi * i / k), 0, 0), np.float32) if axis == "y" else np.array((0, r * math.sin(2 * math.pi * i / k), 0), np.float32))))
+            for i in range(k)]
+    _tri_parts([(p1, ring[i], ring[(i + 1) % k]) for i in range(k)], lambda q: np.asarray(col, np.float32) * 0.92, parts,
+               centre=lambda q: p0)
+
+
+# hull rings of the BTR-80, left side bottom -> belt -> chamfer -> roof edge (x, y, half width); the right side mirrors them
+_APC_RINGS = [
+    [(3.80, 0.97, 0.52), (3.86, 1.02, 0.66), (3.84, 1.05, 0.62), (3.82, 1.07, 0.54)],      # nose edge
+    [(3.00, 0.50, 0.90), (3.10, 1.22, 1.36), (2.62, 1.50, 1.12), (2.40, 1.62, 0.96)],      # glacis / lower nose plate break
+    [(2.20, 0.48, 0.98), (2.20, 1.32, 1.45), (2.02, 1.88, 1.16), (1.96, 2.00, 1.00)],      # top of the vision-block plate
+    [(-2.55, 0.48, 0.98), (-2.55, 1.32, 1.45), (-2.55, 1.88, 1.16), (-2.55, 2.00, 1.00)],  # end of the troop compartment
+    [(-3.30, 0.56, 0.95), (-3.46, 1.30, 1.42), (-3.46, 1.80, 1.12), (-3.40, 1.92, 0.98)],  # engine deck
+    [(-3.60, 0.86, 0.86), (-3.84, 1.22, 1.30), (-3.84, 1.56, 1.05), (-3.78, 1.70, 0.92)],  # tail
+]
+
+
+def _apc_up(x, y, s, d=0.012):
+    """Point on the upper side plate (belt 1.32 -> chamfer 1.88) of the middle hull, d metres proud of it."""
+    t = (y - 1.32) / 0.56
+    return (x, y + d * 0.46, s * (1.45 - 0.29 * t + d * 0.89))
+
+
+def _apc_lo(x, y, s, d=0.012):
+    """Point on the lower side plate (bottom 0.48 -> belt 1.32)."""
+    t = (y - 0.48) / 0.84
+    return (x, y - d * 0.49, s * (0.98 + 0.47 * t + d * 0.87))
+
+
+def _apc_wheel(cx, cy, cz, face=0, R=0.60, wd=0.42):
+    """BTR-80 wheel, axis along z: tall KI-80 off-road tyre with staggered tread lugs, deep sidewall, small green hub with the
+    tyre-inflation cap.  Returns (verts, colours) like _cyl."""
+    vs, cs = [], []
+    tyre, side, hub, dark = np.array((30, 30, 30), np.float32), np.array((38, 38, 37), np.float32), A_ARMY, np.array((26, 28, 24), np.float32)
+    n = 28
+    za, zm, zb = cz - wd / 2, cz, cz + wd / 2
+
+    def P(a, r, z):
+        return (cx + r * math.cos(a), cy + r * math.sin(a), z)
+    for i in range(n):
+        a0, a1 = 2 * math.pi * i / n, 2 * math.pi * (i + 1) / n
+        sh = 0.55 + 0.5 * max(0.0, math.cos((a0 + a1) / 2) * 0.4 + math.sin((a0 + a1) / 2) * 0.9)
+        for h, (z0, z1) in enumerate(((za, zm), (zm, zb))):          # each half of the tread: lug on alternate segments, staggered = chevrons
+            r = R if (i + h) % 2 == 0 else R - 0.045
+            vs += [P(a0, r, z0), P(a1, r, z0), P(a1, r, z1), P(a0, r, z0), P(a1, r, z1), P(a0, r, z1)]
+            cs += [tyre * sh] * 6
+            if r == R:                                                   # lug side walls
+                for a in (a0, a1):
+                    vs += [P(a, R - 0.045, z0), P(a, R, z0), P(a, R, z1), P(a, R - 0.045, z0), P(a, R, z1), P(a, R - 0.045, z1)]
+                    cs += [tyre * 0.7] * 6
+        for z, sg in ((za, -1), (zb, 1)):
+            if face and sg != face:
+                continue
+            zi = z + sg * 0.02                                           # sidewall bulge, then the small rim, then the hub
+            vs += [P(a0, R - 0.045, z), P(a1, R - 0.045, z), P(a1, 0.34, zi), P(a0, R - 0.045, z), P(a1, 0.34, zi), P(a0, 0.34, zi)]
+            cs += [side] * 6
+            vs += [P(a0, 0.34, zi), P(a1, 0.34, zi), P(a1, 0.27, zi - sg * 0.04), P(a0, 0.34, zi), P(a1, 0.27, zi - sg * 0.04), P(a0, 0.27, zi - sg * 0.04)]
+            cs += [hub * 0.8] * 6
+            vs += [(cx, cy, zi - sg * 0.01), P(a0, 0.27, zi - sg * 0.04), P(a1, 0.27, zi - sg * 0.04)]
+            cs += [hub] * 3
+            if i % 4 == 0:                                               # wheel nuts
+                b = (a0 + a1) / 2
+                q = P(b, 0.19, zi + sg * 0.0)
+                for d in ((0.025, 0.025), (-0.025, 0.025), (-0.025, -0.025)), ((0.025, 0.025), (-0.025, -0.025), (0.025, -0.025)):
+                    vs += [(q[0] + d[k][0], q[1] + d[k][1], zi + sg * 0.005) for k in range(3)]
+                    cs += [dark] * 3
+            for k in range(8):                                           # central inflation cap
+                b0, b1 = 2 * math.pi * k / 8, 2 * math.pi * (k + 1) / 8
+                if i == 0:
+                    vs += [(cx, cy, zi + sg * 0.06), P(b0, 0.07, zi + sg * 0.005), P(b1, 0.07, zi + sg * 0.005)]
+                    cs += [dark * 1.4] * 3
+    return np.asarray(vs, np.float32), np.asarray(cs, np.float32)
 
 
 def _apc_parts(body_c, A, box, quad, parts):
-    """BTR-80: boat-shaped eight-wheeled hull (x forward, y up, z right); the turret is turret_model() (it rotates)."""
-    # stations: x, bottom y, belt y, top y, half widths at bottom / belt / top
-    st = [(3.82, 0.95, 1.22, 1.30, 0.55, 1.15, 1.05), (3.15, 0.55, 1.36, 1.70, 0.95, 1.45, 1.12),
-          (2.15, 0.48, 1.40, 2.02, 1.02, 1.46, 1.14), (-3.25, 0.48, 1.40, 2.02, 1.02, 1.46, 1.14),
-          (-3.82, 0.78, 1.36, 1.86, 0.88, 1.36, 1.04)]
-    rings = [[(x, yb, -hb), (x, ym, -hm), (x, yt, -ht), (x, yt, ht), (x, ym, hm), (x, yb, hb)] for x, yb, ym, yt, hb, hm, ht in st]
-    tris = _loft(rings)
-    for r, sg in ((rings[0], 1), (rings[-1], -1)):                   # nose and tail plates
-        tris += [(r[0], r[k], r[k + 1]) for k in range(1, 5)]
+    """BTR-80: wedge-nosed, chined eight-wheeled hull (x forward, y up, z right); the turret is turret_model() (it rotates)."""
+    sty = APC_STYLE
     bc = np.asarray(body_c, np.float32)
+    rings = []
+    for r in _APC_RINGS:
+        left = [(x, y, -h) for x, y, h in r]
+        ring = left + [(x, y, -z) for x, y, z in reversed(left)]
+        fine = []                                                    # each plate split in 4 across (fine camouflage, smooth shading stays flat)
+        for i in range(len(ring)):
+            p0, p1 = np.asarray(ring[i]), np.asarray(ring[(i + 1) % len(ring)])
+            fine += [tuple(p0 + (p1 - p0) * t) for t in (0.0, 0.25, 0.5, 0.75)]
+        rings.append(fine)
+    dense = [rings[0]]
+    for r0, r1 in zip(rings, rings[1:]):                             # and every ~0.3 m along the hull
+        n = max(1, int(round(abs(r0[0][0] - r1[0][0]) / 0.3)))
+        dense += [[tuple(np.asarray(a) + (np.asarray(b) - np.asarray(a)) * (k / n)) for a, b in zip(r0, r1)] for k in range(1, n + 1)]
+    tris = _loft(dense)
+    for r in (rings[0], rings[-1]):                                  # nose edge and rear plate
+        tris += [(r[0], r[k], r[k + 1]) for k in range(1, len(r) - 1)]
 
     def col(q):
-        j = _camo_n(*q)
+        j = _camo_n(*q) if sty["camo"] else -1
         return bc if j < 0 else np.asarray(_CAMO[j], np.float32)
-    _tri_parts(tris, col, parts, centre=lambda q: (max(-3.0, min(3.0, q[0])), 1.25, 0.0))
-    dark, glass = (26, 28, 26), (40, 52, 60)
-    for z in (-0.55, -0.18, 0.18, 0.55):                             # driver / commander vision blocks on the glacis
-        quad((2.55, 1.86, z - 0.12), (0.18, -0.12, 0), (0, 0, 0.24), (0.6, 0.8, 0), glass)
+    _tri_parts(tris, col, parts, centre=lambda q: (max(-3.0, min(3.0, q[0])), 1.2, 0.0))
+    dark, glass, metal, edge = (26, 28, 24), (36, 50, 60), (52, 56, 50), bc * 0.72
+    rubber = (30, 30, 30)
     for s in (-1, 1):
-        box(3.55, 1.25, s * 0.75, 0.12, 0.12, 0.2, (255, 240, 180))   # headlamps
-        box(3.0, 1.70, s * 0.85, 0.5, 0.12, 0.25, dark)                 # hatch hinges / periscope guards
-        quad((-0.05, 0.62, s * 1.462), (0.95, 0, 0), (0, 0.66, 0), (0, 0, s), dark)            # side hatch between axles 2 and 3
-        box(-2.9, 1.40, s * 1.36, 0.9, 0.35, 0.16, (60, 66, 44))         # exhaust / stowage boxes
-        for k in range(3):                                               # smoke grenade launchers
-            box(0.0 - k * 0.18, 2.02, s * 0.95, 0.12, 0.12, 0.3, dark)
-        quad((1.2, 1.62, s * 1.30), (0.42, 0, 0), (0, 0.25, 0), (0, 0, s), (200, 30, 30))      # Macedonian flag on the hull side
-        quad((1.38, 1.70, s * 1.302), (0.08, 0, 0), (0, 0.08, 0), (0, 0, s), (250, 210, 30))
-    box(3.70, 0.95, 0, 0.12, 0.25, 1.6, dark)                           # trim vane, folded
-    box(-1.6, 2.02, 0.45, 0.9, 0.06, 0.7, (64, 74, 46))                 # engine deck hatches
-    box(-2.6, 2.02, -0.45, 0.9, 0.06, 0.7, (64, 74, 46))
+        # wheel wells: dark recesses in the lower side plate behind each wheel
+        for ax in (2.30, 0.82, -0.70, -2.18):
+            _poly([_apc_lo(ax - 0.66, 0.52, s), _apc_lo(ax + 0.66, 0.52, s), _apc_lo(ax + 0.60, 1.26, s), _apc_lo(ax - 0.60, 1.26, s)], (22, 22, 20), parts)
+            _poly([_apc_up(ax - 0.70, 1.33, s, 0.02), _apc_up(ax + 0.70, 1.33, s, 0.02), _apc_up(ax + 0.70, 1.37, s, 0.02), _apc_up(ax - 0.70, 1.37, s, 0.02)], edge, parts)
+        # side door between axles 2 and 3: upper half on the upper plate, lower half (the step) on the lower plate, frame, hinges
+        _poly([_apc_up(-0.42, 1.36, s), _apc_up(0.52, 1.36, s), _apc_up(0.52, 1.80, s), _apc_up(-0.42, 1.80, s)], bc * 0.86, parts)
+        _poly([_apc_lo(-0.42, 0.78, s), _apc_lo(0.52, 0.78, s), _apc_lo(0.52, 1.28, s), _apc_lo(-0.42, 1.28, s)], bc * 0.86, parts)
+        for (x0, x1, y0, y1) in ((-0.44, -0.40, 1.36, 1.80), (0.50, 0.54, 1.36, 1.80), (-0.44, 0.54, 1.78, 1.82)):
+            _poly([_apc_up(x0, y0, s, 0.02), _apc_up(x1, y0, s, 0.02), _apc_up(x1, y1, s, 0.02), _apc_up(x0, y1, s, 0.02)], dark, parts)
+        for hx in (-0.36, 0.46):
+            box(*_apc_up(hx, 1.55, s, 0.04)[:2], s * 1.36, 0.06, 0.12, 0.05, metal)
+        box(0.05, 0.80, s * 1.16, 0.7, 0.04, 0.12, metal)                                 # fold-down step
+        # firing ports: ball mounts on the upper side plates
+        for px in (1.45, -1.10, -1.85):
+            p0 = np.asarray(_apc_up(px, 1.62, s, 0.0), np.float32)
+            n = np.asarray((0.0, 0.46, 0.89 * s), np.float32)
+            _tri_parts(_tube(tuple(p0), tuple(p0 + n * 0.06), 0.09, 12), lambda q: np.asarray(metal, np.float32), parts, centre=lambda q: tuple(p0 - n))
+            _tri_parts(_tube(tuple(p0 + n * 0.05), tuple(p0 + n * 0.09), 0.035, 8), lambda q: np.asarray(dark, np.float32), parts, centre=lambda q: tuple(p0))
+        # grab rails along the upper hull, tow hooks, mud flaps
+        rp = [_apc_up(x, 1.84, s, 0.06) for x in (1.6, -2.3)]
+        _tri_parts(_tube(rp[0], rp[1], 0.018, 6), lambda q: np.asarray(metal, np.float32), parts, centre=lambda q: (q[0], 1.6, 0.0))
+        for x in (1.6, -0.35, -2.3):
+            _tri_parts(_tube(_apc_up(x, 1.84, s, 0.0), _apc_up(x, 1.84, s, 0.07), 0.016, 6), lambda q: np.asarray(metal, np.float32), parts, centre=lambda q: (q[0], 1.6, 0.0))
+        box(3.62, 0.70, s * 0.55, 0.22, 0.1, 0.12, dark)                                 # front tow hooks
+        box(-3.70, 0.84, s * 0.52, 0.22, 0.1, 0.12, dark)                                # rear tow hooks
+        box(-2.90, 0.50, s * 1.20, 0.04, 0.45, 0.42, rubber)                             # mud flap behind the last wheel
+        box(3.02, 0.62, s * 1.20, 0.04, 0.38, 0.42, rubber)
+        # headlamps in their guards on the nose, side and tail lights
+        box(3.40, 1.18, s * 0.92, 0.22, 0.18, 0.26, metal)
+        for dz in (-0.06, 0.06):
+            _disc(3.51, 1.27, s * 0.92 + dz, 0.05, 0.03, (250, 240, 190), parts, 10, "x")
+        _tri_parts(_tube((3.40, 1.40, s * 0.78), (3.62, 1.40, s * 0.78), 0.015, 5) + _tube((3.40, 1.40, s * 1.06), (3.62, 1.40, s * 1.06), 0.015, 5) +
+                   _tube((3.62, 1.40, s * 0.78), (3.62, 1.40, s * 1.06), 0.015, 5), lambda q: np.asarray(metal, np.float32), parts)
+        box(-3.83, 1.30, s * 0.95, 0.05, 0.12, 0.16, (190, 30, 24))                      # tail lights
+        box(-3.83, 1.43, s * 0.95, 0.05, 0.08, 0.16, (230, 150, 40))
+        # exhaust mufflers on the rear quarters, with mesh guards
+        _tri_parts(_tube((-2.85, 1.70, s * 1.18), (-3.45, 1.70, s * 1.18), 0.11, 10), lambda q: np.asarray((48, 46, 42), np.float32), parts, centre=lambda q: (q[0], 1.70, s * 1.18))
+        box(-3.15, 1.60, s * 1.18, 0.7, 0.24, 0.3, (60, 64, 50))
+        # whip antennas on the rear roof corners
+        _tri_parts(_tube((-2.45, 2.0, s * 0.82), (-2.62, 4.2, s * 0.86), 0.012, 4), lambda q: np.asarray(dark, np.float32), parts)
+        box(-2.45, 2.0, s * 0.82, 0.12, 0.10, 0.12, dark)
+        # driver's (left) and commander's (right) hatches behind the vision blocks
+        _disc(1.68, 2.0, s * 0.45, 0.27, 0.05, bc * 0.9, parts, 16)
+        box(1.68, 2.05, s * 0.45, 0.30, 0.04, 0.05, metal)
+        for k in range(3):                                                                # periscopes round the hatch
+            box(1.98, 2.0, s * (0.25 + k * 0.2), 0.10, 0.08, 0.12, dark)
+        # roof hatches behind the turret
+        box(-0.72, 2.0, s * 0.46, 0.66, 0.04, 0.56, bc * 0.88)
+        box(-0.72, 2.04, s * 0.46, 0.08, 0.03, 0.56, metal)
+        # Macedonian flag on the upper hull side, in front of the door
+        _poly([_apc_up(0.75, 1.52, s, 0.02), _apc_up(1.2, 1.52, s, 0.02), _apc_up(1.2, 1.78, s, 0.02), _apc_up(0.75, 1.78, s, 0.02)], (200, 30, 30), parts)
+        fx, fy = 0.975, 1.65                                             # North Macedonia: yellow sun with eight broadening rays
+        for k in range(8):
+            t = k * math.pi / 4
+            c_, s_ = math.cos(t), math.sin(t)
+            w_ = 0.045
+            _poly([_apc_up(fx + c_ * 0.03, fy + s_ * 0.03, s, 0.03), _apc_up(fx + c_ * 0.4 - s_ * w_, fy + s_ * 0.4 + c_ * w_, s, 0.03),
+                   _apc_up(fx + c_ * 0.4 + s_ * w_, fy + s_ * 0.4 - c_ * w_, s, 0.03)] if False else
+                  [_apc_up(fx, fy, s, 0.03), _apc_up(max(0.75, min(1.2, fx + c_ * 0.3 - s_ * w_)), max(1.52, min(1.78, fy + s_ * 0.3 + c_ * w_)), s, 0.03),
+                   _apc_up(max(0.75, min(1.2, fx + c_ * 0.3 + s_ * w_)), max(1.52, min(1.78, fy + s_ * 0.3 - c_ * w_)), s, 0.03)], (250, 210, 30), parts)
+        _poly([_apc_up(fx + 0.045 * math.cos(k * math.pi / 6), fy + 0.045 * math.sin(k * math.pi / 6), s, 0.035) for k in range(12)], (250, 210, 30), parts)
+        _poly([_apc_up(fx + 0.036 * math.cos(k * math.pi / 6), fy + 0.036 * math.sin(k * math.pi / 6), s, 0.04) for k in range(12)], (200, 30, 30), parts)
+        _poly([_apc_up(fx + 0.028 * math.cos(k * math.pi / 6), fy + 0.028 * math.sin(k * math.pi / 6), s, 0.045) for k in range(12)], (250, 210, 30), parts)
+    # vision blocks: two big windscreens on the steep front plate (driver left, commander right) with their armoured covers
+    def fp(t, z, d=0.012):                                           # point on the front plate between rings 1 and 2 (t 0 bottom .. 1 top)
+        return (2.40 - 0.44 * t + d * 0.65, 1.62 + 0.38 * t + d * 0.76, z)
+    for s in (-1, 1):
+        z0, z1 = s * 0.10, s * 0.82
+        _poly([fp(0.12, z0), fp(0.12, z1), fp(0.88, z1), fp(0.88, z0)], glass, parts)
+        _poly([fp(0.08, z0 - s * 0.03, 0.02), fp(0.08, z1 + s * 0.03, 0.02), fp(0.12, z1 + s * 0.03, 0.02), fp(0.12, z0 - s * 0.03, 0.02)], dark, parts)
+        if sty["covers"] == "open":                                   # hinged at the top, swung up and forward
+            h0, h1 = fp(0.95, z0, 0.03), fp(0.95, z1, 0.03)
+            _poly([h0, h1, (h1[0] + 0.30, h1[1] + 0.40, z1), (h0[0] + 0.30, h0[1] + 0.40, z0)], bc * 0.95, parts)
+            _poly([(h0[0] + 0.02, h0[1] + 0.02, z0), (h1[0] + 0.02, h1[1] + 0.02, z1), (h1[0] + 0.31, h1[1] + 0.41, z1), (h0[0] + 0.31, h0[1] + 0.41, z0)], bc * 0.8, parts)
+        else:
+            _poly([fp(0.08, z0, 0.05), fp(0.08, z1, 0.05), fp(0.95, z1, 0.05), fp(0.95, z0, 0.05)], bc * 0.95, parts)
+            for t in (0.4, 0.6):
+                _poly([fp(t, z0 + s * 0.15, 0.06), fp(t, z1 - s * 0.15, 0.06), fp(t + 0.03, z1 - s * 0.15, 0.06), fp(t + 0.03, z0 + s * 0.15, 0.06)], dark, parts)
+    # trim vane folded flat on the upper glacis, with its ribs
+    def gp(t, z, d):                                                 # point on the upper glacis (t 0 nose edge .. 1 front plate)
+        return (3.82 - 1.42 * t + d * 0.36, 1.07 + 0.55 * t + d * 0.93, z)
+    _poly([gp(0.10, -0.62, 0.04), gp(0.10, 0.62, 0.04), gp(0.62, 0.86, 0.04), gp(0.62, -0.86, 0.04)], bc * 0.9, parts)
+    for z in (-0.5, -0.17, 0.17, 0.5):
+        _poly([gp(0.12, z - 0.02, 0.07), gp(0.12, z + 0.02, 0.07), gp(0.6, z * 1.3 + 0.02, 0.07), gp(0.6, z * 1.3 - 0.02, 0.07)], bc * 0.7, parts)
+    # engine deck: two louvred grilles and an access panel
+    for s in (-1, 1):
+        for k in range(9):
+            box(-1.95 - k * 0.15, 2.0, s * 0.52, 0.06, 0.03, 0.64, dark)
+    box(-3.05, 1.95, 0, 0.55, 0.03, 0.5, bc * 0.85)
+    # rear: water-jet outlet with its cover plate, number plate, tow pintle
+    box(-3.83, 0.95, 0, 0.06, 0.42, 0.52, bc * 0.8)
+    box(-3.86, 1.22, 0, 0.03, 0.12, 0.42, (220, 220, 210))
+    box(-3.70, 0.62, 0, 0.3, 0.12, 0.14, dark)
+    # front number plate and convoy light on the nose
+    _poly([gp(0.05, -0.22, 0.02), gp(0.05, 0.22, 0.02), gp(0.1, 0.22, 0.02), gp(0.1, -0.22, 0.02)], (220, 220, 210), parts)
+    # tools on the glacis: shovel and crowbar
+    _tri_parts(_tube(gp(0.66, -0.55, 0.05), gp(0.95, -0.40, 0.05), 0.022, 5), lambda q: np.asarray((110, 84, 50), np.float32), parts)
+    _tri_parts(_tube(gp(0.66, 0.55, 0.05), gp(0.95, 0.30, 0.05), 0.018, 5), lambda q: np.asarray(metal, np.float32), parts)
 
 
 def turret_model():
-    """BTR-80 turret on its own pivot (y up, barrel along +x): low cone with the 30 mm cannon and its mantlet."""
+    """BTR-80 turret on its own pivot (y up, barrel along +x).  "80a": faceted turret with the 30 mm 2A72 mounted outside on top,
+    coaxial PKT, sight, searchlight, six smoke dischargers;  "80": the classic low cone with the gun in a mantlet."""
     parts = []
     bc = np.asarray(V.ARMY, np.float32)
-    k = 10
-    lo = [(0.78 * math.cos(2 * math.pi * i / k), 0.0, 0.78 * math.sin(2 * math.pi * i / k)) for i in range(k)]
-    hi = [(0.52 * math.cos(2 * math.pi * i / k) - 0.06, 0.48, 0.52 * math.sin(2 * math.pi * i / k)) for i in range(k)]
-    tris = _loft([lo + lo[:0], hi])
-    tris += [(hi[0], hi[i + 1], hi[i]) for i in range(1, k - 1)]
+    sty = APC_STYLE
+    dark, metal, glass = (30, 32, 30), (54, 58, 50), (40, 60, 80)
 
     def col(q):
-        j = _camo_n(q[0] + 0.3, q[1] + 2.0, q[2])
+        j = _camo_n(q[0] + 0.3, q[1] + 2.0, q[2]) if sty["camo"] else -1
         return bc if j < 0 else np.asarray(_CAMO[j], np.float32)
-    _tri_parts(tris, col, parts, centre=lambda q: (0.0, 0.2, 0.0))
-    _tri_parts(_tube((0.45, 0.26, 0.0), (2.95, 0.30, 0.0), 0.065, 8), lambda q: np.asarray((30, 32, 30), np.float32), parts)
-    _tri_parts(_tube((2.75, 0.30, 0.0), (3.0, 0.30, 0.0), 0.095, 8), lambda q: np.asarray((24, 24, 26), np.float32), parts)   # muzzle brake
-    _tri_parts(_tube((0.45, 0.24, 0.22), (1.6, 0.25, 0.22), 0.035, 6), lambda q: np.asarray((30, 32, 30), np.float32), parts)  # coaxial MG
-    for name, (v, n) in box_faces(0.55, 0.1, 0.0, 0.32, 0.36, 0.62).items():                           # mantlet
-        parts.append((v, np.tile(np.asarray((58, 68, 40), np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1))))
-    for name, (v, n) in box_faces(-0.3, 0.48, -0.15, 0.3, 0.12, 0.3).items():                          # sight
-        parts.append((v, np.tile(np.asarray((40, 44, 36), np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1))))
+    k = 12
+    _tri_parts(_tube((0, -0.02, 0), (0, 0.05, 0), 0.86, 20), lambda q: np.asarray(metal, np.float32), parts, centre=lambda q: (0, -0.5, 0))   # ring
+    if sty["turret"] == "80a":
+        lo = [(0.80 * math.cos(2 * math.pi * (i + 0.5) / k), 0.05, 0.80 * math.sin(2 * math.pi * (i + 0.5) / k)) for i in range(k)]
+        hi = [(0.60 * math.cos(2 * math.pi * (i + 0.5) / k) - 0.05, 0.50, 0.58 * math.sin(2 * math.pi * (i + 0.5) / k)) for i in range(k)]
+        tris = _loft([lo, hi]) + [(hi[0], hi[i + 1], hi[i]) for i in range(1, k - 1)]
+        _tri_parts(tris, col, parts, centre=lambda q: (0.0, 0.2, 0.0))
+        gy = 0.66                                                                     # bore height above the ring
+        box_ = lambda cx, cy, cz, sx, sy, sz, c: [parts.append((v, np.tile(np.asarray(c, np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1)))) for _n, (v, n) in box_faces(cx, cy, cz, sx, sy, sz).items()]
+        box_(0.18, 0.48, 0.0, 0.72, 0.10, 0.44, bc * 0.85)                           # gun cradle on the roof
+        box_(0.10, 0.56, 0.0, 1.00, 0.20, 0.26, bc * 0.9)                            # receiver / armoured gun cover
+        box_(0.10, 0.76, 0.0, 0.80, 0.03, 0.22, bc * 0.75)
+        _tri_parts(_tube((0.60, gy, 0.0), (1.05, gy, 0.0), 0.065, 12), lambda q: np.asarray(metal, np.float32), parts)     # recoil sleeve
+        _tri_parts(_tube((1.05, gy, 0.0), (3.05, gy, 0.0), 0.036, 10), lambda q: np.asarray(dark, np.float32), parts)      # 30 mm barrel
+        _tri_parts(_tube((2.92, gy, 0.0), (3.12, gy, 0.0), 0.05, 10), lambda q: np.asarray((24, 24, 26), np.float32), parts)
+        _tri_parts(_tube((0.55, gy - 0.04, -0.20), (1.30, gy - 0.04, -0.20), 0.022, 6), lambda q: np.asarray(dark, np.float32), parts)   # coaxial PKT
+        box_(0.42, 0.50, -0.20, 0.30, 0.14, 0.10, metal)
+        box_(0.28, 0.50, 0.36, 0.34, 0.26, 0.20, bc * 0.8)                           # gunner's sight 1PZ-9
+        box_(0.46, 0.58, 0.36, 0.02, 0.12, 0.14, glass)
+        box_(0.22, 0.52, -0.42, 0.24, 0.18, 0.18, metal)                             # searchlight
+        _disc(0.34, 0.61, -0.42, 0.07, 0.02, (240, 236, 200), parts, 10, "x")
+        _disc(-0.28, 0.50, 0.18, 0.22, 0.05, bc * 0.85, parts, 14)                   # commander's hatch
+        ry = 0.30
+    else:
+        lo = [(0.78 * math.cos(2 * math.pi * i / 16), 0.05, 0.78 * math.sin(2 * math.pi * i / 16)) for i in range(16)]
+        hi = [(0.50 * math.cos(2 * math.pi * i / 16) - 0.06, 0.48, 0.50 * math.sin(2 * math.pi * i / 16)) for i in range(16)]
+        tris = _loft([lo, hi]) + [(hi[0], hi[i + 1], hi[i]) for i in range(1, 15)]
+        _tri_parts(tris, col, parts, centre=lambda q: (0.0, 0.2, 0.0))
+        gy = 0.28
+        for _n, (v, n) in box_faces(0.62, 0.10, 0.0, 0.30, 0.36, 0.62).items():                         # mantlet
+            parts.append((v, np.tile(bc * 0.85 * _shade(np.asarray(n, np.float32)), (len(v), 1))))
+        _tri_parts(_tube((0.70, gy, 0.0), (3.05, gy, 0.0), 0.05, 10), lambda q: np.asarray(dark, np.float32), parts)
+        _tri_parts(_tube((2.85, gy, 0.0), (3.10, gy, 0.0), 0.075, 10), lambda q: np.asarray((24, 24, 26), np.float32), parts)
+        _tri_parts(_tube((0.70, gy - 0.02, 0.20), (1.40, gy - 0.02, 0.20), 0.025, 6), lambda q: np.asarray(dark, np.float32), parts)
+        for _n, (v, n) in box_faces(0.10, 0.46, -0.22, 0.30, 0.16, 0.20).items():                        # sight
+            parts.append((v, np.tile(np.asarray(metal, np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1))))
+        _disc(-0.25, 0.47, 0.15, 0.2, 0.04, bc * 0.85, parts, 14)
+        ry = 0.22
+    for s in (-1, 1):                                                                # 902V smoke dischargers on the turret rear
+        for i in range(3):
+            a = math.pi * (0.78 + 0.07 * i) * s
+            bx, bz = 0.66 * math.cos(a), 0.66 * math.sin(a)
+            _tri_parts(_tube((bx, ry, bz), (bx - 0.18, ry + 0.16, bz + s * 0.04), 0.045, 8), lambda q: np.asarray(dark, np.float32), parts)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
     rgba = np.empty((len(pos), 4), np.uint8)
     rgba[:, :3] = np.clip(np.concatenate([p[1] for p in parts]), 0, 255)
@@ -1202,11 +1421,14 @@ def front_wheel(kind):
     semi = V.EXTRA[kind % V.N] == "semi"
     wx, wr, wd = _wheel_layout(V.STYLE[kind % V.N], V.SEMI_TRACTOR_L if semi else L, V.IDS[kind % V.N])[0]
     wx += V.SEMI_SHIFT if semi else 0.0
-    v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 12, carbody.layout(V.IDS[kind % V.N], L)["rim"] if carbody.has(V.IDS[kind % V.N]) else ("truck", 5))
+    if V.STYLE[kind % V.N] == "apc":                                        # БТР-80: green hubs with the tyre-inflation caps
+        v, c = _apc_wheel(0.0, 0.0, 0.0)
+    else:
+        v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), np.array(carbody.layout(V.IDS[kind % V.N], L)["hub"] if carbody.has(V.IDS[kind % V.N]) else (158, 158, 164), np.float32), 16 if carbody.has(V.IDS[kind % V.N]) else 12, carbody.layout(V.IDS[kind % V.N], L)["rim"] if carbody.has(V.IDS[kind % V.N]) else ("truck", 5))
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
-    return wx, wr, W / 2 - 0.02, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+    return wx, wr, (APC_TRACK if V.STYLE[kind % V.N] == "apc" else W / 2 - 0.02), make_model(v, np.zeros((len(v), 2), np.float32), rgba)
 
 
 def rear_axles(kind):
@@ -1226,7 +1448,8 @@ def rear_axles(kind):
         rim = lay["rim"] if lay else ("truck", 5)
         vs, cs = [], []
         for s in (-1, 1):
-            v, c = _cyl(0.0, 0.0, s * (W / 2 - 0.02), wr, wd, np.array((26, 26, 28), np.float32), hub, 16 if lay else 12, rim, s)
+            apc = V.STYLE[kind] == "apc"
+            v, c = _apc_wheel(0.0, 0.0, s * APC_TRACK, s) if apc else _cyl(0.0, 0.0, s * (W / 2 - 0.02), wr, wd, np.array((26, 26, 28), np.float32), hub, 16 if lay else 12, rim, s)
             vs.append(v)
             cs.append(c)
         v, c = np.concatenate(vs), np.concatenate(cs)
@@ -1311,7 +1534,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
         _apc_parts(body_c, A, box, quad, parts)
         for wx, wr, wd_ in ([] if steer_wheels else _wheel_layout(st, L)):
             for s_ in (-1, 1):
-                v, c = _cyl(wx, wr, s_ * (W / 2 - 0.02), wr, wd_, A((24, 24, 26)), A((70, 82, 48)), 12, ("truck", 5), s_)
+                v, c = _apc_wheel(wx, wr, s_ * APC_TRACK, s_)
                 parts.append((v, c, False))
         return _finish_arrays(parts, dents, burnt, 1.4)
     if st in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):

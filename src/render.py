@@ -1125,8 +1125,13 @@ class Renderer:
                 ra = self.rear_axle_models.get(kind)
                 if ra is None:
                     ra = self.rear_axle_models[kind] = gl3d.rear_axles(kind)
-                for ax_, rr_, _z, am_ in ra:
+                for i_, (ax_, rr_, _z, am_) in enumerate(ra):
                     if am_ is None:
+                        continue
+                    if i_ == 0 and kind == vehicles.BTR:           # БТР-80: the second axle steers too, less than the first (turn centre between axles 3 and 4)
+                        for sd in (-hz, hz):
+                            wheels.add(wm, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang * 0.6)),
+                                                                                 rl.matrix_translate(ax_, rr_, sd)), M), tint)
                         continue
                     wheels.add(am_, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M), tint)
         wheels.flush()
