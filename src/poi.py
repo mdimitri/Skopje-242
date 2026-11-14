@@ -118,7 +118,7 @@ class Pois:
             menu = self.menu_of(self.cur)[1]
             if not 0 <= pick < len(menu):
                 return False
-            lab, price, heal, gain, what = menu[pick]
+            lab, price, heal, gain, what = menu[pick][:5]
             if sim.money < price:
                 popups.add((f'{lab} = {price}' + TXT("poi.0246")), wk.x, wk.y, 2.8, 2.0, (255, 150, 140), 20)
                 self.cool = 0.6
@@ -147,7 +147,9 @@ class Pois:
         elif self.state == "stay":
             wk.hidden = True
             if self.t >= self.STAY:
-                lab, price, heal, gain, what = self.choice
+                lab, price, heal, gain, what = self.choice[:5]
+                if len(self.choice) > 5:                     # a place with an action (a gate pass, ...)
+                    self.choice[5]()
                 sim.money += gain - price
                 wk.health = min(100.0, wk.health + heal)
                 sim.stats["poi"] = sim.stats.get("poi", 0) + 1
@@ -179,7 +181,7 @@ class Pois:
         x, y = sw // 2 - w // 2, sh - h - 150
         rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.08, 6, rl.Color(10, 10, 14, 215))
         font.draw_text(title[:40], x + 14, y + 8, 22, rl.Color(250, 214, 80, 255))
-        for i, (lab, price, heal, gain, _w) in enumerate(menu):
+        for i, (lab, price, heal, gain, *_w) in enumerate(menu):
             ok = sim.money >= price
             col = rl.Color(235, 235, 235, 255) if ok else rl.Color(150, 150, 150, 255)
             font.draw_text(f"[{i + 1}] {lab}", x + 14, y + 40 + i * 28, 20, col)

@@ -408,9 +408,13 @@ class Art:
             x0, y0, x1, y1 = c.bb
             if not inr((x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0) / 2 + 20):
                 continue
-            pieces = self.cells.get(id(c))
-            if pieces is None:
-                pieces = self.cells[id(c)] = build(c, w)
+            got = self.cells.get(id(c))
+            if got is None or got[0] != c.ver:                         # a rammed fence: rebuild that compound's geometry
+                if got is not None:
+                    for *_bb, m in got[1]:
+                        rl.unload_model(m)
+                got = self.cells[id(c)] = (c.ver, build(c, w))
+            pieces = got[1]
             for a, b, c2, d, m in pieces:
                 if inr((a + c2) / 2, (b + d) / 2, (c2 - a) / 2 + 10):
                     rl.draw_model(m, rl.Vector3(0, 0, 0), 1.0, rl.WHITE)

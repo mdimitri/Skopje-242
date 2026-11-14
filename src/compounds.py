@@ -22,6 +22,7 @@ NEAR = 300.0                                     # guards and vehicles appear wi
 FAR = 430.0
 BUST_S = 2.6                                     # hands up, cuffs on
 BARB_DMG = 6.0
+RAM_V, PASS_S = 9.0, 60.0           # m/s into a fence that knocks a section down; seconds a gate pass lasts
 SOLDIER_DMG = 9.0                                # one soldier's Калаш round on you (or your car)
 POLICE_TXT = {"warn": ["Стој! Полиција! Ова е забранет простор, излези веднаш!", "Хеј ти! Нема влез тука, назад!"],
               "arrest": ["Доста беше! Рацете горе!", "Сега те приведувам!"],
@@ -106,6 +107,8 @@ class Compound:
         self.taken = set()         # spot indices whose vehicle somebody drove away
         self.active = False
         self.building = None       # the main building's ring (police station)
+        self.pass_t = 0.0          # > 0: the guards let you in (permission asked at the gate)
+        self.ver = 0               # bumped when a fence section is knocked down (the art rebuilds)
 
     def near(self, x, y, r):
         x0, y0, x1, y1 = self.bb
@@ -128,6 +131,7 @@ class Compounds:
         self.tex = {}
         self.barb_cd = 0.0
         self.bust = None
+        self.places = []
         self.bust_screen = 0.0
         self.btr_tip = None
         self._chk = 0.0
@@ -477,7 +481,7 @@ class Compounds:
         for _r, x, y, gw, i in hits:
             if all(math.hypot(x - g[0], y - g[1]) > 40 for g in gates):
                 gates.append((x, y, gw, i))
-            if len(gates) >= 4:
+            if len(gates) >= 8:                                    # every street into it gets a checkpoint (traffic never drives through a fence)
                 break
         if not gates:                                              # no road in: a gate where the nearest road is
             cx_, cy_ = sum(xs) / len(xs), sum(ys) / len(ys)
@@ -622,9 +626,12 @@ class Compounds:
                     self._despawn(c)
                 elif c.active:
                     self._respawn_cars(c, fx, fy)
+            c.pass_t = max(0.0, c.pass_t - dt)
             if c.active:
                 self._guards(c, dt, fx, fy)
+                self._keep_out(c)
         self._barbs(dt)
+        self._rams()
         car = sim.car
         if sim.mode == "car" and car is not None and car.kind == vehicles.BTR and self.btr_tip is not car:
             self.btr_tip = car
@@ -716,8 +723,10 @@ class Compounds:
         c.guards = live
         pl = self._player()
         wk = sim.walker
-        alive = pl is not None and (sim.mode == "car" or (wk is not None and wk.health > 0)) and not self.ignore   # debug toggle: guards leave you alone
-        if self.ignore:
+        if any(p.hp < p.ghp - 0.01 for p in live):
+            c.pass_t = 0.0                                             # hit a guard: the pass is gone
+        alive = pl is not None and (sim.mode == "car" or (wk is not None and wk.health > 0)) and not self.ignore and c.pass_t <= 0   # debug toggle / a pass
+        if self.ignore or c.pass_t > 0:
             c.state = "calm"
             for p in live:
                 p.ghp = p.hp
@@ -900,6 +909,97 @@ class Compounds:
         return 1 if self.bust["t"] < 0.9 else 2
 
     # ------------------------------------------------------------------ barbed wire
+    def _keep_out(self, c):
+        """Passers-by never walk through the fence: one who would step in turns round on the spot."""
+        x0, y0, x1, y1 = c.bb
+        lst = self.sim.peds.list
+        for p in list(lst):
+            if p.mode not in ("walk", "flee") or not (x0 - 2 < p.x < x1 + 2 and y0 - 2 < p.y < y1 + 2):
+                continue
+            ins = c.inside(p.x, p.y)
+            was = getattr(p, "_cin", None)
+            if ins and was is None and p.mode == "walk":               # spawned on a footpath inside: not a passer-by, gone
+                lst.remove(p)
+                continue
+            if ins and was is False:
+                p.x, p.y = p._cxy
+                p.d = -p.d
+                p.h += math.pi
+                continue
+            p._cin = ins
+            p._cxy = (p.x, p.y)
+
+    def _rams(self):
+        """A car that hits a fence hard enough flattens a section of it (the gap stays)."""
+        for k, d in list(self.sim.events):
+            if k != "crash" or d.get("kind") != "wall":
+                continue
+            b = d.get("body")
+            if d.get("impact", 0) <= (3.0 if getattr(b, "kind", -1) == vehicles.BTR else RAM_V):
+                continue
+            x, y = d["x"], d["y"]
+            for c in self.list:
+                if not c.near(x, y, 6.0):
+                    continue
+                for f in list(c.fence):
+                    if _seg_d2(x, y, *f[:4]) < 2.5 ** 2:
+                        self._break(c, f, x, y)
+
+    def _break(self, c, f, x, y):
+        ax, ay, bx, by, h, barbed = f
+        L = math.hypot(bx - ax, by - ay) or 1.0
+        t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / (L * L)
+        g = 2.6 / L                                                    # a 5 m gap round the hit
+        c.fence.remove(f)
+        self._del_wall(ax, ay, bx, by)
+        for t0, t1 in ((0.0, t - g), (t + g, 1.0)):
+            if (t1 - t0) * L > 0.8:
+                q = (ax + (bx - ax) * t0, ay + (by - ay) * t0, ax + (bx - ax) * t1, ay + (by - ay) * t1, h, barbed)
+                c.fence.append(q)
+                self._add_wall(*q[:4])
+        self._barb = {}
+        for c2 in self.list:
+            for q in c2.fence:
+                if q[5]:
+                    for gx in range(int(min(q[0], q[2]) // 16), int(max(q[0], q[2]) // 16) + 1):
+                        for gy in range(int(min(q[1], q[3]) // 16), int(max(q[1], q[3]) // 16) + 1):
+                            self._barb.setdefault((gx, gy), []).append(q)
+        c.ver += 1
+        self.sim.ev("fence_down", x=x, y=y, army=c.kind == "army")
+
+    def _del_wall(self, ax, ay, bx, by):
+        w = self.w
+        cg = w.cg
+        for cx in range(int(min(ax, bx) // cg), int(max(ax, bx) // cg) + 1):
+            for cy in range(int(min(ay, by) // cg), int(max(ay, by) // cg) + 1):
+                cell = w.cgrid.get((cx, cy))
+                if cell and (ax, ay, bx, by) in cell:
+                    cell.remove((ax, ay, bx, by))
+
+    # ------------------------------------------------------------------ gate places (1-4 tooltip menus)
+    def gate_pois(self):
+        """[([x, y, cat, name], (title, menu))] for every gate: a walk-up place just outside it."""
+        out = []
+        for c in self.list:
+            for i, (gx, gy, al, gw, onx, ony) in enumerate(c.gates):
+                x, y = gx + onx * 4.0 + math.cos(al) * (gw / 2 + 2.0), gy + ony * 4.0 + math.sin(al) * (gw / 2 + 2.0)
+                grant = (lambda c_=c: setattr(c_, "pass_t", PASS_S))
+                if c.kind == "police":
+                    nm = "Дежурна служба"
+                    menu = [("За станицата", 0, 0, 0, f"{c.name}: дежурна служба 0-24, итни случаи 192. Влез само со дозвола"),
+                            ("Побарај дозвола за влез", 0, 0, 0, "Дежурниот те пушта внатре. Имаш една минута", grant),
+                            ("Плати казна", 200, 0, 0, "Казната е платена. Чисто досие... засега"),
+                            ("Пријави кражба", 0, 0, 0, "Записникот е составен. Ќе ве известиме")]
+                else:
+                    nm = "Контролен пункт"
+                    menu = [("За касарната", 0, 0, 0, f"{c.name}, Армија на Република Македонија. Воен објект, влез забранет"),
+                            ("Побарај дозвола за влез", 100, 0, 0, "Дежурниот офицер те пушта. Една минута, ништо не допирај", grant),
+                            ("Воена конзерва", 60, 25, 0, "Паштета од 1987. Изненадувачки добра"),
+                            ("Прашај за регрутација", 0, 0, 0, "Дојди во понеделник во 7 со лична карта")]
+                out.append(([x, y, "police" if c.kind == "police" else "public", f"{nm} {i + 1}" if len(c.gates) > 1 else nm], (c.name, menu)))
+        self.places = [p for p, _m in out]                           # the gate pins (hud.draw_gate_markers)
+        return out
+
     def _barbs(self, dt):
         sim = self.sim
         if not self._barb or self.barb_cd > 0:

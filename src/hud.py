@@ -133,6 +133,28 @@ def draw_escape_markers(sim, cam, sw, sh):
                 font.draw_text("F", int(sp.x - 5), int(sp.y - r - 24), 20, rl.WHITE, bold=True)
 
 
+def draw_gate_markers(sim, cam, sw, sh, reach):
+    """Police / barracks gates: the same pulsing pin as the fire escapes, with an "i" (walk up: the 1-4 menu)."""
+    cp = getattr(sim, "compounds", None)
+    if cp is None or not cp.places or sim.mode != "foot" or sim.walker is None:
+        return
+    fx, fy = sim.focus()[:2]
+    pul = 0.5 + 0.5 * math.sin(rl.get_time() * 4.0)
+    for x, y, _cat, _nm in cp.places:
+        d = math.hypot(x - fx, y - fy)
+        if d > 45.0:
+            continue
+        sp = rl.get_world_to_screen(rl.Vector3(x, sim.w.ground_y(x, y) + 2.4 + 0.25 * pul, y), cam)
+        if not (10 < sp.x < sw - 10 and 10 < sp.y < sh - 10):
+            continue
+        near_ = d < reach
+        r = 17 if near_ else 13
+        rl.draw_circle(int(sp.x), int(sp.y), r + 3, rl.Color(0, 0, 0, 150))
+        rl.draw_circle(int(sp.x), int(sp.y), r, rl.Color(255, 214, 40, 255 if near_ else 150))
+        rl.draw_circle(int(sp.x), int(sp.y - r * 0.45), max(2, r * 0.14), rl.Color(30, 30, 34, 255))
+        rl.draw_rectangle(int(sp.x - r * 0.12), int(sp.y - r * 0.2), max(3, int(r * 0.24)), int(r * 0.75), rl.Color(30, 30, 34, 255))
+
+
 def draw_waypoint(hud, sim, cam, sw, sh):
     """Navigation waypoint: a straight-line arrow at the screen edge (a pin when on screen) with the distance; clears itself within 50 m."""
     if not hud.wp:

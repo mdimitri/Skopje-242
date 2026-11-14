@@ -123,7 +123,7 @@ import selfie as selfie_mod   # noqa: E402
 import mall as mall_mod   # noqa: E402
 import signals   # noqa: E402
 import escride  # noqa: E402
-from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers   # noqa: E402
+from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers, draw_gate_markers   # noqa: E402
 from render import LOD_PPM, TILT, Renderer, gait_cycle   # noqa: E402
 from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
@@ -760,7 +760,12 @@ def main():
     log(f"[game] stray dog hubs (kiosks, food places): {sum(len(v) for v in sim.dogs.hubs.values())}")
     labels += [(nm_, x_, world.ground_y(x_, y_) + 3.2, y_, "poi:" + c_) for x_, y_, c_, nm_ in hud.pois if nm_]
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
+    gate_pl_ = sim.compounds.gate_pois() if getattr(sim, "compounds", None) is not None else []
+    hud.pois = hud.pois + [p_ for p_, _m in gate_pl_]          # police / barracks gates: a walk-up place each
+    labels += [(p_[3], p_[0], world.ground_y(p_[0], p_[1]) + 3.2, p_[1], "poi:" + p_[2]) for p_, _m in gate_pl_]
     pois = poi_mod.Pois(hud.pois)                           # walk-in places with a 1-4 tooltip
+    for p_, m_ in gate_pl_:
+        pois._menus[(p_[0], p_[1])] = m_
     selfie = selfie_mod.Selfie(ROOT)
     gtc = mall_mod.Mall(world)
     sim.peds.hall = gtc.in_hall if gtc.enabled else None
@@ -1040,6 +1045,9 @@ def main():
                 hud.banner = ("", 0.0)                                  # the "Стој!" warning would sit over УАПСЕН
                 if d["lost"] and sim.walker is not None:
                     popups.add(f"-{d['lost']} ден.", sim.walker.x, sim.walker.y, 3.0, 3.0, (255, 150, 140), 22)
+            elif kind == "fence_down":
+                aud.play("hurt_thud", 0.9, 0.6)
+                particles.sparks(d["x"], d["y"], 10, 1.0)
             elif kind == "barbed":
                 aud.play("hurt_thud", 0.6, 1.3)
                 particles.emit("b", d["x"], d["y"], 1.0, 0, 0, 1.2, 3, 0.12, 0.4, (190, 20, 24), 1.5, 0.8, -6.0) if not d.get("car") else particles.sparks(d["x"], d["y"], 4, 0.8)
@@ -2086,6 +2094,7 @@ def main():
             guard.run("players", draw_players, sim, cam, sw, sh)
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)
+            guard.run("gate pins", draw_gate_markers, sim, cam, sw, sh, poi_mod.REACH)
             guard.run("mall_doors", gtc.markers, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
