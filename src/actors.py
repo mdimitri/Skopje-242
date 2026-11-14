@@ -3376,7 +3376,7 @@ class Sim:
             a = c.h + c.turret
             import gl3d
             tx_, ty_ = c.x + math.cos(c.h) * gl3d.APC_TURRET[0], c.y + math.sin(c.h) * gl3d.APC_TURRET[0]
-            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.66   # bore height of the 2A72
+            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.28   # bore height of the gun in the cone turret
             dmg = WEAPONS["kalash"][2] * 6
             self.shots.fire(tx_ + math.cos(a) * 3.1, ty_ + math.sin(a) * 3.1, a + self.rng.uniform(-0.004, 0.004), "shell30", dmg, 220.0, gz, src=c)
             self.ev("gunfire", x=tx_, y=ty_, kind="btr")

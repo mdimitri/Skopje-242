@@ -1017,7 +1017,7 @@ def _camo_parts(parts, body_c):
 A_ARMY = np.array((70, 82, 48), np.float32)
 APC_TURRET = (0.62, 2.0)           # BTR-80 turret ring: x along the hull, height of the roof (local metres)
 APC_TRACK = 1.21                   # half track of the BTR-80's wheels (track 2.41 m)
-APC_STYLE = {"turret": "80a", "camo": True, "covers": "open"}     # look of the БТР-80 (turret "80a" = 30 mm 2A72 outside, "80" = cone turret)
+APC_STYLE = {"turret": "80", "camo": True, "covers": "open"}     # look of the БТР-80 (turret "80a" = 30 mm 2A72 outside, "80" = cone turret)
 
 
 def _poly(pts, col, parts, centre=(0.0, 1.25, 0.0)):
