@@ -812,6 +812,11 @@ class Renderer:
                 gy = w.ground_y(x, y) + z
                 sp = math.hypot(vx, vy) or 1.0
                 k = (1.6 if kind != "rocket" else 0.8) / sp
+                if kind == "shell30":                        # 30 mm tracer: long, fat and bright, seen from the usual camera height
+                    k = 6.0 / sp
+                    for o_ in (-0.06, 0.0, 0.06):
+                        rl.draw_line_3d(V3(x - vx * k, gy + o_, y - vy * k), V3(x, gy + o_, y), rl.Color(255, 200, 90, 255))
+                    rl.draw_sphere(V3(x, gy, y), 0.28, rl.Color(255, 236, 160, 255))
                 col = rl.Color(*projectiles.KINDS[kind][2], 255)
                 if kind == "rocket":
                     rl.draw_cube(V3(x, gy, y), 0.35, 0.35, 0.35, rl.Color(80, 90, 50, 255))

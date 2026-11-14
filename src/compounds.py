@@ -364,6 +364,10 @@ class Compounds:
                 t = ((gx - ax) * (bx - ax) + (gy - ay) * (by - ay)) / (L * L)
                 if -0.05 <= t <= 1.05 and _seg_d2(gx, gy, ax, ay, bx, by) < 4.0:
                     cuts.append((t - gw / 2 / L, t + gw / 2 / L))
+            k = max(2, int(L))                                         # never across a carriageway: open where the fence would stand on the road
+            for j in range(k + 1):
+                if self._road(ax + (bx - ax) * j / k, ay + (by - ay) * j / k):
+                    cuts.append((j / k - 1.2 / L, j / k + 1.2 / L))
             t0 = 0.0
             for g0, g1 in sorted(cuts) + [(1.0, 1.0)]:
                 if g0 > t0:

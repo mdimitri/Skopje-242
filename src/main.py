@@ -1777,7 +1777,7 @@ def main():
                 "respawn": rl.is_key_pressed(rl.KEY_R),
                 "move": (((down(rl.KEY_D) or down(rl.KEY_RIGHT)) - (down(rl.KEY_A) or down(rl.KEY_LEFT))),
                          ((down(rl.KEY_W) or down(rl.KEY_UP)) - (down(rl.KEY_S) or down(rl.KEY_DOWN)))),
-                "run": down(rl.KEY_LEFT_SHIFT),
+                "run": down(rl.KEY_LEFT_SHIFT) or down(rl.KEY_RIGHT_SHIFT),
                 "attack": down(rl.KEY_LEFT_CONTROL) or down(rl.KEY_RIGHT_CONTROL),
                 "jump": rl.is_key_pressed(rl.KEY_SPACE),
                 "buy": next((i for i, k in enumerate((rl.KEY_ONE, rl.KEY_TWO, rl.KEY_THREE, rl.KEY_FOUR)) if rl.is_key_pressed(k)), None),

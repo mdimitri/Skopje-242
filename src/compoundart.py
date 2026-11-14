@@ -21,11 +21,7 @@ class _B:
 
     def tri(self, a, b, c, col):
         self.p += [a, b, c]
-        n = np.cross(np.subtract(b, a), np.subtract(c, a))
-        ln = float(np.linalg.norm(n)) or 1.0
-        n = n / ln
-        k = max(float(gl3d._shade(n)), float(gl3d._shade(-n)))
-        self.c += [tuple(min(255, int(v * k)) for v in col)] * 3
+        self.c.append(col)                       # shaded all at once in model()
 
     def quad(self, a, b, c, d, col):
         self.tri(a, b, c, col)
@@ -50,24 +46,29 @@ class _B:
 
     def line(self, p0, p1, w, col):
         """A thin wire: two crossed ribbons (seen from the side and from above)."""
-        d = np.subtract(p1, p0)
-        ln = float(np.linalg.norm(d)) or 1.0
-        d = d / ln
-        up = np.array((0, 1, 0)) if abs(d[1]) < 0.9 else np.array((1, 0, 0))
-        s1 = np.cross(d, up)
-        s1 = s1 / (np.linalg.norm(s1) or 1.0) * w / 2
-        s2 = np.cross(d, s1)
-        s2 = s2 / (np.linalg.norm(s2) or 1.0) * w / 2
-        p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
-        for s in (s1, s2):
-            self.quad(tuple(p0 - s), tuple(p1 - s), tuple(p1 + s), tuple(p0 + s), col)
+        dx, dy, dz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+        ln = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+        dx, dy, dz = dx / ln, dy / ln, dz / ln
+        ux, uy, uz = (0.0, 1.0, 0.0) if abs(dy) < 0.9 else (1.0, 0.0, 0.0)
+        ax, ay, az = dy * uz - dz * uy, dz * ux - dx * uz, dx * uy - dy * ux          # d x up
+        n = (math.sqrt(ax * ax + ay * ay + az * az) or 1.0) / (w / 2)
+        ax, ay, az = ax / n, ay / n, az / n
+        bx, by, bz = dy * az - dz * ay, dz * ax - dx * az, dx * ay - dy * ax          # d x s1 (already w/2 long)
+        for sx, sy, sz in ((ax, ay, az), (bx, by, bz)):
+            self.quad((p0[0] - sx, p0[1] - sy, p0[2] - sz), (p1[0] - sx, p1[1] - sy, p1[2] - sz),
+                      (p1[0] + sx, p1[1] + sy, p1[2] + sz), (p0[0] + sx, p0[1] + sy, p0[2] + sz), col)
 
     def model(self):
         if not self.p:
             return None
         pos = np.asarray(self.p, np.float32)
+        t = pos.reshape(-1, 3, 3)
+        n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-9
+        k = np.maximum(gl3d._shade(n), gl3d._shade(-n))                  # lit from either side (wires, mesh)
+        col = np.repeat(np.minimum(255, (np.asarray(self.c, np.float32) * k[:, None]).astype(np.int32)), 3, 0)
         rgba = np.empty((len(pos), 4), np.uint8)
-        rgba[:, :3] = np.clip(np.asarray(self.c, np.float32), 0, 255)
+        rgba[:, :3] = np.clip(col, 0, 255)
         rgba[:, 3] = 255
         return gl3d.make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
 
@@ -404,6 +405,10 @@ class Art:
 
     def draw(self, cmp, sim, w, inr, fx, fy):
         """inr(x, y, pad) -> on screen."""
+        if not getattr(self, "_warm", False):                          # every compound's geometry at once, on the first frame, not on arrival
+            self._warm = True
+            for c in cmp.list:
+                self.cells[id(c)] = (c.ver, build(c, w))
         for c in cmp.list:
             x0, y0, x1, y1 = c.bb
             if not inr((x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0) / 2 + 20):

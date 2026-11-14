@@ -286,7 +286,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     dmg = 1.0 if p.health > 35 else 0.7           # a wrecked engine is slower
     fx, fy = math.cos(p.h), math.sin(p.h)
     vf = p.vx * fx + p.vy * fy
-    p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt * (HERO["drv"] if p.player_car else 1.0))
+    p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt * (HERO["drv"] if p.player_car else 1.0) * (0.7 if p.kind == vehicles.BTR else 1.0))   # БТР: slower hands on the wheel
     maxang = STEER / (1.0 + abs(vf) / (8.0 if L_ < 6 else 13.0))
     p.wheel = p.steer * maxang
     om = 0.0
@@ -3371,7 +3371,7 @@ class Sim:
             c.turret = (c.turret + inp.get("steer", 0.0) * 1.5 * dt + math.pi) % math.tau - math.pi
         c.gun_cd = max(0.0, c.gun_cd - dt)
         if inp.get("attack") and c.gun_cd <= 0 and c.ammo > 0 and c.alive:
-            c.gun_cd = 0.2
+            c.gun_cd = 0.2 / 1.5                                       # Martin: 50 % faster
             c.ammo -= 1
             a = c.h + c.turret
             import gl3d
