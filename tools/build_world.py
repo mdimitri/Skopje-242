@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 68
+VERSION = 69
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2836,7 +2836,10 @@ def main():
         import rail
         rl = _read_list(os.path.join(a.src, "rail.json"))
         if rl:
-            rp, stations, track = rail.build(rl, edges, add_c, mesh.add, chunk_of, lambda x, y: float(T.hs(x, y)), in_lane)
+            _barr = np.asarray(bld)
+            rp, stations, track = rail.build(rl, edges, add_c, mesh.add, chunk_of, lambda x, y: float(T.hs(x, y)), in_lane,
+                                             lift=lambda items, keep: __import__("ramps")._lift_overlay(T, items, lambda x, y, _v: keep(x, y) or bool(
+                                                 _barr[min(NCY - 1, max(0, int((y + HY) / CELL))), min(NCX - 1, max(0, int((x + HX) / CELL)))]), HX, HY))
             posts = list(posts) + rp
     except Exception as e:  # noqa: BLE001 - decoration
         import traceback

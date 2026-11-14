@@ -22,11 +22,13 @@ import numpy as np
 import quays
 
 G_MAX = 0.07           # steepest approach / deck grade where there is room
+G_SHORT = 0.10         # a way under a deck is cleared only if the deck can climb over it at most this steeply
 A_MAX = 140.0          # longest approach embankment (m)
 W = 24.0               # vertical curve: moving average window (m)
 LIFT_MIN = 1.2         # a deck point this far above the ground is "elevated": its height is kept (clearance)
 SIDE = 0.5             # embankment side slope (rise per metre)
 ROAD_FLANK = 0.07      # ... where another street runs into it
+SLAB = 0.9             # deck thickness (tools/terrain.py SLAB)
 JOIN = 0.6             # deck ends / road vertices this close are the same point
 
 
@@ -88,13 +90,23 @@ def _approach(roads, rindex, p, away, limit):
             j += step
         if tot >= limit:
             break
-        end = out[-1]                                   # road ended: go on only if exactly one other road continues here
-        nxt = [(r_, v_) for r_, v_ in _near(rindex, end) if r_ not in used and (v_ == 0 or v_ == len(roads[r_]["pts"]) - 1)
-               and math.hypot(roads[r_]["pts"][v_][0] - end[0], roads[r_]["pts"][v_][1] - end[1]) <= JOIN]
-        if len(nxt) != 1:
+        end, prev = out[-1], out[-2]                    # road ended: go on along the straightest road (also through a
+        ux, uy = end[0] - prev[0], end[1] - prev[1]     # junction: the side streets ramp up to it at ROAD_FLANK)
+        ul = math.hypot(ux, uy) or 1e-9
+        nxt = None
+        for r_, v_ in _near(rindex, end):
+            Q = roads[r_]["pts"]
+            if r_ in used or len(Q) < 2 or math.hypot(Q[v_][0] - end[0], Q[v_][1] - end[1]) > JOIN:
+                continue
+            for st in (1, -1):
+                if 0 <= v_ + st < len(Q):
+                    dx, dy = Q[v_ + st][0] - end[0], Q[v_ + st][1] - end[1]
+                    c = (dx * ux + dy * uy) / ul / (math.hypot(dx, dy) or 1e-9)
+                    if c > 0.85 and (nxt is None or c > nxt[0]):
+                        nxt = (c, r_, v_, st)
+        if nxt is None:
             break
-        ri, vi = nxt[0]
-        step = 1 if vi == 0 else -1
+        _, ri, vi, step = nxt
         used.add(ri)
     return out, hw
 
@@ -144,7 +156,8 @@ def _chains(dlist):
 
 def _lift_overlay(T, items, blocked, hx, hy, segs=None):
     """items: [(points (k, 2), lift (k,), half width)] -> merged into T.q (created if needed).  Lift is full within
-    hw + 1 m of the centreline and falls at SIDE beyond; `blocked(x, y)` (buildings) posts stay as they are."""
+    hw + 1 m of the centreline and falls at SIDE beyond; `blocked(x, y, v)`: True keeps the post as it is
+    (buildings), a number caps its lift."""
     S, Tl = quays.QSTEP, quays.TILE
     nty = int(math.ceil(2 * hy / (S * Tl))) + 1
     ntx = int(math.ceil(2 * hx / (S * Tl))) + 1
@@ -156,7 +169,13 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
             tiles[(int(tx), int(ty))] = [ov.d[k].astype(np.float32).copy(), ov.cls[k].copy()]
         nty, ntx = max(nty, ov.idx.shape[0]), max(ntx, ov.idx.shape[1])
     add = {}
+    cut = []                                             # long runs in pieces of <= 16 points: small boxes, fast
     for P, lift, hw in items:
+        for k in range(0, max(1, len(P) - 1), 15):
+            cut.append((P[k:k + 16], lift[k:k + 16], hw))
+    for P, lift, hw in cut:
+        if len(P) < 2:
+            continue
         if lift.max() < 0.03:
             continue
         reach = hw + 1.0 + float(lift.max()) / ROAD_FLANK + 1.0
@@ -194,8 +213,14 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
     n = 0
     for (px, py), v in add.items():
         x, y = px * S - hx, py * S - hy
-        if blocked(x, y):
-            continue
+        r = blocked(x, y, v)                             # True: stays as it is; a number: lifted at most that much
+        if isinstance(r, (bool, np.bool_)):
+            if r:
+                continue
+        else:
+            v = min(v, float(r))
+            if v < 0.005:
+                continue
         tx, ty = px // Tl, py // Tl
         for ox in ((0, 1) if px % Tl == 0 and tx > 0 else (0,)):        # a post on a tile border lives in both tiles
             for oy in ((0, 1) if py % Tl == 0 and ty > 0 else (0,)):
@@ -219,6 +244,32 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
     return n
 
 
+def _under(ugrid, p, tang, e0, e1, cleared=True, ways=None):
+    """Headroom a way crossing under deck point p (deck direction `tang`) needs, or 0.  Ways running along the deck (the
+    approach roads it joins, parallel streets) or touching the bridge's ends do not count.  Unless the deck already `cleared` the ground there by 2 m, paths and streets
+    within 20 m of an end meet the road at grade (a junction at the bridge foot) and do not count either.  `ways`: a set
+    that collects the road indices of the ways that count."""
+    tl = math.hypot(tang[0], tang[1]) or 1.0
+    tx, ty = tang[0] / tl, tang[1] / tl
+    best = 0.0
+    for ax, ay, bx, by, hw, c, ri in ugrid.get((int(p[0] // 16), int(p[1] // 16)), ()):
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy or 1e-9
+        t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / l2))
+        if math.hypot(p[0] - ax - dx * t, p[1] - ay - dy * t) >= hw:
+            continue
+        if not cleared and (c < 4.0 or min(math.hypot(p[0] - e[0], p[1] - e[1]) for e in (e0, e1)) < 20.0):
+            continue
+        if abs(dx * tx + dy * ty) / math.sqrt(l2) > 0.87:     # within 30 degrees of the deck: along it, not under it
+            continue
+        if any(math.hypot(q[0] - e[0], q[1] - e[1]) < 3.0 for q in ((ax, ay), (bx, by)) for e in (e0, e1)):
+            continue
+        best = max(best, c)
+        if ways is not None:
+            ways.add(ri)
+    return best
+
+
 def smooth(T, decks, roads, blocked, hx, hy, log=print):
     """See the module docstring.  decks: {road index: terrain.Deck} (changed in place)."""
     dlist = [d for d in decks.values() if d.hw >= 3.0]          # carriageways (footbridges keep their steps / grades)
@@ -228,7 +279,16 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             continue
         for vi, p in enumerate(rd["pts"]):
             rindex.setdefault(_key(p), []).append((ri, vi))
-    items, stats = [], {"chains": 0, "approaches": 0, "short": 0, "lifted_m": 0.0}
+    ugrid = {}                                                  # ways that may pass under a deck, by 16 m cell
+    for ri, rd in enumerate(roads):
+        if rd.get("bridge") or rd.get("tunnel") or not (rd.get("drive") or rd.get("walk")) or len(rd["pts"]) < 2:
+            continue
+        hw_, c_ = rd["w"] / 2 + (1.5 if rd.get("drive") else 0.5), (4.4 if rd.get("drive") else 3.0)
+        for a, b in zip(rd["pts"], rd["pts"][1:]):
+            for cx in range(int((min(a[0], b[0]) - hw_) // 16), int((max(a[0], b[0]) + hw_) // 16) + 1):
+                for cy in range(int((min(a[1], b[1]) - hw_) // 16), int((max(a[1], b[1]) + hw_) // 16) + 1):
+                    ugrid.setdefault((cx, cy), []).append((a[0], a[1], b[0], b[1], hw_, c_, ri))
+    items, stats = [], {"chains": 0, "approaches": 0, "short": 0, "lifted_m": 0.0, "no_room": 0}
     for chain in _chains(dlist):
         # the chain's centreline at 1 m, which piece / sample each point came from, and the old heights
         P, H, own = [], [], []
@@ -271,11 +331,19 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
         floor[n0 + 6:n0 + Ld - 6] = np.maximum(floor[n0 + 6:n0 + Ld - 6], t[n0 + 6:n0 + Ld - 6] + 0.35)
         if not el.any():                                      # a deck on the ground: just round it into the roads
             req[n0:n0 + Ld] = H
+        for k in range(n0, n0 + Ld):                          # a street / path crossing under the deck anywhere (also within 24 m
+            c = _under(ugrid, X[k], X[min(k + 2, len(X) - 1)] - X[max(k - 2, 0)], P[0], P[-1],   # of an end, where make_deck
+                       cleared=H[k - n0] - t[k] >= 2.0)      # kept no clearance): full headroom + the slab
+            if c > 0:
+                need = t[k] + c + SLAB
+                if max((need - t[0]) / max(1.0, s[k] - s[0]), (need - t[-1]) / max(1.0, s[-1] - s[k])) > G_SHORT:
+                    stats["no_room"] += 1                     # no room to climb over it (a bridge foot right at the
+                    continue                                  # street, no approach road): left as OSM has it
+                req[k] = max(req[k], need)
         # the grade each side needs: the requirement must come down to the ground by the end of the approach
         ri_ = np.nonzero(req > -1e8)[0]
-        first, last = ri_[0], ri_[-1]
-        g0 = max(G_MAX, (req[first] - t[0]) / max(1.0, s[first] - s[0]))
-        g1 = max(G_MAX, (req[last] - t[-1]) / max(1.0, s[-1] - s[last]))
+        g0 = max(G_MAX, float(np.max((req[ri_] - t[0]) / np.maximum(1.0, s[ri_] - s[0]))))    # steepest need from the
+        g1 = max(G_MAX, float(np.max((req[ri_] - t[-1]) / np.maximum(1.0, s[-1] - s[ri_]))))  # ends (any requirement)
         stats["short"] += (g0 > G_MAX + 1e-6) + (g1 > G_MAX + 1e-6)
         cone = np.full(len(X), -1e9)
         for k in ri_:
@@ -320,8 +388,39 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             for cx in range(int(min(a[0], b[0]) // 64), int(max(a[0], b[0]) // 64) + 1):
                 for cy in range(int(min(a[1], b[1]) // 64), int(max(a[1], b[1]) // 64) + 1):
                     segs.setdefault((cx, cy), []).append((a[0], a[1], b[0], b[1], rd["w"] / 2))
-    stats["posts"] = _lift_overlay(T, items, blocked, hx, hy, segs)
+    kg = {}                                                     # ways passing beneath a deck stay down (in a cutting
+    for d in decks.values():                                    # between retaining walls) and climb out of it at G_MAX
+        for a, b, ha, hb in zip(d.pts, d.pts[1:], d.h, d.h[1:]):
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            for k in range(int(L // 2) + 1):
+                f = min(1.0, k * 2.0 / (L or 1.0))
+                p = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+                ws = set()
+                if _under(ugrid, p, (b[0] - a[0], b[1] - a[1]), d.pts[0], d.pts[-1],
+                          cleared=ha + (hb - ha) * f - T.hs(*p) >= 2.0, ways=ws) <= 0.0:
+                    continue
+                for cx in range(int((p[0] - 160) // 32), int((p[0] + 160) // 32) + 1):
+                    for cy in range(int((p[1] - 160) // 32), int((p[1] + 160) // 32) + 1):
+                        for ri in ws:
+                            kg.setdefault((cx, cy), set()).add((p[0], p[1], ri))
+
+    def clogs(x, y, v):
+        """Most a post may be raised: on a way that passes under a deck it stays down below the deck and climbs at
+        G_MAX out of the cutting (the way may be another bridge's approach); False where nothing limits it."""
+        cr = kg.get((int(x // 32), int(y // 32)))
+        if v <= 0.0 or not cr:
+            return False
+        mine = set()
+        for ax, ay, bx, by, hw, c, ri in ugrid.get((int(x // 16), int(y // 16)), ()):
+            dx, dy = bx - ax, by - ay
+            l2 = dx * dx + dy * dy or 1e-9
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
+            if math.hypot(x - ax - dx * t, y - ay - dy * t) < hw:
+                mine.add(ri)
+        dmin = min((math.hypot(x - px, y - py) for px, py, ri in cr if ri in mine), default=None)
+        return False if dmin is None else max(0.0, (dmin - 8.0) * G_MAX)
+    stats["posts"] = _lift_overlay(T, items, lambda x, y, v: True if blocked(x, y) else clogs(x, y, v), hx, hy, segs)
     log(f"[ramps] {stats['chains']} bridge chains smoothed, {stats['approaches']} approach embankments "
         f"(highest {stats['lifted_m']:.1f} m, {stats['posts']} posts), {stats['short']} approaches too short for "
-        f"{G_MAX:.0%} (steeper there)")
+        f"{G_MAX:.0%} (steeper there), {stats['no_room']} deck points over a way left low (no room to climb)")
     return stats

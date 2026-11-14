@@ -51,7 +51,7 @@ G_RAIL = 0.025                       # steepest rail grade: the viaduct climbs a
 CURVE = 80.0                         # vertical curves: moving average over this many metres
 
 
-def rail_profile(pcs, total, th, under):
+def rail_profile(pcs, total, th, under, free=(True, True)):
     """Deck heights (underside) of the pieces of one bridge way: CLEAR over the ground where there is room to climb,
     always CLEAR over a street beneath, down to the ground at both ends, at no more than G_RAIL, with vertical curves.
     (Before: each piece took CLEAR or CLEAR * ramp on its own, so a street under the ramp made a 5.5 m step.)"""
@@ -68,6 +68,12 @@ def rail_profile(pcs, total, th, under):
     full = low + CLEAR
     # from the ends (on the ground) upwards at G_RAIL, never above full clearance ...
     g0, g1 = float(th(*pcs[0][:2])) - 1.0, float(th(*pcs[-1][:2])) - 1.0   # rail top at the ends = the ground line's (th + 0.25)
+    if not free[0]:
+        g0 = 1e9                                             # a branch of the viaduct goes on here: stay up (full clearance)
+        must[0] = True
+    if not free[1]:
+        g1 = 1e9
+        must[-1] = True
     prof = np.minimum(full, np.minimum(g0 + s * G_RAIL, g1 + (total - s) * G_RAIL))
     # ... but a street beneath always gets its clearance, the climb to it at G_RAIL (steeper only if the ends are too near)
     for k in np.nonzero(must)[0]:
@@ -76,16 +82,16 @@ def rail_profile(pcs, total, th, under):
     ext = np.concatenate([np.full(k_, prof[0]), prof, np.full(k_, prof[-1])])
     sm = np.convolve(ext, np.ones(k_) / k_, mode="same")[k_:k_ + n]
     sm[must] = np.maximum(sm[must], full[must])
-    e = np.minimum(1.0, np.minimum(s, total - s) / 40.0)
+    e = np.minimum(1.0, np.minimum(s if free[0] else 1e9, (total - s) if free[1] else 1e9) / 40.0)
     return list(np.maximum(sm, low - 1.0 + 1.3 * e))          # sunk into the ground at the ends, clear of it inside
 
 
-def viaduct(g_list, pts, th, in_lane, under):
+def viaduct(g_list, pts, th, in_lane, under, free=(True, True)):
     """Deck, parapets, rails and columns along one bridge way.  -> [(x, z, y_abs, G)], posts, [(x, z, rail top)]
     Every piece is sheared to the grade between its neighbours, so the deck is one sloping ribbon, not flat steps."""
     pcs, total = _pieces(pts)
     parts, posts, top = [], [], []
-    ys = rail_profile(pcs, total, th, under)
+    ys = rail_profile(pcs, total, th, under, free)
     for i, (x, z, yaw, ln, run) in enumerate(pcs):
         ca, sa = math.cos(yaw), math.sin(yaw)
         nx, nz = -sa, ca
@@ -195,12 +201,27 @@ def _join_bridges(ways, tol=1.0):
                 else:
                     Q = br[j] if key(br[j][-1]) == key(p) else br[j][::-1]
                     P = Q[:-1] + P
-        out.append(("way", "rail", True, False, P))
-    return rest + out
+        out.append(P)
+    res = []
+    for ci, P in enumerate(out):                           # an end where another viaduct track goes on (a switch, a parallel
+        free = []                                          # track ending a few metres off) is no ramp end: it stays up
+        for q in (P[0], P[-1]):
+            free.append(not any(math.hypot(o_[0] - q[0], o_[1] - q[1]) < 10.0 for cj, Q in enumerate(out) if cj != ci for o_ in _dense(Q)))
+        res.append(("way", "rail", True, False, P, tuple(free)))
+    return rest + res
 
 
-def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
-    """rl: rail.json rows.  th(x, z): terrain height.  in_lane(x, z, r): inside a drivable carriageway."""
+def _dense(P, step=4.0):
+    for a, b in zip(P, P[1:]):
+        n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1]) / step))
+        for k in range(n + 1):
+            yield (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+
+
+def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print, lift=None):
+    """rl: rail.json rows.  th(x, z): terrain height.  in_lane(x, z, r): inside a drivable carriageway.
+    lift(items): raise the terrain along [(points (k, 2), lift (k,), half width)] (tools/ramps.py overlay), for the
+    embankments where the ground track has to climb to a viaduct end."""
     ways = [r for r in rl if r[0] == "way" and r[1] == "rail"]
     nodes = [r for r in rl if r[0] == "node"]
     posts, stations, runs, xings = [], [], [], []
@@ -224,16 +245,18 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
         return False
 
     nv = nd = nc = 0
-    for _k, _kind, bridge, tunnel, pts in _join_bridges(ways):
+    via = set()
+    for _k, _kind, bridge, tunnel, pts, *fr_ in _join_bridges(ways):
         if tunnel or len(pts) < 2:
             continue
         if bridge:
-            parts, pp, top = viaduct(None, pts, th, in_lane, under)
+            parts, pp, top = viaduct(None, pts, th, in_lane, under, fr_[0] if fr_ else (True, True))
             for x, z, _y, g in parts:
                 pos, uv, col = _out(g)
                 add_abs(chunk_of(x, z), mat, pos, uv, col)
             posts += pp
             runs.append(top)
+            via.update((p_[0], p_[1]) for p_ in top)
             nd += 1
         else:                                                    # ground line: rails across the streets it meets
             runs.append([(round(x, 1), round(z, 1), round(th(x, z) + 0.25, 2)) for x, z, _yw, _l, _r in _pieces(pts)[0]])
@@ -281,8 +304,56 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
                 posts.append((x + math.cos(best[1]) * k - math.sin(best[1]) * 12.5, z + math.sin(best[1]) * k + math.cos(best[1]) * 12.5,
                               4.2, th(x, z) - 1.0, th(x, z) + 4.5))
     lines = _chain([r for r in runs if len(r) >= 2])
-    log(f"[build] railway: {nd} viaduct sections, {nc} ground crossings, {len(stations)} stations, {len(lines)} train lines")
+    vg = {}
+    for x_, z_ in via:
+        vg.setdefault((int(x_ // 8), int(z_ // 8)), []).append((x_, z_))
+
+    def keep_down(x, z):                                     # never raise a street, or the ground under the viaduct
+        if in_lane(x, z, -1.0):
+            return True
+        return any(math.hypot(x - a, z - b) < 5.0 for cx in (-1, 0, 1) for cy in (-1, 0, 1)
+                   for a, b in vg.get((int(x // 8) + cx, int(z // 8) + cy), ()))
+    lines, nlift = _embank(lines, via, (lambda items: lift(items, keep_down)) if lift else None)
+    log(f"[build] railway: {nlift} ground track points raised onto approach embankments; {nd} viaduct sections, {nc} ground crossings, {len(stations)} stations, {len(lines)} train lines")
     return posts, stations, {"lines": lines, "crossings": xings}
+
+
+def _embank(lines, via, lift):
+    """Where a viaduct ends high (a street right under its end) the ground track beside it used to stay on the ground: a
+    jump of up to 6.5 m.  Raise the ground track to fall from the viaduct at G_RAIL (forward and backward pass over each
+    line, viaduct points fixed), and the terrain under it with it.  -> (lines, points raised)."""
+    out, items, n = [], [], 0
+    for ln in lines:
+        P = np.array([(p[0], p[1]) for p in ln], np.float64)
+        h = np.array([p[2] for p in ln], np.float64)
+        isv = np.array([(p[0], p[1]) in via for p in ln])
+        if not isv.any() or isv.all():
+            out.append(ln)
+            continue
+        ds = np.concatenate([[0.0], np.hypot(*np.diff(P, axis=0).T)])
+        f = np.where(isv, h, -1e9)
+        for i in range(1, len(h)):
+            f[i] = max(f[i], f[i - 1] - G_RAIL * ds[i])
+        for i in range(len(h) - 2, -1, -1):
+            f[i] = max(f[i], f[i + 1] - G_RAIL * ds[i + 1])
+        new = np.where(isv, h, np.maximum(h, f))
+        up = (new - h > 0.05) & ~isv
+        n += int(up.sum())
+        k = 0
+        while k < len(h):                                    # runs of raised ground points -> embankment pieces
+            if not up[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < len(h) and up[j + 1]:
+                j += 1
+            a, b = max(0, k - 1), min(len(h) - 1, j + 1)
+            items.append((P[a:b + 1], np.maximum(0.0, new[a:b + 1] - h[a:b + 1]), 2.5))
+            k = j + 1
+        out.append([(p[0], p[1], round(float(v), 2)) for p, v in zip(ln, new)])
+    if lift is not None and items:
+        lift(items)
+    return out, n
 
 
 def _chain(runs):
