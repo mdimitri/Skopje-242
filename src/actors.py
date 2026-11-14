@@ -2642,12 +2642,28 @@ class Sim:
             if roof:
                 deck = [(x - 8.5, y - 8.5), (x + 8.5, y - 8.5), (x + 8.5, y + 8.5), (x - 8.5, y + 8.5)]
                 _pg2_add(self.w, (1, deck, z, (x - 8.5, y - 8.5, x + 8.5, y + 8.5)), x - 8.5, y - 8.5, x + 8.5, y + 8.5)
-                self.heli_stairs.extend(_roof_stairs(self.w, hit[0], hit[1]))
+                fl_ = _roof_stairs(self.w, hit[0], hit[1])
+                self.heli_stairs.extend(fl_)
+                pts_ = []                                       # the ride line for escride (the yellow F prompt at both ends): toe -> flights -> roof edge -> deck
+                for q_ in fl_:
+                    if not pts_:
+                        pts_.append([q_[1] - q_[3] * q_[5], q_[2] - q_[4] * q_[5], q_[7]])
+                    pts_.append([q_[1] + q_[3] * q_[5], q_[2] + q_[4] * q_[5], q_[8]])
                 if z - hit[1] > 0.6:                          # deck well above the roof: a short stair up onto it
                     L = max(2.0, (z - hit[1]) / 0.6)
                     up = (0, x + 8.5 + L / 2, y, -1.0, 0.0, L / 2, 0.65, hit[1], z)
                     _pg2_add(self.w, up, x + 8.5, y - 1, x + 8.5 + L, y + 1)
                     self.heli_stairs.append(up)
+                    if pts_:
+                        pts_ += [[up[1] - up[3] * up[5], up[2] - up[4] * up[5], up[7]], [up[1] + up[3] * up[5], up[2] + up[4] * up[5], up[8]]]
+                elif pts_:
+                    pts_.append([x, y, z])
+                if len(pts_) >= 2:
+                    esc_ = getattr(self.w, "esc", None)
+                    if not isinstance(esc_, dict):
+                        esc_ = self.w.esc = {}
+                    esc_.setdefault("stairs", []).append({"path": pts_, "heli": True})
+                    self.__dict__.pop("_esc_grid", None)
             self._clear_pad(x, y)
             b = Heli(x, y, -math.pi / 2, vehicles.HELI, 0)
             b.az = z

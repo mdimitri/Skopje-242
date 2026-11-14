@@ -1505,6 +1505,31 @@ def photo_facade(outer, h, fit, y_bot0=0.0, hide=None):
 ROOF_KINDS = ("flat", "shed", "gable", "hip", "pyramid", "mansard", "gambrel", "halfhip")
 
 
+def _roof_too_steep(outer, rf, max_deg=20.0):
+    """True when a fitted pitched roof is steeper than max_deg (rise over the half of the footprint's narrow side) or is a mansard / gambrel."""
+    kind = rf.get("kind")
+    if kind in (None, "flat"):
+        return False
+    if kind in ("mansard", "gambrel"):
+        return True
+    rise = float(rf.get("rise", 0.0))
+    r = np.asarray(outer, np.float64)
+    best = None
+    for i in range(len(r)):                                    # narrow side of the minimum-width bounding rectangle
+        d = r[(i + 1) % len(r)] - r[i]
+        ln = float(np.hypot(*d))
+        if ln < 1e-6:
+            continue
+        u = d / ln
+        v = np.array([-u[1], u[0]])
+        wv = float((r @ v).max() - (r @ v).min())
+        best = wv if best is None else min(best, wv)
+    if not best:
+        return False
+    run = best if kind == "shed" else best / 2.0
+    return math.degrees(math.atan2(rise, run)) > max_deg
+
+
 def photo_roof(outer, h, fit, roofc, wallc):
     """The fitted roof (src/photogram.py roof_shape) through src/archlib.py: roof pieces, gable walls, fascia, downpipes,
     chimneys, housings -> [(material, pos, uv, col)] or None when the fit has no roof of a known kind."""
@@ -1932,6 +1957,9 @@ def _bld_job(job):
         gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
         if gg:
             badd(MAT_GRAF, *gg)
+    if roof_fit and not small and _roof_too_steep(outer, roof_fit):           # blocks keep calm roofs: a learned pitch over 20 degrees (or a mansard / gambrel) becomes a flat roof with parapet
+        fit = dict(fit, roof=dict(roof_fit, kind="flat", rise=0.0))
+        roof_fit = fit["roof"]
     proof = photo_roof(outer, h, fit, roofc, wallc) if roof_fit else None
     if proof is not None:
         for m_, *g in proof:
