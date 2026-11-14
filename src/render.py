@@ -11,6 +11,7 @@ import actors
 import birdart
 import fx
 import gl3d
+import farview
 import modelpool
 import weaponart
 import projectiles
@@ -594,8 +595,9 @@ class Renderer:
         S = w.chunk
         self.t = t
         gl3d.ground_time(t)
-        rl.rl_set_clip_planes(near, H * 4 + 400)
-        self._cam, self._clip = cam, (near, H * 4 + 400)
+        far_ = max(H * 4 + 400, getattr(self, "view_far", 0.0))     # helicopter street view: out to the far ring
+        rl.rl_set_clip_planes(near, far_)
+        self._cam, self._clip = cam, (near, far_)
         # full-model shadows for everything on screen: the frame's half diagonal on the ground (resolution x zoom setting x
         # the current zoom-out), the street view out to its full-detail distance; beyond that the parallelogram
         r = 150.0 if far_overview else 0.5 * math.hypot(rl.get_render_width(), rl.get_render_height()) / max(ppm, 0.1) + 8.0
@@ -607,7 +609,7 @@ class Renderer:
             lod = ppm >= LOD_PPM
             drawn = 0
             missing = not lod
-            fr = self.frustum = Frustum(cam, rl.get_render_width() / max(1, rl.get_render_height()), H * 4 + 400)
+            fr = self.frustum = Frustum(cam, rl.get_render_width() / max(1, rl.get_render_height()), far_)
             gsph = st.gsph
             ind = getattr(self, "indoor", None)
             if ind is not None:                            # inside the GTC mall: only its hall and the actors are drawn
@@ -632,6 +634,11 @@ class Renderer:
                             missing = True
             if missing or far_overview:                    # the coarse whole-city model is only seen where a chunk is not baked yet
                 self._overview()
+            fk = getattr(self, "far_keys", None)
+            if fk:                                         # helicopter: cheap building / tree blocks beyond the streamed chunks
+                if getattr(self, "farview", None) is None:
+                    self.farview = farview.FarView(w)
+                self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr)
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:

@@ -1994,7 +1994,13 @@ def main():
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
             wanted, lite_, _f = ring_want(o_.x, o_.y, far_, near_)
             lod = True
+            if sim.mode == "car" and o_.kind in vehicles.FLY:      # helicopter: 3x further, as cheap far blocks (src/farview.py)
+                renderer.view_far = far_ * 3 + 60
+                renderer.far_keys = ring_want(o_.x, o_.y, far_ * 3, far_)[0]
+            else:
+                renderer.view_far, renderer.far_keys = 0.0, None
         else:
+            renderer.view_far, renderer.far_keys = 0.0, None
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
         guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         if lod:
