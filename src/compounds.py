@@ -577,6 +577,7 @@ class Compounds:
     # ------------------------------------------------------------------ per frame
     def update(self, dt):
         sim = self.sim
+        self.ignore = bool(getattr(sim, "cfg_ignore_law", False))
         if sim.client:
             return
         fx, fy = sim.focus()[:2]
@@ -691,7 +692,11 @@ class Compounds:
         c.guards = live
         pl = self._player()
         wk = sim.walker
-        alive = pl is not None and (sim.mode == "car" or (wk is not None and wk.health > 0))
+        alive = pl is not None and (sim.mode == "car" or (wk is not None and wk.health > 0)) and not self.ignore   # debug toggle: guards leave you alone
+        if self.ignore:
+            c.state = "calm"
+            for p in live:
+                p.ghp = p.hp
         inside = alive and self.bust is None and c.inside(pl[0], pl[1])
         # a guard who got hit: the gloves are off (and if you punched him from up close, he cuffs you there and then)
         for p in live:

@@ -1668,6 +1668,7 @@ def main():
             log(f"[window] {'focus gained' if focused_now else 'focus lost'} fullscreen={is_borderless()}")
         frame += 1
         t_game += dt
+        sim.cfg_ignore_law = bool(cfg.get("debug_nolaw"))          # debug: police and army leave you alone (session only)
         # ------------------------------------------------ input
         enter_pressed = False
         if a.test:
