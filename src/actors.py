@@ -507,10 +507,11 @@ def _roof_stairs(w, ring, top):
     m = len(ring)
     inside = lambda px, py: w._in_ring(px, py, ring)
     best = None
+    Lmin = 6.0 if any(math.hypot(ring[(i + 1) % m][0] - ring[i][0], ring[(i + 1) % m][1] - ring[i][1]) >= 6.0 for i in range(m)) else 2.0   # (a tiny footprint: the stair runs past the wall's ends)
     for i in range(m):
         (ax, ay), (bx, by) = ring[i], ring[(i + 1) % m]
         L = math.hypot(bx - ax, by - ay)
-        if L < 6.0:
+        if L < Lmin:
             continue
         ux, uy = (bx - ax) / L, (by - ay) / L
         nx, ny = uy, -ux
@@ -524,7 +525,7 @@ def _roof_stairs(w, ring, top):
     if best is None:
         return []
     _d, ax, ay, ux, uy, nx, ny, L = best
-    Lf = min(L - 2.0, 9.0)
+    Lf = min(L - 2.0, 9.0) if L >= 6.0 else 6.0
     s0 = (L - Lf) / 2
     off = 1.3                                                   # stair centre line out from the wall
     g0 = w.ground_y(ax + ux * (s0 + Lf / 2) + nx * off, ay + uy * (s0 + Lf / 2) + ny * off)
