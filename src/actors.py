@@ -118,8 +118,8 @@ class Heli(Body):
 
 
 class Apc(Body):
-    """БТР-80: crashes and blasts barely scratch it (4 %); 50 small-arms hits or one direct Зоља hit finish it."""
-    ARMOR = 0.04
+    """БТР-80: crashes and blasts barely scratch it (2 %); 100 small-arms hits or one direct Зоља hit finish it (Martin: 2x the hit points)."""
+    ARMOR = 0.02
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
@@ -139,7 +139,7 @@ class Apc(Body):
 
     def shot(self, kind):
         """A projectile hit: bullets and pellets chip it (50 rounds kill it), a 30 mm shell does five times that."""
-        self.__dict__["_hp"] = self.health - {"bullet": 2.0, "pellet": 0.7, "shell30": 10.0}.get(kind, 2.0)
+        self.__dict__["_hp"] = self.health - {"bullet": 1.0, "pellet": 0.35, "shell30": 5.0}.get(kind, 2.0)
         self.dirty = True
 
     def wreck(self):
@@ -201,6 +201,8 @@ def bump(b, impact, wx, wy, nx, ny):
         return
     b.health -= max(0.0, impact - 2.0) * 3.4 / 1.33 * (0.3 if b.service else 0.5 if vehicles.LARGE[b.kind] else 1.0)   # sturdy builds
     mag = min(0.08 + impact * 0.04, 0.8)
+    if isinstance(b, Apc):                            # armour plate: a БТР barely creases
+        mag *= 0.2
     dx, dy = wx - b.x, wy - b.y
     c, s = math.cos(b.h), math.sin(b.h)
     lx, lz = dx * c + dy * s, -dx * s + dy * c
@@ -3376,12 +3378,13 @@ class Sim:
             a = c.h + c.turret
             import gl3d
             tx_, ty_ = c.x + math.cos(c.h) * gl3d.APC_TURRET[0], c.y + math.sin(c.h) * gl3d.APC_TURRET[0]
-            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.28   # bore height of the gun in the cone turret
+            g0 = self.w.ground_y(c.x, c.y)
+            gz = (c.az - g0 if c.az is not None else 0.0) + gl3d.APC_TURRET[1] + 0.28   # bore height above the ground (projectile z is relative)
             dmg = WEAPONS["kalash"][2] * 6
             self.shots.fire(tx_ + math.cos(a) * 3.1, ty_ + math.sin(a) * 3.1, a + self.rng.uniform(-0.004, 0.004), "shell30", dmg, 220.0, gz, src=c)
             self.ev("gunfire", x=tx_, y=ty_, kind="btr")
             self.ev("muzzle", x=tx_ + math.cos(a) * 3.1, y=ty_ + math.sin(a) * 3.1, z=gz, ex=tx_ + math.cos(a) * 0.5, ey=ty_ + math.sin(a) * 0.5, ea=a,
-                    ez=gz - (c.az if c.az is not None else self.w.ground_y(c.x, c.y)))
+                    ez=gz - 0.15)
             self.scare(c.x, c.y, 60.0)
             if c.ammo == 0:
                 self.ev("btr_empty")

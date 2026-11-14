@@ -487,6 +487,20 @@ def bld_style(t, ar, outer, r):
     return h, roofc, wallc, mat, small
 
 
+MIL_WALLS = ((150, 146, 104), (176, 166, 120), (128, 132, 96), (196, 184, 142))      # olive drab, khaki, field green, sand
+MIL_ROOFS = ((70, 78, 60), (84, 86, 80), (62, 66, 56))
+
+
+def military_style(t, ar, h, r):
+    """A building inside the barracks: low flat-roofed barrack blocks and stores in olive / khaki plaster, the big ones an
+    academy / command hall (cream, colonnade).  Returns (h, roofc, wallc, mat, small, archkit archetype)."""
+    if ar > 1400:                                                  # academy / command building: 3-4 storeys, pale, columns
+        return max(10.0, min(h, 16.0)), vary(MIL_ROOFS[1], r, 4), vary((214, 204, 170), r, 4), MAT_FACADE_A, False, "academy"
+    if ar < 120:                                                   # guard houses, sheds, stores
+        return max(3.0, min(h, 4.5)), vary(r.choice(MIL_ROOFS), r, 4), vary(r.choice(MIL_WALLS), r, 4), MAT_FACADE_A, False, "military"
+    return max(6.0, min(h, 10.0)), vary(r.choice(MIL_ROOFS), r, 4), vary(r.choice(MIL_WALLS), r, 5), MAT_FACADE_A, False, "military"
+
+
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
@@ -2092,6 +2106,15 @@ def main():
                 and e.get("tags", {}).get("highway")]
     buildings = []
     pending = []                      # mesh emission waits until the river bed is carved into the terrain
+    mil_polys = []                    # army barracks (landuse=military): the buildings inside get the military look
+    for e_ in elements:
+        if e_.get("tags", {}).get("landuse") == "military" or e_.get("tags", {}).get("military") in ("barracks", "base", "academy"):
+            try:
+                for o_, _h in polygons_of(e_):
+                    if len(o_) >= 3:
+                        mil_polys.append((o_, (min(q[0] for q in o_), min(q[1] for q in o_), max(q[0] for q in o_), max(q[1] for q in o_))))
+            except Exception:  # noqa: BLE001
+                pass
     for el in each([e for e in elements if "building" in e.get("tags", {}) and e["tags"].get("building") != "no"],
                    "buildings -> 3D meshes", feed=("buildings", buildings, lambda b: list(b["ring"][0]))):
         t = el["tags"]
@@ -2144,6 +2167,12 @@ def main():
                                     (230, 220, 200), (176, 90, 60), ar, False, [], {"worship": ws}))
                     continue
                 h, roofc, wallc, mat, small = bld_style(t, ar, outer, r)
+                mx_, my_ = sum(q[0] for q in outer) / len(outer), sum(q[1] for q in outer) / len(outer)
+                if t.get("building") in ("military", "barracks") or any(bb_[0] <= mx_ <= bb_[2] and bb_[1] <= my_ <= bb_[3] and pip((mx_, my_), o_)
+                                                                         for o_, bb_ in mil_polys):
+                    h, roofc, wallc, mat, small, mil_arch = military_style(t, ar, h, r)
+                else:
+                    mil_arch = None
                 fit = photo_fit.get(el["id"])             # the photo-fitted look (src/photogram.py), when --src has photogram.json
                 if fit:
                     h, mat = fit.get("h", h), fit.get("mat", mat)
@@ -2164,7 +2193,7 @@ def main():
                             rooftop.append((px, py, r.uniform(1.5, 3.2), r.uniform(1.5, 3.2), r.uniform(1.0, 2.4)))
                 if not fit and OSM_KIT:                   # the archetype for the element kit, from the tags too
                     import archkit
-                    fit = {"osm_arch": archkit.osm_archetype(mat, h, ar, small, t)}
+                    fit = {"osm_arch": mil_arch or archkit.osm_archetype(mat, h, ar, small, t)}
                 pending.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
             except Exception as e:  # noqa: BLE001 - skip a malformed building
                 print(f"   skipped building {el.get('id')}: {e}")

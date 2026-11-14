@@ -315,7 +315,7 @@ class Compounds:
             n = max(2, int(math.hypot(bx - ax, by - ay) / 2.0))
             return any(self._road(ax + (bx - ax) * j / n, ay + (by - ay) * j / n) for j in range(n + 1))
         for i in range(4):
-            while m[i] > 3.0 and blocked(i):
+            while m[i] > 0.5 and blocked(i):
                 m[i] -= 1.0
         u0, u1, v0, v1 = min(us) - m[0], max(us) + m[1], min(vs) - m[2], max(vs) + m[3]
         rect = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)]
@@ -398,6 +398,55 @@ class Compounds:
             return (p[0], p[1])
         return (x, y)
 
+    def _road_segs(self, ring, pad):
+        """Drive-road centre segments near a ring: (ax, ay, bx, by, half width)."""
+        x0, y0 = min(p[0] for p in ring) - pad, min(p[1] for p in ring) - pad
+        x1, y1 = max(p[0] for p in ring) + pad, max(p[1] for p in ring) + pad
+        out = []
+        for e in self.w.edges:
+            if not e["drive"]:
+                continue
+            pts, hw = e["pts"], e.get("w", 6.0) / 2
+            for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+                if max(ax, bx) > x0 and min(ax, bx) < x1 and max(ay, by) > y0 and min(ay, by) < y1:
+                    out.append((ax, ay, bx, by, hw))
+        return out
+
+    def _off_roads(self, ring):
+        """Move the ring's corners inwards wherever a road runs along the fence line (one that crosses it gets a gate instead)."""
+        segs = self._road_segs(ring, 40.0)
+        if not segs:
+            return ring
+        ring = list(ring)
+        n = len(ring)
+        for _it in range(10):
+            push = [0.0] * n
+            for i in range(n):
+                (ax, ay), (bx, by) = ring[i], ring[(i + 1) % n]
+                L = math.hypot(bx - ax, by - ay)
+                if L < 0.5:
+                    continue
+                ux, uy = (bx - ax) / L, (by - ay) / L
+                for j in range(int(L / 2.0) + 1):
+                    t = min(1.0, j * 2.0 / L)
+                    x, y = ax + (bx - ax) * t, ay + (by - ay) * t
+                    for sx, sy, ex, ey, hw in segs:
+                        d2 = _seg_d2(x, y, sx, sy, ex, ey)
+                        if d2 > (hw + 2.0) ** 2:
+                            continue
+                        sl = math.hypot(ex - sx, ey - sy) or 1.0
+                        if abs(ux * (ex - sx) / sl + uy * (ey - sy) / sl) < 0.55:
+                            continue                                # crossing it, not running along: that is a gate
+                        need = hw + 2.0 - math.sqrt(d2) + 0.5
+                        w0, w1 = 1.0 - t, t
+                        push[i] = max(push[i], need * min(1.0, w0 * 2))
+                        push[(i + 1) % n] = max(push[(i + 1) % n], need * min(1.0, w1 * 2))
+            if max(push) < 0.05:
+                break
+            one = _offset(ring, 1.0)                                   # inward step of each corner per metre
+            ring = [(ring[i][0] + (one[i][0] - ring[i][0]) * push[i], ring[i][1] + (one[i][1] - ring[i][1]) * push[i]) for i in range(n)]
+        return ring
+
     def _fence_ring(self, c, ring, h, barbed, gaps):
         """Fence segments along a ring, with openings (x, y, width) where the gates are."""
         n = len(ring)
@@ -411,10 +460,6 @@ class Compounds:
                 t = ((gx - ax) * (bx - ax) + (gy - ay) * (by - ay)) / (L * L)
                 if -0.05 <= t <= 1.05 and _seg_d2(gx, gy, ax, ay, bx, by) < 4.0:
                     cuts.append((t - gw / 2 / L, t + gw / 2 / L))
-            k = max(2, int(L))                                         # never across a carriageway: open where the fence would stand on the road
-            for j in range(k + 1):
-                if self._road(ax + (bx - ax) * j / k, ay + (by - ay) * j / k):
-                    cuts.append((j / k - 1.2 / L, j / k + 1.2 / L))
             t0 = 0.0
             for g0, g1 in sorted(cuts) + [(1.0, 1.0)]:
                 if g0 > t0:
@@ -508,6 +553,7 @@ class Compounds:
         xs, ys = [p[0] for p in ring], [p[1] for p in ring]
         if max(xs) < -w.hx + 30 or min(xs) > w.hx - 30 or max(ys) < -w.hy + 30 or min(ys) > w.hy - 30:
             return None
+        ring = self._off_roads(ring)                               # the fence never stands on a carriageway running along it
         c = Compound("army", name, ring)
         inner = _offset(ring, 3.5)
         # gates where drive roads cross the perimeter
@@ -532,7 +578,7 @@ class Compounds:
         for _r, x, y, gw, i in hits:
             if all(math.hypot(x - g[0], y - g[1]) > 40 for g in gates):
                 gates.append((x, y, gw, i))
-            if len(gates) >= 8:                                    # every street into it gets a checkpoint (traffic never drives through a fence)
+            if len(gates) >= 16:                                   # every street into it gets a checkpoint (traffic never drives through a fence)
                 break
         if not gates:                                              # no road in: a gate where the nearest road is
             cx_, cy_ = sum(xs) / len(xs), sum(ys) / len(ys)
@@ -544,7 +590,7 @@ class Compounds:
             t = max(0.15, min(0.85, ((tx - ax) * (bx - ax) + (ty - ay) * (by - ay)) / L2))
             gates.append((ax + (bx - ax) * t, ay + (by - ay) * t, 7.0, i))
         per = sum(math.hypot(ring[(i + 1) % n][0] - ring[i][0], ring[(i + 1) % n][1] - ring[i][1]) for i in range(n))
-        want = max(1, min(4, int(per / 550) + 1))                    # big barracks: extra checkpoints where a street runs close
+        want = max(2, min(8, int(per / 275) + 1))                   # Martin: twice as many checkpoints                    # big barracks: extra checkpoints where a street runs close
         if len(gates) < want:
             cand = []
             for i in range(n):
@@ -560,7 +606,7 @@ class Compounds:
             for d_, x, y, i in sorted(cand):
                 if len(gates) >= want:
                     break
-                if all(math.hypot(x - g[0], y - g[1]) > 160 for g in gates):
+                if all(math.hypot(x - g[0], y - g[1]) > 90 for g in gates):
                     gates.append((x, y, 7.0, i))
         sgn = 1.0 if _area(ring) > 0 else -1.0
         gap_o, gap_i = [], []
@@ -635,7 +681,7 @@ class Compounds:
             c.spots.append([x, y, h, vehicles.BTR, i != lucky])
             c.posts.append((x + math.cos(h) * 9.5 + math.sin(h) * 3.5, y + math.sin(h) * 9.5 - math.cos(h) * 3.5, h))
         H, N, T = vehicles.ARMY_CARS
-        kinds = [H, N, T, H, N, T] if area > 45000 else [H, N, T]
+        kinds = [H, N, T] * (5 if area > 150000 else 4 if area > 45000 else 2)      # Martin: a much fuller motor pool
         av = [(x, y, 10.0) for x, y, _h in c.bunkers]
         c.spots += self._park(c, deep, None, kinds, (g0[0], g0[1]), av, math.atan2(g0[5], g0[4]) + math.pi / 2)
         # a wall sign on the biggest building near the main gate
@@ -883,7 +929,7 @@ class Compounds:
         sim = self.sim
         spread = 0.035 + min(0.05, d / 1500.0)
         a = ang + self.rng.uniform(-spread, spread)
-        gz = p.gz if p.gz is not None else self.w.ground_y(p.x, p.y)
+        gz = (p.gz - self.w.ground_y(p.x, p.y)) if p.gz is not None else 0.0     # projectile z is above the ground
         sim.shots.fire(p.x + math.cos(a) * 0.7, p.y + math.sin(a) * 0.7, a, "bullet", SOLDIER_DMG, 70.0, gz + 1.15, src=p)
         sim.ev("gunfire", x=p.x, y=p.y, kind="kalash")
 

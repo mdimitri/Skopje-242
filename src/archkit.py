@@ -482,7 +482,7 @@ def auto_ids(fit):
 
 
 ARCHETYPES = {"block": "стамбен блок", "tower": "кула (9+ ката)", "house": "куќа", "glass": "стаклена (деловна)",
-              "industrial": "индустрија", "old": "стара / дотраена"}
+              "industrial": "индустрија", "old": "стара / дотраена", "military": "воена (касарна)", "academy": "воена академија"}
 
 
 def archetype(fit):
@@ -544,6 +544,11 @@ OSM_POOLS = {
               [(0.08, "att_white")], [(0.06, "sf_shutter")]],
     "industrial": [[(0.4, "rib_corrug"), (0.1, "joint_acm")], [(0.2, "sr_std"), (0.1, "sr_fine")], [(0.3, "vt_big"), (0.1, "ps_std")],
                    [(0.3, "wt_dirt")], [(0.2, "wt_stain")]],
+    "military": [[(0.5, "joint_floor"), (0.3, "joint_grid_2")], [(0.5, "att_std"), (0.2, "att_white")], [(0.6, "pl_low"), (0.3, "pl_dark")],
+                 [(0.5, "can_std")], [(0.7, "rr_std"), (0.2, "rr_two")], [(0.4, "vt_row"), (0.3, "an_one"), (0.2, "tk_box")],
+                 [(0.4, "wt_stain")], [(0.5, "wt_dirt")], [(0.25, "wt_roofstain")]],
+    "academy": [[(0.5, "joint_floor"), (0.3, "frame_ims_2")], [(0.6, "att_white"), (0.3, "att_stepped")], [(0.7, "pil_std")],
+                [(0.6, "pl_stone")], [(0.6, "rr_std")], [(0.4, "an_many"), (0.3, "vt_row")], [(0.3, "wt_stain")], [(0.4, "wt_dirt")]],
     "glass": [[(0.35, "cw_vert"), (0.2, "cw_horiz"), (0.15, "cw_fins")], [(0.35, "att_dark"), (0.15, "att_white")],
               [(0.3, "ps_std"), (0.2, "rr_std")], [(0.15, "bb_mast"), (0.08, "bb_one")], [(0.2, "sf_full"), (0.15, "can_wide")]],
 }
