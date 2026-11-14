@@ -3380,7 +3380,8 @@ class Sim:
             dmg = WEAPONS["kalash"][2] * 6
             self.shots.fire(tx_ + math.cos(a) * 3.1, ty_ + math.sin(a) * 3.1, a + self.rng.uniform(-0.004, 0.004), "shell30", dmg, 220.0, gz, src=c)
             self.ev("gunfire", x=tx_, y=ty_, kind="btr")
-            self.ev("muzzle", x=tx_ + math.cos(a) * 3.1, y=ty_ + math.sin(a) * 3.1, z=gz)
+            self.ev("muzzle", x=tx_ + math.cos(a) * 3.1, y=ty_ + math.sin(a) * 3.1, z=gz, ex=tx_ + math.cos(a) * 0.5, ey=ty_ + math.sin(a) * 0.5, ea=a,
+                    ez=gz - (c.az if c.az is not None else self.w.ground_y(c.x, c.y)))
             self.scare(c.x, c.y, 60.0)
             if c.ammo == 0:
                 self.ev("btr_empty")

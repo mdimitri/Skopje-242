@@ -1065,6 +1065,9 @@ def main():
                     shake = max(shake, 0.35)
             elif kind == "muzzle":
                 particles.sparks(d["x"], d["y"], 5, 2.3)
+                if "ex" in d:                                    # БТР: a spent 30 mm case out of the ejection port, barrel-wide brass
+                    ca_ = d["ea"] - math.pi / 2
+                    particles.emit("d", d["ex"], d["ey"], d["ez"], math.cos(ca_) * 3.5, math.sin(ca_) * 3.5, 2.5, 1, 0.1, 2.2, (214, 168, 70), 0.4, 0.0, -9.0)
                 shake = max(shake, 0.2)
             elif kind == "heli_land":                                # F in mid-air: not in text/ yet (hand-edited folder)
                 hud.set_banner("Прво слетај, па излези!", 2.5)
