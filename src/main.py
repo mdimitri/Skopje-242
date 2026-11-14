@@ -1709,7 +1709,12 @@ def main():
                     inp["move"] = (1.0, 0.0) if frame < 120 + int(math.pi / 3.4 * 60) else (0.0, 1.0)
                 inp["attack"] = inp["jump"] = False
                 enter_pressed = False
-                if frame % 50 == 0 or 300 < frame < 316 or 240 < frame < 300 and sim.walker.health < 100 and not getattr(sim, "_mt_", 0):
+                if os.environ.get("SK242_TEST_MALL_KEY"):                    # stand at the door: F in, F out, F in, then teleport away
+                    inp["move"] = (0.0, 0.0)
+                    enter_pressed = frame in (10, 60, 110)
+                    if frame == 200:
+                        sim.teleport(300.0, -200.0)
+                if frame % 50 == 0 or frame in (11, 61, 111, 201, 230) or 300 < frame < 316 or 240 < frame < 300 and sim.walker.health < 100 and not getattr(sim, "_mt_", 0):
                     sim._mt_ = sim.walker.health < 100
                     print([(p_.mode, vehicles.PED_NAMES[p_.arch]) for p_ in sim.peds.list if gtc.in_hall(p_.x, p_.y)], getattr(sim.walker, "land_v", 0))
                     print("mall test", frame, [round(c_, 1) for c_ in mall_mod.to_local(sim.walker.x, sim.walker.y)], "indoor" if sim.walker.indoor else "outdoor", round(sim.walker.az or 0, 2), "hp", round(sim.walker.health), sim.walker.cause, sum(1 for p_ in sim.peds.list if gtc.in_hall(p_.x, p_.y)))
@@ -1922,7 +1927,9 @@ def main():
             enter_pressed = False
         if selfie.active:
             sf_due_ = selfie.advance(dt)
-        if enter_pressed and escride.start(sim):
+        if enter_pressed and gtc.door_key(sim):
+            pass                                             # Enter / F at a GTC door: through it
+        elif enter_pressed and escride.start(sim):
             pass                                             # F at a fire escape: the ride starts (or stops)
         elif enter_pressed:
             if sim.mode == "car":

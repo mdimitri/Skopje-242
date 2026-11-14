@@ -105,6 +105,26 @@ class Mall:
                 wk.az = self.floor
                 return
 
+    def door_key(self, sim):
+        """Enter / F within 4 m of a door: step through it (in from the street, out from the hall).  True when used."""
+        wk = sim.walker if sim.mode == "foot" else None
+        if wk is None or not self.enabled or wk.health <= 0:
+            return False
+        a, n = to_local(wk.x, wk.y)
+        inside = getattr(wk, "indoor", None) is self
+        for nm, ax, w, s, c, hw in DOORS:
+            u, v = (a, n) if ax == "a" else (n, a)
+            if abs(v - c) < hw + 1.0 and -4.0 < (u - w) * s * (-1 if inside else 1) < 4.0:
+                k = -1.5 if not inside else 2.0                 # land 1.5 m inside / 2 m outside the wall
+                ta, tn = (w + s * k, c) if ax == "a" else (c, w + s * k)
+                wk.x, wk.y = to_world(ta, tn)
+                wk.lx, wk.ly = wk.x, wk.y
+                wk.vx = wk.vy = 0.0
+                wk.h = ANG + ((math.pi if s > 0 else 0.0) if ax == "a" else -s * math.pi / 2) + (0.0 if not inside else math.pi)
+                wk.indoor, wk.az = (None, None) if inside else (self, self.floor)
+                return True
+        return False
+
     def collide(self, wk):
         """Keep the walker on the floor of the mall: slide along walls, the opening's balustrade and the shopfronts."""
         a, n = to_local(wk.x, wk.y)
@@ -351,7 +371,7 @@ class Mall:
             sp = rl.get_world_to_screen(rl.Vector3(x, h + 2.4 + 0.25 * pul, y), cam)
             if not (10 < sp.x < sw - 10 and 10 < sp.y < sh - 10):
                 continue
-            near_ = d < 6.0
+            near_ = d < 4.0
             col = rl.Color(255, 214, 40, 255) if near_ else rl.Color(255, 214, 40, 150)
             r = 17 if near_ else 13
             rl.draw_circle(int(sp.x), int(sp.y), r + 3, rl.Color(0, 0, 0, 150))
@@ -361,7 +381,7 @@ class Mall:
             rl.draw_triangle(*tri, rl.Color(30, 30, 34, 255))
             rl.draw_triangle(tri[0], tri[2], tri[1], rl.Color(30, 30, 34, 255))
             if near_:
-                t = "ИЗЛЕЗ" if inside else "ВЛЕЗ — ГТЦ"
+                t = "F — ИЗЛЕЗ" if inside else "F — ВЛЕЗ ВО ГТЦ"
                 font.draw_text(t, int(sp.x - font.measure_text(t, 20) / 2), int(sp.y - r - 24), 20, rl.WHITE, bold=True)
 
     def labels(self, cam, sw, sh):

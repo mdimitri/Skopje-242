@@ -2814,6 +2814,7 @@ class Sim:
             else:
                 wk.x, wk.y = x, y
             wk.vx = wk.vy = 0.0
+            wk.indoor, wk.az = None, None            # out of the GTC mall too (its walls would pull the player back in)
             self.safe = (wk.x, wk.y, wk.h)
             self.safe_z = None
         self.ev("teleport")
