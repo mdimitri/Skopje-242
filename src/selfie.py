@@ -1,5 +1,5 @@
 """Selfie: key P.  The camera swings round in front of the avatar at eye level, the avatar blurts a catchy phrase,
-and a burst of frames is saved to selfies/<date-time>/frame_NNN.png.  The world is drawn with a short view distance
+and a burst of frames is saved to selfies/<date-time>/frame_NNN.jpg.  The world is drawn with a short view distance
 (cheap city overview beyond it), over a procedural sky: clouds by day, stars and moon at night."""
 from texts import TXT
 import math
@@ -239,8 +239,9 @@ class Selfie:
             self.t = None
         return due
 
-    def take(self):
-        """Grab the screen (call just before end_drawing) into the selfie folder."""
+    def take(self, tex=None):
+        """Save one selfie.  Call after the frame is complete (the world lives in the offscreen buffer `tex`, the window's own
+        framebuffer is not what the player sees), as a polaroid JPEG."""
         if self.dir is None:
             self.n += 1
             return
@@ -249,9 +250,49 @@ class Selfie:
         except OSError:
             self.n += 1
             return
-        img = rl.load_image_from_screen()
-        rl.export_image(img, os.path.join(self.dir, f"frame_{self.n:03d}.png"))
-        rl.unload_image(img)
+        try:
+            if tex is not None:
+                img = rl.load_image_from_texture(tex)
+                rl.image_flip_vertical(img)
+            else:
+                img = rl.load_image_from_screen()
+            rl.image_format(img, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+            w, h = img.width, img.height
+            raw = bytes(rl.ffi.buffer(img.data, w * h * 4))
+            rl.unload_image(img)
+            from PIL import Image
+            polaroid(Image.frombytes("RGBA", (w, h), raw).convert("RGB")).save(
+                os.path.join(self.dir, f"frame_{self.n:03d}.jpg"), "JPEG", quality=92)
+        except Exception as e:               # a failed photo must never take the game down
+            print("[selfie] save failed:", e)
         self.n += 1
         self.flash = 1.0
         self.saved_dir = self.dir
+
+
+def polaroid(im):
+    """Instant-film look: warm faded tint, soft vignette, white frame with a thick bottom border and 'Скопје 242' inscribed."""
+    from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+    import numpy as np
+    w, h = im.size
+    a = np.asarray(im, dtype=np.float32) / 255.0
+    a = 0.06 + a * 0.90                                             # lifted blacks, softer whites
+    a *= np.array([1.05, 1.00, 0.90], dtype=np.float32)             # warm tint
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r = np.hypot((xx - w / 2) / (w / 2), (yy - h / 2) / (h / 2))
+    a *= (1.0 - 0.28 * np.clip(r - 0.55, 0.0, 1.0) ** 1.5)[..., None]   # vignette
+    im = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+    im = ImageEnhance.Color(im).enhance(0.88)
+    side = max(12, w // 28)
+    bottom = side * 4
+    out = Image.new("RGB", (w + 2 * side, h + side + bottom), (250, 248, 242))
+    out.paste(im, (side, side))
+    d = ImageDraw.Draw(out)
+    try:
+        f = ImageFont.truetype(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "fonts", "Oswald-SemiBold.ttf"), int(bottom * 0.5))
+    except OSError:
+        f = ImageFont.load_default()
+    txt = "Скопје 242"
+    tw = d.textlength(txt, font=f)
+    d.text(((out.width - tw) / 2, h + side + bottom * 0.2), txt, font=f, fill=(70, 62, 55))
+    return out

@@ -2133,8 +2133,6 @@ def main():
             present.ui_layer()                          # from here on the HUD: its own layer, never shifted
             if sf_on and selfie.active:
                 selfie.overlay(sw, sh)
-                if sf_due_:
-                    selfie.take()
             else:
                 pois.draw(sim, sw, sh)
             if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
@@ -2159,6 +2157,8 @@ def main():
                 font.exit_button(bx_ + 224, 10)
         finally:
             present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
+            if sf_due_:
+                selfie.take(present.rt.texture)         # the world is in the offscreen buffer; the window framebuffer reads black
             t_sw = time.perf_counter()
             rl.end_drawing()
         ft_hist.append(dt_real)
