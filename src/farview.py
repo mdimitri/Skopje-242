@@ -15,8 +15,20 @@ TREE = np.array((70, 112, 58), np.float32)
 
 
 class FarView:
-    def __init__(self, world):
+    def __init__(self, world, tex=None):
         self.w = world
+        self.tex = None                          # own mipmapped copy of facade texture A (windows), tinted by the vertex colours
+        if tex is not None:
+            try:
+                import pyray as rl
+                img = rl.load_image_from_texture(tex)
+                t = rl.load_texture_from_image(img)
+                rl.unload_image(img)
+                rl.gen_texture_mipmaps(t)            # far away the windows average out instead of shimmering
+                rl.set_texture_filter(t, rl.TEXTURE_FILTER_TRILINEAR)
+                self.tex = t
+            except Exception as e:  # noqa: BLE001 - untextured blocks rather than no far view
+                print(f"[farview] texture copy failed: {e}")
         self.models = {}                         # chunk key -> Model or None (empty chunk)
         self.idx = None
         self.sph = {}
@@ -41,7 +53,8 @@ class FarView:
     def _build(self, key):
         w = self.w
         bi, ti = self.idx
-        tris, cols = [], []
+        tris, cols, uvs = [], [], []
+        PL = (0.08, 0.06)                                    # a plain patch of facade texture A (above the windows): roofs, trees
         for i in bi.get(key, ()):
             b = w.buildings[i]
             ring = b["ring"]
@@ -56,12 +69,16 @@ class FarView:
                 p0, p1, p2, p3 = (ax, g - 0.5, ay), (bx, g - 0.5, by), (bx, top, by), (ax, top, ay)
                 tris += [(p0, p1, p2), (p0, p2, p3)]
                 cols += [wc, wc]
+                L = math.hypot(bx - ax, by - ay) / 3.0           # one window bay every 3 m, one storey every 3 m (as the near facades)
+                v0, v1 = (b["h"] + 0.5) / 3.0, 0.0
+                uvs += [((0, v0), (L, v0), (L, v1)), ((0, v0), (L, v1), (0, v1))]
             v, tr = b.get("v"), b.get("tri")
             if v is not None and tr is not None and len(tr):
                 V = np.asarray(v, np.float32)[:, :2]
                 for t in np.asarray(tr, np.int64).reshape(-1, 3):
                     tris.append(tuple((float(V[k, 0]), top, float(V[k, 1])) for k in t))
                     cols.append(rc)
+                    uvs.append((PL, PL, PL))
         tk = ti.get(key)
         if tk is not None:
             T = self.ta[tk]
@@ -74,6 +91,7 @@ class FarView:
                 for j in range(4):
                     tris.append((b4[j], b4[(j + 1) % 4], ap))
                     cols.append(TREE)
+                    uvs.append((PL, PL, PL))
         if not tris:
             return None
         t = np.asarray(tris, np.float32)
@@ -83,7 +101,10 @@ class FarView:
         c = np.asarray(cols, np.float32) * np.clip(0.62 + 0.45 * np.abs(n @ gl3d.SUN), 0, 1.15)[:, None]
         rgba = np.full((len(t) * 3, 4), 255, np.uint8)
         rgba[:, :3] = np.clip(np.repeat(c, 3, 0), 0, 255)
-        return gl3d.make_model(t.reshape(-1, 3), np.zeros((len(t) * 3, 2), np.float32), rgba)
+        m = gl3d.make_model(t.reshape(-1, 3), np.asarray(uvs, np.float32).reshape(-1, 2), rgba)
+        if m is not None and self.tex is not None:
+            gl3d.set_texture(m, self.tex)
+        return m
 
     def draw(self, rl, keys, skip, fr, budget_ms=3.0):
         """Draws the far meshes of `keys` (nearest first) that are not in `skip` (chunks with streamed meshes) and inside
@@ -92,22 +113,29 @@ class FarView:
             self._index()
         t0 = time.perf_counter()
         S = self.w.chunk
+        if keys is not getattr(self, "_keys", None):
+            self._keys = keys
+            sp = []
+            for k in keys:
+                v = self.sph.get(k)
+                if v is None:
+                    cx, cz = k[0] * S + S / 2, k[1] * S + S / 2
+                    v = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 15, cz, S * 0.75 + 30)
+                sp.append(v)
+            self._sp = np.asarray(sp, np.float64).reshape(-1, 4)
+        if not keys:
+            return 0
         n = 0
         zero, white = rl.Vector3(0, 0, 0), rl.WHITE
-        for k in keys:
+        for i in np.flatnonzero(fr.spheres(self._sp)).tolist():
+            k = keys[i]
             if k in skip:
                 continue
-            sp = self.sph.get(k)
-            if sp is None:
-                cx, cz = k[0] * S + S / 2, k[1] * S + S / 2
-                sp = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 15, cz, S * 0.75 + 30)
-            if not fr.sphere(*sp):
-                continue
-            if k not in self.models:
+            m = self.models.get(k, 0)
+            if m == 0:
                 if (time.perf_counter() - t0) * 1000 > budget_ms:
                     continue
-                self.models[k] = self._build(k)
-            m = self.models[k]
+                m = self.models[k] = self._build(k)
             if m is not None:
                 rl.draw_model(m, zero, 1.0, white)
                 n += 1
