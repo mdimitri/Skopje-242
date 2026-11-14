@@ -174,9 +174,38 @@ def _gate(B, w, gate, army, sign_h):
     fl = [(fx + ux * 0.05, gf + 7.4, fy + uy * 0.05), (fx + ux * 1.9, gf + 7.4, fy + uy * 1.9),
           (fx + ux * 1.9, gf + 6.4, fy + uy * 1.9), (fx + ux * 0.05, gf + 6.4, fy + uy * 0.05)]
     B.quad(*fl, (206, 26, 30))
-    cx, cy = fx + ux * 0.97, fy + uy * 0.97
-    B.quad((cx - ux * 0.2, gf + 7.1, cy - uy * 0.2), (cx + ux * 0.2, gf + 7.1, cy + uy * 0.2),
-           (cx + ux * 0.2, gf + 6.7, cy + uy * 0.2), (cx - ux * 0.2, gf + 6.7, cy - uy * 0.2), (252, 214, 30))
+    _flag_sun(B, fx, fy, ux, uy, 0.05, 1.9, gf + 6.4, gf + 7.4)
+
+
+def _flag_sun(B, fx, fy, ux, uy, s0, s1, t0, t1):
+    """The sun on the flag (s along it from the pole, t up): eight rays widening out to the edges and a disc, on both faces."""
+    gold = (252, 214, 30)
+    cs, ct = (s0 + s1) / 2, (t0 + t1) / 2
+    for side in (0.012, -0.012):                                       # just off the cloth, front and back
+        nx, ny = -uy * side, ux * side
+
+        def P(s, t):
+            return (fx + ux * s + nx, t, fy + uy * s + ny)
+
+        def put(*q):
+            B.tri(*q, gold)
+            B.tri(q[0], q[2], q[1], gold)                              # both windings: seen from either side
+        w = 0.11 * (t1 - t0)                                           # half the width where a ray meets the edge
+        ends = [((s1, ct - w), (s1, ct + w)), ((s0, ct - w), (s0, ct + w)),           # the 4 to the edges' middles
+                ((cs - w * 1.6, t1), (cs + w * 1.6, t1)), ((cs - w * 1.6, t0), (cs + w * 1.6, t0))]
+        for es, et in ((s0, t0), (s0, t1), (s1, t0), (s1, t1)):        # the 4 to the corners, cut by the two edges
+            ends.append(((es - math.copysign(w * 2.2, es - cs), et), (es, et - math.copysign(w * 1.2, et - ct))))
+        for (sa, ta), (sb, tb) in ends:
+            dx, dy = (sa + sb) / 2 - cs, (ta + tb) / 2 - ct
+            n_ = math.hypot(dx, dy) or 1.0
+            px, py = -dy / n_ * 0.02, dx / n_ * 0.02                    # narrow at the disc
+            c0, c1 = P(cs + px, ct + py), P(cs - px, ct - py)
+            put(c0, P(sa, ta), P(sb, tb))
+            put(c0, P(sb, tb), c1)
+        r = 0.16 * (t1 - t0)                                           # the disc
+        for j in range(12):
+            q0, q1 = j * math.pi / 6, (j + 1) * math.pi / 6
+            put(P(cs, ct), P(cs + math.cos(q0) * r, ct + math.sin(q0) * r), P(cs + math.cos(q1) * r, ct + math.sin(q1) * r))
 
 
 def build(c, w):
@@ -346,7 +375,7 @@ def to_texture(im):
 def board(tex, x, y, z, h, wd, ht, off):
     """A vertical textured quad facing heading h (both faces readable)."""
     nx, ny = math.cos(h), math.sin(h)
-    ux, uy = -ny, nx                                                   # right along the board, as seen from the front
+    ux, uy = ny, -nx                                                   # right along the board, as seen from the front (y is south)
     rl.rl_set_texture(tex.id)
     rl.rl_begin(rl.RL_QUADS)
     rl.rl_color4ub(255, 255, 255, 255)

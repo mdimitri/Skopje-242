@@ -722,8 +722,9 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                 for r, row in enumerate(g):
                     for cI, bit in enumerate(row):
                         if bit == "1":
-                            cc = cI if sd == 1 else 3 - cI                  # the left side is read the other way round
-                            quad((x0 + gi * (4 * cell + gap) + cc * cell, belt - 0.08 - (r + 1) * cell, sd * (W / 2 + 0.014)), (cell, 0, 0), (0, cell, 0), (0, 0, sd), (246, 246, 250))
+                            cc = cI if sd == 1 else 3 - cI                  # the left side is read the other way round:
+                            gj = gi if sd == 1 else len(word) - 1 - gi      # the letters mirrored and in the reverse order
+                            quad((x0 + gj * (4 * cell + gap) + cc * cell, belt - 0.08 - (r + 1) * cell, sd * (W / 2 + 0.014)), (cell, 0, 0), (0, cell, 0), (0, 0, sd), (246, 246, 250))
     elif ex == "army":                                                     # olive drab: jerrycans on the tail, whip antenna, black grille guard
         box(xb - 0.12, y0 + 0.25, -W * 0.25, 0.16, 0.45, 0.3, (60, 70, 42))
         box(xb - 0.12, y0 + 0.25, W * 0.25, 0.16, 0.45, 0.3, (60, 70, 42))
