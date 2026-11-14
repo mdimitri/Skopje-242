@@ -420,6 +420,8 @@ class Hud:
             self._bar(sw - 260, sh - 150, 240, 10, fu, rl.Color(230, 90, 60, 255) if fu < 0.15 else rl.Color(240, 170, 40, 255))
             font.draw_text((TXT("hud.0012") + f'{int(fu * 100)}%') + (TXT("hud.0013") if fu <= 0 else ""), sw - 260, sh - 170, 16,
                            rl.Color(255, 120, 90, 255) if fu < 0.15 else rl.Color(255, 255, 255, 220))
+            if c.kind == vehicles.BTR:                                  # БТР-80: 30 mm rounds left
+                self._big(f"30 мм: {getattr(c, 'ammo', 0)}", sw - 260, sh - 202, 24, rl.Color(255, 230, 140, 255))
         else:
             wk = sim.walker
             font.draw_text(TXT("hud.0014"), sw - 190, sh - 60, 34, rl.Color(250, 220, 80, 255))
@@ -446,7 +448,17 @@ class Hud:
         if prompt:
             wpx = font.measure_text(prompt, 24)
             rl.draw_rectangle_rounded(rl.Rectangle(sw // 2 - wpx // 2 - 14, sh - 120, wpx + 28, 40), 0.3, 6, rl.Color(10, 10, 14, 200))
-            font.draw_text(prompt, sw // 2 - wpx // 2, sh - 112, 24, rl.Color(255, 240, 150, 255))
+            font.draw_text(prompt, sw // 2 - wpx // 2, sh - 112, 24, rl.Color(130, 130, 130, 200) if getattr(self, "prompt_dim", False) else rl.Color(255, 240, 150, 255))
+        cmp_ = getattr(sim, "compounds", None)
+        bs_ = cmp_.bust_screen if cmp_ is not None else 0.0
+        if bs_ > 0:                                                    # busted: the arrest screen
+            a_ = int(255 * min(1.0, bs_ / 0.6, (4.5 - bs_) / 0.3 + 0.2))
+            rl.draw_rectangle(0, 0, sw, sh, rl.Color(0, 0, 0, int(a_ * 0.65)))
+            for txt, size, y, col in (("УАПСЕН!", 96, sh // 2 - 90, rl.Color(230, 60, 50, a_)),
+                                      ("Приведен. Оружјето е одземено, парите преполовени.", 26, sh // 2 + 20, rl.Color(240, 240, 240, a_))):
+                wpx_ = font.measure_text(txt, size)
+                font.draw_text(txt, sw // 2 - wpx_ // 2 + 3, y + 3, size, rl.Color(0, 0, 0, a_))
+                font.draw_text(txt, sw // 2 - wpx_ // 2, y, size, col)
         t, s = self.banner
         if s > 0:
             a = int(255 * min(1.0, s / 0.5))

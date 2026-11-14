@@ -4,8 +4,9 @@
 from texts import TXT
 _STYLE = {"hatch": (0.40, 0.95, 1.44), "sedan": (0.40, 0.98, 1.45), "taxi": (0.40, 0.98, 1.45), "mini": (0.38, 0.92, 1.36),
           "suv": (0.58, 1.10, 1.68), "van": (0.45, 1.00, 1.95), "pickup": (0.55, 1.10, 1.78), "bus": (0.50, 1.00, 3.10),
-          "bike": (0.0, 0.55, 1.05), "heli": (0.55, 1.3, 3.4), "wagon": (0.40, 0.97, 1.48), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
+          "bike": (0.0, 0.55, 1.05), "heli": (0.55, 1.3, 3.4), "apc": (0.62, 1.55, 2.35), "wagon": (0.40, 0.97, 1.48), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
 BLACK, WHITE_, SILVER = (30, 30, 34), (236, 236, 240), (190, 192, 198)
+ARMY = (78, 92, 52)                                           # olive drab of the army's vehicles
 
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
 _V = [
@@ -112,6 +113,11 @@ _V = [
     ("Cisterna Gorivo", "truck", 11.50, 2.50, 3.30, 0, SILVER, "tanker"),
     # ---- medical helicopter: parked on hospital helipads (Sim._make_helis), never in traffic
     ("Helikopter Brza Pomosh", "heli", 11.0, 2.6, 3.4, 0, WHITE_, "medheli"),
+    # ---- army barracks (compounds.py): parked inside the Касарни only, never in traffic
+    ("Voen Hamer", "suv", 4.90, 2.20, 1.90, 0, ARMY, "army"),
+    ("Voena Niva", "suv", 3.75, 1.83, 1.64, 0, ARMY, "army"),
+    ("Voen Kamion", "truck", 7.40, 2.45, 3.25, 0, ARMY, "armytruck"),
+    ("BTR-80", "apc", 7.65, 2.90, 2.35, 0, ARMY, "btr"),
 ]
 N = len(_V)
 IDS = [v[0] for v in _V]
@@ -219,6 +225,7 @@ MK_CAR = {
     # round 30: not in text/ yet (the text folder is hand-edited): move these into text/02 when the editor is ready
     "Maritsa": "Марица", "Kamion Tovarnik": "Товарен камион", "Tir Rinfuz": "Шлепер", "Cisterna Gorivo": "Цистерна за гориво",
     "Helikopter Brza Pomosh": "Хеликоптер Брза помош",
+    "Voen Hamer": "Воен Хамер", "Voena Niva": "Воена Лада Нива", "Voen Kamion": "Воен камион", "BTR-80": "БТР-80",
 }
 MK_PED = {
     "Chichko": TXT("vehicles.0090"), "Baba": TXT("vehicles.0091"), "Biznismen": TXT("vehicles.0092"), "Student": TXT("vehicles.0093"), "Navivach": TXT("vehicles.0094"), "Dete": TXT("vehicles.0095"), "Rabotnik": TXT("vehicles.0096"),
@@ -229,6 +236,7 @@ MK_PED = {
     "Nevesta": TXT("vehicles.0118"), "Dostavuvach": TXT("vehicles.0119"), "Velosipedist": TXT("vehicles.0120"), "Dedo na Kolo": TXT("vehicles.0121"), "Moped Tomos": TXT("vehicles.0122"),
     "Glovo Skuter": TXT("vehicles.0123"), "Trotinet Dete": TXT("vehicles.0124"), "E-Trotinet Hipster": TXT("vehicles.0125"), "Skejter": TXT("vehicles.0126"),
     "Rolerash": TXT("vehicles.0127"), "Kocija": TXT("vehicles.0128"), "Jogger": TXT("vehicles.0129"),
+    "Vojnik": "Војник",
 }
 MK_LINES = {
     "Chichko": [TXT("vehicles.0130"), TXT("vehicles.0131")],
@@ -317,6 +325,7 @@ _P = [
     ("Rolerash", 3.6, 1.0, ["Ako gi imav kocnicite...", "Ae pazi se, nemam stop!", "Retro e kral."]),
     ("Kocija", 1.8, 0.6, ["Hajde, Sharo, ajde!", "Konj ne troshi gorivo.", "Sveze zelka, sveze!"]),
     ("Jogger", 3.2, 1.2, ["Petti krug, petti!", "Ne zboruvaj, trcam.", "Ovoj vozduh e ... zagaden."]),
+    ("Vojnik", 1.0, 0, []),                                       # barracks guard (compounds.py), never a street walker
 ]
 PED_IDS = [p[0] for p in _P]                                      # internal keys (models, fight table)
 PED_NAMES = [MK_PED.get(p[0], p[0]) for p in _P]                    # what the player reads
@@ -334,14 +343,20 @@ JACK_KIND = {i: IDS.index(JACK_BIKE[n]) for i, n in enumerate(PED_IDS) if n in J
 BIKES = {i for i in range(N) if STYLE[i] == "bike"}
 FLY = {i for i in range(N) if STYLE[i] == "heli"}                  # helicopters: Sim/actors.fly() flies them, no wheels
 HELI = IDS.index("Helikopter Brza Pomosh")
+BTR = IDS.index("BTR-80")
+ARMY_CARS = [IDS.index(n) for n in ("Voen Hamer", "Voena Niva", "Voen Kamion")]
+FUEL_MULT = {BTR: 6.0}                                          # the APC's tanks last this many times longer
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility
-WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS]
+WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS and PED_IDS[i] != "Vojnik"]
+SOLDIER = PED_IDS.index("Vojnik")
+COP = PED_IDS.index("Pandur")
 
 # ---------------------------------------------------------------------------- handling: (top speed m/s, accel m/s2, steering, grip, mass)
 _PERF_STYLE = {"hatch": (35, 10.5, 0.68, 9.5, 1.0), "sedan": (40, 12.0, 0.62, 9.5, 1.1), "taxi": (38, 11.0, 0.62, 9.5, 1.1),
                "mini": (28, 8.0, 0.75, 9.0, 0.7), "suv": (36, 10.0, 0.56, 8.5, 1.5), "van": (31, 8.0, 0.62, 8.5, 1.6),
                "pickup": (33, 9.0, 0.60, 8.5, 1.5), "bus": (24, 4.5, 0.66, 8.0, 5.0), "wagon": (36, 10.5, 0.60, 9.5, 1.2),
-               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5), "bike": (9, 5.0, 0.95, 8.0, 0.2), "heli": (60, 14.0, 0.6, 8.0, 3.0)}
+               "limo": (34, 8.0, 0.58, 8.5, 1.8), "truck": (26, 5.5, 0.62, 8.0, 4.0), "tractor": (11, 3.0, 0.50, 7.5, 2.5), "bike": (9, 5.0, 0.95, 8.0, 0.2), "heli": (60, 14.0, 0.6, 8.0, 3.0),
+               "apc": (30, 7.0, 0.55, 9.0, 12.0)}
 _PERF_NAME = {
     "Zastava Yugo": (29, 7.5), "Golf Dvojka": (37, 11), "Mercedes 190": (44, 13), "Fico": (24, 6, 0.80), "Zastava 101 Skala": (32, 9),
     "Zastava Koral": (30, 8.5), "Lada Samara": (33, 9), "Lada 1500": (32, 8.5), "Moskvich 412": (29, 7), "Trabant 601": (25, 5.5),
@@ -352,7 +367,7 @@ _PERF_NAME = {
     "Range Rover Ortak": (46, 12), "Policiska Skoda": (48, 16, 0.66, 10.5), "Brza Pomosh": (40, 11), "Smart Sitnichka": (27, 7, 0.9),
     "Moped Tomos": (17, 7.5, 0.90, 8.5, 0.3), "Glovo Skuter": (21, 9, 0.90, 9.0, 0.35), "E-Trotinet": (11, 6, 0.95, 8.0, 0.2),
     "Lada Niva": (32, 9, 0.6, 10), "Land Cruiser Lovec": (40, 10), "Pajak Vlechna Sluzhba": (34, 9),
-    "Maritsa": (38, 8.5, 0.54, 9.0, 2.0), "Tir Rinfuz": (24, 4.0, 0.62, 8.0, 7.0), "Cisterna Gorivo": (24, 4.5, 0.55, 8.0, 6.0),
+    "Maritsa": (38, 8.5, 0.54, 9.0, 2.0), "Voen Hamer": (40, 10, 0.5, 9.5, 2.2), "Voena Niva": (32, 9, 0.6, 10), "Tir Rinfuz": (24, 4.0, 0.62, 8.0, 7.0), "Cisterna Gorivo": (24, 4.5, 0.55, 8.0, 6.0),
 }
 PERF = []
 for _i, _v in enumerate(_V):
@@ -372,7 +387,8 @@ _FIGHT_NAME = {"Chichko": (45, 0.45, 7), "Baba": (28, 0.2, 5), "Biznismen": (40,
                "Telefonash": (36, 0.1, 4), "Penzioner": (30, 0.5, 6), "Kafana Chicko": (55, 0.55, 8), "Turist": (38, 0.1, 4),
                "Gastarbajter": (52, 0.6, 8), "Majka so Kolichka": (36, 0.2, 5), "Partiski Aktivist": (42, 0.4, 6), "Advokat": (40, 0.15, 5),
                "Teretana Brat": (100, 0.95, 14), "Kiosk Chika": (38, 0.5, 6), "Ribar": (42, 0.4, 6), "Golabar": (26, 0.1, 4),
-               "Komunalec": (46, 0.35, 6), "Nevesta": (32, 0.3, 5), "Dostavuvach": (40, 0.2, 5), "Jogger": (40, 0.2, 5)}
+               "Komunalec": (46, 0.35, 6), "Nevesta": (32, 0.3, 5), "Dostavuvach": (40, 0.2, 5), "Jogger": (40, 0.2, 5),
+               "Vojnik": (260, 1.0, 16)}
 FIGHT = [_FIGHT_NAME.get(n, (30, 0.0, 3)) for n in PED_IDS]       # riders and the player fall back to the default
 KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (TXT("vehicles.0248"), 130, 50), (TXT("vehicles.0249"), 90, 35)]
 
@@ -387,8 +403,9 @@ for _i in (59, 66, 75, 84):
     _ENGINE[_i] = "engine_tdi"                                               # light turbodiesel cars and vans: tighter, harder knock than the big diesels
 _ENGINE[90] = _ENGINE[91] = "engine_moto"
 _ENGINE[92] = "engine_ev"
-for _i in (49, 50, 51, 55, *HEAVY):
+for _i in (49, 50, 51, 55, *HEAVY, BTR, ARMY_CARS[2]):
     _ENGINE[_i] = "engine_truck"
+_ENGINE[ARMY_CARS[0]] = _ENGINE[ARMY_CARS[1]] = "engine_diesel"
 for _i in (25, 26, 28, 29, 43, 45, 46):
     _ENGINE[_i] = "engine_v8"
 for _i in (0, 7, 9, 10, 14, 15, 17, 18, 19, 41, 44):

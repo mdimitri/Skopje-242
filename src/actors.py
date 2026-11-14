@@ -117,6 +117,36 @@ class Heli(Body):
         self.__dict__["_hp"] = v if old is None or v >= old else old - (old - v) * self.ARMOR
 
 
+class Apc(Body):
+    """БТР-80: crashes and blasts barely scratch it (4 %); 50 small-arms hits or one direct Зоља hit finish it."""
+    ARMOR = 0.04
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.turret = 0.0            # turret angle relative to the hull (rad)
+        self.ammo = 300              # 30 mm rounds
+        self.gun_cd = 0.0
+        self.locked = False          # True: the crew keeps it shut (only one per barracks can be taken)
+
+    @property
+    def health(self):
+        return self.__dict__.get("_hp", 100.0)
+
+    @health.setter
+    def health(self, v):
+        old = self.__dict__.get("_hp")
+        self.__dict__["_hp"] = v if old is None or v >= old else old - (old - v) * self.ARMOR
+
+    def shot(self, kind):
+        """A projectile hit: bullets and pellets chip it (50 rounds kill it), a 30 mm shell does five times that."""
+        self.__dict__["_hp"] = self.health - {"bullet": 2.0, "pellet": 0.7, "shell30": 10.0}.get(kind, 2.0)
+        self.dirty = True
+
+    def wreck(self):
+        self.__dict__["_hp"] = -1.0
+        self.dirty = True
+
+
 def offsets(kind):
     """Centres of the collision circles along the car: spaced at most one radius apart, so long buses and trucks
     have no gaps a wall corner or lamp post can slip into."""
@@ -1368,7 +1398,7 @@ class Peds:
                     self.sim._pay(min(70, 25 + int(hit.speed * 2)), p.x, p.y)       # running people over pays (badly)
                 out.append(p)
                 continue
-            if p.mode in ("queue", "board", "alight", "play"):       # moved by Transit / Kids (they can still be hit)
+            if p.mode in ("queue", "board", "alight", "play", "guard"):       # moved by Transit / Kids / Compounds (they can still be hit)
                 out.append(p)
                 continue
             if p.vault > 0.0:                                       # over / under the vehicle in the way: nothing pushes back for a moment
@@ -2944,7 +2974,7 @@ class Sim:
                 p.mode, p.t = "dead", clear_secs(self)
                 self.stats["peds"] += 1
                 self.ev("ped_shot", x=p.x, y=p.y)
-            else:
+            elif p.mode != "guard":
                 p.mode, p.t = "flee", 4.0
                 p.vx, p.vy = fx * 4, fy * 4
         for b in self.bodies:
@@ -3081,7 +3111,7 @@ class Sim:
                 p.mode, p.t = "dead", clear_secs(self)
                 self.stats["peds"] += 1
                 self.ev("ped_shot", x=p.x, y=p.y)
-            else:
+            elif p.mode != "guard":
                 p.mode, p.t = "flee", 4.0
                 p.vx, p.vy = fx * 4, fy * 4
 
@@ -3109,7 +3139,7 @@ class Sim:
                         return True
         best, bd, kind = None, 1e9, None
         for b in self.bodies:
-            if not b.alive or b.burn > 0.5:
+            if not b.alive or b.burn > 0.5 or getattr(b, "locked", False):
                 continue
             if getattr(b, "remote", False) and getattr(b, "drop_pid", None) is None and not (getattr(b, "puppet", False) and getattr(b, "bus_line", None)):
                 continue                                           # another player's occupied car, or a host puppet: not for the taking
@@ -3333,6 +3363,26 @@ class Sim:
                     return px, py
         return fallback[0], fallback[1]
 
+    def _btr(self, c, inp, dt):
+        """БТР-80: Shift + A/D turns the turret, Ctrl fires the 30 mm cannon (2x a Калаш round's speed, 6x its damage, splash)."""
+        if inp.get("run"):
+            c.turret = (c.turret + inp.get("steer", 0.0) * 1.5 * dt + math.pi) % math.tau - math.pi
+        c.gun_cd = max(0.0, c.gun_cd - dt)
+        if inp.get("attack") and c.gun_cd <= 0 and c.ammo > 0 and c.alive:
+            c.gun_cd = 0.2
+            c.ammo -= 1
+            a = c.h + c.turret
+            import gl3d
+            tx_, ty_ = c.x + math.cos(c.h) * gl3d.APC_TURRET[0], c.y + math.sin(c.h) * gl3d.APC_TURRET[0]
+            gz = (c.az if c.az is not None else self.w.ground_y(c.x, c.y)) + gl3d.APC_TURRET[1] + 0.3
+            dmg = WEAPONS["kalash"][2] * 6
+            self.shots.fire(tx_ + math.cos(a) * 3.1, ty_ + math.sin(a) * 3.1, a + self.rng.uniform(-0.004, 0.004), "shell30", dmg, 220.0, gz, src=c)
+            self.ev("gunfire", x=tx_, y=ty_, kind="btr")
+            self.ev("muzzle", x=tx_ + math.cos(a) * 3.1, y=ty_ + math.sin(a) * 3.1, z=gz)
+            self.scare(c.x, c.y, 60.0)
+            if c.ammo == 0:
+                self.ev("btr_empty")
+
     def exit_car(self):
         if self.mode != "car":
             return
@@ -3374,6 +3424,9 @@ class Sim:
         if getattr(self, "jack", None) is not None:              # the carjack plays out; the controls wait
             self._tick_jack(dt)
             inp = dict(inp, move=(0, 0), attack=False, jump=False)
+        cmp_ = getattr(self, "compounds", None)
+        if cmp_ is not None and cmp_.bust is not None:            # being arrested: hands up, cuffs on
+            inp = dict(inp, move=(0, 0), attack=False, jump=False, throttle=0.0, steer=0.0)
         inp = escride.tick(self, dt, inp)                        # F at a fire escape: automatic climb (and its prompt)
         # ---------------- player
         if self.mode == "car" and getattr(self, "riding", None) is not None:
@@ -3384,6 +3437,10 @@ class Sim:
         if self.mode == "car":
             c = self.car
             ride = getattr(self, "riding", None) is not None
+            if c.kind == vehicles.BTR and not ride:
+                self._btr(c, inp, dt)
+                if inp.get("run"):                                    # Shift: the steering keys turn the turret, not the wheels
+                    inp = dict(inp, steer=0.0)
             for _ in range(steps):
                 sdt = dt / steps
                 if c.kind in vehicles.FLY:
@@ -3400,7 +3457,7 @@ class Sim:
                     drive(c, thr, inp["steer"], inp["handbrake"], sdt, w)
                 if thr > 0:
                     was = c.fuel
-                    c.fuel = max(0.0, c.fuel - math.hypot(c.vx, c.vy) * sdt * (0.6 + 0.4 * thr) / (FUEL_KM * 1000.0))
+                    c.fuel = max(0.0, c.fuel - math.hypot(c.vx, c.vy) * sdt * (0.6 + 0.4 * thr) / (FUEL_KM * 1000.0 * vehicles.FUEL_MULT.get(c.kind, 1.0)))
                     if was > 0.15 >= c.fuel:
                         ev("fuel_low")
                     if was > 0 >= c.fuel:
@@ -3578,6 +3635,8 @@ class Sim:
             self._dispatch()
             self.services.update(dt)
         self.chaos.update(dt)
+        if getattr(self, "compounds", None) is not None:
+            self.compounds.update(dt)
         if getattr(self, "transit", None) is not None and not self.client:
             self.transit.update(dt)
         if getattr(self, "kids", None) is not None and not self.client:

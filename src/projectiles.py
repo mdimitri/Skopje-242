@@ -10,7 +10,9 @@ import vehicles
 
 # kind -> (speed m/s, radius m, tracer colour)
 KINDS = {"bullet": (38.0, 0.06, (255, 236, 150)), "pellet": (32.0, 0.05, (255, 220, 140)),
-         "rocket": (20.0, 0.16, (255, 160, 60))}
+         "rocket": (20.0, 0.16, (255, 160, 60)), "shell30": (76.0, 0.09, (255, 210, 120))}     # БТР-80 30 mm: twice a Калаш round's speed
+CONE = math.tan(math.radians(0.25))          # a 30 mm shell hits whatever is within 0.25 degrees of its line, not only on it
+SPLASH = 3.0                                 # m: shrapnel and sparks round a 30 mm hit
 PAY = {"ped": 5, "kill": 20, "car": 8, "wreck": 40, "wall": 1, "tree": 1}
 MARKS_MAX = 600
 STEP = 1.2                                   # metres per collision sub-step
@@ -19,12 +21,12 @@ STEP = 1.2                                   # metres per collision sub-step
 class Projectiles:
     def __init__(self, sim):
         self.sim = sim
-        self.list = []                       # [x, y, vx, vy, travelled, reach, dmg, kind, z]
+        self.list = []                       # [x, y, vx, vy, travelled, reach, dmg, kind, z, src]  src: who fired (None = the player on foot)
         self.marks = []                      # (x, y, z, nx, ny, size, dark) wall damage drawn by the renderer
 
-    def fire(self, x, y, ang, kind, dmg, reach, z=1.15):
+    def fire(self, x, y, ang, kind, dmg, reach, z=1.15, src=None):
         sp = KINDS[kind][0]
-        self.list.append([x, y, math.cos(ang) * sp, math.sin(ang) * sp, 0.0, reach, dmg, kind, z])
+        self.list.append([x, y, math.cos(ang) * sp, math.sin(ang) * sp, 0.0, reach, dmg, kind, z, src])
 
     def update(self, dt):
         keep = []
@@ -56,6 +58,14 @@ class Projectiles:
         sim, w = self.sim, self.sim.w
         x, y = p[0], p[1]
         r = 0.45 if p[7] != "rocket" else 0.7
+        src = p[9]
+        cone = p[4] * CONE if p[7] == "shell30" else 0.0
+        r += cone
+        npc = src is not None and not hasattr(src, "kind")          # fired by a guard (a Ped), not by the player or the player's БТР
+        if npc and sim.mode == "foot" and sim.walker is not None and sim.walker.health > 0:
+            wk = sim.walker
+            if (wk.x - x) ** 2 + (wk.y - y) ** 2 < r * r:
+                return self._impact(p, "walker", wk, x, y)
         for rp in sim.remote_foot.values():                      # another player on foot: the hit is reported to him (mpgame)
             if (rp["x"] - x) ** 2 + (rp["y"] - y) ** 2 < r * r:
                 if p[7] == "rocket":
@@ -64,21 +74,23 @@ class Projectiles:
                 sim.ev("hit", x=rp["x"], y=rp["y"], kick=True)
                 return True
         for q in sim.peds.list:
-            if q.mode not in ("dead", "air") and abs(q.x - x) < 1 and abs(q.y - y) < 1 and (q.x - x) ** 2 + (q.y - y) ** 2 < r * r:
+            if q is src or (npc and q.mode == "guard"):
+                continue
+            if q.mode not in ("dead", "air") and abs(q.x - x) < 1 + r and abs(q.y - y) < 1 + r and (q.x - x) ** 2 + (q.y - y) ** 2 < r * r:
                 return self._impact(p, "ped", q, x, y)
         for b in sim.bodies:
-            if b is sim.car and sim.mode == "car":
+            if b is src or (b is sim.car and sim.mode == "car" and not npc):
                 continue
-            if abs(b.x - x) < 6 and abs(b.y - y) < 6:
+            if abs(b.x - x) < 6 + cone and abs(b.y - y) < 6 + cone:
                 L, Wd = vehicles.CIRC[b.kind][0], vehicles.CIRC[b.kind][1]
                 fx, fy = math.cos(b.h), math.sin(b.h)
                 lx, ly = (x - b.x) * fx + (y - b.y) * fy, -(x - b.x) * fy + (y - b.y) * fx
-                if abs(lx) < L + 0.4 and abs(ly) < Wd + 0.1:
+                if abs(lx) < L + 0.4 + cone and abs(ly) < Wd + 0.1 + cone:
                     if getattr(b, "pid", None) is not None:
                         sim._pvp_hit(b.pid, "car", p[6] * 0.35)    # another player's car
                     return self._impact(p, "car", b, x, y)
         for c in sim.traffic.cars:
-            if abs(c.x - x) < 2.4 and abs(c.y - y) < 2.4 and (c.x - x) ** 2 + (c.y - y) ** 2 < 2.0 ** 2:
+            if abs(c.x - x) < 2.4 + cone and abs(c.y - y) < 2.4 + cone and (c.x - x) ** 2 + (c.y - y) ** 2 < (2.0 + cone) ** 2:
                 return self._impact(p, "traffic", c, x, y)
         for ax, ay, bx, by in w.edges_near(x, y, 0.3):          # building walls
             if _cross(ox, oy, x, y, ax, ay, bx, by):
@@ -92,8 +104,10 @@ class Projectiles:
 
     def _impact(self, p, what, obj, x, y):
         sim = self.sim
-        kind, dmg = p[7], p[6]
+        kind, dmg, src = p[7], p[6], p[9]
         if kind == "rocket":
+            if what == "car" and hasattr(obj, "wreck"):          # a direct Зоља hit is the one thing that stops a БТР
+                obj.wreck()
             sim.blast(x, y)
             self._mark(x, y, p[8], obj if what == "wall" else None, 1.6, 1)
             return True
@@ -101,9 +115,28 @@ class Projectiles:
         sp = math.hypot(fx, fy) or 1.0
         fx, fy = fx / sp, fy / sp
         pay = 0
+        if what == "walker":                                    # a guard's bullet found you
+            wk = obj
+            wk.health -= dmg
+            wk.hurt_t = 0.35
+            sim.ev("hit", x=wk.x, y=wk.y, kick=True)
+            sim.ev("hurt", dmg=dmg)
+            if wk.health <= 0:
+                wk.cause = "shot"
+                sim.ev("walker_dead", cause="shot")
+            return True
         if what == "ped":
             q = obj
             q.hp -= dmg
+            if q.mode == "guard":                               # guards stand their ground (compounds.py reacts)
+                sim.ev("hit", x=q.x, y=q.y, kick=True)
+                if q.hp <= 0:
+                    q.mode, q.t = "dead", sim.clear_time()
+                    sim.stats["peds"] += 1
+                    sim.ev("ped_shot", x=q.x, y=q.y)
+                if kind == "shell30":
+                    self._splash(p, x, y)
+                return True
             q.vx, q.vy = fx * 3, fy * 3
             sim.ev("hit", x=q.x, y=q.y, kick=True)
             pay = PAY["ped"]
@@ -130,23 +163,59 @@ class Projectiles:
                 q = sim.peds.eject(dx_, dy_, math.atan2(vy_, vx_), gz=b.az, flee=(vx_, vy_))
                 sim.ev("shout", text=sim.rng.choice(slang.DRIVER_RAGE), x=q.x, y=q.y)
             was = b.health
-            b.health -= dmg * 0.35
+            if hasattr(b, "shot"):                              # БТР-80: armour, counted in hits
+                b.shot(kind)
+            elif src is not None and not hasattr(src, "kind"):  # a soldier's round into your car
+                b.health -= dmg
+            else:
+                b.health -= dmg * 0.35
             b.dirty = True
             pay = PAY["car"] + (PAY["wreck"] if was > 0 >= b.health else 0)
             sim.ev("bullet_car", x=x, y=y, nx=-fx, ny=-fy)
         elif what == "wall":
             pay = PAY["wall"]
-            self._mark(x, y, p[8], obj, 0.18, 0)
+            self._mark(x, y, p[8], obj, 0.18 if kind != "shell30" else 0.7, 0 if kind != "shell30" else 1)
             sim.ev("bullet_wall", x=x, y=y, nx=obj[0], ny=obj[1])
         elif what == "tree":
             pay = PAY["tree"]
             sim.ev("bullet_tree", x=x, y=y)
         else:
             sim.ev("bullet_ground", x=x, y=y)
-        if pay:
+        if kind == "shell30":
+            self._splash(p, x, y, obj)
+        if pay and not (src is not None and not hasattr(src, "kind")):
             sim.money += pay
             sim.ev("pay", x=x, y=y, amount=pay)
         return True
+
+    def _splash(self, p, x, y, skip=None):
+        """30 mm hit: shrapnel hurts people and dents cars within SPLASH metres, props break, lots of sparks."""
+        sim = self.sim
+        src = p[9]
+        sim.ev("shell_hit", x=x, y=y, z=p[8])
+        for q in sim.peds.list:
+            if q is skip or q.mode in ("dead", "air"):
+                continue
+            d = math.hypot(q.x - x, q.y - y)
+            if d < SPLASH:
+                q.hp -= 120.0 * (1.0 - d / SPLASH)
+                if q.hp <= 0:
+                    q.mode, q.t = "dead", sim.clear_time()
+                    sim.stats["peds"] += 1
+                    sim.ev("ped_shot", x=q.x, y=q.y)
+        for b in sim.bodies:
+            if b is skip or b is src or (b is sim.car and sim.mode == "car"):
+                continue
+            d = math.hypot(b.x - x, b.y - y)
+            if d < SPLASH + 1.0 and b.alive:
+                b.health -= 30.0 * (1.0 - d / (SPLASH + 1.0))
+                b.dirty = True
+        wk = sim.walker
+        if sim.mode == "foot" and wk is not None and wk.health > 0 and math.hypot(wk.x - x, wk.y - y) < SPLASH:
+            wk.health -= 40.0 * (1.0 - math.hypot(wk.x - x, wk.y - y) / SPLASH)
+            if wk.health <= 0:
+                wk.cause = "shot"
+        sim.chaos.blast(x, y, 2.5, peds=False)
 
     def _mark(self, x, y, z, n, size, dark):
         if n is None:

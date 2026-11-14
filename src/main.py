@@ -745,6 +745,12 @@ def main():
         hud.pois = []
     print(f"[game] map points of interest: {len(hud.pois)}")
     sim.dogs.add_pois(hud.pois)
+    try:                                                   # police stations and army barracks: fences, guards, vehicles
+        import compounds as compounds_mod
+        sim.compounds = compounds_mod.Compounds(sim, hud.pois, os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm"))
+    except Exception as e_:  # noqa: BLE001 - the game runs without them
+        log(f"[game] compounds failed: {e_!r}")
+        sim.compounds = None
     log(f"[game] stray dog hubs (kiosks, food places): {sum(len(v) for v in sim.dogs.hubs.values())}")
     labels += [(nm_, x_, world.ground_y(x_, y_) + 3.2, y_, "poi:" + c_) for x_, y_, c_, nm_ in hud.pois if nm_]
     hud.markers = [(p[0], p[1], p[2]) for p in places.list]
@@ -935,9 +941,9 @@ def main():
                 aud.play("body_fall", 0.8, 0.7)
                 popups.add(TXT("main.0004"), d["x"], d["y"], 2.6, 1.8, (255, 230, 90), 26)
             elif kind == "gunfire":
-                aud.at({"zolja": "rocket_launch", "pistol": "shot_pistol", "uzi": "shot_uzi", "shotgun": "shot_shotgun", "kalash": "shot_kalash", "revolver": "shot_pistol", "smg": "shot_uzi"}.get(d["kind"], "shot")
+                aud.at({"zolja": "rocket_launch", "pistol": "shot_pistol", "uzi": "shot_uzi", "shotgun": "shot_shotgun", "kalash": "shot_kalash", "revolver": "shot_pistol", "smg": "shot_uzi", "btr": "shot_shotgun"}.get(d["kind"], "shot")
                        if near(d["x"], d["y"], 70.0) else "shot_distant",
-                       d["x"], d["y"], 0.6 if d["kind"] == "zolja" else 0.75, {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7}.get(d["kind"], 1.0), maxd=220.0)
+                       d["x"], d["y"], 0.6 if d["kind"] == "zolja" else 0.75, {"uzi": 1.25, "kalash": 0.9, "shotgun": 0.7, "btr": 0.55}.get(d["kind"], 1.0), maxd=220.0)
             elif kind == "bullet_wall":                              # chips of plaster + dust puff
                 aud.at("bullet_ricochet" if rng.random() < 0.4 else "bullet_wall", d["x"], d["y"], 0.5)
                 particles.debris(d["x"], d["y"], (200, 194, 180), 4, 1.2)
@@ -1016,6 +1022,36 @@ def main():
                 hud.set_banner(d["text"], 3.0)
             elif kind == "heli_board":                               # each time you get in: how to fly it (also on the left while flying)
                 hud.set_banner("Почекај роторот, Space искачи, Shift спушти, W/S напред, A/D сврти", 6.0)
+            elif kind == "compound_warn":                            # police stations / barracks (compounds.py); not in text/ yet
+                hud.set_banner(d["text"], 3.5)
+                aud.play("whistle_ref" if d["kind"] == "police" else "denied_buzz", 0.7)
+            elif kind == "compound_alarm":
+                hud.set_banner("Уапси го!" if d["kind"] == "police" else "Тревога! Војската пука!", 2.5)
+            elif kind == "cuffs":
+                aud.play("weapon_pickup", 0.7, 0.6)
+            elif kind == "busted":
+                aud.play("body_fall", 0.5, 1.2)
+                hud.banner = ("", 0.0)                                  # the "Стој!" warning would sit over УАПСЕН
+                if d["lost"] and sim.walker is not None:
+                    popups.add(f"-{d['lost']} ден.", sim.walker.x, sim.walker.y, 3.0, 3.0, (255, 150, 140), 22)
+            elif kind == "barbed":
+                aud.play("hurt_thud", 0.6, 1.3)
+                particles.emit("b", d["x"], d["y"], 1.0, 0, 0, 1.2, 3, 0.12, 0.4, (190, 20, 24), 1.5, 0.8, -6.0) if not d.get("car") else particles.sparks(d["x"], d["y"], 4, 0.8)
+                hud.set_banner("Бодликава жица!", 1.2)
+            elif kind == "btr_board":
+                hud.set_banner("БТР-80: Ctrl пука (30 мм), Shift + A/D ја врти купола", 6.0)
+            elif kind == "btr_empty":
+                hud.set_banner("Нема повеќе муниција за топот", 2.5)
+            elif kind == "shell_hit":                                # 30 mm: sparks, chips, a puff, a crack
+                particles.sparks(d["x"], d["y"], 18, 1.2)
+                particles.debris(d["x"], d["y"], (170, 160, 140), 8, 0.8)
+                particles.smoke(d["x"], d["y"], 0.5, 2, 1.0, 0, 0, 0.8)
+                aud.at("bullet_car_ping" if rng.random() < 0.5 else "bullet_wall", d["x"], d["y"], 0.8, 0.7)
+                if near(d["x"], d["y"], 40.0):
+                    shake = max(shake, 0.35)
+            elif kind == "muzzle":
+                particles.sparks(d["x"], d["y"], 5, 2.3)
+                shake = max(shake, 0.2)
             elif kind == "heli_land":                                # F in mid-air: not in text/ yet (hand-edited folder)
                 hud.set_banner("Прво слетај, па излези!", 2.5)
             elif kind == "fuel_low":
@@ -2047,10 +2083,12 @@ def main():
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""
+            hud.prompt_dim = False
             if sim.mode == "foot" and sim.walker and sim.walker.health > 0:
                 for b in sim.bodies:
                     if b.alive and (actors.reach(b, fx, fy) < 2.5 if vehicles.HALF_L[b.kind] > 3.5 else math.hypot(b.x - fx, b.y - fy) < 4.0):
                         prompt = (TXT("main.0044") + f'{b.name}') + (TXT("main.0045") if b.parked_idx is not None else "")
+                        hud.prompt_dim = bool(getattr(b, "locked", False))       # a БТР the crew keeps shut: same tooltip, greyed out
                         break
                 else:
                     for c in sim.traffic.cars:

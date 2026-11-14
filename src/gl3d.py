@@ -649,6 +649,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
             col = (40, 130, 70)
         if ex == "tanker":
             col = (196, 200, 208)
+        if ex == "armytruck":
+            col = (70, 82, 48)                                             # canvas tarp over the cargo bed
         if ex == "mixer":                                                  # drum: a revolved, rear-high cone-cylinder with a spiral stripe
             u_r = ((0.0, 0.55), (0.12, 0.88), (0.35, 0.95), (0.65, 0.95), (0.88, 0.7), (1.0, 0.3))
             xa, xz = xb + 0.25, x1 - 0.25
@@ -672,6 +674,13 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
             from_h = top_h - belt if ex != "fire" else 1.5
             for name, (v, n) in box_faces(cgx, belt, 0, cgl, from_h, W * 0.96, 6, 3, 3).items():
                 parts.append((v, np.tile(np.array(col, np.float32) * _shade(np.array(n, np.float32)), (len(v), 1)), True))
+            if ex == "armytruck":                                          # tarp hoops showing through the canvas, tailgate
+                for k in range(5):
+                    xk = xb + 0.3 + k * (cgl - 0.6) / 4
+                    for sd in (-1, 1):
+                        quad((xk - 0.04, belt + 0.1, sd * (W * 0.48 + 0.012)), (0.08, 0, 0), (0, from_h - 0.15, 0), (0, 0, sd), (52, 62, 36))
+                    quad((xk - 0.04, top_h + 0.004, -W * 0.48), (0.08, 0, 0), (0, 0, W * 0.96), (0, 1, 0), (52, 62, 36))
+                quad((xb - 0.012, belt, -W * 0.48), (0, 0, W * 0.96), (0, 0.5, 0), (-1, 0, 0), (60, 70, 42))
             if ex in ("tanker", "semi"):                                  # livery stripe along the tank / trailer
                 for sd in (-1, 1):
                     quad((xb + 0.5, belt + from_h * 0.4, sd * (W * 0.48 + 0.012)), (cgl - 1.0, 0, 0), (0, 0.4, 0), (0, 0, sd), (200, 40, 40) if ex == "tanker" else (40, 90, 170))
@@ -715,6 +724,14 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                         if bit == "1":
                             cc = cI if sd == 1 else 3 - cI                  # the left side is read the other way round
                             quad((x0 + gi * (4 * cell + gap) + cc * cell, belt - 0.08 - (r + 1) * cell, sd * (W / 2 + 0.014)), (cell, 0, 0), (0, cell, 0), (0, 0, sd), (246, 246, 250))
+    elif ex == "army":                                                     # olive drab: jerrycans on the tail, whip antenna, black grille guard
+        box(xb - 0.12, y0 + 0.25, -W * 0.25, 0.16, 0.45, 0.3, (60, 70, 42))
+        box(xb - 0.12, y0 + 0.25, W * 0.25, 0.16, 0.45, 0.3, (60, 70, 42))
+        box(xb + 0.25, roof, W * 0.4, 0.04, 1.6, 0.04, (24, 24, 26))
+        box(xf + 0.12, y0 + 0.05, 0, 0.08, belt - y0 - 0.05, W * 0.8, (30, 32, 30))
+        for s in (-1, 1):                                                  # small Macedonian flag on the doors
+            quad((cx - 0.15, belt - 0.42, s * (W / 2 + 0.014)), (0.36, 0, 0), (0, 0.22, 0), (0, 0, s), (200, 30, 30))
+            quad((cx - 0.01, belt - 0.35, s * (W / 2 + 0.016)), (0.08, 0, 0), (0, 0.08, 0), (0, 0, s), (250, 210, 30))
     elif ex == "police":
         bar(cx, 0.0, (220, 30, 30), (40, 80, 230))
         for s in (-1, 1):
@@ -969,6 +986,98 @@ def _heli_parts(body_c, A, box, quad, parts):
     box(2.3, 0.34, 0.55, 0.3, 0.2, 0.22, dark)
 
 
+_CAMO = ((44, 56, 32), (104, 88, 58), (30, 34, 26))
+
+
+def _camo_n(x, y, z):
+    """Low-frequency noise of a point: which camouflage blotch it falls in (-1 base, else an index of _CAMO)."""
+    n = math.sin(x * 1.7 + z * 0.9) + math.sin(y * 2.3 - x * 1.1 + 1.3) + math.sin(z * 2.1 + x * 0.6 + 2.0)
+    return 0 if n > 0.95 else (1 if n < -1.1 else (2 if -0.15 < n < 0.0 else -1))
+
+
+def _camo_parts(parts, body_c):
+    """Paint the body-coloured triangles of an army vehicle in green / brown / black blotches (per triangle)."""
+    bc = np.asarray(body_c, np.float32)
+    for i, (v, c, d) in enumerate(parts):
+        if len(v) < 3:
+            continue
+        cc = np.asarray(c, np.float32).copy()
+        r = cc / np.maximum(bc, 1.0)
+        body = (np.abs(r[:, 0] - r[:, 1]) < 0.12) & (np.abs(r[:, 1] - r[:, 2]) < 0.12)
+        if not body.any():
+            continue
+        t = v[: len(v) - len(v) % 3].reshape(-1, 3, 3).mean(1)
+        for k, q in enumerate(t):
+            j = _camo_n(*q)
+            if j >= 0 and body[k * 3]:
+                cc[k * 3: k * 3 + 3] *= np.asarray(_CAMO[j], np.float32) / bc
+        parts[i] = (v, cc, d)
+
+
+APC_TURRET = (0.55, 2.02)          # BTR-80 turret ring: x along the hull, height of the roof (local metres)
+
+
+def _apc_parts(body_c, A, box, quad, parts):
+    """BTR-80: boat-shaped eight-wheeled hull (x forward, y up, z right); the turret is turret_model() (it rotates)."""
+    # stations: x, bottom y, belt y, top y, half widths at bottom / belt / top
+    st = [(3.82, 0.95, 1.22, 1.30, 0.55, 1.15, 1.05), (3.15, 0.55, 1.36, 1.70, 0.95, 1.45, 1.12),
+          (2.15, 0.48, 1.40, 2.02, 1.02, 1.46, 1.14), (-3.25, 0.48, 1.40, 2.02, 1.02, 1.46, 1.14),
+          (-3.82, 0.78, 1.36, 1.86, 0.88, 1.36, 1.04)]
+    rings = [[(x, yb, -hb), (x, ym, -hm), (x, yt, -ht), (x, yt, ht), (x, ym, hm), (x, yb, hb)] for x, yb, ym, yt, hb, hm, ht in st]
+    tris = _loft(rings)
+    for r, sg in ((rings[0], 1), (rings[-1], -1)):                   # nose and tail plates
+        tris += [(r[0], r[k], r[k + 1]) for k in range(1, 5)]
+    bc = np.asarray(body_c, np.float32)
+
+    def col(q):
+        j = _camo_n(*q)
+        return bc if j < 0 else np.asarray(_CAMO[j], np.float32)
+    _tri_parts(tris, col, parts, centre=lambda q: (max(-3.0, min(3.0, q[0])), 1.25, 0.0))
+    dark, glass = (26, 28, 26), (40, 52, 60)
+    for z in (-0.55, -0.18, 0.18, 0.55):                             # driver / commander vision blocks on the glacis
+        quad((2.55, 1.86, z - 0.12), (0.18, -0.12, 0), (0, 0, 0.24), (0.6, 0.8, 0), glass)
+    for s in (-1, 1):
+        box(3.55, 1.25, s * 0.75, 0.12, 0.12, 0.2, (255, 240, 180))   # headlamps
+        box(3.0, 1.70, s * 0.85, 0.5, 0.12, 0.25, dark)                 # hatch hinges / periscope guards
+        quad((-0.05, 0.62, s * 1.462), (0.95, 0, 0), (0, 0.66, 0), (0, 0, s), dark)            # side hatch between axles 2 and 3
+        box(-2.9, 1.40, s * 1.36, 0.9, 0.35, 0.16, (60, 66, 44))         # exhaust / stowage boxes
+        for k in range(3):                                               # smoke grenade launchers
+            box(0.0 - k * 0.18, 2.02, s * 0.95, 0.12, 0.12, 0.3, dark)
+        quad((1.2, 1.62, s * 1.30), (0.42, 0, 0), (0, 0.25, 0), (0, 0, s), (200, 30, 30))      # Macedonian flag on the hull side
+        quad((1.38, 1.70, s * 1.302), (0.08, 0, 0), (0, 0.08, 0), (0, 0, s), (250, 210, 30))
+    box(3.70, 0.95, 0, 0.12, 0.25, 1.6, dark)                           # trim vane, folded
+    box(-1.6, 2.02, 0.45, 0.9, 0.06, 0.7, (64, 74, 46))                 # engine deck hatches
+    box(-2.6, 2.02, -0.45, 0.9, 0.06, 0.7, (64, 74, 46))
+
+
+def turret_model():
+    """BTR-80 turret on its own pivot (y up, barrel along +x): low cone with the 30 mm cannon and its mantlet."""
+    parts = []
+    bc = np.asarray(V.ARMY, np.float32)
+    k = 10
+    lo = [(0.78 * math.cos(2 * math.pi * i / k), 0.0, 0.78 * math.sin(2 * math.pi * i / k)) for i in range(k)]
+    hi = [(0.52 * math.cos(2 * math.pi * i / k) - 0.06, 0.48, 0.52 * math.sin(2 * math.pi * i / k)) for i in range(k)]
+    tris = _loft([lo + lo[:0], hi])
+    tris += [(hi[0], hi[i + 1], hi[i]) for i in range(1, k - 1)]
+
+    def col(q):
+        j = _camo_n(q[0] + 0.3, q[1] + 2.0, q[2])
+        return bc if j < 0 else np.asarray(_CAMO[j], np.float32)
+    _tri_parts(tris, col, parts, centre=lambda q: (0.0, 0.2, 0.0))
+    _tri_parts(_tube((0.45, 0.26, 0.0), (2.95, 0.30, 0.0), 0.065, 8), lambda q: np.asarray((30, 32, 30), np.float32), parts)
+    _tri_parts(_tube((2.75, 0.30, 0.0), (3.0, 0.30, 0.0), 0.095, 8), lambda q: np.asarray((24, 24, 26), np.float32), parts)   # muzzle brake
+    _tri_parts(_tube((0.45, 0.24, 0.22), (1.6, 0.25, 0.22), 0.035, 6), lambda q: np.asarray((30, 32, 30), np.float32), parts)  # coaxial MG
+    for name, (v, n) in box_faces(0.55, 0.1, 0.0, 0.32, 0.36, 0.62).items():                           # mantlet
+        parts.append((v, np.tile(np.asarray((58, 68, 40), np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1))))
+    for name, (v, n) in box_faces(-0.3, 0.48, -0.15, 0.3, 0.12, 0.3).items():                          # sight
+        parts.append((v, np.tile(np.asarray((40, 44, 36), np.float32) * _shade(np.asarray(n, np.float32)), (len(v), 1))))
+    pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
+    rgba = np.empty((len(pos), 4), np.uint8)
+    rgba[:, :3] = np.clip(np.concatenate([p[1] for p in parts]), 0, 255)
+    rgba[:, 3] = 255
+    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+
+
 def rotor_model(kind, tail=False):
     """Spinning blades of the helicopter: 4 tapered, twisted blades and a hub about y at the mast, or the 2-blade
     tail rotor about z."""
@@ -1063,6 +1172,8 @@ def _wheel_layout(st, L, name=None):
     if L > 11:
         return [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
     r = _TYRE_R.get(st, 0.34)                                      # real tyre radii: 13" Yugo ~0.28 m, SUV ~0.38 m
+    if st == "apc":                                                # BTR-80: four axles, big off-road tyres
+        return [(2.30, 0.60, 0.40), (0.82, 0.60, 0.40), (-0.70, 0.60, 0.40), (-2.18, 0.60, 0.40)]
     return {"bus": [(L * 0.32, 0.50, 0.26), (-L * 0.30, 0.50, 0.26)],
             "truck": [(L * 0.36, 0.5, 0.34), (-L * 0.22, 0.5, 0.34), (-L * 0.36, 0.5, 0.34)],
             "tractor": [(L * 0.36, 0.45, 0.28), (-L * 0.28, 0.85, 0.5)]}.get(st, [(L * 0.31, r, 0.26), (-L * 0.31, r, 0.26)])
@@ -1196,6 +1307,13 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
     if st == "heli":
         _heli_parts(body_c, A, box, quad, parts)
         return _finish_arrays(parts, dents, burnt, 1.0)
+    if st == "apc":
+        _apc_parts(body_c, A, box, quad, parts)
+        for wx, wr, wd_ in ([] if steer_wheels else _wheel_layout(st, L)):
+            for s_ in (-1, 1):
+                v, c = _cyl(wx, wr, s_ * (W / 2 - 0.02), wr, wd_, A((24, 24, 26)), A((70, 82, 48)), 12, ("truck", 5), s_)
+                parts.append((v, c, False))
+        return _finish_arrays(parts, dents, burnt, 1.4)
     if st in carbody.LOFT_STYLES and carbody.has(V.IDS[kind]):
         return _loft_arrays(kind, color, dents, burnt, player, steer_wheels, (L, W, y0, belt, roof, st, ex), (body_c, accent, two, rng),
                             parts, A, quad, box)
@@ -1360,6 +1478,8 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
             v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), s)
             parts.append((v, c, False))
 
+    if fixed == V.ARMY:
+        _camo_parts(parts, body_c)
     if semi:                                                                # move the short tractor to the front of the rig's footprint
         parts[:] = [(v + np.array((V.SEMI_SHIFT, 0, 0), np.float32), c, d) for v, c, d in parts]
     return _finish_arrays(parts, dents, burnt, belt)
@@ -1769,7 +1889,12 @@ def _ped_special(arch, tone, frame, skin):
     held_l = []                       # ... and with the left
     extra = []                        # static boxes (x, y, z, sx, sy, sz, col) in body space
     P3 = lambda a, b, c: [a, b, c][tone % 3]
-    if name == "Pandur":
+    if name == "Vojnik":                                                   # barracks guard: camo uniform, helmet, vest, rifle slung on the back
+        D.update(torso=P3((84, 96, 58), (78, 90, 54), (90, 100, 62)), legs=(76, 86, 54), shoe=(22, 22, 22)); hat = ("helmet", (62, 72, 44))
+        extra += [(0.0, 0.95, 0, 0.32, 0.4, 0.54, (58, 66, 40)), (0.17, 0.8, -0.12, 0.06, 0.16, 0.12, (44, 52, 32)),
+                  (0.17, 0.8, 0.12, 0.06, 0.16, 0.12, (44, 52, 32)), (-0.2, 0.55, 0.12, 0.07, 0.85, 0.07, (24, 24, 26)),
+                  (-0.2, 0.75, 0.12, 0.09, 0.14, 0.08, (60, 44, 30)), (0.0, 0.8, 0, 0.29, 0.06, 0.52, (40, 40, 30))]
+    elif name == "Pandur":
         D.update(torso=(70, 92, 134), legs=(44, 54, 86)); hat = ("cap", (40, 54, 94))
         extra += [(0, 0.84, 0, 0.3, 0.06, 0.54, (240, 240, 240))]
         held = [(0.06, 0.5, 0.06, (240, 240, 240), 0.55, 0.0)]

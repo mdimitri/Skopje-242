@@ -807,7 +807,7 @@ class Renderer:
         if sh is None:
             return
         w = self.w
-        for x, y, vx, vy, _tr, _re, _d, kind, z in sh.list:
+        for x, y, vx, vy, _tr, _re, _d, kind, z, *_src in sh.list:
             if self._in(x, y, rect):
                 gy = w.ground_y(x, y) + z
                 sp = math.hypot(vx, vy) or 1.0
@@ -881,6 +881,13 @@ class Renderer:
                 rl.draw_cube(V3(hx_ - 1.4, g_ + 0.1, hy_), 0.8, 0.04, 4.0, rl.Color(236, 236, 240, 255))
                 rl.draw_cube(V3(hx_ - 0.7, g_ + 0.1, hy_), 2.2, 0.04, 0.8, rl.Color(236, 236, 240, 255))
         self._heli_wind(sim)
+        cmp_ = getattr(sim, "compounds", None)
+        if cmp_ is not None and cmp_.list:                            # police stations and barracks: fences, gates, bunkers, signs
+            if getattr(self, "cmp_art", None) is None:
+                import compoundart
+                self.cmp_art = compoundart.Art()
+            fx_, fy_ = sim.focus()[:2]
+            self.cmp_art.draw(cmp_, sim, w, lambda x_, y_, pad_: self._in(x_, y_, rect, pad_), fx_, fy_)
         st_ = getattr(sim, "heli_stairs", None)
         if st_:                                                       # steel stairs up to the roof helipads
             if getattr(self, "_stairs_m", None) is None:
@@ -993,6 +1000,14 @@ class Renderer:
                 frame = 40 + (int(wk.anim * 3.0) & 7)      # crawling under a big vehicle: face down, limbs animated
             if wk.health <= 0:
                 frame = 2
+            bp_ = sim.compounds.busted_pose() if getattr(sim, "compounds", None) is not None else 0
+            if bp_:
+                frame = 3 if bp_ == 1 else 12                  # hands up, then hands behind the back in cuffs
+            if bp_ == 2:
+                gyc_ = wk.az if wk.az is not None else w.ground_y(wk.x, wk.y)
+                bx_, by_ = wk.x - math.cos(wk.h) * 0.2, wk.y - math.sin(wk.h) * 0.2
+                for s_ in (-0.07, 0.07):
+                    rl.draw_cube(V3(bx_ - math.sin(wk.h) * s_, gyc_ + 0.86, by_ + math.cos(wk.h) * s_), 0.07, 0.07, 0.07, rl.Color(200, 202, 210, 255))
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
                 pass                                       # flicker while hurt
             else:
@@ -1085,6 +1100,17 @@ class Renderer:
                     if hf_ is not None and self._near(x, z):
                         self._proj_shadow(rm, rm.transform, hf_, 55)
                     rm.transform = oldr[0]
+            if kind == vehicles.BTR:                         # БТР-80: the turret turns on its ring
+                tb_ = next((b_ for b_ in sim.bodies if id(b_) == ckey), None)
+                tm_ = self.car_models.get("turret")
+                if tm_ is None:
+                    tm_ = self.car_models["turret"] = gl3d.turret_model()
+                if tm_ is not None:
+                    Lt_ = rl.matrix_multiply(rl.matrix_rotate_y(-getattr(tb_, "turret", 0.0)), rl.matrix_translate(gl3d.APC_TURRET[0], gl3d.APC_TURRET[1], 0.0))
+                    oldt_ = _keep(tm_.transform)
+                    tm_.transform = rl.matrix_multiply(Lt_, M)
+                    rl.draw_model(tm_, V3(0, 0, 0), 1.0, tint)
+                    tm_.transform = oldt_[0]
             fw = self.front_wheels.get(kind)
             if fw is None:
                 fw = self.front_wheels[kind] = gl3d.front_wheel(kind) if kind not in vehicles.FLY else (0, 0, 0, None)
