@@ -279,7 +279,7 @@ class LoadMusic:
         lw = 3 * (b + 4)                                         # ◀  ❚❚  ■ on the left, ▶ on the right
         w = lw + b + 4 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
-        m = rl.get_mouse_position()
+        m = font.pointer()
         click_in = font.clicked()
         click = click_in and not self.menu_open                  # an open list swallows the click
         tip = None

@@ -208,6 +208,7 @@ def run_tool(args, loader, stage, max_sec=3600):
                         pass
                 else:
                     log("[tool] " + line)
+                loader.draw()                        # a steady stream of lines must not starve the window of redraws and input
             except queue.Empty:
                 loader.draw()
             if proc.poll() is None and time.time() - t0 > max_sec and not killed:

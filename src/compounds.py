@@ -372,9 +372,11 @@ class Compounds:
         cand = []
         st = 1.5
         gx_, gy_ = gate
-        for i in range(int((x1 - x0) / st) + 1):
-            for j in range(int((y1 - y0) / st) + 1):
+        for i in range(max(0, int((gx_ - 90 - x0) / st)), min(int((x1 - x0) / st), int((gx_ + 90 - x0) / st) + 1) + 1):
+            for j in range(max(0, int((gy_ - 90 - y0) / st)), min(int((y1 - y0) / st), int((gy_ + 90 - y0) / st) + 1) + 1):
                 x, y = x0 + i * st, y0 + j * st
+                if (x - gx_) ** 2 + (y - gy_) ** 2 > 90.0 ** 2:      # a big military area: only the ground near the gate is ever used
+                    continue
                 if not _inside(x, y, ring):
                     continue
                 edge = min(_seg_d2(x, y, *ring[k - 1], *ring[k]) for k in range(len(ring)))

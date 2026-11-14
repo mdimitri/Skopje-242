@@ -95,17 +95,17 @@ def wrap(text, size, width, bold=False):
 
 
 # ---------------------------------------------------------------------------- clickable buttons (menu / exit)
-_latch = {"p": False}
+_latch = {"p": False, "pos": None}
 
 
 def poll_latch():
     """For screens that only draw now and then (the loading splash): poll input between draws and remember a mouse press,
     so a click made while the loader was busy is not lost (a press+release inside one poll gap would otherwise vanish)."""
     if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
-        _latch["p"] = True
+        _latch["p"], _latch["pos"] = True, rl.get_mouse_position()
     rl.poll_input_events()
     if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
-        _latch["p"] = True
+        _latch["p"], _latch["pos"] = True, rl.get_mouse_position()
 
 
 def clicked():
@@ -115,11 +115,19 @@ def clicked():
 
 def clear_latch():
     _latch["p"] = False
+    _latch["pos"] = None
+
+
+def pointer():
+    """The mouse position; on a frame that applies a click latched between two draws, where the press happened (the pointer may have moved on)."""
+    if _latch["p"] and _latch["pos"] is not None:
+        return _latch["pos"]
+    return rl.get_mouse_position()
 
 
 def button(label, x, y, w, h, size=18):
     """Flat button with a gold edge on the left; True on the frame it is clicked."""
-    m = rl.get_mouse_position()
+    m = pointer()
     x, y, w, h = int(x), int(y), int(w), int(h)
     on = x <= m.x < x + w and y <= m.y < y + h
     rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.25, 6, rl.Color(70, 46, 40, 240) if on else rl.Color(18, 20, 30, 225))
