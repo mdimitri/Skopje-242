@@ -3090,6 +3090,10 @@ def main():
         shutil.rmtree(a.out)
     os.replace(tmp, a.out)
     print(f"[build] wrote {a.out} ({sum(sizes.values()) / 1e6:.1f} MB), {len(chunks)} chunks")
+    import subprocess                                    # police stations / barracks layout, baked with the world (same for every player)
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "bake_compounds.py"), "--world", a.out, "--src", a.src])
+    if r.returncode:
+        print("[build] compounds bake failed: the game will place them on first load")
 
 
 if __name__ == "__main__":

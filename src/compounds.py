@@ -122,10 +122,43 @@ class Compound:
         return self.near(x, y, 0.0) and _inside(x, y, self.ring)
 
 
+BAKED = "compounds.json"            # the layout, written next to the built world so every player has the same one
+_FIELDS = ("fence", "gates", "booths", "bunkers", "spots", "posts", "route", "signs", "flat", "out_pt", "building")
+
+
+def save(lst, path):
+    out = [dict({"kind": c.kind, "name": c.name, "ring": c.ring}, **{f: getattr(c, f) for f in _FIELDS}) for c in lst]
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "compounds": out}, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def load(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        out = []
+        for q in d["compounds"]:
+            c = Compound(q["kind"], q["name"], [tuple(p) for p in q["ring"]])
+            for f_ in _FIELDS:
+                v = q.get(f_)
+                if isinstance(v, list):
+                    v = [list(e) if f_ == "spots" else (tuple(e) if isinstance(e, list) else e) for e in v]
+                    if f_ in ("out_pt",):
+                        v = tuple(v)
+                setattr(c, f_, v)
+            out.append(c)
+        return out
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"[compounds] baked layout unreadable ({e}), placing again")
+        return None
+
+
 class Compounds:
     def __init__(self, sim, pois, osm_dir=None, seed=None):
         self.sim, self.w = sim, sim.w
-        self.rng = random.Random(seed)
+        self.rng = random.Random(242 if seed is None else seed)    # fixed: the same layout (and the same free БТР) on every PC
         self.list = []
         self._models = {}          # render cache (compound index -> [(bounds, model)])
         self.tex = {}
@@ -135,23 +168,17 @@ class Compounds:
         self.bust_screen = 0.0
         self.btr_tip = None
         self._chk = 0.0
-        pol = [p for p in (pois or ()) if len(p) >= 4 and p[2] == "police"]
-        for x, y, _c, nm in pol:
+        baked = os.path.join(getattr(self.w, "path", "") or "", BAKED)
+        self.list = load(baked) if os.path.exists(baked) else None
+        if self.list is None:                                  # an older world: place them now and keep the result with the world
+            self.list = []
+            self._place(pois, osm_dir)
             try:
-                c = self._police(float(x), float(y), nm)
-            except Exception as e:  # noqa: BLE001 - a strange footprint never stops the game
-                print(f"[compounds] police '{nm}' skipped: {e}")
-                c = None
-            if c is not None:
-                self.list.append(c)
-        for nm, ring in self._military(osm_dir):
-            try:
-                c = self._army(nm, ring)
-            except Exception as e:  # noqa: BLE001
-                print(f"[compounds] barracks '{nm}' skipped: {e}")
-                c = None
-            if c is not None:
-                self.list.append(c)
+                save(self.list, baked)
+            except OSError as e:
+                print(f"[compounds] could not save {baked}: {e}")
+        else:
+            print(f"[compounds] baked layout from {baked}")
         w = self.w
         for c in self.list:                                    # fences and bunker walls are walls for cars, people and bullets
             for ax, ay, bx, by, *_r in c.fence + self._solid(c):
@@ -170,6 +197,26 @@ class Compounds:
                             self._barb.setdefault((gx, gy), []).append(f)
         print(f"[compounds] {sum(1 for c in self.list if c.kind == 'police')} police stations, "
               f"{sum(1 for c in self.list if c.kind == 'army')} barracks, {sum(len(c.bunkers) for c in self.list)} bunkers")
+
+    def _place(self, pois, osm_dir):
+        """Where the stations and barracks, their fences, gates, bunkers and vehicles go (baked into the world, see bake())."""
+        pol = [p for p in (pois or ()) if len(p) >= 4 and p[2] == "police"]
+        for x, y, _c, nm in pol:
+            try:
+                c = self._police(float(x), float(y), nm)
+            except Exception as e:  # noqa: BLE001 - a strange footprint never stops the game
+                print(f"[compounds] police '{nm}' skipped: {e}")
+                c = None
+            if c is not None:
+                self.list.append(c)
+        for nm, ring in self._military(osm_dir):
+            try:
+                c = self._army(nm, ring)
+            except Exception as e:  # noqa: BLE001
+                print(f"[compounds] barracks '{nm}' skipped: {e}")
+                c = None
+            if c is not None:
+                self.list.append(c)
 
     # ------------------------------------------------------------------ placing
     def _add_wall(self, ax, ay, bx, by):
