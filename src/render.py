@@ -976,7 +976,7 @@ class Renderer:
                     sh.append((rp["x"], rp["y"], rp["h"], 0.14, 0.24, 60, gy, 1.75))
         wk = sim.walker
         if sim.mode == "foot" and wk is not None and not getattr(wk, "hidden", False):   # hidden: inside a POI
-            frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0) if wk.moving else 12
+            frame = self._gait(100 + getattr(sim, "lik", 0), wk.anim, wk.speed > 6.0 or wk.esc_on or wk.stair) if wk.moving else 12
             swinging = wk.atk_t > 0 and wk.weapon in actors.SWINGERS and wk.ammo > 0
             if wk.atk_t > 0:
                 frame = 60 + min(7, int((1.0 - wk.atk_t / actors.SWING_T) * 8)) if swinging else wk.atk_kind   # bat: arms and torso swing with it

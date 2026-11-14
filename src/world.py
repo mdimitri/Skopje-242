@@ -211,6 +211,16 @@ class World:
                 best = h
         return best
 
+    def on_ramp(self, x, y, wy):
+        """True on a sloped escape / helipad stair flight (not a flat landing or roof) with the feet at wy."""
+        for p in self.pg2.get((int(x // 8), int(y // 8)), ()):
+            if p[0] == 0 and abs(p[8] - p[7]) > 0.3:
+                dx, dy = x - p[1], y - p[2]
+                s = dx * p[3] + dy * p[4]
+                if abs(s) <= p[5] and abs(-dx * p[4] + dy * p[3]) <= p[6] and abs(p[7] + (p[8] - p[7]) * (s + p[5]) / (2 * p[5]) - wy) < 0.8:
+                    return True
+        return False
+
     def plat_wall(self, x, y, wy):
         """A roof taller than the rider's feet is here: its wall blocks (an elevated rider must not walk into a building)."""
         lim = wy + 0.7

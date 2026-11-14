@@ -953,6 +953,7 @@ class Walker:
         self.moving = False
         self.esc_on = False          # climbing a fire escape (escride.py): legs and arms play the walk cycle
         self.run = False
+        self.stair = False           # on a stair flight: runs (faster, running cycle)
         self.dead_t = 0.0
         self.z = 0.0                 # height above the surface under the feet (jumping / falling)
         self.duck_t = 0.0            # > 0: crawling under a big vehicle (slow, crouched)
@@ -1039,6 +1040,9 @@ class Walker:
             gr = world.slope_at(self.x, self.y, math.cos(self.h) * (1 if fwd >= 0 else -1), math.sin(self.h) * (1 if fwd >= 0 else -1), self.az, 1.0)
             self.grade = gr
             sp *= max(0.15, min(1.25, math.exp(-3.5 * (abs(gr + 0.05) - 0.05))))
+        self.stair = bool(world.pg2) and self.z <= 0.001 and world.on_ramp(self.x, self.y, self.az)
+        if self.stair:
+            sp = max(sp, 8.0 * HERO["spd"])                      # stairs are taken at a run, up and down
         tx, ty = math.cos(self.h) * fwd * (sp if fwd > 0 else sp * 0.6), math.sin(self.h) * fwd * (sp if fwd > 0 else sp * 0.6)
         self.vx += (tx - self.vx) * k
         self.vy += (ty - self.vy) * k
@@ -1054,6 +1058,15 @@ class Walker:
             if world.pg2 and self.az - world.ground_y(self.x, self.y) > 0.5 and world.plat_wall(self.x, self.y, self.az):    # a taller roof is a wall
                 self.x, self.y = self.lx, self.ly
                 self.vx = self.vy = 0.0
+            if world.pg2 and self.z <= 0.05 and self.vz <= 0.0 and self.az - world.ground_y(self.x, self.y) > 1.0 and world.plat_h(self.lx, self.ly, self.az) is not None:   # roof-edge barrier: only a jump gets over it
+                if self.az - world.level(self.x, self.y, self.az, True) > 1.0:
+                    if self.az - world.level(self.x, self.ly, self.az, True) <= 1.0:
+                        self.y = self.ly
+                    elif self.az - world.level(self.lx, self.y, self.az, True) <= 1.0:
+                        self.x = self.lx
+                    else:
+                        self.x, self.y = self.lx, self.ly
+                    self.vx = self.vy = 0.0
             self.push_out(world)
             # ---- vertical: stand on the terrain / deck under the feet, fall when it ends
             sup = world.level(self.x, self.y, self.az, True)

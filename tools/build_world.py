@@ -1944,7 +1944,7 @@ def _bld_job(job):
         fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
         if fp:
             badd(MAT_ROOF, *fp)
-        pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])
+        pr = _parapet(outer, h, 0.95 if h > 8 else 0.35, [c * 0.82 for c in wallc])
         if pr:
             badd(MAT_SOLID, *pr)
     elif proof is not None:
@@ -1966,7 +1966,7 @@ def _bld_job(job):
         fp = flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in roofc])
         if fp:
             badd(MAT_ROOF, *fp)
-        pr = _parapet(outer, h, 0.55 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
+        pr = _parapet(outer, h, 0.95 if h > 8 else 0.35, [c * 0.82 for c in wallc])   # roof rim / attic wall
         if pr:
             badd(MAT_SOLID, *pr)
         if ar > 70 and rg.random() < 0.17:                                  # roof pieces (80% fewer than v42): the only graffiti a top-down camera reads

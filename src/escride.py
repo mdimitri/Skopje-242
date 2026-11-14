@@ -4,7 +4,7 @@ import math
 
 import vehicles
 
-SPEED_FOOT, SPEED_BIKE = 4.6, 6.2
+SPEED_FOOT, SPEED_BIKE = 8.0, 6.2          # (on foot the stairs are taken at a run)
 REACH = 3.5                                   # how near (m) to the foot / roof end F works
 # in-game texts (Macedonian); text/ is a human-edited folder, so they live here
 T_UP, T_DOWN, T_STOP = "F — искачи се по пожарните скали", "F — симни се по пожарните скали", "S / F — запри"

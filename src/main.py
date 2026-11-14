@@ -1341,7 +1341,7 @@ def main():
         wk = sim.walker
         if sim.mode != "car":
             v = math.hypot(wk.vx, wk.vy)
-            run_ = wk.speed > 6.0                                   # the same switch render.py uses for the run cycle
+            run_ = wk.speed > 6.0 or wk.esc_on or wk.stair                                   # the same switch render.py uses for the run cycle
             n_ = int(wk.anim * 2.0 / gait_cycle(100 + getattr(sim, "lik", 0), run_))   # a foot lands twice per stride cycle (render._gait)
             fresh = n_ != sx.get("stepn", n_)
             sx["stepn"] = n_
