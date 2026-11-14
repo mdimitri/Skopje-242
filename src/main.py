@@ -2028,6 +2028,7 @@ def main():
             guard.run("players", draw_players, sim, cam, sw, sh)
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)
+            guard.run("mall_doors", gtc.markers, sim, cam, sw, sh)
             if lod and ppm > 4.0 and flags["labels"] and not sf_on:
                 guard.run("labels", draw_labels, labels, cam, fx, fy, sw, sh)
             prompt = ""

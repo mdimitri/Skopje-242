@@ -51,11 +51,14 @@ def _walk_rects():
 
 
 WALK = _walk_rects()
-CAMR = [(A0 + 0.3, A1 - 0.3, -LANE_O + 0.3, LANE_O - 0.3)] + [(a0 - R + 0.3, a1 + R - 0.3, n0 - R + 0.3, n1 + R - 0.3) for a0, a1, n0, n1 in WALK[4:]]
+CM = 0.6                                     # the camera keeps this far from every wall (its near plane would cut through)
+CAMR = [(A0 + CM, A1 - CM, -LANE_O + CM, LANE_O - CM, CEIL - 0.4),                                  # hall (over the opening too)
+        (-139.8 + CM, A0 + 1.0, -3.0 + CM, 3.0 - CM, 2.9), (A1 - 1.0, 132.4 - CM, -3.0 + CM, 3.0 - CM, 2.9),   # door halls, not out of the door
+        (-2.8 + CM, 2.8 - CM, -44.6 + CM, -LANE_O + 1.0, 3.2), (-2.8 + CM, 2.8 - CM, LANE_O - 1.0, 66.2 - CM, 3.2)]   # corridors (lower ceiling)
 
 
 def _inside(rects, a, n):
-    return any(a0 <= a <= a1 and n0 <= n <= n1 for a0, a1, n0, n1 in rects)
+    return any(a0 <= a <= a1 and n0 <= n <= n1 for a0, a1, n0, n1, *_ in rects)
 
 
 def _outside_door(a, n):
@@ -113,15 +116,25 @@ class Mall:
                 wk.x, wk.y = to_world(ta, tn)
                 break
 
-    def cam_clip(self, f, p):
-        """Fraction of the way from the focus f (x, y) to the camera p (x, y) that stays inside the hall."""
-        fa, fn = to_local(*f)
-        pa, pn = to_local(*p)
-        for i in range(1, 21):
-            t = i / 20.0
-            if not _inside(CAMR, fa + (pa - fa) * t, fn + (pn - fn) * t):
-                return max(0.0, (i - 1) / 20.0 - 0.03)
-        return 1.0
+    def cam_fit(self, x, y):
+        """The wanted camera spot moved into the hall's open space (the nearest point of it), so it never sits in or
+        behind a wall, a shopfront, the ceiling of a corridor or outside a door; a spot already inside is kept."""
+        a, n = to_local(x, y)
+        if _inside(CAMR, a, n):
+            return x, y
+        best = None
+        for a0, a1, n0, n1, _top in CAMR:
+            ca, cn = min(max(a, a0), a1), min(max(n, n0), n1)
+            d = (ca - a) ** 2 + (cn - n) ** 2
+            if best is None or d < best[0]:
+                best = (d, ca, cn)
+        return to_world(best[1], best[2])
+
+    def cam_top(self, x, y):
+        """Highest the camera may sit above the floor here (under the ceiling of the hall / corridor / door)."""
+        a, n = to_local(x, y)
+        tops = [r[4] for r in CAMR if r[0] <= a <= r[1] and r[2] <= n <= r[3]]
+        return max(tops) if tops else 2.9
 
     def in_hall(self, x, y):
         """Inside the mall's hall or its corridors (up to the building's walls)."""
@@ -316,6 +329,40 @@ class Mall:
             self.build()
         if self.model is not None:
             rl.draw_model(self.model, rl.Vector3(0, 0, 0), 1.0, rl.WHITE)
+
+    def markers(self, sim, cam, sw, sh):
+        """The doors, marked like the fire-escape stairs (hud.draw_escape_markers): a pulsing pin over each door within
+        45 m, on the inside when in the mall (ИЗЛЕЗ), on the street outside (ВЛЕЗ)."""
+        import pyray as rl
+        import font
+        wk = sim.walker if sim.mode == "foot" else None
+        if wk is None or not self.enabled:
+            return
+        inside = getattr(wk, "indoor", None) is self
+        pul = 0.5 + 0.5 * math.sin(rl.get_time() * 4.0)
+        for nm, ax, w, sg, c, hw in DOORS:
+            k = -1.5 if inside else 1.5                             # inside / outside the wall
+            a, n = (w + sg * k, c) if ax == "a" else (c, w + sg * k)
+            x, y = to_world(a, n)
+            d = math.hypot(x - wk.x, y - wk.y)
+            if d > 45.0:
+                continue
+            h = self.floor if inside else self.w.ground_y(x, y)
+            sp = rl.get_world_to_screen(rl.Vector3(x, h + 2.4 + 0.25 * pul, y), cam)
+            if not (10 < sp.x < sw - 10 and 10 < sp.y < sh - 10):
+                continue
+            near_ = d < 6.0
+            col = rl.Color(255, 214, 40, 255) if near_ else rl.Color(255, 214, 40, 150)
+            r = 17 if near_ else 13
+            rl.draw_circle(int(sp.x), int(sp.y), r + 3, rl.Color(0, 0, 0, 150))
+            rl.draw_circle(int(sp.x), int(sp.y), r, col)
+            tri = (rl.Vector2(sp.x, sp.y - r * 0.6), rl.Vector2(sp.x - r * 0.55, sp.y + r * 0.35), rl.Vector2(sp.x + r * 0.55, sp.y + r * 0.35)) if inside else \
+                  (rl.Vector2(sp.x, sp.y + r * 0.6), rl.Vector2(sp.x + r * 0.55, sp.y - r * 0.35), rl.Vector2(sp.x - r * 0.55, sp.y - r * 0.35))
+            rl.draw_triangle(*tri, rl.Color(30, 30, 34, 255))
+            rl.draw_triangle(tri[0], tri[2], tri[1], rl.Color(30, 30, 34, 255))
+            if near_:
+                t = "ИЗЛЕЗ" if inside else "ВЛЕЗ — ГТЦ"
+                font.draw_text(t, int(sp.x - font.measure_text(t, 20) / 2), int(sp.y - r - 24), 20, rl.WHITE, bold=True)
 
     def labels(self, cam, sw, sh):
         """Shop names on their sign bands (2D, after the 3D pass)."""
