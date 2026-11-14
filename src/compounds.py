@@ -282,23 +282,28 @@ class Compounds:
                 if self._road(*P(mu + nu * r, mv + nv * r)):
                     return r
             return 99
-        gs = min(sides, key=road_dist)
-        (a, b), (c2, d), (nu, nv) = gs
-        mu, mv = (a + c2) / 2, (b + d) / 2
-        gx, gy = P(mu, mv)
-        onx, ony = ux * nu + vx * nv, uy * nu + vy * nv               # outward
+        per = 2 * ((u1 - u0) + (v1 - v0))
+        ranked = sorted(sides, key=road_dist)
+        n_g = 1 if per < 170 else (2 if per < 320 else 3)              # a big station: an entry on more than one street
+        chosen = [ranked[0]] + [q for q in ranked[1:] if road_dist(q) < 99][:n_g - 1]
         gw = 6.5
-        along = math.atan2(ony, onx) + math.pi / 2
-        c.gates.append((gx, gy, along, gw, onx, ony))
-        self._fence_ring(c, rect, 2.4, False, [(gx, gy, gw)])
-        bx_, by_ = gx - onx * 2.5 + math.cos(along) * (gw / 2 + 1.6), gy - ony * 2.5 + math.sin(along) * (gw / 2 + 1.6)
-        c.booths.append((bx_, by_, along))
-        c.posts += [(gx - onx * 1.2 - math.cos(along) * (gw / 2 + 0.8), gy - ony * 1.2 - math.sin(along) * (gw / 2 + 0.8), math.atan2(ony, onx)),
-                    (gx - onx * 4.5 + math.cos(along) * (gw / 2 - 0.5), gy - ony * 4.5 + math.sin(along) * (gw / 2 - 0.5), math.atan2(ony, onx))]
+        for (a, b), (c2, d), (nu, nv) in chosen:
+            mu, mv = (a + c2) / 2, (b + d) / 2
+            gx, gy = P(mu, mv)
+            onx, ony = ux * nu + vx * nv, uy * nu + vy * nv           # outward
+            along = math.atan2(ony, onx) + math.pi / 2
+            c.gates.append((gx, gy, along, gw, onx, ony))
+            bx_, by_ = gx - onx * 2.5 + math.cos(along) * (gw / 2 + 1.6), gy - ony * 2.5 + math.sin(along) * (gw / 2 + 1.6)
+            c.booths.append((bx_, by_, along))
+            c.posts += [(gx - onx * 1.2 - math.cos(along) * (gw / 2 + 0.8), gy - ony * 1.2 - math.sin(along) * (gw / 2 + 0.8), math.atan2(ony, onx)),
+                        (gx - onx * 4.5 + math.cos(along) * (gw / 2 - 0.5), gy - ony * 4.5 + math.sin(along) * (gw / 2 - 0.5), math.atan2(ony, onx))]
+        self._fence_ring(c, rect, 2.4, False, [(g[0], g[1], g[3]) for g in c.gates])
+        gx, gy, along, gw, onx, ony = c.gates[0]                       # the main gate (signs, parking) as before
         ins = _offset(rect, 2.0)
         c.route = ins
         # signs: a board over the gate (both faces) and one on the station wall facing the gate
-        c.signs.append((gx + onx * 0.3, gy + ony * 0.3, w.ground_y(gx, gy) + 3.3, math.atan2(ony, onx), 5.6, 1.4))
+        for gx_, gy_, _al, _gw, onx_, ony_ in c.gates:
+            c.signs.append((gx_ + onx_ * 0.3, gy_ + ony_ * 0.3, w.ground_y(gx_, gy_) + 3.3, math.atan2(ony_, onx_), 5.6, 1.4))
         wall = self._wall_facing(ring, gx, gy)
         if wall is not None:
             wx, wy, wn = wall
@@ -483,6 +488,25 @@ class Compounds:
             L2 = (bx - ax) ** 2 + (by - ay) ** 2 or 1.0
             t = max(0.15, min(0.85, ((tx - ax) * (bx - ax) + (ty - ay) * (by - ay)) / L2))
             gates.append((ax + (bx - ax) * t, ay + (by - ay) * t, 7.0, i))
+        per = sum(math.hypot(ring[(i + 1) % n][0] - ring[i][0], ring[(i + 1) % n][1] - ring[i][1]) for i in range(n))
+        want = max(1, min(4, int(per / 550) + 1))                    # big barracks: extra checkpoints where a street runs close
+        if len(gates) < want:
+            cand = []
+            for i in range(n):
+                (ax, ay), (bx, by) = ring[i], ring[(i + 1) % n]
+                L = math.hypot(bx - ax, by - ay)
+                for k in range(1, int(L / 20)):
+                    t = k * 20 / L
+                    if 0.15 < t < 0.85:
+                        x, y = ax + (bx - ax) * t, ay + (by - ay) * t
+                        q = w.nearest_drive_point(x, y, 80)
+                        if q:
+                            cand.append((math.hypot(q[0] - x, q[1] - y), x, y, i))
+            for d_, x, y, i in sorted(cand):
+                if len(gates) >= want:
+                    break
+                if all(math.hypot(x - g[0], y - g[1]) > 160 for g in gates):
+                    gates.append((x, y, 7.0, i))
         sgn = 1.0 if _area(ring) > 0 else -1.0
         gap_o, gap_i = [], []
         for gi, (x, y, gw, i) in enumerate(gates):
