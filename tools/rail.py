@@ -47,18 +47,53 @@ def _pieces(pts):
     return out, run
 
 
+G_RAIL = 0.025                       # steepest rail grade: the viaduct climbs and falls at this, never in steps
+CURVE = 80.0                         # vertical curves: moving average over this many metres
+
+
+def rail_profile(pcs, total, th, under):
+    """Deck heights (underside) of the pieces of one bridge way: CLEAR over the ground where there is room to climb,
+    always CLEAR over a street beneath, down to the ground at both ends, at no more than G_RAIL, with vertical curves.
+    (Before: each piece took CLEAR or CLEAR * ramp on its own, so a street under the ramp made a 5.5 m step.)"""
+    n = len(pcs)
+    if not n:
+        return []
+    s = np.array([p[4] for p in pcs])
+    low = []
+    for x, z, yaw, _ln, _run in pcs:
+        nx, nz = -math.sin(yaw), math.cos(yaw)
+        low.append(min(th(x, z), th(x + nx * 3, z + nz * 3), th(x - nx * 3, z - nz * 3)))
+    low = np.array(low)
+    must = np.array([under(x, z) for x, z, *_r in pcs])
+    full = low + CLEAR
+    # from the ends (on the ground) upwards at G_RAIL, never above full clearance ...
+    g0, g1 = float(th(*pcs[0][:2])) - 1.0, float(th(*pcs[-1][:2])) - 1.0   # rail top at the ends = the ground line's (th + 0.25)
+    prof = np.minimum(full, np.minimum(g0 + s * G_RAIL, g1 + (total - s) * G_RAIL))
+    # ... but a street beneath always gets its clearance, the climb to it at G_RAIL (steeper only if the ends are too near)
+    for k in np.nonzero(must)[0]:
+        prof = np.maximum(prof, full[k] - np.abs(s - s[k]) * G_RAIL)
+    k_ = max(1, int(round(CURVE / STEP)))
+    ext = np.concatenate([np.full(k_, prof[0]), prof, np.full(k_, prof[-1])])
+    sm = np.convolve(ext, np.ones(k_) / k_, mode="same")[k_:k_ + n]
+    sm[must] = np.maximum(sm[must], full[must])
+    e = np.minimum(1.0, np.minimum(s, total - s) / 40.0)
+    return list(np.maximum(sm, low - 1.0 + 1.3 * e))          # sunk into the ground at the ends, clear of it inside
+
+
 def viaduct(g_list, pts, th, in_lane, under):
-    """Deck, parapets, rails and columns along one bridge way.  -> [(x, z, y_abs, G)], posts, [(x, z, rail top)]"""
+    """Deck, parapets, rails and columns along one bridge way.  -> [(x, z, y_abs, G)], posts, [(x, z, rail top)]
+    Every piece is sheared to the grade between its neighbours, so the deck is one sloping ribbon, not flat steps."""
     pcs, total = _pieces(pts)
     parts, posts, top = [], [], []
+    ys = rail_profile(pcs, total, th, under)
     for i, (x, z, yaw, ln, run) in enumerate(pcs):
-        ramp = min(1.0, min(run, total - run) / RAMP)
-        ramp = ramp * ramp * (3 - 2 * ramp)
         ca, sa = math.cos(yaw), math.sin(yaw)
         nx, nz = -sa, ca
-        low = min(th(x, z), th(x + nx * 3, z + nz * 3), th(x - nx * 3, z - nz * 3))
-        c = CLEAR if under(x, z) else CLEAR * ramp
-        y = low + c
+        y = ys[i]
+        ya = (ys[i - 1] + y) / 2 if i > 0 else y                  # heights at the piece's two ends
+        yb = (ys[i + 1] + y) / 2 if i + 1 < len(ys) else y
+        slope = (yb - ya) / max(ln, 0.1)
+        c = y - min(th(x, z), th(x + nx * 3, z + nz * 3), th(x - nx * 3, z - nz * 3))
         g = G()
         g.box(x, y, z, ln + 0.05, 0.9, 6.0, CONC, yaw)                                    # deck slab
         g.box(x, y + 0.9, z, ln + 0.05, 0.28, 4.2, BALLAST, yaw)                          # ballast bed
@@ -67,6 +102,7 @@ def viaduct(g_list, pts, th, in_lane, under):
             g.box(x + nx * 0.72 * s, y + 1.18, z + nz * 0.72 * s, ln + 0.05, 0.16, 0.08, STEEL, yaw)     # rails
         for k in (-0.5, 0.0, 0.5):                                                        # sleepers
             g.box(x + ca * ln * k, y + 1.12, z + sa * ln * k, 0.28, 0.07, 2.5, SLEEPER, yaw)
+        g.shear = (x, z, ca, sa, slope)
         parts.append((x, z, 0.0, g))
         top.append((round(x, 1), round(z, 1), round(y + 1.26, 2)))
         if c > 2.0 and i % 3 == 1:                                                        # a pair of columns
@@ -79,6 +115,17 @@ def viaduct(g_list, pts, th, in_lane, under):
                     parts.append((px, pz, 0.0, gc))
                     posts.append((px, pz, 0.7, h - 1.0, y))
     return parts, posts, top
+
+
+def _out(g):
+    """G.out() with the piece's grade applied (a shear along the track)."""
+    pos, uv, col = g.out()
+    sh = getattr(g, "shear", None)
+    if sh is not None and sh[4]:
+        x, z, ca, sa, slope = sh
+        pos = pos.copy()
+        pos[:, 1] += ((pos[:, 0] - x) * ca + (pos[:, 2] - z) * sa) * slope
+    return pos, uv, col
 
 
 def crossing(x, z, yaw, ryaw, w):
@@ -118,6 +165,40 @@ def station(x, z, yaw, name):
     return g, h
 
 
+def _join_bridges(ways, tol=1.0):
+    """The viaduct is mapped as many short bridge ways: join the ones that meet end to end (two-way, no branch) into
+    one polyline, so the rail profile runs on over the joints instead of dipping to the ground at every one."""
+    br = [list(w[4]) for w in ways if w[2] and not w[3] and len(w[4]) >= 2]
+    rest = [w for w in ways if not (w[2] and not w[3] and len(w[4]) >= 2)]
+    key = lambda p: (round(p[0] / tol), round(p[1] / tol))
+    ends = {}
+    for i, P in enumerate(br):
+        for e in (0, -1):
+            ends.setdefault(key(P[e]), []).append(i)
+    used, out = set(), []
+    for i in range(len(br)):
+        if i in used:
+            continue
+        used.add(i)
+        P = list(br[i])
+        for side in (1, 0):                                  # grow at the end, then at the start
+            while True:
+                p = P[-1] if side else P[0]
+                nb = [j for j in ends.get(key(p), ()) if j not in used]
+                if len(nb) != 1 or len(ends.get(key(p), ())) > 2:
+                    break
+                j = nb[0]
+                used.add(j)
+                if side:
+                    Q = br[j] if key(br[j][0]) == key(p) else br[j][::-1]
+                    P = P + Q[1:]
+                else:
+                    Q = br[j] if key(br[j][-1]) == key(p) else br[j][::-1]
+                    P = Q[:-1] + P
+        out.append(("way", "rail", True, False, P))
+    return rest + out
+
+
 def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
     """rl: rail.json rows.  th(x, z): terrain height.  in_lane(x, z, r): inside a drivable carriageway."""
     ways = [r for r in rl if r[0] == "way" and r[1] == "rail"]
@@ -143,13 +224,13 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
         return False
 
     nv = nd = nc = 0
-    for _k, _kind, bridge, tunnel, pts in ways:
+    for _k, _kind, bridge, tunnel, pts in _join_bridges(ways):
         if tunnel or len(pts) < 2:
             continue
         if bridge:
             parts, pp, top = viaduct(None, pts, th, in_lane, under)
             for x, z, _y, g in parts:
-                pos, uv, col = g.out()
+                pos, uv, col = _out(g)
                 add_abs(chunk_of(x, z), mat, pos, uv, col)
             posts += pp
             runs.append(top)
@@ -186,10 +267,11 @@ def build(rl, edges, add_c, add_abs, chunk_of, th, in_lane, log=print):
                     best = (d, math.atan2(dy, dx), br)
         if best and best[0] < 40:
             gp, gb = station(x, z, best[1], name)
-            if best[2]:                                          # on the viaduct: platform at deck level
+            if best[2]:                                          # on the viaduct: platform at deck level (the rail profile's, nearest piece)
                 pos, uv, col = gp.out()
                 pos = pos.copy()
-                pos[:, 1] += th(x, z) + CLEAR + 0.9
+                near = min((p_ for r_ in runs for p_ in r_), key=lambda p_: (p_[0] - x) ** 2 + (p_[1] - z) ** 2, default=None)
+                pos[:, 1] += (near[2] - 1.26 + 0.9) if near else th(x, z) + CLEAR + 0.9
                 add_abs(chunk_of(x, z), mat, pos, uv, col)
             else:
                 add_c(chunk_of(x, z), mat, *gp.out())

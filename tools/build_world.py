@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 67
+VERSION = 68
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2424,6 +2424,13 @@ def main():
         print(f"[build] river quays: {nj} bridge joints lifted, {nl} decks lifted over the walkways below or smoothed "
               f"({nskip} crossings too close to an end)")
     print(f"[build] bridges: {terrain_mod.twin_decks(decks, T)} deck samples raised to the deck beside them")
+    try:                                                        # approaches: embankments and vertical curves into the roads (after twin_decks: it would kink them again)
+        _barr = np.asarray(bld)
+        __import__("ramps").smooth(T, decks, roads, lambda x, y: bool(_barr[min(NCY - 1, max(0, int((y + HY) / CELL))), min(NCX - 1, max(0, int((x + HX) / CELL)))]), HX, HY)
+    except Exception as ex:  # noqa: BLE001 - the old profiles stay
+        import traceback
+        traceback.print_exc()
+        print(f"[build] ramps skipped: {ex}")
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
