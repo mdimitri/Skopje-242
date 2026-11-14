@@ -520,6 +520,11 @@ class Hud:
                     rl.draw_rectangle_v(rl.Vector2(qx - 3, qy - 3), rl.Vector2(6, 6), rl.Color(150, 40, 40, 255))
                     if name:
                         font.draw_text(name, int(qx) + 5, int(qy) - 7, 12, rl.Color(150, 40, 40, 255))
+            for t_ in getattr(getattr(sim, "trains", None), "trains", ()):    # trains
+                tx_, ty_, _z, _h = t_.line.at(t_.s)
+                qx, qy = to_mm(tx_, ty_)
+                if inside(qx, qy):
+                    rl.draw_rectangle_v(rl.Vector2(qx - 2, qy - 2), rl.Vector2(4, 4), rl.Color(30, 30, 30, 255))
             for bd in sim.bodies:                                            # parked and standing vehicles (the player's own is the arrow)
                 if bd is not c and bd.alive:
                     qx, qy = to_mm(bd.x, bd.y)
@@ -584,6 +589,10 @@ class Hud:
                 rl.draw_rectangle(int(qx) - 4, int(qy) - 4, 8, 8, rl.Color(150, 40, 40, 255))
                 if name:
                     font.draw_text(name, int(qx) + 7, int(qy) - 8, 15, rl.Color(150, 40, 40, 255))
+            for t_ in getattr(getattr(sim, "trains", None), "trains", ()):    # trains
+                tx_, ty_, _z, _h = t_.line.at(t_.s)
+                qx, qy = to_big(tx_, ty_)
+                rl.draw_rectangle(int(qx) - 3, int(qy) - 3, 6, 6, rl.Color(30, 30, 30, 255))
             for x, y, cat, _nm in self.pois:                    # faint POI dots, coloured by kind
                 qx, qy = to_big(x, y)
                 rl.draw_circle(int(qx), int(qy), 1.6, POI_COL.get(cat, POI_COL["shop"]))

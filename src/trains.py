@@ -8,7 +8,12 @@ SPEED = 16.0                     # m/s on open track (≈ 58 km/h)
 CAR_L, GAP, CARS = 20.0, 1.2, 3  # carriage length, coupling gap, carriages
 CLOSE = 140.0                    # a crossing is closed while the train is this close along the line
 DWELL = 20.0                     # seconds at a station
-BODY = rl.Color(196, 52, 44, 255)
+# New in-game strings (Macedonian, not in text/ -- for the editor):
+TXT_BOARD = "Во воз си (билет "                       # + fare +
+TXT_BOARD2 = " ден.)  –  F: излези на станица"
+TXT_ALIGHT = "Слезе од возот."
+BODY = rl.Color(226, 228, 232, 255)
+STRIPE = rl.Color(196, 40, 40, 255)
 ROOF = rl.Color(70, 72, 80, 255)
 GLASS = rl.Color(60, 90, 120, 255)
 BAR = (rl.Color(236, 236, 236, 255), rl.Color(214, 36, 36, 255))
@@ -140,6 +145,9 @@ class Trains:
                 rl.draw_cube(rl.Vector3(0, 2.1, 0), CAR_L, 2.5, 3.0, BODY)
                 rl.draw_cube(rl.Vector3(0, 2.4, 0), CAR_L - 1.0, 0.9, 3.04, GLASS)      # window band
                 rl.draw_cube(rl.Vector3(0, 3.5, 0), CAR_L - 0.4, 0.3, 2.8, ROOF)
+                rl.draw_cube(rl.Vector3(0, 1.55, 0), CAR_L + 0.02, 0.45, 3.04, STRIPE)   # livery stripe
+                for e in ((t.d,) if k == 0 else ()) + ((-t.d,) if k == CARS - 1 else ()):
+                    rl.draw_cube(rl.Vector3(e * (CAR_L / 2 + 0.05), 2.0, 0), 0.2, 2.6, 2.9, GLASS)      # cab front
                 rl.rl_pop_matrix()
         for (ei, es), (_ln, _s, x, z, yaw) in self.xings.items():
             if not (x0 - 5 < x < x1 + 5 and z0 - 5 < z < z1 + 5):

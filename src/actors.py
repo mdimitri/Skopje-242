@@ -3078,7 +3078,7 @@ class Sim:
         if tr is not None:                                         # get off, only while the train stands in a station
             if tr.v < 0.1 and tr.wait > 0:
                 self.train_ride = None
-                self.ev("alight")
+                self.ev("alight", train=True)
             return False
         for t in self.trains.trains:
             if t.v < 0.1 and t.wait > 0 and t.last_stop is not None:
@@ -3088,7 +3088,8 @@ class Sim:
                         fare = 40 if self.money >= 40 else 0
                         self.money -= fare
                         self.train_ride = t
-                        self.ev("board", body=None, fare=fare)
+                        t.ended = False
+                        self.ev("board", body=None, fare=fare, train=True)
                         return True
         best, bd, kind = None, 1e9, None
         for b in self.bodies:
@@ -3682,9 +3683,13 @@ class Sim:
                 self.train_ride = None
                 if st is not None:
                     self.walker.x, self.walker.y, self.walker.vx, self.walker.vy = st[1], st[2], 0.0, 0.0
-                    self.ev("alight")
+                    self.ev("alight", train=True)
             else:
-                self.walker.x, self.walker.y, _z, _h = tr.line.at(tr.s - tr.d * (trains.CAR_L / 2))
+                wk_ = self.walker
+                wk_.x, wk_.y, gz_, _h = tr.line.at(tr.s - tr.d * (trains.CAR_L / 2))
+                wk_.vx = wk_.vy = wk_.vz = 0.0
+                wk_.az, wk_.z = gz_ + 0.9, 0.0                         # carried at the floor height of the carriage, on bridges too
+                wk_.lx, wk_.ly = wk_.x, wk_.y
         elif tr is not None:
             self.train_ride = None
         if not self.client:

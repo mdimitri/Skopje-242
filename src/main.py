@@ -96,6 +96,7 @@ import audio as audio_mod   # noqa: E402
 import radio as radio_mod   # noqa: E402
 import menu as menu_mod   # noqa: E402
 import savegame   # noqa: E402
+import trains   # noqa: E402
 import hero_lines   # noqa: E402
 import characters   # noqa: E402
 import talk   # noqa: E402
@@ -962,10 +963,13 @@ def main():
             elif kind == "board":
                 aud.play("bus_air_brake", 0.5)
                 aud.play("bus_door", 0.6)
+                if d.get("train"):
+                    hud.set_banner(trains.TXT_BOARD + f"{d['fare']}" + trains.TXT_BOARD2, 5.0)
+                    continue
                 hud.set_banner((TXT("main.0006") + f"{d['fare']}" + TXT("main.0007")), 5.0)
             elif kind == "alight":
                 aud.play("bus_door", 0.6)
-                hud.set_banner(TXT("main.0008"), 2.0)
+                hud.set_banner(trains.TXT_ALIGHT if d.get("train") else TXT("main.0008"), 2.0)
             elif kind == "ped_shot":
                 aud.at("bullet_flesh", d["x"], d["y"], 0.6)
                 streamer.add_decal(("d", d["x"], d["y"], 0.8, (150, 20, 24, 200)))
