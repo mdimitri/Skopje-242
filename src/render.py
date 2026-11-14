@@ -638,7 +638,7 @@ class Renderer:
             if fk:                                         # helicopter: cheap building / tree blocks beyond the streamed chunks
                 if getattr(self, "farview", None) is None:
                     self.farview = farview.FarView(w, st.tex.get("A"))
-                self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr)
+                self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr, self.view_far - 100)
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:

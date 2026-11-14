@@ -12,6 +12,9 @@ import gl3d
 WALLS = np.array([(214, 204, 186), (226, 220, 206), (196, 186, 170), (232, 214, 190), (186, 184, 180), (210, 196, 172)], np.float32)
 ROOFS = np.array([(150, 148, 146), (168, 92, 70), (128, 128, 130), (176, 170, 160)], np.float32)
 TREE = np.array((70, 112, 58), np.float32)
+HAZE = np.array((196, 210, 226), np.float32)
+TILE = 3                                     # chunks per side of a last-band tile (360 m)
+NEAR_BAND = 900.0                            # textured per-chunk blocks out to here, coarse merged tiles beyond
 
 
 class FarView:
@@ -51,11 +54,20 @@ class FarView:
         self.idx, self.ta = (bi, ti), ta
 
     def _build(self, key):
+        """key: a chunk (cx, cy) -> textured blocks and trees; or a tile ("T", tx, ty) of TILE x TILE chunks -> one coarse
+        merged mesh for the last band: only buildings that make the skyline (tall or big), plain walls, no trees, hazed."""
         w = self.w
         bi, ti = self.idx
         tris, cols, uvs = [], [], []
         PL = (0.08, 0.06)                                    # a plain patch of facade texture A (above the windows): roofs, trees
-        for i in bi.get(key, ()):
+        coarse = key[0] == "T"
+        if coarse:
+            ks = [(key[1] * TILE + i, key[2] * TILE + j) for i in range(TILE) for j in range(TILE)]
+            ids = [i for k in ks for i in bi.get(k, ())]
+            ids = [i for i in ids if w.buildings[i]["h"] >= 9.0 or (w.buildings[i]["bb"][2] - w.buildings[i]["bb"][0]) * (w.buildings[i]["bb"][3] - w.buildings[i]["bb"][1]) >= 600]
+        else:
+            ids = bi.get(key, ())
+        for i in ids:
             b = w.buildings[i]
             ring = b["ring"]
             x0, y0, x1, y1 = b["bb"]
@@ -69,6 +81,9 @@ class FarView:
                 p0, p1, p2, p3 = (ax, g - 0.5, ay), (bx, g - 0.5, by), (bx, top, by), (ax, top, ay)
                 tris += [(p0, p1, p2), (p0, p2, p3)]
                 cols += [wc, wc]
+                if coarse:
+                    uvs += [(PL, PL, PL), (PL, PL, PL)]
+                    continue
                 L = math.hypot(bx - ax, by - ay) / 3.0           # one window bay every 3 m, one storey every 3 m (as the near facades)
                 v0, v1 = (b["h"] + 0.5) / 3.0, 0.0
                 uvs += [((0, v0), (L, v0), (L, v1)), ((0, v0), (L, v1), (0, v1))]
@@ -79,7 +94,7 @@ class FarView:
                     tris.append(tuple((float(V[k, 0]), top, float(V[k, 1])) for k in t))
                     cols.append(rc)
                     uvs.append((PL, PL, PL))
-        tk = ti.get(key)
+        tk = None if coarse else ti.get(key)
         if tk is not None:
             T = self.ta[tk]
             for x, y, r, _k in T.tolist():
@@ -99,6 +114,9 @@ class FarView:
         n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-9
         n *= np.where(n[:, 1:2] < -0.2, -1.0, 1.0)            # roofs / tree faces lit from above whichever way they wind
         c = np.asarray(cols, np.float32) * np.clip(0.62 + 0.45 * np.abs(n @ gl3d.SUN), 0, 1.15)[:, None]
+        if coarse:
+            c = c * 0.7 + HAZE * 0.3                          # aerial perspective: the far skyline fades towards the sky
+
         rgba = np.full((len(t) * 3, 4), 255, np.uint8)
         rgba[:, :3] = np.clip(np.repeat(c, 3, 0), 0, 255)
         m = gl3d.make_model(t.reshape(-1, 3), np.asarray(uvs, np.float32).reshape(-1, 2), rgba)
@@ -106,29 +124,64 @@ class FarView:
             gl3d.set_texture(m, self.tex)
         return m
 
-    def draw(self, rl, keys, skip, fr, budget_ms=3.0):
-        """Draws the far meshes of `keys` (nearest first) that are not in `skip` (chunks with streamed meshes) and inside
-        the frustum; builds missing ones within the time budget. Returns the number drawn."""
+    def _plan(self, x, y, near, far):
+        """Items for the view from (x, y): per-chunk blocks where any part of the tile is nearer than NEAR_BAND, one coarse
+        tile mesh where the whole tile is beyond it. Recomputed only when the viewer crosses a chunk."""
+        S = self.w.chunk
+        T = S * TILE
+        ck = (math.floor(x / S), math.floor(y / S))
+        if getattr(self, "_pk", None) == (ck, near, far):
+            return
+        self._pk = (ck, near, far)
+        lx, ly = int(self.w.hx // T) + 1, int(self.w.hy // T) + 1
+        TX, TY = np.meshgrid(np.arange(max(math.floor((x - far) / T), -lx), min(math.floor((x + far) / T), lx) + 1),
+                             np.arange(max(math.floor((y - far) / T), -ly), min(math.floor((y + far) / T), ly) + 1), indexing="ij")
+        TX, TY = TX.ravel(), TY.ravel()
+        gap = lambda X, Y, s_: np.hypot(np.maximum(np.maximum(X * s_ - x, 0), x - (X + 1) * s_), np.maximum(np.maximum(Y * s_ - y, 0), y - (Y + 1) * s_))
+        tg = gap(TX, TY, T)
+        items, sp = [], []
+        for tx, ty, g in zip(TX.tolist(), TY.tolist(), tg.tolist()):
+            if g >= far:
+                continue
+            if g >= NEAR_BAND:
+                k = ("T", tx, ty)
+                v = self.sph.get(k)
+                if v is None:
+                    cx, cz = tx * T + T / 2, ty * T + T / 2
+                    v = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 20, cz, T * 0.75 + 40)
+                items.append(k)
+                sp.append(v)
+                continue
+            for i in range(TILE):
+                for j in range(TILE):
+                    k = (tx * TILE + i, ty * TILE + j)
+                    if gap(np.array(k[0]), np.array(k[1]), S) >= far:
+                        continue
+                    v = self.sph.get(k)
+                    if v is None:
+                        cx, cz = k[0] * S + S / 2, k[1] * S + S / 2
+                        v = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 15, cz, S * 0.75 + 30)
+                    items.append(k)
+                    sp.append(v)
+        d2 = [(v[0] - x) ** 2 + (v[2] - y) ** 2 for v in sp]
+        o = sorted(range(len(items)), key=d2.__getitem__)                 # nearest first: they get built first
+        self._items = [items[i] for i in o]
+        self._sp = np.asarray([sp[i] for i in o], np.float64).reshape(-1, 4)
+
+    def draw(self, rl, pos, skip, fr, far, budget_ms=3.0):
+        """Draws the far blocks round pos = (x, y) out to `far` m, leaving out chunks in `skip` (streamed meshes) and what is
+        outside the frustum; builds missing ones within the time budget. Returns the number of draw calls."""
         if self.idx is None:
             self._index()
         t0 = time.perf_counter()
-        S = self.w.chunk
-        if keys is not getattr(self, "_keys", None):
-            self._keys = keys
-            sp = []
-            for k in keys:
-                v = self.sph.get(k)
-                if v is None:
-                    cx, cz = k[0] * S + S / 2, k[1] * S + S / 2
-                    v = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 15, cz, S * 0.75 + 30)
-                sp.append(v)
-            self._sp = np.asarray(sp, np.float64).reshape(-1, 4)
-        if not keys:
+        self._plan(pos[0], pos[1], NEAR_BAND, far)
+        items = self._items
+        if not items:
             return 0
         n = 0
         zero, white = rl.Vector3(0, 0, 0), rl.WHITE
         for i in np.flatnonzero(fr.spheres(self._sp)).tolist():
-            k = keys[i]
+            k = items[i]
             if k in skip:
                 continue
             m = self.models.get(k, 0)

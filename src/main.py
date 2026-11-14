@@ -2059,13 +2059,9 @@ def main():
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
             wanted, lite_, _f = ring_want(o_.x, o_.y, far_, near_)
             lod = True
-            if sim.mode == "car" and o_.kind in vehicles.FLY:      # helicopter: 6x further (~2 km), as cheap textured far blocks (src/farview.py)
-                fk_c = getattr(renderer, "_fk_c", None)              # the 2 km key ring only changes when the heli crosses a chunk
-                ck_ = (math.floor(o_.x / S), math.floor(o_.y / S))
-                if fk_c is None or fk_c[0] != ck_:
-                    renderer._fk_c = fk_c = (ck_, ring_want(o_.x, o_.y, far_ * 6, far_)[0])
-                renderer.view_far = far_ * 6 + 60
-                renderer.far_keys = fk_c[1]
+            if sim.mode == "car" and o_.kind in vehicles.FLY:      # helicopter: out to 2.6 km in stepped far blocks (src/farview.py)
+                renderer.view_far = 2600.0                            # last band: coarse merged skyline tiles (src/farview.py)
+                renderer.far_keys = (o_.x, o_.y)
             else:
                 renderer.view_far, renderer.far_keys = 0.0, None
         else:
