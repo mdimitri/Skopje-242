@@ -182,6 +182,7 @@ class Compounds:
                 print(f"[compounds] could not save {baked}: {e}")
         else:
             print(f"[compounds] baked layout from {baked}")
+        self.drop_cutters()
         w = self.w
         for c in self.list:                                    # fences and bunker walls are walls for cars, people and bullets
             for ax, ay, bx, by, *_r in c.fence + self._solid(c):
@@ -1045,11 +1046,32 @@ class Compounds:
                     if _seg_d2(x, y, *f[:4]) < 2.5 ** 2:
                         self._break(c, f, x, y)
 
-    def _break(self, c, f, x, y):
+    def drop_cutters(self):
+        """Wire cutters (Макази) lying in the street by every police station and barracks (with each fresh set of weapons)."""
+        for c in self.list:
+            gx, gy, al, gw, onx, ony = c.gates[0]
+            self.sim.pickups.append([gx + onx * 12.0 + math.cos(al) * (gw / 2 + 6.0), gy + ony * 12.0 + math.sin(al) * (gw / 2 + 6.0),
+                                     "cutters", True, 0.0])
+
+    def cut(self, x, y, h):
+        """Макази: the player snips a 1.6 m hole in the fence section right in front of them, quietly (no alarm; the guards
+        still react once they see you inside).  -> True when there was fence to cut."""
+        px, py = x + math.cos(h) * 0.9, y + math.sin(h) * 0.9
+        for c in self.list:
+            for f in c.fence:
+                ax, ay, bx, by = f[:4]
+                L2 = (bx - ax) ** 2 + (by - ay) ** 2 or 1.0
+                t = max(0.0, min(1.0, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2))
+                if math.hypot(ax + (bx - ax) * t - px, ay + (by - ay) * t - py) < 0.9:
+                    self._break(c, f, px, py, 0.8, "fence_cut")
+                    return True
+        return False
+
+    def _break(self, c, f, x, y, half=2.6, event="fence_down"):
         ax, ay, bx, by, h, barbed = f
         L = math.hypot(bx - ax, by - ay) or 1.0
         t = ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / (L * L)
-        g = 2.6 / L                                                    # a 5 m gap round the hit
+        g = half / L                                                   # a 5 m gap round a ram, 1.6 m for the cutters
         c.fence.remove(f)
         self._del_wall(ax, ay, bx, by)
         for t0, t1 in ((0.0, t - g), (t + g, 1.0)):
@@ -1065,7 +1087,7 @@ class Compounds:
                         for gy in range(int(min(q[1], q[3]) // 16), int(max(q[1], q[3]) // 16) + 1):
                             self._barb.setdefault((gx, gy), []).append(q)
         c.ver += 1
-        self.sim.ev("fence_down", x=x, y=y, army=c.kind == "army")
+        self.sim.ev(event, x=x, y=y, army=c.kind == "army")
 
     def _del_wall(self, ax, ay, bx, by):
         w = self.w

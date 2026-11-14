@@ -22,12 +22,12 @@ WEAPONS = {"pistol": (TXT("actors.0001"), 0.28, 45, 1, 0.0, 40, 90), "uzi": (TXT
            "bat": (TXT("actors.0005"), 0.55, 34, 1, 0.0, 1.9, 9999), "zolja": (TXT("actors.0006"), 1.6, 400, 1, 0.0, 90, 14),
            "knuckles": ("Боксирач", 0.3, 28, 1, 0.0, 1.2, 9999), "chain": ("Ланец", 0.5, 26, 1, 0.0, 2.6, 9999),
            "machete": ("Мачета", 0.45, 48, 1, 0.0, 1.8, 9999), "revolver": ("Револвер", 0.6, 70, 1, 0.01, 45, 36),
-           "smg": ("Ингрем", 0.07, 16, 1, 0.09, 26, 400)}
-MELEE = ("bat", "knuckles", "chain", "machete")                # swung, not fired: no tracer, no ammo used
+           "smg": ("Ингрем", 0.07, 16, 1, 0.09, 26, 400), "cutters": ("Макази", 0.9, 6, 1, 0.0, 1.4, 9999)}
+MELEE = ("bat", "knuckles", "chain", "machete", "cutters")                # swung, not fired: no tracer, no ammo used
 from weaponart import swing_az   # noqa: E402
 SWINGERS = ("bat", "chain")                          # two-handed swings: swept arc hits, arms follow (render swing frames 60..67)
 SWING_T = 0.36                  # seconds of one bat swing (the renderer sweeps the bat across the body)
-WEAPON_ORDER = ["fist", "knuckles", "chain", "bat", "machete", "pistol", "revolver", "uzi", "smg", "shotgun", "kalash", "zolja"]
+WEAPON_ORDER = ["fist", "cutters", "knuckles", "chain", "bat", "machete", "pistol", "revolver", "uzi", "smg", "shotgun", "kalash", "zolja"]
 
 FUEL_KM = 14.0                 # a full tank of the player's car lasts about this many kilometres (NPC cars never run dry)
 
@@ -2748,7 +2748,9 @@ class Sim:
         for e in rng.sample(walk, min(self.WEAPON_PICKUPS, len(walk))):
             x, y, dx, dy = self.w.edge_point(e, rng.uniform(5, e["len"] - 5))
             self.pickups.append([x, y, rng.choice(("pistol", "pistol", "bat", "bat", "knuckles", "chain", "uzi", "uzi", "shotgun", "kalash",
-                                                    "kalash", "zolja", "machete", "revolver", "smg")), True, 0.0])
+                                                    "kalash", "zolja", "machete", "revolver", "smg", "cutters")), True, 0.0])
+        if getattr(self, "compounds", None):
+            self.compounds.drop_cutters()
 
     def _make_pickups(self):
         rng = random.Random(99)
@@ -2926,6 +2928,8 @@ class Sim:
         if wk.weapon in SWINGERS:                           # hits are found along the swept arc by _swing_tick over the next 0.36 s
             wk.sw_hit, wk.sw_u, wk.sw_k = set(), 0.0, -1
             self.ev("swing", x=wk.x + fx, y=wk.y + fy, hit=False, weapon=wk.weapon)
+        elif wk.weapon == "cutters" and getattr(self, "compounds", None) and self.compounds.cut(wk.x, wk.y, wk.h):
+            pass                                            # wire cutters on a compound fence: a quiet hole to slip through
         elif wk.weapon in MELEE:
             self._ray(wk, wk.h, dmg, rng_m, False)
             self.chaos.punch(wk, True)                      # a swung bat also smashes whatever stands in front of it

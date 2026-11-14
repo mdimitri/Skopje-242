@@ -618,7 +618,7 @@ def main():
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
     renderer.pick_model("cash")
-    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "knuckles", "chain", "zolja", "machete", "revolver", "smg", "fuel"):
+    for _k in ("pistol", "uzi", "shotgun", "kalash", "bat", "knuckles", "chain", "zolja", "machete", "revolver", "smg", "cutters", "fuel"):
         renderer.pick_model(_k)
     loader.tick(0.9, "pickups & weapons")
 
@@ -1045,6 +1045,10 @@ def main():
                 hud.banner = ("", 0.0)                                  # the "Стој!" warning would sit over УАПСЕН
                 if d["lost"] and sim.walker is not None:
                     popups.add(f"-{d['lost']} ден.", sim.walker.x, sim.walker.y, 3.0, 3.0, (255, 150, 140), 22)
+            elif kind == "fence_cut":                                   # Макази: a quiet snip, a few sparks off the wire
+                aud.play("weapon_pickup", 0.35, 1.6)
+                particles.sparks(d["x"], d["y"], 3, 0.6)
+                hud.set_banner("Оградата е пресечена", 1.2)
             elif kind == "fence_down":
                 aud.play("hurt_thud", 0.9, 0.6)
                 particles.sparks(d["x"], d["y"], 10, 1.0)

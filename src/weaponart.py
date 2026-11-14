@@ -1,6 +1,7 @@
 """Weapon shapes as boxes, shared by the 3D renderer (pickups on the ground, the weapon in the avatar's hand) and the HUD icon.
 Each box is (x, y, w, h, colour): x along the barrel (grip at 0), y up from the grip line, side view; depth is `d` in 3D."""
 STEEL, DARK, WOOD, OLIVE, GRIP = (92, 94, 100), (38, 40, 46), (140, 92, 48), (84, 98, 52), (28, 28, 32)
+RED = (176, 34, 30)                  # bolt-cutter handles
 
 BOXES = {
     "pistol": [(-0.02, 0.0, 0.26, 0.06, STEEL), (-0.02, 0.06, 0.26, 0.015, DARK), (-0.02, -0.12, 0.06, 0.12, GRIP), (0.0, -0.02, 0.07, 0.02, DARK)],
@@ -19,8 +20,10 @@ BOXES = {
     "machete": [(-0.1, 0.0, 0.16, 0.04, GRIP), (0.06, -0.015, 0.5, 0.09, STEEL), (0.5, 0.02, 0.12, 0.06, STEEL)],
     "revolver": [(-0.02, 0.0, 0.34, 0.06, STEEL), (-0.02, 0.06, 0.34, 0.015, DARK), (-0.02, -0.12, 0.06, 0.12, WOOD), (0.0, -0.03, 0.1, 0.07, DARK)],
     "smg": [(-0.02, -0.01, 0.2, 0.07, DARK), (0.18, 0.0, 0.14, 0.03, STEEL), (0.0, -0.17, 0.045, 0.16, DARK), (-0.12, 0.0, 0.1, 0.03, STEEL)],
+    "cutters": [(-0.2, 0.012, 0.24, 0.035, RED), (-0.2, -0.047, 0.24, 0.035, RED), (0.04, -0.03, 0.06, 0.06, STEEL),
+                (0.1, 0.0, 0.14, 0.03, STEEL), (0.1, -0.035, 0.14, 0.03, STEEL), (0.06, -0.012, 0.03, 0.024, DARK)],
 }
-DEPTH = {"machete": 0.03, "revolver": 0.05, "smg": 0.06, "pistol": 0.05, "uzi": 0.07, "shotgun": 0.06, "kalash": 0.07, "bat": 0.07, "knuckles": 0.09, "chain": 0.04, "zolja": 0.13}
+DEPTH = {"machete": 0.03, "revolver": 0.05, "smg": 0.06, "pistol": 0.05, "uzi": 0.07, "shotgun": 0.06, "kalash": 0.07, "bat": 0.07, "knuckles": 0.09, "chain": 0.04, "zolja": 0.13, "cutters": 0.04}
 
 
 def swing_az(u):
