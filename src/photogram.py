@@ -9,7 +9,7 @@ Pipeline (Job, in a thread; the viewer in src/photoview.py redraws after every s
   2. the buildings around the captures, with the look the world build gives them (build_world.bld_style)
   3. per capture: labels (segment.py: building / sky / vegetation / vehicle / ground) + the screenshot's UI boxes masked
   4. per visible facade: the photo resampled onto the wall plane (RES px per metre), minus other buildings in front
-  5. per building: one of ALGOS fits the numbers from all its facade views
+  5. per building: the ДЕТАЛИ fit (fit_detail) fits the numbers from all its facade views
   6. buildings nobody photographed borrow from fitted neighbours of the same kind ("inferred")
 """
 import copy
@@ -60,9 +60,6 @@ SUN = np.array([-0.45, 0.80, -0.40]) / np.linalg.norm([-0.45, 0.80, -0.40])
 # label ids (segment.py)
 L_OTHER, L_BUILDING, L_SKY, L_VEG, L_VEHICLE, L_GROUND, L_NONE = 0, 1, 2, 3, 4, 5, 255
 ALGOS = [
-    ("colour", "БОЈА + ВИСИНА", "висина од силуетата, боја на ѕидот; фасадата останува"),
-    ("grid", "РЕШЕТКА", "+ катови и прозорци од периодичноста, фасада по сличност"),
-    ("render", "РЕНДЕР-СПОРЕДИ", "+ дотерување на камерата, фасада/катови/прозорци по најмала разлика"),
     ("detail", "ДЕТАЛИ", "прозорци, лоѓии, балкони, клими, кровови и површини во 3D, сè процедурално"),
 ]
 URL_POSE = re.compile(r"@(-?\d+\.\d+),(-?\d+\.\d+),(?:[\d.]+a,)?([\d.]+)y,([\d.]+)h,([\d.]+)t")
@@ -416,7 +413,7 @@ def wall_edges(blds, near_xz, radius):
     for b in blds.values():
         if np.hypot(*(b.c - near_xz)) > radius:
             continue
-        h = max(b.gen["h"], b.look("render").get("h", 0) if b.fits else 0)
+        h = b.gen["h"]
         r = b.ring
         for i in range(len(r)):
             E0.append(r[i]); E1.append(r[(i + 1) % len(r)])
@@ -634,109 +631,6 @@ def fit_colours(obs, h):
     return np.clip(wall, 0, 255), np.clip(win, 0, 255)
 
 
-def _period(profile, lo, hi):
-    """Strongest repeat (in samples) of a 1-D profile between lo and hi samples, and its strength 0..1."""
-    p = np.asarray(profile, np.float64)
-    good = np.isfinite(p)
-    if good.sum() < hi * 2:
-        return None, 0.0
-    p = np.where(good, p, np.nanmean(p))
-    k = int(hi) * 2 + 1                                        # detrend over two periods (slow lighting gradients only)
-    pad = np.pad(p, k // 2, mode="edge")
-    p = p - np.convolve(pad, np.ones(k) / k, "valid")
-    p -= p.mean()
-    den = float(p @ p) or 1.0
-    best, bs = None, 0.0
-    for lag in range(int(lo), int(hi) + 1):
-        r = float(p[:-lag] @ p[lag:]) / den
-        if r > bs:
-            best, bs = lag, r
-    return best, bs
-
-
-def fit_grid(obs, h):
-    """Floor height and window-bay width (m) from the repeats of the facade brightness -> (floor, bay, strength)."""
-    fl, bays = [], []
-    for o in obs:
-        m = _rows(o, h, lo=0.5)
-        # only the clean stretches: columns that are facade over most of their height (trees break the rhythm)
-        k0, k1 = int(0.5 * RES), int(max(1.0, h - 0.3) * RES)
-        clean = m[k0:k1].mean(0) > 0.7
-        m = m & clean[None, :]
-        if m.sum() < 400:
-            continue
-        lum = o.rgb @ np.array([0.3, 0.59, 0.11])
-        cnt = m.sum(1)
-        row = np.where(cnt > 3, (lum * m).sum(1) / np.maximum(cnt, 1), np.nan)
-        lag, s = _period(row, 2.6 * RES, 4.2 * RES)
-        if lag and s > 0.1:                           # weak repeats are noise (plain walls): no vote
-            fl.append((lag / RES, s * cnt.sum()))
-        cntc = m.sum(0)
-        col = np.where(cntc > 3, (lum * m).sum(0) / np.maximum(cntc, 1), np.nan)
-        lag, s = _period(col, 2.2 * RES, min(7.0, o.ln / 2) * RES)
-        if lag and s > 0.1:
-            bays.append((lag / RES, s * cntc.sum()))
-
-    def wmed(v):
-        if not v:
-            return None, 0.0
-        v = sorted(v)
-        tot = sum(w for _, w in v)
-        acc = 0.0
-        for x, w in v:
-            acc += w
-            if acc >= tot / 2:
-                return x, tot
-        return v[-1][0], tot
-    f, wf = wmed(fl)
-    b, wb = wmed(bays)
-    return f, b, (wf + wb)
-
-
-def synth(o, tex, h, fh, bw):
-    """The game's wall (texture tiles, no tint) on the view's grid -> (nv, nu, 3) in 0..1."""
-    nv, nu = o.ok.shape
-    floors = max(1, round(h / fh))
-    nb = max(1, round(o.ln / bw))
-    fe, be = h / floors, o.ln / nb
-    us = (np.arange(nu) + 0.5) / RES
-    vs = (np.arange(nv) + 0.5) / RES
-    S = tex.shape[0]
-    col = ((us / be) % 1.0 * S).astype(int) % S
-    row = (((h - vs) / fe) % 1.0 * S).astype(int) % S
-    return tex[row[:, None], col[None, :]] / 255.0
-
-
-def render_loss(obs, texs, mat, h, fh, bw):
-    """Relative L1 between the photo and the tinted game wall, with the best tint -> (loss, tint)."""
-    tex = texs.get(MATS.get(mat))
-    if tex is None:
-        return None, None
-    P, Tt = [], []
-    for o in obs:
-        m = _rows(o, h)
-        if m.sum() < 100:
-            continue
-        s = synth(o, tex, h, fh, bw)                 # albedo against albedo: the photo's light is its own
-        # 2x2 averaging: windows are big, single pixels are noise
-        def half(a):
-            nv, nu = a.shape[:2]
-            a = a[:nv // 2 * 2, :nu // 2 * 2]
-            return 0.25 * (a[0::2, 0::2] + a[1::2, 0::2] + a[0::2, 1::2] + a[1::2, 1::2])
-        mm = half(m.astype(np.float32)[..., None])[..., 0] > 0.99
-        P.append(half(o.rgb)[mm])
-        Tt.append(half(s)[mm])
-    if not P:
-        return None, None
-    P, Tt = np.concatenate(P), np.concatenate(Tt)
-    tint = (P * Tt).sum(0) / np.maximum((Tt * Tt).sum(0), 1e-6)
-    if tint.max() > 255:                             # a texture darker than the wall: keep the hue, cap the brightness
-        tint = tint * (255.0 / tint.max())
-    tint = np.clip(tint, 0, 255)
-    loss = float(np.abs(P - Tt * tint).sum() / max(1.0, P.sum()))
-    return loss, tint
-
-
 def refine_pose(cap, lab, blds, h_of=lambda b: b.gen["h"]):
     """Small yaw / pitch correction that lines the buildings' outlines up with the labelled building pixels."""
     H, W = lab.shape
@@ -897,16 +791,6 @@ def _silhouette(cap, blds, h_of, shape, step):
         for j in np.nonzero(ok)[0]:
             d.polygon(list(zip(U[j].tolist(), V[j].tolist())), fill=1)
     return np.asarray(im, bool)
-
-
-def plausible_mats(b, h):
-    """Facades that make sense for this building (the photo picks among them, it does not turn a tower into a cottage)."""
-    kind = b.kind()
-    if kind == "house" or h < 9:
-        return [0, 5, 7, 10]                                       # plain, family house, brick, cream
-    if b.tags.get("building") in ("commercial", "office", "retail", "industrial"):
-        return [0, 1, 8, 11]
-    return [0, 1, 4, 7, 8, 9, 10, 11] if h >= 15 else [0, 4, 7, 10, 11]
 
 
 def _weighted_median(vals, w):
@@ -1146,52 +1030,9 @@ def fit_detail(b, obs, log=None):
     return out
 
 
-def fit_building(b, obs, algo, texs, log=None):
+def fit_building(b, obs, log=None):
     """The fitted look of one building from its views."""
-    if algo == "detail":
-        return fit_detail(b, obs, log)
-    # views that are mostly something else (trees, cars) only add noise when there are better ones
-    good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))]
-    obs = good or obs
-    h_raw, hc, agree = fit_height(obs, b.gen["h"])
-    h = blend_height(b, h_raw, hc, agree)
-    out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(obs)}
-    wall, win = fit_colours(obs, h)
-    mat = b.gen["mat"]
-    fh, bw = b.gen["floor"], b.gen["bay"]
-    if algo == "colour":
-        if wall is not None:
-            loss, tint = render_loss(obs, texs, mat, h, fh, bw) if texs else (None, None)
-            out["wallc"] = [int(v) for v in (tint if tint is not None else wall)]
-            if loss is not None:
-                out["loss"] = round(loss, 3)
-    else:
-        f_, b_, _s = fit_grid(obs, h)
-        try:                                         # OSM storeys beat a weak brightness rhythm for the floor height
-            lv = float(str(b.tags.get("building:levels", "")).split(";")[-1])
-            f_ = float(np.clip((h - 1.0) / lv, 2.6, 4.2)) if lv >= 1 else f_
-        except ValueError:
-            pass
-        if algo == "grid":
-            fh, bw = (f_ or fh), (b_ or bw)
-            cands = [(m, fh, bw) for m in plausible_mats(b, h)]
-        else:
-            fhs = sorted({round(x, 2) for x in (f_ or 3.2, 3.0, 3.2)})
-            bws = sorted({round(x, 2) for x in (b_ or 3.4, 3.4, 2.6, 4.5)})
-            cands = [(m, f, w) for m in plausible_mats(b, h) for f in fhs for w in bws]
-        best = None
-        for m, f, w in cands:
-            loss, tint = render_loss(obs, texs, m, h, f, w) if texs else (None, None)
-            if loss is not None and (best is None or loss < best[0]):
-                best = (loss, m, f, w, tint)
-        if best:
-            out.update(loss=round(best[0], 3), mat=best[1], floor=best[2], bay=best[3], wallc=[int(v) for v in best[4]])
-        elif wall is not None:
-            out.update(wallc=[int(v) for v in wall], floor=fh, bay=bw)
-    if win is not None:
-        out["winc"] = [int(v) for v in win]
-    out["pitched"] = h < 11 and b.gen["small"]
-    return out
+    return fit_detail(b, obs, log)
 
 
 def infer(blds, algo, k=3):
@@ -1605,7 +1446,7 @@ class Job(threading.Thread):
         def fit_one(bid):                                # numbers only by now (ДЕТАЛИ): quick, here
             b = self.blds[bid]
             try:
-                fb = fit_building(b, b.obs, self.algo, self.texs, self.log)
+                fb = fit_building(b, b.obs, self.log)
             except Exception as e:  # noqa: BLE001 - one building must never stop the run
                 import traceback
                 self.log(f"  зграда {bid}: напасувањето падна ({type(e).__name__}: {e}), останува тековната")

@@ -483,7 +483,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     """-> 'changed' when the game's choice of buildings changed (the world has to be built again), else None.
     frames / shot: headless test (run that many frames, save the last one)."""
     import archkit
-    folder = folder or ask_folder(music)
+    pf_ = os.path.join(ROOT, "Photogrametry")
+    folder = folder or (pf_ if os.path.isdir(pf_) else ask_folder(music))   # every capture folder under Photogrametry at once
     if not folder:
         return None
     osm_dir = osm_dir or os.path.join(ROOT, "data", "osm")
@@ -536,7 +537,6 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     if bg_folder:
         bg_load()
     st, op = pg.load_settings(folder)                # engine settings + element switches, kept with the photo folder
-    algo_i = 3                                     # ДЕТАЛИ: procedural windows, balconies, AC, roofs, surfaces
     look = True                                     # show the fitted look (else the current one)
     job, t_job = None, 0.0
     scene = Scene(tex)
@@ -820,12 +820,9 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 orb.free = None
             else:
                 break
-        algo = pg.ALGOS[algo_i][0]
+        algo = "detail"                                       # ДЕТАЛИ: procedural windows, balconies, AC, roofs, surfaces
         running = job is not None and not job.done
         shift = rl.is_key_down(rl.KEY_LEFT_SHIFT) or rl.is_key_down(rl.KEY_RIGHT_SHIFT)
-        for i, k in enumerate((rl.KEY_ONE, rl.KEY_TWO, rl.KEY_THREE, rl.KEY_FOUR)):
-            if rl.is_key_pressed(k) and i < len(pg.ALGOS):
-                algo_i = i
         for i, k in enumerate((rl.KEY_F1, rl.KEY_F2, rl.KEY_F3, rl.KEY_F4, rl.KEY_F5)):
             if rl.is_key_pressed(k):
                 tab = i
@@ -945,16 +942,14 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         bottom = H - 118                                         # the always-there progress block starts here
         changed_res = not status[1]
         if tab == 0:                                            # ---- build
-            font.draw_text("АЛГОРИТАМ (1-4)", 16, y, 16, INK, bold="cond")
+            have = sum(1 for b in blds.values() if algo in b.fits)
+            font.draw_text("ДЕТАЛИ" + (f"  ({have} згради)" if have else ""), 16, y, 16, INK, bold="cond")
             y += 22
-            for i, (k, name, note) in enumerate(pg.ALGOS):
-                have = sum(1 for b in blds.values() if k in b.fits)
-                if _button(16, y, lw - 32, 28, f"{i + 1}  {name}" + (f"  ({have})" if have else ""), i == algo_i, 17):
-                    algo_i = i
-                y += 30
-                if i == algo_i:
-                    font.draw_text(_fit(note, 13, lw - 40), 20, y, 13, DIM)
-                    y += 17
+            if bg_folder and photobg.ENABLED and not running:     # the background run: pause / resume it from here
+                bg_run = photobg.running()
+                if _button(16, y, lw - 32, 28, "ПОЗАДИНА: ПАУЗА" if bg_run else "ПОЗАДИНА: ПРОДОЛЖИ", not bg_run, 15):
+                    photobg.stop() if bg_run else photobg.start()
+                y += 34
             y += 6
             hw = (lw - 40) // 2
             if not running:
