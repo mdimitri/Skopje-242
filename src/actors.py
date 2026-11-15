@@ -932,7 +932,11 @@ def clear_secs(sim):
 
 
 class Ped:
+    _n = 0
+
     def __init__(self):
+        Ped._n += 1
+        self.pid = Ped._n            # identity for the voice colour (each pedestrian speaks a little differently)
         self.mode = "walk"           # walk | dead | flee | rage | air
         self.t = 0.0
         self.vx = self.vy = 0.0
@@ -1241,7 +1245,7 @@ class Peds:
         for x, y in ((a, b), (b, a)):
             x.mode, x.t, x.foe, x.atk_cd = "brawl", rng.uniform(7, 14), y, rng.uniform(0.2, 0.9)
         ev("shout", text=talk.react("fight", a.arch, self.sim, lines("fight", a.arch), rng), x=a.x, y=a.y,
-           who=vehicles.PED_NAMES[a.arch])
+           who=vehicles.ped_who(a))
 
     _SOLID = ("walk", "flee", "rage", "brawl", "fight", "play")
 
@@ -1324,7 +1328,7 @@ class Peds:
         text = bible_lines.bump(vehicles.PED_IDS[p.arch], stage, lang, rng) or bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
         if not talk.allowed(text, lang):
             text = bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
-        ev("shout", text=text, x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+        ev("shout", text=text, x=p.x, y=p.y, who=vehicles.ped_who(p))
         if stage == 3:
             if kid:                                               # children shout, then run to mama
                 p.mode, p.t = "flee", 4.0
@@ -1435,7 +1439,7 @@ class Peds:
                             lang_ = getattr(self.sim, "lang", 1) if self.sim else 1
                             text_ = bible_lines.bump(vehicles.PED_IDS[p.arch], 0, lang_, rng) or bump_lines.line(vehicles.PED_IDS[p.arch], 0, rng)
                             if talk.allowed(text_, lang_):
-                                ev("shout", text=text_, x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                                ev("shout", text=text_, x=p.x, y=p.y, who=vehicles.ped_who(p))
                     elif p.mode == "walk" and getattr(b, "speed", 9.0) < 0.3:                  # steer round a standing car a step or two ahead
                         ah_ = push_from_box(b, p.x + math.cos(p.h) * 1.1, p.y + math.sin(p.h) * 1.1, 0.55)
                         if ah_ is not None:
@@ -1454,7 +1458,7 @@ class Peds:
                             p.mode, p.t = "flee", 2.6
                             p.vx, p.vy = -fyb * side * 5.0, fxb * side * 5.0       # sideways, out of its path
                             if rng.random() < 0.5:
-                                ev("shout", text=talk.react("panic", p.arch, self.sim, lines("panic", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                                ev("shout", text=talk.react("panic", p.arch, self.sim, lines("panic", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
                             break
             if p.mode == "walk":                                  # traffic cars too
                 for b in _near(g_a, p.x, p.y):
@@ -1507,9 +1511,9 @@ class Peds:
                             o.mode, o.t, o.foe = "ko", rng.uniform(5.0, 8.0), None
                             p.mode, p.t = "flee", 3.0
                             p.vx, p.vy = -dx / d * 3.0, -dy / d * 3.0
-                            ev("shout", text=talk.react("ko", o.arch, self.sim, lines("ko", o.arch), rng), x=o.x, y=o.y, who=vehicles.PED_NAMES[o.arch])
+                            ev("shout", text=talk.react("ko", o.arch, self.sim, lines("ko", o.arch), rng), x=o.x, y=o.y, who=vehicles.ped_who(o))
                         elif rng.random() < 0.25:
-                            ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                            ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
                 if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
@@ -1530,7 +1534,7 @@ class Peds:
                         p.mode, p.t, p.vx, p.vy = "flee", 0.05, 0.0, 0.0
                         if rng.random() < 0.5:
                             ev("shout", text=rng.choice((TXT("actors.0008"), TXT("actors.0009"), TXT("actors.0010"), TXT("actors.0011"))),
-                               x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                               x=p.x, y=p.y, who=vehicles.ped_who(p))
                         out.append(p)
                         continue
                     dx, dy = wk.x - p.x, wk.y - p.y
@@ -1561,7 +1565,7 @@ class Peds:
                                 wk.cause = "fight"
                             ev("hurt", ped=p, dmg=dmg)
                             if rng.random() < 0.3:
-                                ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                                ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
                 if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
@@ -1643,7 +1647,7 @@ class Peds:
             if p.say_t <= 0:
                 p.say_t = rng.uniform(10, 28) / max(0.05, getattr(self.sim, "speech_freq", 1.0))
                 if (p.x - fx) ** 2 + (p.y - fy) ** 2 < 22 ** 2:
-                    ev("shout", text=talk.say(p, self.sim, rng) if self.sim else rng.choice(lines("idle", p.arch)), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                    ev("shout", text=talk.say(p, self.sim, rng) if self.sim else rng.choice(lines("idle", p.arch)), x=p.x, y=p.y, who=vehicles.ped_who(p))
             if self._d2(p.x, p.y, fx, fy) < 300 ** 2:
                 out.append(p)
         if self.hall is not None:                  # people who wander into the GTC hall leave: they would ignore its walls
@@ -2902,17 +2906,17 @@ class Sim:
         elif p.mode in ("walk", "flee", "rage"):
             if rng.random() < (vehicles.FIGHT[p.arch][1] + 0.12) * (0.3, 1.0, 1.8, 3.0)[self.aggro % 4]:
                 p.mode, p.t = "fight", 14.0
-                self.ev("shout", text=talk.react("fight", p.arch, self, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                self.ev("shout", text=talk.react("fight", p.arch, self, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
             else:
                 p.mode, p.t = "flee", 3.0
                 p.vx, p.vy = fx * 3.4, fy * 3.4
-                self.ev("shout", text=talk.react("hit", p.arch, self, lines("hit", p.arch), rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+                self.ev("shout", text=talk.react("hit", p.arch, self, lines("hit", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
 
     def _knock_out(self, p):
         p.mode, p.t = "ko", self.rng.uniform(6.0, 9.0)
         self.stats["ko"] = self.stats.get("ko", 0) + 1
         self.ev("ko", x=p.x, y=p.y)
-        self.ev("shout", text=talk.react("ko", p.arch, self, lines("ko", p.arch), self.rng), x=p.x, y=p.y, who=vehicles.PED_NAMES[p.arch])
+        self.ev("shout", text=talk.react("ko", p.arch, self, lines("ko", p.arch), self.rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
         if not p.looted:
             p.looted = True
             self.pickups.append([p.x + self.rng.uniform(-0.4, 0.4), p.y + self.rng.uniform(-0.4, 0.4), "cash", True, 0.0])
@@ -3031,7 +3035,7 @@ class Sim:
                 if n < 2 and rng.random() < 0.35:
                     n += 1
                     self.ev("shout", text=talk.react("gun", p.arch, self, talk.GUN_PANIC, rng), x=p.x, y=p.y,
-                            who=vehicles.PED_NAMES[p.arch])
+                            who=vehicles.ped_who(p))
 
     def blast(self, x, y):
         """Rocket impact: burning wrecks, people thrown, a crater."""

@@ -695,6 +695,7 @@ def main():
         sim.dens_traffic, sim.dens_peds = c.traffic_mult, c.ped_mult
         sim.services.amb_on, sim.services.fire_on = c["ambulance"], c["fire"]
         spk.set_engine(c["voice"])
+        spk.set_colour(c["voice_colour"])
         spk.set_speed(settings_mod.SPEECH_SPEEDS[c["speech_speed"] % len(settings_mod.SPEECH_SPEEDS)])
         sim.aggro, sim.lang = c["aggro"], c["lang"]
         sim.speech_freq = settings_mod.SPEECH_FREQ[c["speech_freq"] % len(settings_mod.SPEECH_FREQ)]

@@ -329,6 +329,11 @@ _P = [
 ]
 PED_IDS = [p[0] for p in _P]                                      # internal keys (models, fight table)
 PED_NAMES = [MK_PED.get(p[0], p[0]) for p in _P]                    # what the player reads
+
+
+def ped_who(p):
+    """Speaker id of one pedestrian: its kind plus its own number, so each gets its own voice colour."""
+    return PED_NAMES[p.arch] + "#" + str(getattr(p, "pid", 0))
 PED_SPEED = [p[1] for p in _P]
 PED_W = [p[2] for p in _P]
 PED_LINES = {i: MK_LINES.get(p[0], []) for i, p in enumerate(_P)}

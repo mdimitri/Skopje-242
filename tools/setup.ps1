@@ -166,6 +166,13 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { Say "pyosmium could not be installed - the map will come from Overpass." }
 }
 # the Macedonian voice: Suze for RHVoice, through Windows speech (SAPI); a failure never blocks the game
+# optional: per-character voice colour (WORLD vocoder). Never fatal - without it plain Suze speaks.
+& $py -c "import pyworld, scipy" 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Say "Installing the optional voice-colour libraries (pyworld, scipy) ..."
+    [void](Pip-Install @('pyworld', 'scipy'))
+}
+
 Step 'Voice (Suze, RHVoice)'
 & $py -c "import comtypes" 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { & $py -m pip install --disable-pip-version-check --no-warn-script-location comtypes 2>&1 | Out-Host }

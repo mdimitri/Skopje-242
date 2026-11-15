@@ -212,6 +212,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (2, Row("choice", TXT("menu.0034"), "aggro", S.AGGRO, bar=True, note=TXT("menu.0035"))),
         (2, H("Разговори")),
         (2, Row("choice", TXT("menu.0032"), "speech_freq", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_FREQ], bar=True, note=TXT("menu.0033"))),
+        (2, Row("toggle", "Посебен глас за секој лик и пешак", "voice_colour", note="боја, висина и тембар на гласот се различни за секого (бара pyworld; инаку зборува чистиот Сузе)")),
         (2, Row("choice", TXT("menu.0036"), "lang", S.LANGUAGE, note=TXT("menu.0037"))),
         (3, H("Екран")),
         (3, Row("choice", TXT("menu.0008"), "resolution", [S.res_label(w, h) for w, h in S.RESOLUTIONS])),

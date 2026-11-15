@@ -294,6 +294,21 @@ class SuzeVoice:
         except Exception as e:  # noqa: BLE001 - not Windows / no SAPI: formant voice
             self.state, self.note = "error", (TXT("speech.0153") + f'{str(e)[:80]}')
 
+    def synth_raw(self, text, speed=1.0):
+        """Plain Suze at the given speed -> float32 array at 22050 Hz (input of the voice colour stage) or None."""
+        if self.state != "ready" or not text.strip():
+            return None
+        self._v.Rate = max(-10, min(10, int(round((speed - 1.0) * 10))))
+        cc = self._cc
+        ms = cc.CreateObject("SAPI.SpMemoryStream")
+        fmt = cc.CreateObject("SAPI.SpAudioFormat")
+        fmt.Type = 22
+        ms.Format = fmt
+        self._v.AudioOutputStream = ms
+        self._v.Speak(text.strip(), 0)
+        wav = np.frombuffer(bytes(ms.GetData()), dtype=np.int16).astype(np.float32) / 32768.0
+        return wav if wav.size >= 100 else None
+
     def synth(self, text, who="", speed=1.0):
         """-> (int16 array, sample rate) or None.  Suze is a female voice: males are pitched down, children up, and
         rough / soft / old speakers get rate, loudness, grit or a tremble from `profile`."""
@@ -337,6 +352,20 @@ def shape(wav, p):
     return (wav * p["vol"] * 32767).astype(np.int16)
 
 
+_VL = []
+
+
+def _voicelab():
+    """The voice colour module, or None when pyworld/scipy are not installed (then plain Suze speaks)."""
+    if not _VL:
+        try:
+            import voicelab
+            _VL.append(voicelab)
+        except Exception:  # noqa: BLE001
+            _VL.append(None)
+    return _VL[0]
+
+
 class SpeechWorker:
     """Synthesises on a background thread; the main thread polls for finished clips -> (key, pcm int16, sample rate)."""
 
@@ -346,6 +375,8 @@ class SpeechWorker:
         self.cache = {}
         self.dead = False
         self.speed = 1.3               # talking speed (menu); Suze via SAPI rate, the formant voice directly
+        self.colour = True             # per-speaker voice colour (voicelab, WORLD vocoder) on top of Suze
+        self._an = {}                  # text -> WORLD analysis of the plain Suze clip (shared by all speakers of that line)
         self.engine = 1                # 0 formant, 1 Suze (falls back to the formant voice when Suze is missing)
         self.neural = SuzeVoice()
         self.th = threading.Thread(target=self._run, daemon=True)
@@ -353,6 +384,11 @@ class SpeechWorker:
 
     def set_engine(self, e):
         self.engine = e
+
+    def set_colour(self, on):
+        if bool(on) != self.colour:
+            self.colour = bool(on)
+            self.cache.clear()
 
     def set_speed(self, mult):
         if abs(mult - getattr(self, "speed", 1.0)) > 1e-3:
@@ -364,6 +400,8 @@ class SpeechWorker:
 
     def request(self, key, text, who):
         eff = 1 if (self.engine == 1 and self.neural.state in ("ready", "idle")) else 0
+        if eff and self.colour and _voicelab() is not None:
+            eff = 2
         ck = (key, eff)
         if ck in self.cache:
             pcm, sr = self.cache[ck]
@@ -381,9 +419,11 @@ class SpeechWorker:
                 key, text, who, eff = self.q.get(timeout=0.3)
             except queue.Empty:
                 continue
-            eff = 1 if eff and self.neural.state == "ready" else 0
+            eff = (2 if eff == 2 else 1) if eff and self.neural.state == "ready" else 0
             try:
-                res = self.neural.synth(text, who, self.speed) if eff else None
+                res = self._coloured(text, who) if eff == 2 else None
+                if res is None and eff:
+                    res = self.neural.synth(text, who, self.speed)
                 if res is None:
                     f0, sp, fm = voice_for(who)
                     res = (synth(text, f0, sp * self.speed, fm), SR)
@@ -393,6 +433,24 @@ class SpeechWorker:
                 self.done.put((key, res[0], res[1]))
             except Exception:  # noqa: BLE001 - speech is decoration, never fatal
                 pass
+
+    def _coloured(self, text, who):
+        """Suze -> voicelab (this speaker's own formants / pitch / texture).  None -> caller uses the plain path."""
+        vl = _voicelab()
+        try:
+            ck = (text, self.speed)
+            if ck not in self._an:
+                x = self.neural.synth_raw(text, self.speed)
+                if x is None:
+                    return None
+                self._an[ck] = (x, vl.analyse(x, 22050))
+                if len(self._an) > 16:
+                    self._an.pop(next(iter(self._an)))
+            x, an = self._an[ck]
+            y = vl.transform(x, vl.params_for(who, profile(who)), 22050, an)
+            return (y * profile(who)["vol"] * 32767).astype(np.int16), 22050
+        except Exception:  # noqa: BLE001 - never fatal: plain Suze takes over
+            return None
 
     def poll(self):
         try:
