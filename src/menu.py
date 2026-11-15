@@ -1054,10 +1054,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 150))
         font.exit_button()
         import photobg
-        photobg.sync(cfg)
-        pl_ = photobg.line()
-        if pl_:                                                 # the background photogrammetry's progress, bottom left
-            font.draw_text(font.fit(pl_, 16, max(200, x0 - 40)), 14, H - 30, 16, _th["mu"])
+        photobg.sync(cfg)                                       # (its progress line is drawn with the version label)
         if x0 - 24 >= 80:
             font.draw_version(W, H)
         else:                                                   # the panel covers the corner: the label goes in its top right, under the exit button

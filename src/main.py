@@ -639,6 +639,7 @@ def main():
         rl.close_window()
         os.execv(sys.executable, [sys.executable] + sys.argv + ["--rebuild"])
     photobg.set_ready()                                   # the world is in: the background photogrammetry may run now
+    photobg.sync(cfg)
     loader.tick(0.95, "pavement grid")
     world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
     sim.car.color = -1                                   # the player's own car gets racing stripes
@@ -2004,6 +2005,7 @@ def main():
         in_radio_ = sim.mode == "car" and car_radio.aud.ok
         hud.radio_line = car_radio.label() if in_radio_ else ""
         photobg.sync(cfg)                                 # the background photogrammetry follows its setting
+        hud.photo_line = photobg.line()
         hud.radio_keys = car_radio.keys_line() if in_radio_ else ""
         hud.radio_logo = car_radio.logo() if in_radio_ else None
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])

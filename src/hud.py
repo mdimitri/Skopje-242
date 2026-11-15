@@ -262,6 +262,7 @@ class Hud:
         self.radio_logo = None        # texture of the station's logo image, drawn left of the radio line
         self.radio_keys = ""          # key hint under the radio line
         self.radio_line = ""          # car radio station / song, drawn in the vehicle panel
+        self.photo_line = ""          # the background photogrammetry's progress (src/photobg.py), small, top centre
         self.place = ("", "", 0.0)   # neighbourhood tooltip: title, line, seconds left
         self.debug = False           # settings "debug": the map menu offers teleporting
         self.wp = None               # navigation waypoint (x, y) in metres, or None
@@ -442,6 +443,9 @@ class Hud:
                                        (TXT("hud.0008"), st["stolen"]), (TXT("hud.0009"), st["boom"]), (TXT("hud.0010"), st["deaths"]))):
             i += 2.1
             font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22) + (24 if mpv else 0), 20, rl.Color(250, 225, 120, 255) if i == 2.1 else rl.Color(235, 235, 235, 255))
+        if self.photo_line:
+            pw_ = font.measure_text(self.photo_line, 16)
+            font.draw_text(font.fit(self.photo_line, 16, sw - 40), max(20, (sw - pw_) // 2), 6, 16, rl.Color(225, 225, 235, 200))
         # ---- vehicle panel
         c = sim.car
         if sim.mode == "car":

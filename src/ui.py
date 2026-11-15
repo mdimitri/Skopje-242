@@ -662,11 +662,6 @@ class Loader:
         if self.radio_line:
             font.draw_text(font.fit(mk(self.radio_line), 14, w), x, y, 14, GREY)
             y += 20
-        import photobg
-        pl_ = photobg.line()
-        if pl_:                                                # the background photogrammetry's progress
-            font.draw_text(font.fit(pl_, 14, w), x, y, 14, GREY)
-            y += 20
         return y
 
 

@@ -239,3 +239,7 @@ def draw_version(W, H):
     from updater import GAME_VERSION
     vt = "v" + GAME_VERSION
     draw_text(vt, 14, 52 + MUSIC_EXTRA, 25, rl.Color(232, 226, 232, 200), bold="cond")
+    import photobg                                   # the background photogrammetry's progress, under the version (splash and menus)
+    pl = photobg.line()
+    if pl:
+        draw_text(fit(pl, 18, max(300, W // 2)), 14, 84 + MUSIC_EXTRA, 18, rl.Color(232, 226, 232, 210))
