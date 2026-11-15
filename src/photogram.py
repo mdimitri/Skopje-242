@@ -1261,6 +1261,12 @@ def tuned(f, d):
     return f
 
 
+def fit_entry(f):
+    """What of a fit goes into the game's file."""
+    return {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
+                              "params", "surf", "rough", "tune", "h_photo", "agree") if k in f}
+
+
 def write_fits(blds, algo, path):
     """The game's file: only what differs from the generated look matters, the rest is for the viewer / later rounds."""
     out = {}
@@ -1268,9 +1274,7 @@ def write_fits(blds, algo, path):
         f = b.fits.get(algo)
         if not f:
             continue
-        e = {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
-                               "params", "surf", "rough", "tune", "h_photo", "agree") if k in f}
-        out[str(b.id)] = e
+        out[str(b.id)] = fit_entry(f)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -1515,6 +1519,7 @@ class Job(threading.Thread):
         self.pose = self.settings["pose"]  # "fast" | "full" search of the camera position, "file" = as the file says
         self.stats = {}                  # per stage seconds, photos from the store, ... (the viewer's status lines)
         self.labels = {}                 # capture file -> label map (viewer overlay)
+        self.on_fit = None               # callback(building id, fit) as each building is fitted
         self.cur = (0, 0, "")            # (photo number, of how many, file) being labelled now (the background run's progress line)
 
     def log(self, s):
@@ -1602,6 +1607,11 @@ class Job(threading.Thread):
                 return
             b.fits[self.algo] = fb
             f = b.fits[self.algo]
+            if self.on_fit is not None:                  # the background run keeps every finished building at once
+                try:
+                    self.on_fit(bid, f)
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"  зграда {bid}: не се зачува веднаш ({e})")
             self.log(f"  зграда {bid}: {f['h']:.1f} м (од {b.gen['h']:.1f}), фасада {MATS.get(f.get('mat', b.gen['mat']))}"
                      + (f", кат {f['floor']:.2f} м, прозорец {f['bay']:.2f} м" if "floor" in f else "")
                      + (f", разлика {f['loss']:.2f}" if "loss" in f else ""))

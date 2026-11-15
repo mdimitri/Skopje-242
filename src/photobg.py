@@ -2,7 +2,7 @@
 
 A separate low-priority process (tools/photogram_full.py --bg) fits the buildings from every capture folder under
 <game>/Photogrametry, SegFormer included, while you play.  Every photo's result is stored as soon as it is done, so quitting the
-game stops the run and the next start continues it.  The fits made so far are written every few minutes; at the next start
+game stops the run and the next start continues it.  Every fitted building is saved the moment it is done; at the next start
 apply_pending() puts them into data/osm/photogram.json and the world is rebuilt with them (about as long as any rebuild).
 line() is the progress text for the title menu and the loading screen.
 """
@@ -48,12 +48,36 @@ def apply_pending(log=_log):
     """At the start, before the world is checked: newer background fits than the game has -> data/osm/photogram.json.
     -> True when it changed (the caller then rebuilds the world)."""
     src = os.path.join(PHOTOS, CACHE, "fit_detail.json")
+    journal = os.path.join(PHOTOS, CACHE, "fit_detail.new.jsonl")
     mark = os.path.join(OSM, "photogram.src.md5")
     try:
         with open(src, encoding="utf-8") as f:
             d = json.load(f)
     except (OSError, ValueError):
+        d = {"version": 1, "algo": "detail", "buildings": {}}
+    n_new = 0
+    try:                                  # buildings fitted since the fit file was written (each saved the moment it was done)
+        with open(journal, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    e = json.loads(ln)
+                except ValueError:
+                    continue              # the last line of a run killed mid-write
+                d["buildings"][e["id"]] = e["fit"]
+                n_new += 1
+    except OSError:
+        pass
+    if not d["buildings"]:
         return False
+    if n_new:
+        d["made"] = time.strftime("%Y-%m-%d %H:%M")
+        try:
+            with open(src + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(d, f, indent=0)
+            os.replace(src + ".tmp", src)
+            os.remove(journal)
+        except OSError as e:
+            log(f"could not merge the new buildings into the fit file: {e}")
     h = _hash_fits(d)
     try:
         with open(mark, encoding="utf-8") as f:

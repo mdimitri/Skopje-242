@@ -2,7 +2,7 @@
 Resumable: re-running continues from the stored per-photo results.
     python tools/photogram_full.py <capture folder>
     python tools/photogram_full.py <capture folder> --bg    (the game's background run, src/photobg.py: fewer worker processes,
-        progress in <folder>/_photogram/progress.json, the fits written every few minutes, stops when <folder>/_photogram/stop
+        progress in <folder>/_photogram/progress.json, every fitted building appended to _photogram/fit_detail.new.jsonl at once, stops when <folder>/_photogram/stop
         appears; the game applies the fits itself at its next start)
 """
 import argparse
@@ -13,7 +13,6 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
-CHECKPOINT = float(os.environ.get("SK242_PG_CHECKPOINT", 300))                       # seconds between fit files written while a background run goes on
 
 
 def _write(path, d):
@@ -43,8 +42,16 @@ def main():
         st["workers"] = max(1, (os.cpu_count() or 4) // 2 - 1)
     pg.save_settings(folder, st, op)
     job = pg.Job(folder, "detail", None, osm_dir, settings=st)
+    journal = os.path.join(cache, "fit_detail.new.jsonl")
+    if a.bg:                              # every building as soon as it is fitted: one line each (the game merges them at its start)
+        jf = open(journal, "a", encoding="utf-8")
+
+        def on_fit(bid, f):
+            jf.write(json.dumps({"id": str(bid), "fit": pg.fit_entry(f)}, ensure_ascii=False) + "\n")
+            jf.flush()
+        job.on_fit = on_fit
     job.start()
-    t0 = last_ck = last_p = time.time()
+    t0 = last_p = time.time()
     while job.is_alive():
         job.join(1.0)
         now = time.time()
@@ -53,12 +60,6 @@ def main():
             _write(prog, {"frac": round(job.frac, 4), "n": n, "N": N, "file": f, "step": job.step, "done": False, "t": now})
             if os.path.exists(stopf):
                 job.stop = True
-            if now - last_ck > CHECKPOINT and job.blds:
-                try:                       # what is fitted so far: the game applies it at its next start
-                    pg.write_fits(job.blds, "detail", os.path.join(cache, "fit_detail.json"))
-                except Exception as e:  # noqa: BLE001 - a fit changing under us; the next checkpoint writes it
-                    print("[photogram_full] checkpoint skipped:", e, flush=True)
-                last_ck = now
         if now - last_p > 60:
             print(f"[progress] {now - t0:7.0f}s  {job.frac * 100:5.1f}%  {job.step}  stats={job.stats}", flush=True)
             last_p = now
@@ -68,6 +69,9 @@ def main():
             _write(prog, {"frac": round(job.frac, 4), "n": 0, "N": 0, "file": "", "step": "", "done": False, "error": job.error, "t": time.time()})
         sys.exit(1)
     if a.bg:
+        jf.close()
+        if os.path.exists(os.path.join(cache, "fit_detail.json")):   # all of it is in the fit file now
+            os.remove(journal)
         done_n = sum(1 for c in (job.caps or ()) if c.exists and os.path.exists(pg._store_path(pg.job_store(folder, "detail"), c.file)))
         tot = sum(1 for c in (job.caps or ()) if c.exists)
         _write(prog, {"frac": 1.0 if not job.stop else round(done_n / max(1, tot), 4), "n": 0, "N": len(job.caps or ()), "file": "", "step": "",
