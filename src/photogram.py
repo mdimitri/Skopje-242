@@ -24,7 +24,10 @@ import threading
 import time
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFile
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True           # a capture cut short while it was written still has a usable top part
+IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EYE = 2.5                      # Street View camera height above the ground (m)
@@ -104,7 +107,7 @@ class Capture:
     def __init__(self, row, folder):
         self.idx = row.get("idx", "")
         self.file = row["file"]
-        self.path = os.path.join(folder, self.file)
+        self.path = _find_image(os.path.join(folder, self.file))
         try:
             self.bid = int(float(row.get("osm_building_id") or 0))
         except ValueError:
@@ -128,7 +131,9 @@ class Capture:
             try:
                 with Image.open(self.path) as im:
                     self.W, self.H = im.size
-            except OSError:
+                if self.W < 64 or self.H < 64 or os.path.getsize(self.path) < 2048:
+                    self.exists = False                 # an empty / error page, not a photo
+            except Exception:  # noqa: BLE001 - any unreadable file is just skipped (bad header, huge, unknown format)
                 self.exists = False
         self.status = ""                                # what the builder made of it (viewer)
 
@@ -157,7 +162,17 @@ class Capture:
         return self.W / 2 + f * (d @ right) / zs, self.H / 2 - f * (d @ up) / zs, zc
 
     def image(self):
-        return np.asarray(Image.open(self.path).convert("RGB"))
+        with Image.open(self.path) as im:
+            return np.asarray(im.convert("RGB"))
+
+    def cache(self):
+        """The work folder of this capture's own photo folder (labels are kept next to the photos they belong to)."""
+        d = os.path.join(os.path.dirname(self.path), CACHE)
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def label_path(self, seg_name):
+        return os.path.join(self.cache(), os.path.splitext(os.path.basename(self.file))[0] + f".{seg_name}.png")
 
     def ui_mask(self):
         """True where the screenshot shows the map page instead of the street."""
@@ -168,19 +183,85 @@ class Capture:
         return m
 
 
-def read_manifest(folder):
-    """manifest.csv (or any *.csv with a 'file' column) -> [Capture]."""
+def _find_image(path):
+    """The photo the manifest names, or the same name with another image extension / letter case (captures were saved as
+    PNG first, JPEG later); the given path when there is none."""
+    if os.path.exists(path):
+        return path
+    d, stem = os.path.dirname(path), os.path.splitext(os.path.basename(path))[0].lower()
+    try:
+        names = _DIR_CACHE.get(d)
+        if names is None:
+            names = _DIR_CACHE[d] = {}
+            for n in os.listdir(d):
+                st_, ext = os.path.splitext(n)
+                if ext.lower() in IMG_EXT:
+                    names.setdefault(st_.lower(), n)
+        n = names.get(stem)
+        return os.path.join(d, n) if n else path
+    except OSError:
+        return path
+
+
+_DIR_CACHE = {}
+
+
+def manifest_dirs(folder):
+    """Every folder at or under `folder` with a manifest (manifest.csv or another *.csv with a 'file' column)."""
+    out = []
+    for d, subs, files in os.walk(folder):
+        subs[:] = sorted(x for x in subs if x != CACHE and not x.startswith("."))
+        if any(f.lower().endswith((".csv", ".csf")) for f in files):
+            out.append(d)
+    return out
+
+
+def _read_one(top, folder, prefix, log=None):
     names = ["manifest.csv"] + sorted(f for f in os.listdir(folder) if f.lower().endswith((".csv", ".csf")) and f != "manifest.csv")
     for n in names:
         p = os.path.join(folder, n)
         if not os.path.exists(p):
             continue
-        with open(p, encoding="utf-8-sig", newline="") as f:
-            rows = list(csv.DictReader(f))
-        if rows and "file" in rows[0]:
-            caps = [Capture(r, folder) for r in rows]
-            return sorted(caps, key=lambda c: c.file)
-    raise FileNotFoundError(f"no manifest.csv in {folder}")
+        try:
+            with open(p, encoding="utf-8-sig", newline="", errors="replace") as f:
+                rows = list(csv.DictReader(f))
+        except (OSError, csv.Error) as e:
+            if log:
+                log(f"{p}: не се чита ({e})")
+            continue
+        if not rows or "file" not in rows[0]:
+            continue
+        caps, bad = [], 0
+        for r in rows:
+            if not (r.get("file") or "").strip():
+                bad += 1
+                continue
+            r = dict(r, file=(prefix + "/" if prefix else "") + r["file"].strip())
+            try:
+                caps.append(Capture(r, top))
+            except (ValueError, TypeError, KeyError):
+                bad += 1                                 # a broken row (empty lat / heading ...) is skipped
+        if bad and log:
+            log(f"{p}: {bad} неисправни редови прескокнати")
+        return caps
+    return []
+
+
+def read_manifest(folder, log=None):
+    """manifest.csv (or any *.csv with a 'file' column) -> [Capture].  A folder without one of its own reads every folder under
+    it that has one (D:\\GTA\\Photogrametry\\<run>\\...), each capture named by its path from `folder`."""
+    caps = []
+    for d in manifest_dirs(folder):
+        rel = os.path.relpath(d, folder).replace(os.sep, "/")
+        caps += _read_one(folder, d, "" if rel == "." else rel, log)
+        if rel == ".":
+            break                                        # a folder with its own manifest is one capture set
+    if not caps:
+        raise FileNotFoundError(f"no manifest.csv in {folder}")
+    seen = {}
+    for c in caps:                                       # the same photo listed twice: once is enough
+        seen.setdefault(c.file, c)
+    return sorted(seen.values(), key=lambda c: c.file)
 
 
 # ------------------------------------------------------------------------------------------------------------ buildings
@@ -1299,7 +1380,9 @@ def job_signature(st, algo, seg_name):
 
 
 def _store_path(store, file):
-    return os.path.join(store, os.path.splitext(file)[0] + ".pkl")
+    p = os.path.join(store, os.path.splitext(file)[0] + ".pkl")
+    os.makedirs(os.path.dirname(p), exist_ok=True)       # captures from sub-folders keep their folder in the store
+    return p
 
 
 def _store_put(store, file, r):
@@ -1432,6 +1515,7 @@ class Job(threading.Thread):
         self.pose = self.settings["pose"]  # "fast" | "full" search of the camera position, "file" = as the file says
         self.stats = {}                  # per stage seconds, photos from the store, ... (the viewer's status lines)
         self.labels = {}                 # capture file -> label map (viewer overlay)
+        self.cur = (0, 0, "")            # (photo number, of how many, file) being labelled now (the background run's progress line)
 
     def log(self, s):
         self.log_lines.append(s)
@@ -1592,12 +1676,21 @@ class Job(threading.Thread):
                     drain()
                     continue
             self.step = f"снимка {i + 1}/{len(caps)}: сегментација ({nw} процеси работат)"
+            self.cur = (i + 1, len(caps), c.file)
             self.version += 1
             ts = time.time()
-            lp = os.path.join(cache, os.path.splitext(c.file)[0] + f".{seg.name}.png")
-            lab = segment._cached(lp) if os.path.exists(lp) else None
-            if lab is None or lab.shape != (c.H, c.W):
-                lab = seg.labels(c.image(), lp)
+            lp = c.label_path(seg.name)
+            try:
+                lab = segment._cached(lp) if os.path.exists(lp) else None
+                if lab is None or lab.shape != (c.H, c.W):
+                    lab = seg.labels(c.image(), lp)
+            except Exception as e:  # noqa: BLE001 - an unreadable photo is skipped, never the whole build
+                self.log(f"{c.file}: сликата не се чита ({type(e).__name__}: {str(e)[:80]}), се прескокнува")
+                c.status = "грешка: " + type(e).__name__
+                self.stats["failed"] = self.stats.get("failed", 0) + 1
+                left[c.bid] -= 1
+                nback[0] += 1
+                continue
             self.stats["seg"] = self.stats.get("seg", 0.0) + time.time() - ts
             self.labels[c.file] = lab
             lab = lab.copy()

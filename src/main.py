@@ -531,6 +531,9 @@ def main():
         set_borderless(True)
     rl.set_target_fps(0 if a.test else 144)
 
+    import photobg
+    photobg.ENABLED = bool(cfg["photogram_bg"])
+    photo_new = photobg.ENABLED and not (a.demo or a.world or a.test) and photobg.apply_pending(log)   # fits from the background run
     need = plan_needs(a)
     music = None
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
@@ -541,6 +544,8 @@ def main():
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
     if need and not unbuilt:
         need["build"] = False                                          # out of date is fine: rebuilt only from the menu
+    if photo_new and need:
+        need["build"] = True                                           # new photo-fitted buildings: in the world now
     if a.rebuild or a.refresh:
         need["build"] = True
     elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)
@@ -633,6 +638,7 @@ def main():
         log(f"[build] the saved world is out of date and unusable ({e!r}); restarting with a rebuild")
         rl.close_window()
         os.execv(sys.executable, [sys.executable] + sys.argv + ["--rebuild"])
+    photobg.set_ready()                                   # the world is in: the background photogrammetry may run now
     loader.tick(0.95, "pavement grid")
     world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
     sim.car.color = -1                                   # the player's own car gets racing stripes
@@ -1997,6 +2003,7 @@ def main():
                     break
         in_radio_ = sim.mode == "car" and car_radio.aud.ok
         hud.radio_line = car_radio.label() if in_radio_ else ""
+        photobg.sync(cfg)                                 # the background photogrammetry follows its setting
         hud.radio_keys = car_radio.keys_line() if in_radio_ else ""
         hud.radio_logo = car_radio.logo() if in_radio_ else None
         song = guard.run("radio", car_radio.update, dt, sim.mode == "car", cfg["vol_radio"])
@@ -2231,6 +2238,7 @@ def main():
         print(f"[test] ped modes {dict(_c.Counter(p.mode for p in sim.peds.list))} queues {sum(len(q) for q in sim.transit.queue.values())} "
               f"buses {len(sim.transit.buses)} on/off {sim.transit.served} riding {sim.riding is not None} broken {len(getattr(world, 'broken', []))}")
     modelpool.stop()
+    photobg.stop()
     if sim.tproc is not None:
         sim.tproc.stop()
     rl.close_window()

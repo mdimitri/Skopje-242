@@ -240,6 +240,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
         (4, Row("toggle", "Алатки за развивачи", "debug_tools", note="го прикажува копчето ФОТОГРАМЕТРИЈА на почетното мени (не се зачувува)")),
+        (4, Row("toggle", "Фотограметрија во позадина", "photogram_bg", note="ги вклопува зградите од снимките во папката Photogrametry додека играте; напредокот се чува, а новите згради се гледаат по следното стартување (светот се гради одново)")),
         (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
         (4, Row("toggle", "Без апсење", "debug_nolaw", note="полиција и војска не те бркаат и не те апсат (за дебагирање, не се зачувува)")),
         (5, H("Јачина")),
@@ -1052,6 +1053,11 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if settings_only and music is not None and x0 - 24 - 150 > 60:      # beside the panel, if there is room
             music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 150))
         font.exit_button()
+        import photobg
+        photobg.sync(cfg)
+        pl_ = photobg.line()
+        if pl_:                                                 # the background photogrammetry's progress, bottom left
+            font.draw_text(font.fit(pl_, 16, max(200, x0 - 40)), 14, H - 30, 16, _th["mu"])
         if x0 - 24 >= 80:
             font.draw_version(W, H)
         else:                                                   # the panel covers the corner: the label goes in its top right, under the exit button

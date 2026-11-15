@@ -594,13 +594,13 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         import segment
         labs = job.labels.get(c.file) if job is not None else None
         if labs is None:
-            for lp in glob_.glob(os.path.join(cache, glob_.escape(os.path.splitext(c.file)[0]) + ".*.png")):
+            for lp in glob_.glob(os.path.join(c.cache(), glob_.escape(os.path.splitext(os.path.basename(c.file))[0]) + ".*.png")):
                 if lp.endswith((".thumb.jpg", ".labels.png")):
                     continue
                 labs = segment._cached(lp)
                 if labs is not None:
                     break
-        tp = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
+        tp = os.path.join(c.cache(), os.path.splitext(os.path.basename(c.file))[0] + ".thumb.jpg")
         if labs is None or not os.path.exists(tp):
             return None
         ph = np.asarray(Image.open(tp).convert("RGB").resize((480, 270)), np.float64)
@@ -773,7 +773,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         t_q = time.time()
         while thumb_q and time.time() - t_q < 0.012:
             c = thumb_q.pop(0)
-            p = os.path.join(cache, os.path.splitext(c.file)[0] + ".thumb.jpg")
+            p = os.path.join(c.cache(), os.path.splitext(os.path.basename(c.file))[0] + ".thumb.jpg")
             try:
                 if not os.path.exists(p):
                     Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
@@ -1245,7 +1245,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     labs = job.labels.get(sel.file) if job else None
                     if labs is not None and sel.file not in lab_tex:
                         small = LABEL_RGB[np.minimum(labs[::4, ::4], 5)]
-                        p = os.path.join(cache, os.path.splitext(sel.file)[0] + ".labels.png")
+                        p = os.path.join(sel.cache(), os.path.splitext(os.path.basename(sel.file))[0] + ".labels.png")
                         Image.fromarray(small).save(p)
                         lab_tex[sel.file] = rl.load_texture(p)
                     t = lab_tex.get(sel.file)
