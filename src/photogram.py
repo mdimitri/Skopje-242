@@ -47,7 +47,7 @@ OPTS = {"relief": True, "windows": True, "frames": True, "blinds": True, "sills"
         "eaves": True, "kit_on": True, "kit": [], "kit_auto": True, "kit_scope": "blocks", "style": "НИШТО",
         "inferred": "lite", "sat": 1.0, "lod": 400.0, "view": 500.0, "guard": True, "kit_off": [], "autotune": True}
 RESULT_KEYS = ("res", "dist", "pose", "seg", "priors", "sym", "min_px")       # these change the per-photo results
-CODE_VER = 3                      # bump when the per-photo results change meaning
+CODE_VER = 5                      # bump when the per-photo results change meaning
 VMAX = 90.0                    # highest facade point sampled (m)
 NEAR = 320.0                   # buildings this close to a capture are loaded (and may be inferred)
 CACHE = "_photogram"           # work folder inside the photo folder (labels, fits); never part of the game
@@ -112,6 +112,7 @@ class Capture:
         lat, lon = float(row["lat"]), float(row["lon"])
         self.yaw, self.pitch, self.fov = float(row["heading"]), float(row["pitch"]), float(row["fov"])
         m = URL_POSE.search(row.get("final_url") or "")
+        self.pano_known = bool((row.get("pano_lat") or "").strip() or m)   # Google reported where the panorama really is
         if (row.get("pano_lat") or "").strip():
             lat, lon = float(row["pano_lat"]), float(row["pano_lng"])
         elif m:                                         # where the pano really is (a few metres from the asked-for point)
@@ -384,6 +385,11 @@ def facade_views(cap, img, lab, ui, blds, edges, only=None, min_px=1500):
                 hit = (np.abs(den) > 1e-9) & (t > 0.02) & (t < 0.985) & (s >= 0) & (s <= 1) & ~self_edge[None, :]
                 lim = np.where(hit, eye[1] + (etop[None, :] - eye[1]) / np.where(hit, t, 1.0), -1e9)
                 thr = lim.max(1) - b.base
+                # another building BEHIND this wall along the ray: building pixels above this wall's top may be that one
+                hb = (np.abs(den) > 1e-9) & (t > 1.03) & (t < 8.0) & (s >= 0) & (s <= 1) & (eown != b.id)[None, :]
+                behind = hb.any(1)
+            else:
+                behind = np.zeros(nu, bool)
             occluded = vs[:, None] < thr[None, :]
             ui_ = np.ones_like(inimg)
             ui_[inimg] = ui[v[inimg].astype(int), u[inimg].astype(int)]
@@ -394,6 +400,7 @@ def facade_views(cap, img, lab, ui, blds, edges, only=None, min_px=1500):
             rgb[ok] = img[iv, iu]
             lb[ok] = lab[iv, iu]
             o = Obs(cap, b, wi, a, bb, nrm, ln, rgb, lb, ok, thr)
+            o.behind = behind
             if o.n_build >= min_px:
                 out.append(o)
     return out
@@ -413,61 +420,90 @@ def _osm_h(b):
 
 
 def fit_height(obs, h0):
-    """Roof line from the building -> sky change in every column -> (height, confidence 0..1).
-    Robust to: a taller building behind (no sky above = no vote), trees over the roof (vegetation, not sky = no vote), a cut-off
-    top (only a lower bound), single wrong columns (inter-quartile trim), views that disagree (median of per-view medians)."""
-    per_view, lows = [], []
+    """Roof line from the building -> sky change in every column -> (height, confidence 0..1, captures that agree).
+    Columns with another building behind this wall (on the ray, from the OSM footprints) only give an UPPER bound: the sky edge
+    there may be that building's.  Clean columns give the height; views from different captures are solved together (weighted
+    median, then the votes within 15 % of it count as agreeing); cut-off clean columns are lower bounds."""
+    clean, upper, lows = [], [], []
     for o in obs:
         v, lw = (o.hv, o.lows) if isinstance(o, Slim) else _height_votes(o, h0)
         lows += lw
-        if v is not None:
-            per_view.append(v)
-    if per_view:
-        hs = np.array([v[0] for v in per_view])
-        n = sum(v[1] for v in per_view)
-        h = float(np.median(hs))
-        agree = 1.0 if len(hs) == 1 or float(hs.max() - hs.min()) < 4 else 0.6
-        spread = np.median([v[2] for v in per_view])
-        conf = min(1.0, n / 60.0) * agree * (1.0 if spread < 3 else 0.5)
-        return max(3.0, min(120.0, h)), conf
+        if v is None:
+            continue
+        cap = o.cap.file if hasattr(o.cap, "file") else id(o.cap)
+        if len(v) > 3 and v[3] is not None:
+            upper.append(v[3])
+        if v[0] is not None:
+            clean.append((v[0], v[1], v[2], cap))
+    if clean:
+        hs = np.array([c[0] for c in clean])
+        w = np.array([c[1] / (1.0 + c[2]) for c in clean])
+        h = _weighted_median(hs, w)
+        near = [c for c in clean if abs(c[0] - h) <= max(1.5, 0.15 * h)]
+        agree = len({c[3] for c in near})
+        n = sum(c[1] for c in near)
+        spread = float(np.median([c[2] for c in near])) if near else 9.0
+        conf = min(1.0, n / 60.0) * (1.0 if spread < 3 else 0.5) * (1.0 if len(near) == len(clean) else 0.7)
+        if agree >= 2:
+            conf = min(1.0, conf * 1.5 + 0.2)
+        if upper:                                         # never above what the contaminated columns allow
+            h = min(h, min(upper) + 1.0)
+    elif upper:
+        h, conf, agree = float(min(upper)), 0.25, 0
+    elif lows:
+        return max(h0, float(np.percentile(lows, 75))), 0.2, 0
+    else:
+        return h0, 0.0, 0
     if lows:
-        return max(h0, float(np.percentile(lows, 75))), 0.2
-    return h0, 0.0
+        lb = float(np.percentile(lows, 50))
+        if lb > h and (not upper or lb <= min(upper) + 1.0):
+            h = lb
+    return max(3.0, min(120.0, float(h))), conf, agree
 
 
 def _height_votes(o, h0):
-    """One view's roof-line vote: (median top, columns, spread) or None, and the lower bounds of cut-off columns."""
+    """One view's roof-line vote: ((median clean top, columns, spread, upper bound from columns with a building behind) or None,
+    the lower bounds of cut-off clean columns)."""
     lab, ok = o.lab, o.ok
     nv = lab.shape[0]
     isb = (lab == L_BUILDING) & ok
     issky = (lab == L_SKY) & ok
-    tops, lows = [], []
+    beh = getattr(o, "behind", None)
+    tops, dirty, lows = [], [], []
     for j in np.nonzero(isb.any(0))[0]:
         rows = np.nonzero(isb[:, j])[0]
         if rows[0] > max(6.0, 0.5 * h0) * RES:             # no facade low down in this column: a building behind, not this one
             continue
         top = rows[-1]
         above = np.nonzero(issky[top + 1:min(nv, top + 1 + int(2.0 * RES)), j])[0]
+        bj = beh is not None and j < len(beh) and bool(beh[j])
         if len(above):
-            tops.append((top + 1) / RES)
-        elif not ok[top + 1:, j].any():
+            (dirty if bj else tops).append((top + 1) / RES)
+        elif not ok[top + 1:, j].any() and not bj:
             lows.append((top + 1) / RES)
+    ub = float(np.percentile(dirty, 25)) if len(dirty) >= 6 else None
     if len(tops) < 6:
-        return None, lows
+        return ((None, 0, 9.0, ub) if ub is not None else None), lows
     t = np.array(tops)
     q1, q3 = np.percentile(t, [25, 75])
     t = t[(t >= q1 - 1.5 * (q3 - q1) - 1) & (t <= q3 + 1.5 * (q3 - q1) + 1)]
-    return (float(np.median(t)), len(t), float(q3 - q1)), lows
+    return (float(np.median(t)), len(t), float(q3 - q1), ub), lows
 
 
-def blend_height(b, h, conf):
-    """The photo height against what OSM says: the tag wins unless the photos are sure, and never moves it more than 35 %."""
+def blend_height(b, h, conf, agree=0):
+    """The photo height against what OSM says.  The tag wins unless the photos are sure; two or more captures that agree may
+    move it further (OSM storeys are often missing a floor or two) than one view (35 %)."""
     ho = _osm_h(b)
     if ho is None:                                   # no tag: the photo decides, within what this kind of building can be
         g = b.gen["h"]
         h = h if conf >= 0.3 else g + (h - g) * conf / 0.3
-        hi = 12.0 if b.kind() == "house" else (2.0 * g if b.area < 300 else 3.0 * g)
+        if b.kind() == "house":
+            hi = 18.0 if agree >= 2 else 12.0
+        else:
+            hi = (2.0 if b.area < 300 else 3.0) * g * (1.6 if agree >= 2 else 1.0)
         return float(np.clip(h, 0.5 * g, max(g, hi)))
+    if agree >= 2 and conf >= 0.7:
+        return float(np.clip(ho + (h - ho) * 0.8, ho * 0.6, ho * 1.7))
     w = min(1.0, conf) * 0.6
     return float(np.clip(ho + (h - ho) * w, ho * 0.65, ho * 1.35))
 
@@ -484,7 +520,18 @@ def _rows(o, h, lo=None):
 def fit_colours(obs, h):
     """(wall colour, window colour) of the building pixels: two clusters, the bigger brighter one is the wall."""
     # the photo already carries its own light: no division by the game's baked wall shade (that clipped light walls to white)
-    px = np.concatenate([o.px.astype(np.float32) if isinstance(o, Slim) else o.rgb[_rows(o, h)] for o in obs]) if obs else np.zeros((0, 3))
+    # every view counts the same (not by its pixel count), with its exposure matched to the others': Street View panoramas
+    # of one building are shot on different days and in different light
+    sets = [o.px.astype(np.float32) if isinstance(o, Slim) else o.rgb[_rows(o, h)] for o in obs]
+    sets = [q for q in sets if len(q) >= 30]
+    if len(sets) > 1:
+        lm = [float(np.median(q @ np.array([0.3, 0.59, 0.11]))) for q in sets]
+        ref = float(np.median(lm))
+        rng = np.random.default_rng(2)
+        k = min(3000, min(len(q) for q in sets) * 3)
+        sets = [np.clip(q * float(np.clip(ref / max(l_, 1.0), 0.7, 1.4)), 0, 255)[rng.choice(len(q), min(k, len(q)), replace=False)]
+                for q, l_ in zip(sets, lm)]
+    px = np.concatenate(sets) if sets else np.zeros((0, 3))
     if len(px) < 50:
         return None, None
     if len(px) > 40000:
@@ -656,6 +703,10 @@ def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
     tgt = blds.get(cap.bid)
     free = tgt is not None and not tgt.tags.get("building:levels") and not tgt.tags.get("height")
     seen = {}
+    # how far the panorama can really be from the recorded point: a few metres when Google reported its position, a snap to the
+    # next panorama on the street otherwise.  (The old window, 50 m back, let the search push the camera 30-40 m back behind
+    # the street, and every height measured from that photo then came out 1.5-2x too tall.)
+    BK0, BK1, LT = (-4.0, 4.0, 4.0) if getattr(cap, "pano_known", False) else (-10.0, 12.0, 12.0)
 
     def score(back, lat, dy, m):
         k = (round(back, 2), round(lat, 2), round(dy, 2), round(m, 2))
@@ -664,7 +715,7 @@ def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
             cap.dyaw = dy
             pred = _silhouette(cap, near, lambda b: b.gen["h"] * (m if b is tgt else 1.0), L.shape, step)
             a, nb = pred & valid, ~pred & valid
-            seen[k] = float(isb[a].mean() - isb[nb].mean()) if a.sum() >= 20 and nb.sum() >= 20 else -9.0
+            seen[k] = float(isb[a].mean() - isb[nb].mean()) - 0.004 * math.hypot(back, lat) if a.sum() >= 20 and nb.sum() >= 20 else -9.0
         return seen[k]
     if not near or isb[valid].sum() < 50:
         return 0.0, 0.0, 0.0, 1.0, 0.0
@@ -673,10 +724,10 @@ def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
     best = (s0, 0.0, 0.0, 0.0, 1.0)
     ms = (1.0, 1.5, 2.0, 2.5, 3.0) if free else (1.0,)
     if mode == "full":
-        grid = [(bk, lt, dy, m) for bk in np.arange(-10, 50.1, 2.5) for lt in np.arange(-15, 15.1, 2.5)
+        grid = [(bk, lt, dy, m) for bk in np.arange(BK0, BK1 + 0.1, 2.0) for lt in np.arange(-LT, LT + 0.1, 2.0)
                 for dy in (-3.0, -1.5, 0.0, 1.5, 3.0) for m in ms]
     else:
-        grid = [(bk, lt, 0.0, m) for bk in np.arange(-10, 50.1, 10.0) for lt in (-15.0, -7.5, 0.0, 7.5, 15.0)
+        grid = [(bk, lt, 0.0, m) for bk in np.linspace(BK0, BK1, 4) for lt in (-LT, -LT / 2, 0.0, LT / 2, LT)
                 for m in ((1.0, 2.0, 3.0) if free else (1.0,))]
     for g in grid:
         if stop():
@@ -685,7 +736,7 @@ def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
         if sc > best[0] + 1e-4:
             best = (sc, *g)
     if mode != "full":                      # halving pattern search round the best grid point
-        st = [5.0, 3.75, 1.5, 0.5 if free else 0.0]
+        st = [min(5.0, (BK1 - BK0) / 4), min(3.75, LT / 2), 1.5, 0.5 if free else 0.0]
         while st[0] >= 1.2 and not stop():
             moved = False
             for i in range(4):
@@ -694,7 +745,7 @@ def fit_position(cap, lab, blds, log=None, mode="fast", stop=lambda: False):
                 for sgn in (-1, 1):
                     c = list(best[1:])
                     c[i] += sgn * st[i]
-                    c[0], c[1] = float(np.clip(c[0], -10, 50)), float(np.clip(c[1], -15, 15))
+                    c[0], c[1] = float(np.clip(c[0], BK0, BK1)), float(np.clip(c[1], -LT, LT))
                     c[2], c[3] = float(np.clip(c[2], -3, 3)), float(np.clip(c[3], 1.0, 3.0))
                     sc = score(*c)
                     if sc > best[0] + 1e-4:
@@ -837,6 +888,17 @@ def roof_shape(b, walls, bands, roofcs, log=None):
     traps = [o for o in obs if o[0]["kind"] == "trap"]
     levels = [o for o in obs if o[0]["kind"] == "level" and o[0]["band"] >= 0.8]
     axis, high = None, None
+    # every wall votes with its width: one odd profile (a dormer, a tree) no longer decides the whole roof
+    wsum = lambda L: sum(o[0]["w"] for o in L)
+    score = {"gable": wsum(gables), "hip": wsum([o for o in peaks if o not in gables]) + wsum(traps), "shed": wsum(sheds),
+             "level": wsum(levels)}
+    win_ = max(score, key=lambda k: (score[k], -list(score).index(k)))
+    if score[win_] > 0:
+        gables = gables if win_ == "gable" else []
+        if win_ not in ("gable", "hip"):
+            peaks, traps = [], []
+        if win_ != "shed":
+            sheds = []
     if gables:
         o = max(gables, key=lambda o: o[0]["w"])
         kind, rise, axis = "gable", o[0]["rise"], o[4]                  # the gable wall is in the photo's plane: no correction
@@ -865,6 +927,20 @@ def roof_shape(b, walls, bands, roofcs, log=None):
     ext = np.ptp(ring, 0)
     if kind == "hip" and axis is None and max(ext) < 1.25 * max(1.0, min(ext)):
         kind = "pyramid"
+    # physically feasible: the slope a real roof of that kind has over this plan's half width (15-45 deg pitched, 8-30 deg shed)
+    pc = ring - ring.mean(0)
+    ev = np.linalg.eigh(pc.T @ pc)[1]
+    span = np.ptp(pc @ ev, 0)
+    hw = 0.5 * max(2.0, float(min(span)))
+    if axis is not None:
+        ax_ = np.array(axis, float) / max(1e-6, float(np.hypot(*axis)))
+        hw = 0.5 * max(2.0, float(np.ptp(pc @ np.array([-ax_[1], ax_[0]]))))
+    if kind in ("gable", "hip", "pyramid"):
+        rise = float(np.clip(rise, math.tan(math.radians(15)) * hw, min(9.0, math.tan(math.radians(45)) * hw)))
+    elif kind == "shed":
+        rise = float(np.clip(rise, math.tan(math.radians(8)) * 2 * hw, min(6.0, math.tan(math.radians(30)) * 2 * hw)))
+    elif kind == "mansard":
+        rise = float(np.clip(rise, 0.0, 3.5))
     eaves = [o[0]["eave"] for o in obs if o[0].get("eave", 0) > 0]
     eave = float(np.median(eaves)) if eaves else (0.45 if kind in ("gable", "hip", "pyramid", "shed") else 0.0)
     chim, hous = [], []
@@ -898,9 +974,9 @@ def fit_detail(b, obs, log=None):
     floor grid, bay columns and their procedural parameters).  Only numbers come out: no photo pixel reaches the game."""
     import facade
     good = [o for o in obs if o.n_build >= 0.25 * max(1, o.n_ok if isinstance(o, Slim) else int(o.ok.sum()))] or obs
-    h_raw, hc = fit_height(good, max(b.gen["h"], getattr(b, "h_seen", 0.0)))
-    h = blend_height(b, h_raw, hc)
-    out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(good)}
+    h_raw, hc, agree = fit_height(good, max(b.gen["h"], getattr(b, "h_seen", 0.0)))
+    h = blend_height(b, h_raw, hc, agree)
+    out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(good), "agree": agree}
     wall, win = fit_colours(good, h)
     if wall is not None:
         out["wallc"] = [int(v) for v in wall]
@@ -951,11 +1027,18 @@ def fit_detail(b, obs, log=None):
     if seen:
         wt = _weighted_median([f["walltop"] for f in seen], [f["ln"] for f in seen])
         top = _weighted_median([f["top"] for f in seen], [f["ln"] for f in seen])
-        if not (b.tags.get("height") or b.tags.get("building:levels")) or abs(top - b.gen["h"]) < 0.4 * b.gen["h"]:
+        # the facade's own wall top only where it agrees with the solved height (it reads the same, maybe borrowed, sky edge)
+        if abs(wt - out["h"]) <= max(1.5, 0.2 * out["h"]):
             out["h"] = round(max(2.5, wt), 1)
-            out["h_top"] = round(top, 1)
-    elif getattr(b, "h_seen", 0.0) > out["h"]:
+            if top - wt <= 9.0:
+                out["h_top"] = round(top, 1)
+    elif out["h"] < getattr(b, "h_seen", 0.0) <= 1.3 * out["h"]:
         out["h"] = round(b.h_seen, 1)
+    for f in walls:                       # one wall top for the whole building, so the roof meets every facade
+        hw = out["h"]
+        f["secs"] = [[s_[0], s_[1], round(hw + s_[3], 2) if (abs(s_[2] - s_[3] - hw) < max(2.0, 0.25 * hw) or agree < 2) else s_[2],
+                      s_[3], *s_[4:]] for s_ in f["secs"]]
+        f["walltop"] = hw
     bands = [s[3] for f in walls for s in f["secs"] if s[3] > 0]
     roofcs = [f["roofc"] for f in walls if f.get("roofc")]
     best = max(walls, key=lambda f: f["ln"] * (1 + len(f["cols"])))
@@ -982,8 +1065,8 @@ def fit_building(b, obs, algo, texs, log=None):
     # views that are mostly something else (trees, cars) only add noise when there are better ones
     good = [o for o in obs if o.n_build >= 0.25 * max(1, int(o.ok.sum()))]
     obs = good or obs
-    h_raw, hc = fit_height(obs, b.gen["h"])
-    h = blend_height(b, h_raw, hc)
+    h_raw, hc, agree = fit_height(obs, b.gen["h"])
+    h = blend_height(b, h_raw, hc, agree)
     out = {"h": round(h, 1), "h_photo": round(h_raw, 1), "src": "photo", "conf": round(hc, 2), "views": len(obs)}
     wall, win = fit_colours(obs, h)
     mat = b.gen["mat"]
@@ -1040,6 +1123,10 @@ def infer(blds, algo, k=3):
         if d[order[0]] > 250:
             b.fits.pop(algo, None)
             continue
+        # a close neighbour on the same street lends its whole facade; further off only the street's colour and storey,
+        # so unseen buildings stop being copies of one fitted building
+        st_ = b.tags.get("addr:street")
+        near_ = d[order[0]] <= 60 or (st_ and d[order[0]] <= 120 and done[same[order[0]]].tags.get("addr:street") == st_)
         src = [done[same[i]].fits[algo] for i in order]
         w = 1.0 / (1.0 + d[order])
         f = {"src": "inferred", "conf": round(float(0.5 / (1 + d[order[0]] / 60)), 2), "from": [done[same[i]].id for i in order]}
@@ -1048,14 +1135,14 @@ def infer(blds, algo, k=3):
             f["wallc"] = [int(v) for v in sum(c * wi for c, wi in cs) / sum(wi for _, wi in cs)]
         if "mat" in src[0]:
             f["mat"], f["floor"], f["bay"] = src[0]["mat"], src[0].get("floor", 3.2), src[0].get("bay", 3.4)
-        if "cycle" in src[0]:                       # the nearest fitted building's columns (windows, balconies, ...) on every wall
+        if "cycle" in src[0] and near_:                       # the nearest fitted building's columns (windows, balconies, ...) on every wall
             f.update(cycle=src[0]["cycle"], params=src[0]["params"], floor=src[0]["floor"], bay=src[0]["bay"],
                      surf=src[0]["surf"], rough=src[0]["rough"])
             if "roof" in src[0] and (src[0]["roof"]["kind"] in ("flat", "mansard")) == (not (b.kind() == "house" or b.area < 400)):
                 f["roof"] = {k: v for k, v in src[0]["roof"].items() if k not in ("chim", "hous", "axis", "high")}   # world positions: its own
                 f["roofc"] = src[0]["roofc"]
         t = b.tags
-        if not t.get("height") and not t.get("building:levels"):          # OSM gives no height: the neighbours' fitted one
+        if not t.get("height") and not t.get("building:levels") and d[order[0]] <= 120:   # OSM gives no height: the neighbours' fitted one
             hs = [s["h"] for s, o in zip(src, order) if 0.4 < done[same[o]].area / max(b.area, 1) < 2.5]
             if hs:
                 f["h"] = round(float(np.median(hs)), 1)
@@ -1101,7 +1188,7 @@ def write_fits(blds, algo, path):
         if not f:
             continue
         e = {k: f[k] for k in ("h", "mat", "wallc", "roofc", "floor", "bay", "pitched", "src", "conf", "walls", "roof", "cycle",
-                               "params", "surf", "rough", "tune") if k in f}
+                               "params", "surf", "rough", "tune", "h_photo", "agree") if k in f}
         out[str(b.id)] = e
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
@@ -1517,6 +1604,8 @@ class Job(threading.Thread):
             lab[c.ui_mask()] = L_NONE
             pk = poses.get(c.file)
             pk = pk if (pk and (pk[4] == "full" or pk[4] == self.pose)) else None
+            if pk and (abs(pk[0]) > (4.0 if c.pano_known else 12.0) or abs(pk[1]) > (4.0 if c.pano_known else 12.0)):
+                pk = None                                 # found by the older, much wider search: search again
             cap_f[ex.submit(_w_capture, c.file, c.x0, c.z0, self.pose, pk, lab)] = c
             while len(cap_f) >= 2 * nw and not self.stop:   # a bounded queue: the views of many photos are big
                 drain(True)
