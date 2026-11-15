@@ -39,11 +39,11 @@ Extras: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `
 
 ### Steal anything with wheels (and a few things without)
 
-About a hundred vehicle models, all made of honest boxes: Yugos and Ficos, Lada Nivas, Trabants, Golf Dvojkas, the diaspora Passat loaded to the roof, taxis, police cars, ambulances, fire trucks, a double-decker city bus, the Skopje-Ohrid coach, a wedding limousine, a Belarus tractor, tankers, bikes, mopeds and e-scooters. Dents, fires and explosions are included. The tyres steer. The back end swings out. Yes, you can drift.
+About a hundred vehicle models, all made of honest boxes: Yugos and Fichos, Lada Nivas, Trabants, Golf Dvojkas, the diaspora Passat loaded to the roof, taxis, police cars, ambulances, fire trucks, a double-decker city bus, the Skopje-Ohrid coach, a wedding limousine, a IMT tractor, tankers, bikes, mopeds and e-scooters. Dents, fires and explosions are included. The tyres steer. The back end swings out. Yes, you can drift.
 
-<p align="center"><img src="screenshots/hero_cars.jpg" width="900" alt="Yugo, Golf, taxi, Fico, police Skoda, ambulance, fire truck, double-decker bus, wedding limousine, tractor, medical helicopter and a БТР-80 in 3/4 view"></p>
+<p align="center"><img src="screenshots/hero_cars.jpg" width="900" alt="Yugo, Golf, taxi, Fičo, police car, ambulance, fire truck, double-decker bus, wedding limousine, tractor, medical helicopter and a БТР-80 in 3/4 view"></p>
 
-<p align="center"><sub>A few of them, straight from the game's model renderer (labels are the internal names). Yes, the last one is an armoured personnel carrier. We'll get to that.</sub></p>
+<p align="center"><sub>A few of them, straight from the game's model renderer (labels are the in-game names). Yes, the last one is an armoured personnel carrier. We'll get to that.</sub></p>
 
 ### Take the helicopter
 
