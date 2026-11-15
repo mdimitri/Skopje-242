@@ -471,7 +471,8 @@ def _hms(s):
     return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60}:{s % 60:02d}"
 
 
-TABS = ["ГРАДИ", "ПОСТАВКИ", "ЕЛЕМЕНТИ", "ПРОБА", "ДНЕВНИК"]
+TABS = ["ГЛАВНО", "ИЗГЛЕД", "ДЕБАГ"]
+DEBUG_TABS = ["ПОСТАВКИ", "ПРОБА", "ДНЕВНИК"]      # the developer pages, under ДЕБАГ
 SHOW = [("relief", "релјеф (испусти / вовлекувања)"), ("windows", "прозорци"), ("frames", "рамки и пречки"),
         ("blinds", "ролетни"), ("sills", "подпрозорници"), ("balconies", "балкони"), ("ac", "клима уреди"),
         ("bands", "венци и ленти"), ("ground", "приземје (свој изглед)"), ("steps", "повлечени катови"),
@@ -479,7 +480,7 @@ SHOW = [("relief", "релјеф (испусти / вовлекувања)"), ("
         ("roof_extras", "оџаци и кабини"), ("eaves", "стреи")]
 
 
-def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None, test=""):
+def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None, test="", cfg=None):
     """-> 'changed' when the game's choice of buildings changed (the world has to be built again), else None.
     frames / shot: headless test (run that many frames, save the last one)."""
     import archkit
@@ -511,6 +512,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     pf = os.path.abspath(photobg.PHOTOS)
     bg_folder = os.path.abspath(folder) == pf or os.path.abspath(folder).startswith(pf + os.sep)
     bg_ver, bg_t, bg_sig = 0, 0.0, None
+    keep_ids, kept_job = set(), None                 # buildings a finished proof run fitted here: the background ones do not cover them
 
     def bg_load():
         """What the background run has fitted so far -> the buildings' ДЕТАЛИ look (until a build here takes over)."""
@@ -528,7 +530,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         k_ = 0
         for i_, f_ in photobg.read_fits()[0]["buildings"].items():
             b_ = blds.get(int(i_))
-            if b_ is not None and b_.fits.get("detail") != f_:
+            if b_ is not None and b_.id not in keep_ids and b_.fits.get("detail") != f_:
                 b_.fits["detail"] = f_
                 b_.version += 1
                 k_ += 1
@@ -550,7 +552,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     orb = Orbit(cen)
     sel = next((c for c in caps if c.exists), None)
     show_fr, show_ph, panel_mode, alpha = True, True, 0, 0.55
-    tab, scr = 0, [0, 0, 0, 0, 10 ** 9]              # the left panel's tab and each tab's scroll
+    tab, dbg, scr = 0, 0, [0, 0, 0, 0, 10 ** 9]      # the left panel's tab, the ДЕБАГ page, each page's scroll
     proof = set()                                   # photos ticked for a proof run
     group = "сè"
     groups = ["сè"] + sorted({e[3] for e in archkit.ELEMENTS})
@@ -563,7 +565,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     if "panel=" in test:
         panel_mode = int(test.split("panel=")[1][0])
     if "tab=" in test:
-        tab = int(test.split("tab=")[1][0])
+        tab, dbg = {0: (0, 0), 1: (2, 0), 2: (1, 0), 3: (2, 1), 4: (2, 2)}[int(test.split("tab=")[1][0])]   # the old page numbers
     if "style=" in test:
         nm_ = list(archkit.STYLES)[int(test.split("style=")[1].split(",")[0])]
         op.update(style=nm_, kit=list(archkit.STYLES[nm_]), kit_scope="all")
@@ -590,6 +592,22 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         job.start()
         t_job, look = time.time(), True
         say(("ПРОБА на " + str(len(only)) + " снимки" if only else "ГРАДЕЊЕ на сите снимки") + f" · {algo} · поставки зачувани")
+
+    def bg_toggle():
+        """The background run is the build: on = it runs here and while you play (the setting), off = paused, progress kept."""
+        on_ = not photobg.running()
+        if cfg is not None and cfg["photogram_bg"] != on_:
+            cfg["photogram_bg"] = on_
+            cfg.save()
+        photobg.ENABLED = on_
+        if on_:
+            pg.save_settings(folder, st, op)
+            photobg._finished = False
+            photobg.start()
+            say("пресметката тече: продолжува и додека играте")
+        else:
+            photobg.stop()
+            say("пресметката е паузирана: напредокот е зачуван")
 
     def opts_changed():
         nonlocal opt_t
@@ -823,7 +841,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         algo = "detail"                                       # ДЕТАЛИ: procedural windows, balconies, AC, roofs, surfaces
         running = job is not None and not job.done
         shift = rl.is_key_down(rl.KEY_LEFT_SHIFT) or rl.is_key_down(rl.KEY_RIGHT_SHIFT)
-        for i, k in enumerate((rl.KEY_F1, rl.KEY_F2, rl.KEY_F3, rl.KEY_F4, rl.KEY_F5)):
+        for i, k in enumerate((rl.KEY_F1, rl.KEY_F2, rl.KEY_F3)):
             if rl.is_key_pressed(k):
                 tab = i
         if rl.is_key_pressed(rl.KEY_F):
@@ -846,7 +864,12 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         if sel is not None and rl.is_key_pressed(rl.KEY_K):
             proof ^= {sel.file}
         if rl.is_key_pressed(rl.KEY_R) and not running:
-            start_job(set(proof) if shift and proof else None)
+            if shift and proof:
+                start_job(set(proof))
+            elif bg_folder:
+                bg_toggle()
+            elif not shift:
+                start_job()
         if running and rl.is_key_pressed(rl.KEY_SPACE):
             job.pause = not job.pause
         orb.update(over_ui)
@@ -870,7 +893,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         here = orb.free.eye() if orb.free is not None else orb.t          # where the camera is / looks
         if focus is None or math.hypot(here[0] - focus[0], here[2] - focus[1]) > min(lod, view, 1e6) / 4:
             focus = (float(here[0]), float(here[2]))
-        if bg_folder and job is None and time.time() - bg_t > 3.0:     # the background run's new buildings, every 3 s
+        if job is not None and job.done and kept_job is not job:     # a run here ended: its buildings stay, the rest from the background
+            kept_job, bg_sig, bg_t = job, None, 0.0
+            keep_ids = {b.id for b in blds.values() if algo in b.fits} if job.only else set()
+        if bg_folder and not running and time.time() - bg_t > 3.0:     # the background run's new buildings, every 3 s
             bg_t = time.time()
             bg_load()
         want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view, bg_ver)
@@ -935,103 +961,94 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         y += 38
         tw_ = (lw - 16) // len(TABS)
         for i, tn in enumerate(TABS):
-            if _button(8 + i * tw_, y, tw_ - 3, 26, tn, i == tab, 13):
+            if _button(8 + i * tw_, y, tw_ - 3, 26, tn + f" F{i + 1}", i == tab, 13):
                 tab = i
         y += 34
+        if tab == 2:
+            dw_ = (lw - 16) // len(DEBUG_TABS)
+            for i, tn in enumerate(DEBUG_TABS):
+                if _button(8 + i * dw_, y, dw_ - 3, 22, tn, i == dbg, 12):
+                    dbg = i
+            y += 30
+        page = (0, 2, (1, 3, 4)[dbg])[tab]                    # 0 main · 1 engine settings · 2 look · 3 proof · 4 log
         wheel = rl.get_mouse_wheel_move() if m.x < lw else 0.0
         bottom = H - 118                                         # the always-there progress block starts here
         changed_res = not status[1]
-        if tab == 0:                                            # ---- build
-            have = sum(1 for b in blds.values() if algo in b.fits)
-            font.draw_text("ДЕТАЛИ" + (f"  ({have} згради)" if have else ""), 16, y, 16, INK, bold="cond")
-            y += 22
-            if bg_folder and photobg.ENABLED and not running:     # the background run: pause / resume it from here
-                bg_run = photobg.running()
-                if _button(16, y, lw - 32, 28, "ПОЗАДИНА: ПАУЗА" if bg_run else "ПОЗАДИНА: ПРОДОЛЖИ", not bg_run, 15):
-                    photobg.stop() if bg_run else photobg.start()
-                y += 34
-            y += 6
+        if page == 0:                                           # ---- main: the build, step by step
+            nphoto = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo")
+            ninf = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "inferred")
             hw = (lw - 40) // 2
-            if not running:
-                if _button(16, y, hw, 38, "ИЗГРАДИ СЕ (R)", False, 18):
-                    start_job()
-                if _button(24 + hw, y, hw, 38, f"ПРОБА ({len(proof)}) Shift+R", bool(proof), 16) and proof:
-                    start_job(set(proof))
+
+            def step(n_, title, y_):
+                rl.draw_circle(26, y_ + 9, 10, PINK)
+                font.draw_text(str(n_), 22, y_ + 1, 15, rl.WHITE, bold="cond")
+                font.draw_text(title, 44, y_, 16, INK, bold="cond")
+                return y_ + 24
+
+            def note(t_, y_, col=DIM):
+                font.draw_text(_fit(t_, 13, lw - 48), 44, y_, 13, col)
+                return y_ + 16
+            # 1. the build: the background run (it also runs while you play)
+            y = step(1, "ПРЕСМЕТАЈ ГИ ЗГРАДИТЕ", y)
+            if bg_folder:
+                bg_run = photobg.running()
+                if running:
+                    y = note("проба во тек: пресметката во позадина чека", y, PINK)
+                elif _button(44, y, lw - 60, 34, ("ПАУЗИРАЈ (R)" if bg_run else "ПОЧНИ / ПРОДОЛЖИ (R)"), bg_run, 16):
+                    bg_toggle()
+                y += 38 if not running else 4
+                ln_ = photobg.line() if bg_run else ""
+                y = note(ln_ or ("паузирано · напредокот е зачуван" if status[0] else "уште не е почната"), y, INK if bg_run else DIM)
+                y = note("работи во позадина, и додека играте; секоја зграда", y)
+                y = note("се зачувува штом е готова и се појавува тука", y)
             else:
-                if _button(16, y, hw, 38, "ПРОДОЛЖИ (Space)" if job.pause else "ПАУЗА (Space)", job.pause, 16):
-                    job.pause = not job.pause
-                if _button(24 + hw, y, hw, 38, "СТОП (се чува)" if not job.stop else "ЗАСТАНУВА ...", job.stop, 16):
-                    job.stop, job.pause = True, False
-            y += 44
-            nst, same = status
-            if nst:
-                font.draw_text((f"зачувани {nst} снимки: следното градење продолжува" if same else
-                                f"зачувани {nst} снимки, но поставките се сменети: почнува одново"), 16, y, 13,
-                               LOOK_COL["photo"] if same else PINK)
-            else:
-                font.draw_text("нема зачувано: градењето почнува од почеток", 16, y, 13, DIM)
-            y += 18
-            if nst and _button(16, y, lw - 32, 26, "ИСЧИСТИ ЗАЧУВАНО (пресметај сè одново)", False, 14) and not running:
-                pg.clear_job(folder, algo, poses=False)
-                status_t = 0.0
-                say("зачуваните резултати се избришани (позициите на камерите остануваат)")
-            y += 32
-            if _button(16, y, hw, 28, "ПРИКАЖИ: " + ("ФОТО" if look else "ТЕКОВНИ") + " (G)", look, 14):
+                if not running:
+                    if _button(44, y, lw - 60, 34, "ИЗГРАДИ СЕ (R)", False, 16):
+                        start_job()
+                else:
+                    if _button(44, y, hw - 14, 34, "ПРОДОЛЖИ (Space)" if job.pause else "ПАУЗА (Space)", job.pause, 15):
+                        job.pause = not job.pause
+                    if _button(36 + hw, y, hw - 4, 34, "СТОП (се чува)" if not job.stop else "ЗАСТАНУВА ...", job.stop, 15):
+                        job.stop, job.pause = True, False
+                y += 38
+                y = note("папка надвор од Photogrametry: се гради тука, не во позадина", y)
+            y += 10
+            # 2. look at them
+            y = step(2, "ПОГЛЕДНИ ГИ", y)
+            y = note(f"готови: {nphoto} од фото · {ninf} од соседи · {len(blds)} вкупно", y, INK)
+            if _button(44, y, lw - 60, 28, "ПРИКАЖИ: " + ("ПРЕСМЕТАНИ" if look else "ТЕКОВНИ ВО ИГРАТА") + " (G)", look, 14):
                 look = not look
-            if _button(24 + hw, y, hw, 28, "ПРИМЕНИ ВО ИГРАТА", False, 14):
-                if bg_folder and job is None:            # the background run's buildings so far (merged with its journal)
+            y += 32
+            y = note("клик на рамка: сликата десно · Tab следна слика", y)
+            y += 10
+            # 3. into the game
+            y = step(3, "СТАВИ ГИ ВО ИГРАТА", y)
+            if _button(44, y, lw - 60, 34, "ПРИМЕНИ ВО ИГРАТА", False, 16):
+                if bg_folder and not running:            # the background run's buildings so far (merged with its journal)
                     pg.save_settings(folder, st, op)
                     if photobg.apply_pending(say):
                         changed = True
-                        say("зградите од позадината се применети: светот се гради одново по излезот")
+                        say("применето: светот се гради одново по излезот")
                     else:
                         say("нема нови згради од последното градење")
-                else:
+                elif not running:
                     try:
                         pg.apply_to_game(folder, algo, osm_dir, op)
-                        say(f"photogram.json <- {algo} + елементи ({len(op['kit'])} во комплетот): важи по следното градење")
+                        say("применето: важи по следното градење на светот")
                         changed = True
                     except OSError as e:
-                        say(f"нема готов резултат за {algo} ({e.strerror})")
-            y += 34
-            if _button(16, y, hw, 28, "ОЦЕНИ СЛИЧНОСТ", False, 14) and not running:
-                evaluate([c for c in ok_caps if c.status or c.file in proof])
-            if _button(24 + hw, y, hw, 28, "ДОТЕРАЈ ПО СЛИКИТЕ", False, 14) and not running:
-                tune([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
-                evaluate([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
-            y += 32
-            v = _toggle(16, y, lw - 32, "чувар: исклучи стил што ја влошува сличноста", op["guard"], 13)
-            if v != op["guard"]:
-                op["guard"] = v
-                pg.save_settings(folder, st, op)
-            v = op.get("autotune", True)
-            v2 = _toggle(16, y + 22, lw - 32, "по проба: дотерај висина / катови по сликите", v, 13)
-            if v2 != v:
-                op["autotune"] = v2
-                pg.save_settings(folder, st, op)
-            y += 50
+                        say(f"нема готов резултат ({e.strerror})")
+            y += 38
+            y = note("при излез се бара потврда, па светот се гради", y)
+            y = note("одново (~9 мин); пресметката може да продолжи", y)
+            y += 6
             stg = pg.enabled(osm_dir)
-            lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ФОТО", False: "ТЕКОВНИ"}[stg]
-            if _button(16, y, lw - 32, 28, lab, bool(stg), 14) and stg is not None:
+            lab = "ЗГРАДИ ВО ИГРАТА: " + {None: "ТЕКОВНИ (нема фото)", True: "ОД ФОТО", False: "ТЕКОВНИ"}[stg]
+            if _button(44, y, lw - 60, 26, lab, bool(stg), 13) and stg is not None:
                 pg.set_enabled(not stg, osm_dir)
                 changed = True
                 say("се менува по следното градење на светот")
-            y += 38
-            nphoto = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "photo")
-            ninf = sum(1 for b in blds.values() if b.fits.get(algo, {}).get("src") == "inferred")
-            for ln in (f"згради {len(blds)} · од фото {nphoto} · од соседи {ninf}",
-                       f"снимки {len(ok_caps)} · обработени {sum(1 for c in ok_caps if c.status)} · за проба {len(proof)}",
-                       f"сцена: {scene.stats['verts'] / 1e6:.2f} M темиња, {scene.stats['ms'] / 1000:.1f} с"
-                       + (f" · обновува {int(scene.busy * 100)}%" if scene.want is not None else ""),
-                       f"комплет: {len(op['kit'])} елементи · {op['style']}" + (" · авто" if op["kit_auto"] else "")):
-                font.draw_text(ln, 16, y, 14, INK)
-                y += 19
-            if job is not None:
-                y += 6
-                for ln in job.log_lines[-max(0, (bottom - y) // 16):]:
-                    font.draw_text(_fit(ln, 13, lw - 32), 16, y, 13, DIM)
-                    y += 16
-        elif tab == 1:                                          # ---- engine settings
+        elif page == 1:                                         # ---- ДЕБАГ: engine settings
             nst, same = status
             font.draw_text("ПОСТАВКИ НА ПРЕСМЕТКАТА", 16, y, 16, INK, bold="cond")
             y += 22
@@ -1091,7 +1108,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             y += 36
             if running:
                 font.draw_text("за време на градењето поставките се заклучени", 16, y, 13, PINK)
-        elif tab == 2:                                          # ---- elements: what the numbers become (no new fit needed)
+        elif page == 2:                                         # ---- look: what the numbers become (no new fit needed)
             font.draw_text("ПРИКАЗ (важи веднаш, без ново градење)", 16, y, 15, INK, bold="cond")
             y += 22
             cw2 = (lw - 32) // 2
@@ -1170,7 +1187,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     op["kit"] = [i for i in op["kit"] if i != e[0]] + ([e[0]] if v else [])
                     opts_changed()
                 y += 21
-        elif tab == 3:                                          # ---- proof: tick photos, run only those
+        elif page == 3:                                         # ---- ДЕБАГ: proof, tick photos, run only those
             font.draw_text("ПРОБА НА ИЗБРАНИ СНИМКИ", 16, y, 16, INK, bold="cond")
             y += 22
             for ln in ("штиклирај снимки (K / Shift+клик на рамката / тука),", "па ПРОБА: се градат само зградите што тие ги гледаат.",
@@ -1192,9 +1209,23 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if _button(16, y, lw - 32, 34, f"ПРОБАЈ НА {len(proof)} СНИМКИ (Shift+R)", bool(proof), 17) and proof and not running:
                 start_job(set(proof))
             y += 40
-            if _button(16, y, lw - 32, 26, f"ОЦЕНИ ГИ ИЗБРАНИТЕ (PSNR / SSIM со сликата)", False, 13) and proof and not running:
+            if _button(16, y, lw - 32, 26, "ОЦЕНИ ГИ ИЗБРАНИТЕ (PSNR / SSIM со сликата)", False, 13) and proof and not running:
                 evaluate([c for c in ok_caps if c.file in proof])
-            y += 32
+            y += 30
+            if _button(16, y, lw - 32, 26, "ДОТЕРАЈ ПО СЛИКИТЕ (избраните / обработените)", False, 13) and not running:
+                tune([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
+                evaluate([c for c in ok_caps if c.file in proof] or [c for c in ok_caps if c.status])
+            y += 30
+            v = _toggle(16, y, lw - 32, "чувар: исклучи стил што ја влошува сличноста", op["guard"], 13)
+            if v != op["guard"]:
+                op["guard"] = v
+                pg.save_settings(folder, st, op)
+            v = op.get("autotune", True)
+            v2 = _toggle(16, y + 22, lw - 32, "по проба: дотерај висина / катови по сликите", v, 13)
+            if v2 != v:
+                op["autotune"] = v2
+                pg.save_settings(folder, st, op)
+            y += 48
             rows_ = max(1, (bottom - y) // 21)
             scr[3] = int(max(0, min(max(0, len(ok_caps) - rows_), scr[3] - wheel * 4)))
             for c in ok_caps[scr[3]:scr[3] + rows_]:
@@ -1211,9 +1242,15 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 font.draw_text(_fit((f"SSIM {sc_[1]:.2f} · {sc_[0]:.1f} dB" if sc_ else c.status) or "—", 12, lw - 230), 212, y + 4, 12,
                                (PINK if sc_[1] < 0.25 else LOOK_COL["photo"]) if sc_ else (LOOK_COL["photo"] if c.status else DIM))
                 y += 21
-        else:                                                   # ---- log + timings
+        else:                                                   # ---- ДЕБАГ: log + timings
             font.draw_text("ДНЕВНИК", 16, y, 16, INK, bold="cond")
             y += 22
+            for ln in (f"снимки {len(ok_caps)} · обработени {sum(1 for c in ok_caps if c.status)} · за проба {len(proof)}",
+                       f"сцена: {scene.stats['verts'] / 1e6:.2f} M темиња, {scene.stats['ms'] / 1000:.1f} с"
+                       + (f" · обновува {int(scene.busy * 100)}%" if scene.want is not None else ""),
+                       f"комплет: {len(op['kit'])} елементи · {op['style']}" + (" · авто" if op["kit_auto"] else "")):
+                font.draw_text(ln, 16, y, 13, INK)
+                y += 17
             if job is not None and job.stats:
                 s_ = job.stats
                 tt = sum(s_.get(k, 0.0) for k in ("colour", "pose", "walls", "analyse")) or 1.0
@@ -1258,7 +1295,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         if scene.want is not None:
             rl.draw_rectangle(16, y + 52, int((lw - 32) * scene.busy), 4, LOOK_COL["inferred"])
         font.draw_text("десно влечи · средно/Shift поместување · тркало зум · WASD/QE", 16, H - 46, 12, DIM)
-        font.draw_text("F рамки · T слики · V камера · K проба · R гради · F1-F5 табови", 16, H - 28, 12, DIM)
+        font.draw_text("F рамки · T слики · V камера · R пресметка · G приказ · F1-F3 табови", 16, H - 28, 12, DIM)
         # ---- right panel: the picked capture
         if sel is not None:
             x0 = W - pw

@@ -240,7 +240,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
         (4, Row("toggle", "Алатки за развивачи", "debug_tools", note="го прикажува копчето ФОТОГРАМЕТРИЈА на почетното мени (не се зачувува)")),
-        (4, Row("toggle", "Фотограметрија во позадина", "photogram_bg", note="ги вклопува зградите од снимките во папката Photogrametry додека играте; напредокот се чува, а новите згради се гледаат по следното стартување (светот се гради одново)")),
+        (4, Row("toggle", "Фотограметрија во позадина", "photogram_bg", note="ги пресметува зградите од снимките во папката Photogrametry додека играте; напредокот се чува. Во светот влегуваат од ФОТОГРАМЕТРИЈА → ПРИМЕНИ ВО ИГРАТА")),
         (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
         (4, Row("toggle", "Без апсење", "debug_nolaw", note="полиција и војска не те бркаат и не те апсат (за дебагирање, не се зачувува)")),
         (5, H("Јачина")),
@@ -709,7 +709,7 @@ def title_menu(aud=None, music=None, cfg=None):
         if armed and dev and ((over_p and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT)) or rl.is_key_pressed(rl.KEY_P)):
             go = False
             import photoview
-            if photoview.run(aud, music) == "changed" and WORLD["built"] and _confirm_rebuild():
+            if photoview.run(aud, music, cfg=cfg) == "changed" and WORLD["built"] and _confirm_rebuild():
                 return "rebuild"
             t_open = time.time()
         if go:
