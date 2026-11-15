@@ -118,7 +118,8 @@ def transform(x, p, sr=SR, cache=None):
         y = np.tanh(y * 2.5)
     y = y / (np.max(np.abs(y)) or 1.0)
     rms = np.sqrt(np.mean(y[np.abs(y) > 0.02] ** 2)) or 1.0                  # equal loudness across voices
-    y = np.clip(y * 0.12 / rms, -1, 1) * p.get("gain", 0.9)
+    y = np.clip(y * 0.12 / rms, -1, 1)
+    y = y / (np.max(np.abs(y)) or 1.0)                                       # peak 1: the caller scales by the speaker's volume
     return y.astype(np.float32)
 
 
@@ -185,7 +186,8 @@ for _k, _v in X.items():
 
 
 
-HERO_K = 1.2
+HERO_K = 0.9      # = level L2
+PED_K = 0.6       # = level L1 for the generic pedestrian voice (each pedestrian then varies around it)
 
 
 def params_for(who, prof):
@@ -210,20 +212,21 @@ def params_for(who, prof):
         p.update(breath=.3, tilt=-2)
     if prof.get("vib"):
         p.update(vib=.8, rate=.85, tilt=-3, fry=.3)
+    p = level(p, PED_K)
     u = rg.uniform
     p["f0"] *= math.exp(rg.gauss(0, .16))
     p["alpha"] *= math.exp(rg.gauss(0, .045))
     p["rng"] *= u(.8, 1.3)
     p["rate"] *= u(.9, 1.1)
-    p["tilt"] = p.get("tilt", 0) + rg.gauss(0, 2)
-    p["nasal"] = max(p.get("nasal", 0), u(0, .6) if rg.random() < .5 else 0)
+    p["tilt"] += rg.gauss(0, 2)
+    p["nasal"] = max(p["nasal"], u(0, .6) if rg.random() < .5 else 0)
     p["pres"] = u(0, .5)
     p["wobble"] = u(0, 1.2)
-    p["spread"] = rg.gauss(0, .1)
+    p["spread"] += rg.gauss(0, .1)
     if g == "m":
-        p["chest"] = max(p.get("chest", 0), u(0, .6))
+        p["chest"] = max(p["chest"], u(0, .6))
         if rg.random() < .3:
-            p["fry"] = max(p.get("fry", 0), u(.2, .5))
+            p["fry"] = max(p["fry"], u(.2, .5))
     else:
-        p["breath"] = max(p.get("breath", 0), u(0, .25))
-    return level(p, 1.0)
+        p["breath"] = max(p["breath"], u(0, .25))
+    return p
