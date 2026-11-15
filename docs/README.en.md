@@ -1,6 +1,6 @@
 <h1 align="center">СКОПЈЕ · 242</h1>
 <p align="center"><b>Section 242: unlawfully taking someone else's motor vehicle.</b><br>
-<i>You are about to commit it about four hundred times.</i></p>
+</p>
 
 <p align="center"><img src="screenshots/splash_v3.jpg" width="860" alt="Skopje 242: Rooftop Noir"></p>
 
@@ -23,8 +23,8 @@ Windows · Python + raylib · free · the whole game talks in Macedonian Cyrilli
 
 1. Download or clone this repo.
 2. Double-click **`run.bat`**.
-3. Go and get a coffee. The first launch installs Python and the libraries, downloads the OpenStreetMap data and terrain, and builds the city. After that it starts in seconds.
-4. Pick a character, walk up to any car, press **`F`**. Congratulations, you are now violating Article 242.
+3. The first launch installs Python and the libraries, downloads the OpenStreetMap data and terrain, and builds the city. After that it starts in seconds.
+4. Pick a character, walk up to any car, press **`F`**.
 
 Updates are painless: on launch the game checks GitHub, offers the newer version and restarts itself. Your saves, settings and music stay where they are.
 
