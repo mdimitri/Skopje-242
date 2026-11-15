@@ -1057,7 +1057,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             cfg.save()
             return "play"
         corner.avoid((x0 - 16, 90, pw + 32, H - 90), (W - 120, 10, 108, 34), (x0, 0, 420, 100))
-        if settings_only and music is not None:                 # beside / above the panel, wherever corner.py finds room
+        if (settings_only or in_game) and music is not None:    # beside / above the panel, wherever corner.py finds room
             music.widget(keys=False)
         font.exit_button()
         import photobg

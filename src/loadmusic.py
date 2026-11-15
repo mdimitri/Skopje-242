@@ -248,6 +248,11 @@ class LoadMusic:
         self._drop()
         self.title = ""
 
+    def poke(self, sec=1.6):
+        """Keep the bar open for a moment (a hotkey changed the station / song)."""
+        import time
+        self._idle = time.time() + sec
+
     def _symbol(self, x, y, S):
         """The radio symbol on the always-there button: a little set with an antenna, a dial and a speaker."""
         cx, cy = x + S / 2, y + S / 2
@@ -277,13 +282,13 @@ class LoadMusic:
         SW = max(200, min(420, W - X - S - 8 - 12))              # both stripes, the same width
         now = time.time()
         if getattr(self, "_idle", None) is None:
-            self._idle, self._exp = now, 1.0                      # open at first, so it is seen
+            self._idle, self._exp = now + 2.6, 1.0                # open for ~3 s at first, so it is seen
         m = font.pointer()
         reach = S + (8 + SW) * self._exp
         if (X <= m.x < X + reach and Y <= m.y < Y + S) or self.menu_open:
             self._idle = now
-        target = 1.0 if now - self._idle < 5.0 else 0.0
-        self._exp += (target - self._exp) * min(1.0, rl.get_frame_time() * 9.0)
+        target = 1.0 if now - self._idle < 0.4 else 0.0           # folds right after the mouse has left
+        self._exp += (target - self._exp) * min(1.0, rl.get_frame_time() * 14.0)
         if abs(self._exp - target) < 0.01:
             self._exp = target
         e = self._exp
@@ -431,3 +436,58 @@ class LoadMusic:
             rl.unload_sound(self.static)
         except Exception:  # noqa: BLE001
             pass
+
+
+class CarRadioView:
+    """The in-game car radio (radio.Radio) shown through the same button: LoadMusic's interface, driving the radio's own station / track."""
+
+    menu_open = False
+
+    def __init__(self, r):
+        self.r = r
+
+    @property
+    def ok(self):
+        return bool(self.r.aud.ok and self.r.stations)
+
+    @property
+    def stations(self):
+        return self.r.stations
+
+    @property
+    def sel(self):
+        return min(self.r.sel, len(self.r.stations) - 1)
+
+    @property
+    def title(self):
+        return "" if self.r.off else (self.r.now or "")
+
+    paused = False
+
+    def update(self):
+        pass
+
+    @property
+    def stopped(self):
+        return self.r.off
+
+    def skip(self, back=False):
+        self.r.skip(-1 if back else 1)
+
+    def toggle(self):
+        self.r.step(1 if self.r.off else len(self.r.stations) - self.r.sel)      # off -> the first station / playing -> the "off" slot
+
+    def stop(self):
+        if not self.r.off:
+            self.r.step(len(self.r.stations) - self.r.sel)
+
+    def station(self, d):
+        self.r.step(d)
+
+    def _logo(self):
+        return self.r.logo()
+
+    widget = LoadMusic.widget
+    _symbol = LoadMusic._symbol
+    _dropdown = LoadMusic._dropdown
+    poke = LoadMusic.poke

@@ -654,6 +654,8 @@ def main():
     loader.tick(0.99, "sound")
     print(f"[sound] library: {len(aud.lib)} sounds found, {aud.req[0]} new request files in sound_requests/ ({aud.req[2]} of {aud.req[1]} sounds done)")
     car_radio = radio_mod.Radio(aud)
+    import loadmusic as _lm
+    radio_view = _lm.CarRadioView(car_radio)                    # the same radio button as in the menus, at the same top-left spot
     cabin_music = radio_mod.CabinMusic(aud, car_radio)
     spk = SpeechWorker()
     night = Night(world)
@@ -1858,11 +1860,11 @@ def main():
                 else:
                     rl.enable_cursor()
                     mouse_grab = False
-                    res_ = menu_mod.run(cfg, apply_cfg, True, save_fn=lambda n_: savegame.save(sim, cfg, n_))
+                    res_ = menu_mod.run(cfg, apply_cfg, True, save_fn=lambda n_: savegame.save(sim, cfg, n_), music=radio_view)
                     if res_ == "quit":
                         break
                     if res_ == "mainmenu":                 # title menu in-process: the loaded world stays
-                        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud)
+                        res_ = menu_mod.run(cfg, apply_cfg, False, aud=aud, music=radio_view)
                         if res_ == "quit":
                             break
                         apply_cfg(cfg, True)
@@ -1878,7 +1880,7 @@ def main():
                         hud.set_banner(TXT("main.0039"), 3.0)
                         res_ = ""
                     if res_ == "chars":
-                        if menu_mod.pick_character(cfg, aud):
+                        if menu_mod.pick_character(cfg, aud, radio_view):
                             break
                         if not menu_mod.pick_character.back:
                             savegame.new_character(sim, cfg["lik"])
@@ -1892,7 +1894,7 @@ def main():
                             hud.set_banner(TXT("main.0039"), 3.0)
             if rl.is_key_pressed(rl.KEY_L) or want_chars:                  # L: switch character without opening the menu
                 want_chars = False
-                if menu_mod.pick_character(cfg, aud):
+                if menu_mod.pick_character(cfg, aud, radio_view):
                     break
                 if not menu_mod.pick_character.back:
                     savegame.new_character(sim, cfg["lik"])
@@ -1996,10 +1998,12 @@ def main():
             for k_, d_ in ((rl.KEY_E, 1), (rl.KEY_Q, -1)):                  # Q / E: previous / next station (genre)
                 if rl.is_key_pressed(k_):
                     hud.set_banner(car_radio.step(d_), 2.0)
+                    radio_view.poke()
                     break
             for k_, d_ in ((rl.KEY_PERIOD, 1), (rl.KEY_COMMA, -1)):         # , / .: previous / next track in the station
                 if rl.is_key_pressed(k_):
                     car_radio.skip(d_)
+                    radio_view.poke()
                     break
         in_radio_ = sim.mode == "car" and car_radio.aud.ok
         hud.radio_line = car_radio.label() if in_radio_ else ""
@@ -2165,17 +2169,19 @@ def main():
                 pois.draw(sim, sw, sh)
             if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
+            if not selfie.active:                       # the radio button: the same place as everywhere else
+                radio_view.widget(keys=False, station_keys=False)
             vs_ = spk.status()
             if vs_:
-                font.draw_text(TXT("main.0049") + vs_, 16, 62, 16, rl.Color(255, 220, 150, 220))
+                font.draw_text(TXT("main.0049") + vs_, 96, 62, 16, rl.Color(255, 220, 150, 220))
             if not a.test:
                 font.draw_text(TXT("main.0050"),
-                             16, sh - 30 if False else 36, 16, rl.Color(255, 255, 255, 170))
+                             96, sh - 30 if False else 36, 16, rl.Color(255, 255, 255, 170))
             if show_dbg:
                 font.draw_text(f"{rl.get_fps()} fps  {dt_real * 1000:.1f} ms | ground {renderer.drawn_chunks}/{len(streamer.ground)} "
                              f"meshes {renderer.drawn_meshes}/{len(streamer.meshes)} baked {streamer.baked} (last {streamer.bake_ms:.0f} ms) "
                              f"| cars {len(sim.traffic.cars)} bodies {len(sim.bodies)} peds {len(sim.peds.list)} "
-                             f"parts {len(particles.p)} | ppm {ppm:.1f} err {sum(guard.errors.values())}", 12, 10, 16, rl.Color(255, 255, 255, 255))
+                             f"parts {len(particles.p)} | ppm {ppm:.1f} err {sum(guard.errors.values())}", 96, 10, 16, rl.Color(255, 255, 255, 255))
             if not a.test:                                     # mouse buttons: options menu and exit, always on screen
                 bx_ = sw - 300 - 112 * 3
                 if font.button(TXT("main.0051"), bx_, 10, 104, 34):
