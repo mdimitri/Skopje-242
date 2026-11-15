@@ -979,12 +979,20 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if _button(16, y, hw, 28, "ПРИКАЖИ: " + ("ФОТО" if look else "ТЕКОВНИ") + " (G)", look, 14):
                 look = not look
             if _button(24 + hw, y, hw, 28, "ПРИМЕНИ ВО ИГРАТА", False, 14):
-                try:
-                    pg.apply_to_game(folder, algo, osm_dir, op)
-                    say(f"photogram.json <- {algo} + елементи ({len(op['kit'])} во комплетот): важи по следното градење")
-                    changed = True
-                except OSError as e:
-                    say(f"нема готов резултат за {algo} ({e.strerror})")
+                if bg_folder and job is None:            # the background run's buildings so far (merged with its journal)
+                    pg.save_settings(folder, st, op)
+                    if photobg.apply_pending(say):
+                        changed = True
+                        say("зградите од позадината се применети: светот се гради одново по излезот")
+                    else:
+                        say("нема нови згради од последното градење")
+                else:
+                    try:
+                        pg.apply_to_game(folder, algo, osm_dir, op)
+                        say(f"photogram.json <- {algo} + елементи ({len(op['kit'])} во комплетот): важи по следното градење")
+                        changed = True
+                    except OSError as e:
+                        say(f"нема готов резултат за {algo} ({e.strerror})")
             y += 34
             if _button(16, y, hw, 28, "ОЦЕНИ СЛИЧНОСТ", False, 14) and not running:
                 evaluate([c for c in ok_caps if c.status or c.file in proof])

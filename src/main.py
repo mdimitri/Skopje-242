@@ -535,7 +535,6 @@ def main():
 
     import photobg
     photobg.ENABLED = bool(cfg["photogram_bg"])
-    photo_new = photobg.ENABLED and not (a.demo or a.world or a.test) and photobg.apply_pending(log)   # fits from the background run
     need = plan_needs(a)
     music = None
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
@@ -546,8 +545,6 @@ def main():
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
     if need and not unbuilt:
         need["build"] = False                                          # out of date is fine: rebuilt only from the menu
-    if photo_new and need:
-        need["build"] = True                                           # new photo-fitted buildings: in the world now
     if a.rebuild or a.refresh:
         need["build"] = True
     elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)

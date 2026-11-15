@@ -74,8 +74,8 @@ def running():
 
 
 def apply_pending(log=_log):
-    """At the start, before the world is checked: newer background fits than the game has -> data/osm/photogram.json.
-    -> True when it changed (the caller then rebuilds the world)."""
+    """ПРИМЕНИ ВО ИГРАТА in the viewer: the background fits so far -> data/osm/photogram.json.
+    -> True when it changed (the world is then rebuilt; the mark is written once that build finishes)."""
     src = os.path.join(PHOTOS, CACHE, "fit_detail.json")
     journal = os.path.join(PHOTOS, CACHE, "fit_detail.new.jsonl")
     mark = os.path.join(OSM, "photogram.src.md5")
@@ -88,7 +88,8 @@ def apply_pending(log=_log):
             with open(src + ".tmp", "w", encoding="utf-8") as f:
                 json.dump(d, f, indent=0)
             os.replace(src + ".tmp", src)
-            os.remove(journal)
+            if not running():             # a running run still appends to it (its lines are merged again next time: same ids)
+                os.remove(journal)
         except OSError as e:
             log(f"could not merge the new buildings into the fit file: {e}")
     h = _hash_fits(d)
