@@ -86,7 +86,7 @@ Kiosks sell burek with yoghurt, tulumba, kebapi and a sandwich with ajvar. Walk 
 
 ## The cast
 
-24 playable characters, each with dozens of their own lines. Pick a pensioner, a taxi driver, a footballer, a doctor, an e-scooter kid... then meet the rest of the street: aunties with a rolling pin, an old man who knows how it was before, builders, cops, the bad-tempered neighbour. Everyone speaks in a distinct synthetic voice and in three levels of language: clean, street and uncensored.
+24 playable characters, each with dozens of their own lines. Pick a taxi driver, a doctor, an e-scooter kid, a selfie queen... then meet the rest of the street: aunties with a rolling pin, an old man who knows how it was before, builders, cops, the bad-tempered neighbour. Everyone speaks in a distinct synthetic voice and in three levels of language: clean, street and uncensored.
 
 <p align="center"><img src="docs/screenshots/select.jpg" width="900" alt="Character selection screen with 24 characters"></p>
 
