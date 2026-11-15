@@ -44,12 +44,10 @@ def _hash_fits(d):
     return hashlib.md5(json.dumps(d.get("buildings", {}), sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def apply_pending(log=_log):
-    """At the start, before the world is checked: newer background fits than the game has -> data/osm/photogram.json.
-    -> True when it changed (the caller then rebuilds the world)."""
+def read_fits():
+    """-> (fit file dict, buildings from the journal not in it yet).  Read only: the viewer shows them while the run goes on."""
     src = os.path.join(PHOTOS, CACHE, "fit_detail.json")
     journal = os.path.join(PHOTOS, CACHE, "fit_detail.new.jsonl")
-    mark = os.path.join(OSM, "photogram.src.md5")
     try:
         with open(src, encoding="utf-8") as f:
             d = json.load(f)
@@ -62,11 +60,25 @@ def apply_pending(log=_log):
                 try:
                     e = json.loads(ln)
                 except ValueError:
-                    continue              # the last line of a run killed mid-write
+                    continue              # the last line of a run killed mid-write (or still being written)
                 d["buildings"][e["id"]] = e["fit"]
                 n_new += 1
     except OSError:
         pass
+    return d, n_new
+
+
+def running():
+    return _proc is not None and _proc.poll() is None
+
+
+def apply_pending(log=_log):
+    """At the start, before the world is checked: newer background fits than the game has -> data/osm/photogram.json.
+    -> True when it changed (the caller then rebuilds the world)."""
+    src = os.path.join(PHOTOS, CACHE, "fit_detail.json")
+    journal = os.path.join(PHOTOS, CACHE, "fit_detail.new.jsonl")
+    mark = os.path.join(OSM, "photogram.src.md5")
+    d, n_new = read_fits()
     if not d["buildings"]:
         return False
     if n_new:

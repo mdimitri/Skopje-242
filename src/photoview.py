@@ -506,6 +506,35 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         return None
     splash(f"ФОТОГРАМЕТРИЈА: {len(caps)} снимки, згради околу нив ...")
     blds = pg.load_city(osm_dir, caps)
+    import photobg
+    pf = os.path.abspath(photobg.PHOTOS)
+    bg_folder = os.path.abspath(folder) == pf or os.path.abspath(folder).startswith(pf + os.sep)
+    bg_ver, bg_t, bg_sig = 0, 0.0, None
+
+    def bg_load():
+        """What the background run has fitted so far -> the buildings' ДЕТАЛИ look (until a build here takes over)."""
+        nonlocal bg_ver, bg_sig
+        sig = []
+        for nm_ in ("fit_detail.json", "fit_detail.new.jsonl"):
+            try:
+                st_ = os.stat(os.path.join(pf, pg.CACHE, nm_))
+                sig.append((st_.st_size, st_.st_mtime_ns))
+            except OSError:
+                sig.append(None)
+        if sig == bg_sig:
+            return
+        bg_sig = sig
+        k_ = 0
+        for i_, f_ in photobg.read_fits()[0]["buildings"].items():
+            b_ = blds.get(int(i_))
+            if b_ is not None and b_.fits.get("detail") != f_:
+                b_.fits["detail"] = f_
+                b_.version += 1
+                k_ += 1
+        if k_:
+            bg_ver += 1
+    if bg_folder:
+        bg_load()
     st, op = pg.load_settings(folder)                # engine settings + element switches, kept with the photo folder
     algo_i = 3                                     # ДЕТАЛИ: procedural windows, balconies, AC, roofs, surfaces
     look = True                                     # show the fitted look (else the current one)
@@ -554,6 +583,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
 
     def start_job(only=None):
         nonlocal job, t_job, look
+        if photobg.running():                        # never two runs on the same photos: the background one waits (the menu resumes it)
+            photobg.stop()
         pg.save_settings(folder, st, op)
         job = pg.Job(folder, algo, tex_np, osm_dir, state=(caps, blds), settings=st, only=only)
         job.start()
@@ -842,7 +873,10 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         here = orb.free.eye() if orb.free is not None else orb.t          # where the camera is / looks
         if focus is None or math.hypot(here[0] - focus[0], here[2] - focus[1]) > min(lod, view, 1e6) / 4:
             focus = (float(here[0]), float(here[2]))
-        want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view)
+        if bg_folder and job is None and time.time() - bg_t > 3.0:     # the background run's new buildings, every 3 s
+            bg_t = time.time()
+            bg_load()
+        want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view, bg_ver)
         if opt_t is not None and time.time() - opt_t > 0.25:
             opt_t, shown = None, None
         if want != shown and (n % 30 == 0 or want[0] != (shown or (None,))[0] or not running) and opt_t is None:
@@ -1216,6 +1250,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             font.draw_text(f"{int(frac * 100)}%  · {_hms(el)}" + (f" · остануваат ~{_hms(eta)}" if eta else "")
                            + (" · ПРОБА" if job.only else ""), 16, y + 14, 13, INK)
             font.draw_text(_fit(job.error or job.step, 14, lw - 32), 16, y + 32, 14, rl.RED if job.error else INK)
+        elif bg_folder and photobg.line():
+            font.draw_text(_fit(photobg.line(), 13, lw - 32), 16, y + 14, 13, INK)
         if scene.want is not None:
             rl.draw_rectangle(16, y + 52, int((lw - 32) * scene.busy), 4, LOOK_COL["inferred"])
         font.draw_text("десно влечи · средно/Shift поместување · тркало зум · WASD/QE", 16, H - 46, 12, DIM)
@@ -1316,12 +1352,12 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     tune([c for c in ok_caps if c.file in job.only])
                 evaluate([c for c in ok_caps if c.file in job.only])
         if frames is not None:
-            if n == 3 and job is None:
+            if n == 3 and job is None and "nojob" not in test:      # nojob: only look (the background run's buildings)
                 if "proof" in test and sel is not None:
                     proof = {sel.file}
                 st["seg"] = os.environ.get("SK242_SEG", st["seg"])
                 start_job(set(proof) if proof else None)
-            if job is not None and job.done and scene.want is None and frames > 0:
+            if (job is not None and job.done or "nojob" in test) and scene.want is None and frames > 0:
                 frames -= 1
             if frames == 0 or (job is not None and job.done and frames <= 0):
                 if shot:
