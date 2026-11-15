@@ -548,6 +548,15 @@ SHOW = [("relief", "релјеф (испусти / вовлекувања)"), ("
         ("roof_extras", "оџаци и кабини"), ("eaves", "стреи")]
 
 
+def log_ev(msg):
+    """A line in logs/game.log (the viewer's trace if it ever freezes)."""
+    try:
+        with open(os.path.join(ROOT, "logs", "game.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%H:%M:%S ") + msg + "\n")
+    except OSError:
+        pass
+
+
 def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None, test="", cfg=None):
     """-> 'changed' when the game's choice of buildings changed (the world has to be built again), else None.
     frames / shot: headless test (run that many frames, save the last one)."""
@@ -582,28 +591,61 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     bg_ver, bg_t, bg_sig = 0, 0.0, None
     keep_ids, kept_job = set(), None                 # buildings a finished proof run fitted here: the background ones do not cover them
 
+    bg_state = {"fits": {}, "base": None, "off": 0, "new": None, "th": None}
+
+    def bg_read():
+        """In a thread: the base fit file only when it changed, the journal only from where it was read last (a freeze fix:
+        parsing the whole 12k-building file on the draw thread every 3 s stalled the window)."""
+        import json
+        s_ = bg_state
+        try:
+            base = os.path.join(pf, pg.CACHE, "fit_detail.json")
+            jr = os.path.join(pf, pg.CACHE, "fit_detail.new.jsonl")
+            st_ = os.stat(base) if os.path.exists(base) else None
+            sig_ = (st_.st_size, st_.st_mtime_ns) if st_ else None
+            if sig_ != s_["base"]:
+                s_["base"], s_["off"], s_["fits"] = sig_, 0, {}
+                if st_:
+                    with open(base, encoding="utf-8") as f:
+                        s_["fits"] = dict(json.load(f).get("buildings", {}))
+            if os.path.exists(jr):
+                if os.path.getsize(jr) < s_["off"]:
+                    s_["off"] = 0
+                with open(jr, "rb") as f:
+                    f.seek(s_["off"])
+                    data = f.read()
+                cut = data.rfind(b"\n") + 1                # a half-written last line waits for the next read
+                s_["off"] += cut
+                for ln in data[:cut].splitlines():
+                    try:
+                        e = json.loads(ln)
+                        s_["fits"][str(e["id"])] = e["fit"]
+                    except (ValueError, KeyError):
+                        continue
+            s_["new"] = dict(s_["fits"])
+        except Exception as e_:  # noqa: BLE001
+            log_ev("[photoview] background fits read failed: %r" % (e_,))
+        s_["th"] = None
+
     def bg_load():
         """What the background run has fitted so far -> the buildings' ДЕТАЛИ look (until a build here takes over)."""
-        nonlocal bg_ver, bg_sig
-        sig = []
-        for nm_ in ("fit_detail.json", "fit_detail.new.jsonl"):
-            try:
-                st_ = os.stat(os.path.join(pf, pg.CACHE, nm_))
-                sig.append((st_.st_size, st_.st_mtime_ns))
-            except OSError:
-                sig.append(None)
-        if sig == bg_sig:
-            return
-        bg_sig = sig
-        k_ = 0
-        for i_, f_ in photobg.read_fits()[0]["buildings"].items():
-            b_ = blds.get(int(i_))
-            if b_ is not None and b_.id not in keep_ids and b_.fits.get("detail") != f_:
-                b_.fits["detail"] = f_
-                b_.version += 1
-                k_ += 1
-        if k_:
-            bg_ver += 1
+        nonlocal bg_ver
+        s_ = bg_state
+        if s_["new"] is not None:
+            new, s_["new"] = s_["new"], None
+            k_ = 0
+            for i_, f_ in new.items():
+                b_ = blds.get(int(i_))
+                if b_ is not None and b_.id not in keep_ids and b_.fits.get("detail") != f_:
+                    b_.fits["detail"] = f_
+                    b_.version += 1
+                    k_ += 1
+            if k_:
+                bg_ver += 1
+        if s_["th"] is None:
+            import threading
+            s_["th"] = threading.Thread(target=bg_read, daemon=True)
+            s_["th"].start()
     if bg_folder:
         bg_load()
     st, op = pg.load_settings(folder)                # engine settings + element switches, kept with the photo folder
@@ -889,8 +931,15 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             pg.save_settings(folder, st, op)
         say(f"оценети {len(res)} снимки" + (f" · SSIM {np.mean([r_[1] for r_ in res]):.3f}" if res else ""))
 
+    import faulthandler
+    try:
+        wd_f = open(os.path.join(ROOT, "logs", "crash.log"), "a")
+    except OSError:
+        wd_f = None
     while not rl.window_should_close():
         n += 1
+        if wd_f is not None:                                    # watchdog: a frame that takes >8 s dumps every thread's stack to crash.log
+            faulthandler.dump_traceback_later(8, repeat=True, file=wd_f)
         if music is not None:
             music.update()
         t_q = time.time()
@@ -1492,6 +1541,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 if shot:
                     rl.take_screenshot(shot)
                 break
+    faulthandler.cancel_dump_traceback_later()
     if job is not None:
         job.stop = True
     scene.close()
