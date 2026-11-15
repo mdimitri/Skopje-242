@@ -39,7 +39,7 @@ Extras: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `
 
 ### Steal anything with wheels (and a few things without)
 
-About a hundred vehicle models, all made of honest boxes: Yugos and Fichos, Lada Nivas, Trabants, Golf Dvojkas, the diaspora Passat loaded to the roof, taxis, police cars, ambulances, fire trucks, a double-decker city bus, the Skopje-Ohrid coach, a wedding limousine, a IMT tractor, tankers, bikes, mopeds and e-scooters. Dents, fires and explosions are included. The tyres steer. The back end swings out. Yes, you can drift.
+About a hundred vehicle models, all made of honest boxes: Yugos and Fichos, Lada Nivas, Trabants, Golf Dvojkas, the "Дијаспорец" Passat, taxis, police cars, ambulances, fire trucks, a double-decker city bus, the Skopje-Ohrid coach, a wedding limousine, a IMT tractor, tankers, bikes, mopeds and e-scooters. Dents, fires and explosions are included. The tyres steer. The back end swings out. Yes, you can drift.
 
 <p align="center"><img src="screenshots/hero_cars.jpg" width="900" alt="Yugo, Golf, taxi, Fičo, police car, ambulance, fire truck, double-decker bus, wedding limousine, tractor, medical helicopter and a БТР-80 in 3/4 view"></p>
 
@@ -53,7 +53,7 @@ There are flyable medical helicopters on the hospital helipads. Fly one and the 
 
 Police stations and army barracks are fenced, guarded compounds with gates, checkpoints, booths and signs. Walk in and a guard warns you; stay and they cuff you (weapons gone, half your cash, you are put back on the street). Soldiers shoot anyone who barges in by car or at a run.
 
-You do have an option. A pair of **Макази** (wire cutters) lies by every compound. Snip a quiet 1.6 m hole in the fence and walk in. A **БТР-80** is parked inside each barracks, and you can take it: 30 mm cannon, spent cases flying out of the turret, tracers, and a bad attitude toward lampposts.
+You do have an option. A pair of **Макази** (wire cutters) lies by every compound. Snip a quiet 1.6 m hole in the fence and walk in. A **БТР-80** is parked inside each barracks, and you can take it: 30 mm cannon, spent cases flying out of the turret, tracers,.
 
 ### Public transport, the honest way
 
@@ -86,7 +86,7 @@ Kiosks sell burek with yoghurt, tulumba, kebapi and a sandwich with ajvar. Walk 
 
 ## The cast
 
-24 playable characters, each with dozens of their own lines. Pick a taxi driver, a doctor, an e-scooter kid, a selfie queen... then meet the rest of the street: aunties with a rolling pin, an old man who knows how it was before, builders, cops, the bad-tempered neighbour. Everyone speaks in a distinct synthetic voice and in three levels of language: clean, street and uncensored.
+24 playable characters, each with dozens of their own lines. Pick Taxi Driver Mile, Doctor Vladimir, scooter influencer David, Auntie Vesna, Granny Velika, Grandpa Dimche, Cop Boban, Worker Momchilo, Burek Master Blagoja... then meet everyone else on the street. Everyone speaks in a voice with its own pitch and speed and in three levels of language: clean, street and uncensored.
 
 <p align="center"><img src="screenshots/select.jpg" width="900" alt="Character selection screen with 24 characters"></p>
 
