@@ -1009,7 +1009,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         # pick a capture: the nearest camera apex / photo centre on screen (Shift = tick it for a proof run)
         if not over_ui and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and show_fr:
             best = (24.0, None)
-            for c in ok_caps:
+            for c in near_c:                         # only the cameras drawn around the view (frustum needs the photo size = a file open each)
                 e, pts = _frustum(c)
                 for p in (e, np.mean(pts, 0)):
                     s = rl.get_world_to_screen(_v3(p), cam)
