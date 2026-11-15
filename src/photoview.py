@@ -14,6 +14,7 @@ import numpy as np
 import pyray as rl
 from PIL import Image
 
+import corner
 import font
 import gl3d
 import photogram as pg
@@ -1382,6 +1383,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             tw = font.measure_text(msg, 20)
             rl.draw_rectangle((W - tw) // 2 - 12, H - 60, tw + 24, 34, rl.Color(0, 0, 0, 200))
             font.draw_text(msg, (W - tw) // 2, H - 54, 20, rl.WHITE)
+        corner.avoid((0, 0, lw, H), *(((W - pw, 0, pw, H),) if sel is not None else ()), (W - 120, 0, 120, 44))
         if music is not None:
             music.widget(station_keys=False)
         rl.end_drawing()

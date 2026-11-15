@@ -444,8 +444,11 @@ class Hud:
             i += 2.1
             font.draw_text(f"{lbl}: {val}", x, int(14 + i * 22) + (24 if mpv else 0), 20, rl.Color(250, 225, 120, 255) if i == 2.1 else rl.Color(235, 235, 235, 255))
         if self.photo_line:
-            pw_ = font.measure_text(self.photo_line, 16)
-            font.draw_text(font.fit(self.photo_line, 16, sw - 40), max(20, (sw - pw_) // 2), 6, 16, rl.Color(225, 225, 235, 200))
+            room_ = max(120, sw - 300 - 20)                            # (left of the stats panel, never under it)
+            ptxt = font.fit(self.photo_line, 16, min(room_, sw - 40))
+            pw_ = font.measure_text(ptxt, 16)
+            px_ = (sw - pw_) // 2 if (sw + pw_) // 2 <= sw - 300 else 20 + (room_ - pw_) // 2
+            font.draw_text(ptxt, max(20, px_), 6, 16, rl.Color(225, 225, 235, 200))
         # ---- vehicle panel
         c = sim.car
         if sim.mode == "car":

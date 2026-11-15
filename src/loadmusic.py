@@ -248,18 +248,44 @@ class LoadMusic:
         self._drop()
         self.title = ""
 
-    def widget(self, x=12, y=10, keys=True, room=360, station_keys=True):
-        """Top-left: the song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys)."""
+    def widget(self, x=None, y=None, keys=True, room=9999, station_keys=True):
+        """The song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys), with the station drop-down and logo
+        when there is room.  x, y None: corner.py puts it on the first free spot (top left by default) and shrinks it step by
+        step when the screen's content leaves little space: logo + list + bar, no logo, narrower, bar only, buttons only, hidden."""
         if not self.ok:
             return
+        import corner
         sz = 27
         b = 30
         multi = len(self.stations) > 1
-        head = None
-        font.MUSIC_EXTRA = 0
         tex = self._logo() if self.stations else None
-        if tex is not None and tex.width > 0 and room > 200:     # the station's logo, left of the drop-down and the song bar
-            side = (34 if multi else 0) + b + 8
+        has_logo = tex is not None and tex.width > 0
+        W, H = rl.get_screen_width(), rl.get_screen_height()
+        spot = None
+        for logo, dd, R in ((1, 1, 540), (1, 0, 540), (0, 1, 458), (0, 1, 400), (0, 0, 380), (0, 0, 300), (0, 0, 0)):
+            if (logo and not has_logo) or (dd and not multi) or (logo and multi and not dd) or (R and R > room):
+                continue
+            side = (34 if dd else 0) + b + 8
+            bw = 4 * (b + 4) + 4 if not R else R
+            fw = bw
+            fh = (34 + b + 8) if dd else (b + 8)
+            if x is None:
+                p = corner.find(W, H, fw, fh)
+            else:
+                p = (x, y) if corner.free((x, y, fw, fh), W, H) else None
+            if p is not None:
+                spot = (p[0], p[1], logo, dd, R, fw, fh, side)
+                break
+        font.MUSIC_EXTRA = 0
+        if spot is None:
+            corner.set_box(None)
+            self.menu_open = False
+            return
+        x, y, logo, dd, R, fw, fh, side = spot
+        corner.set_box((x, y, fw, fh))
+        head = None
+        room = R
+        if logo:                                                 # the station's logo, left of the drop-down and the song bar
             sc = min((side - 6) / tex.width, (side - 6) / tex.height)
             lw_, lh_ = tex.width * sc, tex.height * sc
             rl.draw_rectangle(x, y, side, side, rl.Color(10, 8, 16, 190))
@@ -268,14 +294,15 @@ class LoadMusic:
             rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, side, side), 2, PINK)
             x += side + 8
             room -= side + 8
-        if multi:                                                # station drop-down above the song bar
+        if dd:                                                   # station drop-down above the song bar
             dh = 30
             head = (x, y, max(120, min(room, 320)), dh)
             y += dh + 4
-            if x < 150:
-                font.MUSIC_EXTRA = 5000 if self.menu_open else dh + 4     # version label moves below the bar (hidden while the list is open)
-        name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, room - 2 * (b + 4)), "cond")
-        tw = font.measure_text(name, sz, "cond")
+        if R:
+            name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, room - 166), "cond")
+            tw = font.measure_text(name, sz, "cond")
+        else:                                                    # buttons only
+            name, tw = "", -22
         lw = 3 * (b + 4)                                         # ◀  ❚❚  ■ on the left, ▶ on the right
         w = lw + b + 4 + tw + 30
         rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))

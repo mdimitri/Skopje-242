@@ -5,6 +5,7 @@ import time
 
 import pyray as rl
 import font   # noqa: E402
+import corner
 
 import characters as C
 import poster
@@ -492,6 +493,8 @@ def pick_character(cfg, aud=None, music=None):
         else:
             rl.clear_background(rl.Color(22, 24, 28, 255))
         _veil(W, H)
+        _tw = font.measure_text(TXT("menu.0051").upper(), 66, CD)
+        corner.avoid((96, 8, _tw, 78), (0, top - 2, Wl, H), _panel_rect(W, H), (W - 640, 56, 620, 58), (W - 120, 10, 108, 34))
         font.draw_text(TXT("menu.0051").upper(), 96, 8, 66, WHITE, bold=CD)
         rl.draw_rectangle(96, 80, 140, 6, _th["a1"])
         for i, (_id, name, stats, money) in enumerate(C.LIKOVI):
@@ -523,7 +526,7 @@ def pick_character(cfg, aud=None, music=None):
         font.draw_text(TXT("menu.0054"), 24, H - 36, 25, rl.Color(240, 232, 240, 255), bold=CD)
         if music is not None:
             music.update()
-            music.widget(x=W // 2 - 200, y=20, keys=False)
+            music.widget(keys=False)
         font.exit_button()
         font.draw_version(W, H)
         rl.end_drawing()
@@ -599,6 +602,7 @@ def _slot_picker(aud=None, music=None, latest=0):
                 rl.draw_rectangle(x0, y + 2, bw, rh - 4, PINK if ok else rl.Color(90, 60, 80, 255))
             col = rl.WHITE if i == sel else (rl.Color(232, 226, 232, 255) if ok else rl.Color(140, 130, 140, 255))
             font.draw_text(txt, tx, ty, sz, col, bold="cond")
+        corner.avoid((x0, y0, bw, len(rows) * rh))
         if music is not None:
             music.widget()
         font.draw_version(W, H)
@@ -759,6 +763,7 @@ def title_menu(aud=None, music=None, cfg=None):
         if time.time() - flash_t < 2.0:
             fw = font.measure_text(flash_msg, sz * 3 // 4, "cond")
             font.draw_text(flash_msg, (W - fw) // 2, y0 + len(TITLE_ITEMS) * rh + 6, sz * 3 // 4, rl.Color(255, 150, 190, 255), bold="cond")
+        corner.avoid((x0, y0, bw, len(TITLE_ITEMS) * rh), (bbx, bby, bbw, bbh), *(((pbx, pby, pbw, bbh),) if dev else ()))
         if music is not None:
             music.widget()
         rl.end_drawing()
@@ -1050,13 +1055,14 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         if over and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             cfg.save()
             return "play"
-        if settings_only and music is not None and x0 - 24 - 150 > 60:      # beside the panel, if there is room
-            music.widget(x=12, y=10, keys=False, room=min(360, x0 - 24 - 150))
+        corner.avoid((x0 - 16, 90, pw + 32, H - 90), (W - 120, 10, 108, 34), (x0, 0, 420, 100))
+        if settings_only and music is not None:                 # beside / above the panel, wherever corner.py finds room
+            music.widget(keys=False)
         font.exit_button()
         import photobg
         photobg.sync(cfg)                                       # (its progress line is drawn with the version label)
-        if x0 - 24 >= 80:
-            font.draw_version(W, H)
+        if font.draw_version(W, H, _th["mu"]):
+            pass
         else:                                                   # the panel covers the corner: the label goes in its top right, under the exit button
             from updater import GAME_VERSION
             vt = "v" + GAME_VERSION

@@ -3,6 +3,7 @@ everything downloaded, generated or loaded (and where it sits); bottom left the 
 speed and warnings; along the very bottom the overall bar (full width) and just above it the bar of the step running now,
 each with its text inside."""
 import collections
+import corner
 import json
 import os
 import random
@@ -429,6 +430,7 @@ class Loader:
         eta = (el / ov - el) if ov > 0.05 else 0
         right = f"{T.L_ELAPSED} {_fmt(el)}" + (f"   {T.L_LEFT} {_fmt(eta)}" if eta else "")
         self._tbar(0, ty, W, th, ov, PINK, f"{T.L_TOTAL.upper()}  {ov * 100:3.0f}%", right)
+        corner.avoid((0, ltop - 4, lw + 2 * m, H - ltop + 4), (mx - 8, top - 8, self.map_w + 16, H - top + 8), (W - 120, 10, 108, 34))
         if self.music is not None:
             self.music.widget()
         font.exit_button()

@@ -231,15 +231,35 @@ def exit_button(x=None, y=10):
 
 
 
-MUSIC_EXTRA = 0          # set by the music widget: extra height of its station drop-down above the song bar
+MUSIC_EXTRA = 0          # (old layout hook, kept so nothing breaks) -- placement now lives in corner.py
 
 
-def draw_version(W, H):
-    """Small major.minor version label, top left right under the music selector (splash and menus)."""
+def draw_version(W, H, col=None):
+    """Small major.minor version label (+ the background photogrammetry's progress), placed by corner.py clear of the music bar and of the screen's content."""
+    import corner
     from updater import GAME_VERSION
-    vt = "v" + GAME_VERSION
-    draw_text(vt, 14, 52 + MUSIC_EXTRA, 25, rl.Color(232, 226, 232, 200), bold="cond")
     import photobg                                   # the background photogrammetry's progress, under the version (splash and menus)
+    vt = "v" + GAME_VERSION
+    vw = measure_text(vt, 25, "cond")
     pl = photobg.line()
+    tiers = []                                       # (progress text or "", block width, block height), roomiest first
     if pl:
-        draw_text(fit(pl, 18, max(300, W // 2)), 14, 84 + MUSIC_EXTRA, 18, rl.Color(232, 226, 232, 210))
+        tiers.append((pl, max(vw, min(max(300, W // 2), measure_text(pl, 18))) + 4, 56))
+        parts = pl.split()
+        if parts and parts[0].endswith("%"):
+            tiers.append((parts[0], vw + measure_text(parts[0], 18) + 16, 30))
+    tiers.append(("", vw + 4, 30))
+    for txt, w, h in tiers:
+        spot = corner.version_spot(W, H, int(w), h)
+        if spot is None:
+            continue
+        x, y = spot
+        if col is None:                                  # a faint plate so the text reads over the splash art
+            rl.draw_rectangle(x - 4, y - 2, int(w) + 8, h, rl.Color(10, 8, 16, 110))
+        draw_text(vt, x, y, 25, col or rl.Color(232, 226, 232, 200), bold="cond")
+        if txt and txt == pl:
+            draw_text(fit(txt, 18, int(w)), x, y + 32, 18, col or rl.Color(232, 226, 232, 210))
+        elif txt:
+            draw_text(txt, x + vw + 12, y + 6, 18, col or rl.Color(232, 226, 232, 210))
+        return True
+    return False
