@@ -951,8 +951,12 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             p = os.path.join(c.cache(), os.path.splitext(os.path.basename(c.file))[0] + ".thumb.jpg")
             try:
                 if not os.path.exists(p):
-                    Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
+                    im_ = Image.open(c.path).convert("RGB")
+                    c.learn_size(*im_.size)
+                    im_.resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
                 thumbs[c.file] = rl.load_texture(p)
+                if c._wh is None:                                     # the thumbnail already says the aspect
+                    c._wh = (thumbs[c.file].width, thumbs[c.file].height)
             except Exception:  # noqa: BLE001 - a broken photo: no thumbnail
                 thumb_bad.add(c.file)
         if len(thumbs) > 360:                                   # the oldest thumbnails away from the view go (VRAM)

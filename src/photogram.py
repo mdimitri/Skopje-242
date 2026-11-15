@@ -126,17 +126,17 @@ class Capture:
         self.exists = os.path.exists(self.path)
         self.status = ""                                # what the builder made of it (viewer)
 
+    NOMINAL = (1280, 720)                           # until the pixels are loaded for real (never opened just to read the size)
+
     def _size(self):
-        if self._wh is None:
-            self._wh = (0, 0)
-            try:
-                with Image.open(self.path) as im:
-                    self._wh = im.size
-            except Exception:  # noqa: BLE001 - any unreadable file is just skipped (bad header, unknown format)
-                pass
-            if self._wh[0] < 64 or self._wh[1] < 64:
-                self.exists = False                     # an empty / error page, not a photo
-        return self._wh
+        return self._wh or self.NOMINAL
+
+    def learn_size(self, w, h):
+        """The size is learned when the image content is loaded anyway (image(), thumbnail, cached labels)."""
+        if w < 64 or h < 64:
+            self.exists = False                     # an empty / error page, not a photo
+        else:
+            self._wh = (int(w), int(h))
 
     W = property(lambda self: self._size()[0])
     H = property(lambda self: self._size()[1])
@@ -167,6 +167,7 @@ class Capture:
 
     def image(self):
         with Image.open(self.path) as im:
+            self.learn_size(*im.size)
             return np.asarray(im.convert("RGB"))
 
     def cache(self):
@@ -1606,8 +1607,10 @@ class Job(threading.Thread):
             lp = c.label_path(seg.name)
             try:
                 lab = segment._cached(lp) if os.path.exists(lp) else None
-                if lab is None or lab.shape != (c.H, c.W):
+                if lab is None:
                     lab = seg.labels(c.image(), lp)
+                else:
+                    c.learn_size(lab.shape[1], lab.shape[0])    # labels are the photo's size
             except Exception as e:  # noqa: BLE001 - an unreadable photo is skipped, never the whole build
                 self.log(f"{c.file}: сликата не се чита ({type(e).__name__}: {str(e)[:80]}), се прескокнува")
                 c.status = "грешка: " + type(e).__name__
