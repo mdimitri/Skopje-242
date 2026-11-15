@@ -22,6 +22,7 @@ import numpy as np
 import quays
 
 G_MAX = 0.07           # steepest approach / deck grade where there is room
+BERM = 3.5             # the embankment's top runs this far past the carriageway edge: pavement + verge, level
 G_SHORT = 0.10         # a way under a deck is cleared only if the deck can climb over it at most this steeply
 A_MAX = 140.0          # longest approach embankment (m)
 W = 24.0               # vertical curve: moving average window (m)
@@ -156,18 +157,9 @@ def _chains(dlist):
 
 def _lift_overlay(T, items, blocked, hx, hy, segs=None):
     """items: [(points (k, 2), lift (k,), half width)] -> merged into T.q (created if needed).  Lift is full within
-    hw + 1 m of the centreline and falls at SIDE beyond; `blocked(x, y, v)`: True keeps the post as it is
+    hw + BERM of the centreline (the pavements stay level) and falls at SIDE beyond; `blocked(x, y, v)`: True keeps the post as it is
     (buildings), a number caps its lift."""
-    S, Tl = quays.QSTEP, quays.TILE
-    nty = int(math.ceil(2 * hy / (S * Tl))) + 1
-    ntx = int(math.ceil(2 * hx / (S * Tl))) + 1
-    tiles = {}
-    ov = getattr(T, "q", None)
-    if ov is not None:
-        for ty, tx in zip(*np.nonzero(ov.idx >= 0)):
-            k = int(ov.idx[ty, tx])
-            tiles[(int(tx), int(ty))] = [ov.d[k].astype(np.float32).copy(), ov.cls[k].copy()]
-        nty, ntx = max(nty, ov.idx.shape[0]), max(ntx, ov.idx.shape[1])
+    S = quays.QSTEP
     add = {}
     cut = []                                             # long runs in pieces of <= 16 points: small boxes, fast
     for P, lift, hw in items:
@@ -178,7 +170,7 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
             continue
         if lift.max() < 0.03:
             continue
-        reach = hw + 1.0 + float(lift.max()) / ROAD_FLANK + 1.0
+        reach = hw + BERM + float(lift.max()) / ROAD_FLANK + 1.0
         x0, y0 = P.min(0) - reach
         x1, y1 = P.max(0) + reach
         gx = np.arange(math.floor((x0 + hx) / S), math.ceil((x1 + hx) / S) + 1)
@@ -205,12 +197,12 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
             t = np.clip(((GX - ax) * dx + (GY - ay) * dy) / l2, 0.0, 1.0)
             d = np.hypot(GX - ax - dx * t, GY - ay - dy * t)
             li = lift[k] + (lift[k + 1] - lift[k]) * t
-            v = li - np.maximum(0.0, d - hw - 1.0) * slope
+            v = li - np.maximum(0.0, d - hw - BERM) * slope
             best = np.maximum(best, v)
         for (iy, ix) in zip(*np.nonzero(best > 0.005)):
             key = (int(gx[ix]), int(gy[iy]))
             add[key] = max(add.get(key, 0.0), float(best[iy, ix]))
-    n = 0
+    keep = {}
     for (px, py), v in add.items():
         x, y = px * S - hx, py * S - hy
         r = blocked(x, y, v)                             # True: stays as it is; a number: lifted at most that much
@@ -221,6 +213,24 @@ def _lift_overlay(T, items, blocked, hx, hy, segs=None):
             v = min(v, float(r))
             if v < 0.005:
                 continue
+        keep[(px, py)] = v
+    return merge_posts(T, keep, hx, hy)
+
+
+def merge_posts(T, add, hx, hy):
+    """{(post x index, post y index): height delta} added onto the fine overlay T.q (created if needed) -> posts."""
+    S, Tl = quays.QSTEP, quays.TILE
+    nty = int(math.ceil(2 * hy / (S * Tl))) + 1
+    ntx = int(math.ceil(2 * hx / (S * Tl))) + 1
+    tiles = {}
+    ov = getattr(T, "q", None)
+    if ov is not None:
+        for ty, tx in zip(*np.nonzero(ov.idx >= 0)):
+            k = int(ov.idx[ty, tx])
+            tiles[(int(tx), int(ty))] = [ov.d[k].astype(np.float32).copy(), ov.cls[k].copy()]
+        nty, ntx = max(nty, ov.idx.shape[0]), max(ntx, ov.idx.shape[1])
+    n = 0
+    for (px, py), v in add.items():
         tx, ty = px // Tl, py // Tl
         for ox in ((0, 1) if px % Tl == 0 and tx > 0 else (0,)):        # a post on a tile border lives in both tiles
             for oy in ((0, 1) if py % Tl == 0 and ty > 0 else (0,)):

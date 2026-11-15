@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 69
+VERSION = 70
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -59,10 +59,10 @@ AREA_STYLE = {   # kind: (z-order, rgb)
 TUNNEL_ROADS = ("motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential")
 
 
-def lift_over_tunnels(roads, margin=8.0):
+def lift_over_tunnels(roads, margin=8.0, extra=()):
     """A road tunnel lies on the ground here, so whatever crosses over it (a plaza, a street, a footpath on a higher layer) is cut
     at the crossing and the cut piece becomes a bridge: the existing deck code then lifts it clear of the road below."""
-    tun = [r for r in roads if r.get("tunnel")]
+    tun = [r for r in roads if r.get("tunnel")] + list(extra)          # extra: the deep open part of an underpass cutting
     if not tun:
         return roads
 
@@ -2306,13 +2306,16 @@ def main():
             print(f"   skipped road {el.get('id')}: {e}")
     phase("roads")                                           # the bar above ended at 100 %: the slow steps after it keep it moving
     frac(0.02, "bridges over tunnels")
-    roads = lift_over_tunnels(roads)
+    import underpass
+    upass = underpass.plan(roads, T)                         # road tunnels are dug in (ramps, roof): see tools/underpass.py
+    roads = lift_over_tunnels(roads, extra=underpass.bridge_lines(upass))
     frac(0.1, "rivers")
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
     T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
     frac(0.2, "quays")
     import quays
     T.q, quay_info = quays.build(T, river_polys, [(wl["pts"], wl["w"]) for wl in wlines], roads, buildings, bld, CELL, HX, HY)
+    print(f"[build] underpasses: {underpass.cut(T, upass, HX, HY)} ground posts dug")
     frac(1.0, "quays")
     del lakes, ld
 
@@ -2449,7 +2452,7 @@ def main():
     # ---- bridge decks: ends meet the terrain, the middle clears whatever runs underneath ---------------
     under = {}                                      # 12 m grid of ways a bridge may pass over
     for ri, rd in enumerate(span(roads, 0.0, 0.4, "ways under bridges")):
-        if rd["bridge"] or not (rd["drive"] or rd["walk"]):
+        if rd["bridge"] or not (rd["drive"] or rd["walk"]) or rd.get("tunnel"):   # an underpass is dug in: no hump over it
             continue
         hwr = rd["w"] / 2 + (2.0 if rd["drive"] else 0.5)
         clear = terrain_mod.CLEAR_ROAD if rd["drive"] else terrain_mod.CLEAR_FOOT
@@ -2459,7 +2462,11 @@ def main():
                 for cy_ in range(int((min(ay, by) - hwr) // 12), int((max(ay, by) + hwr) // 12) + 1):
                     under.setdefault((cx_, cy_), []).append((ax, ay, bx, by, hwr, clear))
 
+    _ugrid = underpass.grid(upass)
+
     def lower(x, y):
+        if underpass.inside(_ugrid, x, y):                      # over an underpass cutting: the deck stays at street level
+            return 0.0
         best = 0.0
         for ax, ay, bx, by, hwr, clear in under.get((int(x // 12), int(y // 12)), ()):
             dx, dy = bx - ax, by - ay
@@ -2933,6 +2940,9 @@ def main():
         traceback.print_exc()
         print(f"[build] 3D roads failed ({e}); using flat roads")
         roads3d_ok = False
+    _up_posts, up_decks, up_recs = underpass.roof(upass, mesh.add, chunk_of, MAT_SOLID)     # roof slab, walls, roof deck
+    up_decks = [terrain_mod.Deck(d_["pts"], d_["h"], d_["hw"]).pack() for d_ in up_decks]
+    posts = list(posts) + _up_posts
     spread("road3d", edges, lambda e: flat(e["pts"], 60))
     stage("rasters")
     phase("ground rasters")
@@ -3082,7 +3092,8 @@ def main():
                  "hgt": zlib.compress(hg_arr.tobytes(), 6)},
         "terrain": {"terrain": {"grid": np.asarray(T.g, np.float32).tobytes(), "nx": T.nx, "ny": T.ny, "step": terrain_mod.STEP,
                                 "real": bool(real_terrain), "quay": T.q.pack() if T.q is not None else None},
-                    "decks": [d.pack() for d in decks.values()], "plats": plats, "esc": esc_info},
+                    "decks": [d.pack() for d in decks.values()] + up_decks, "plats": plats, "esc": esc_info,
+                    "underpass": up_recs},
     }
     sizes = {"meshes.bin": os.path.getsize(os.path.join(tmp, "meshes.bin"))}
     phase("write world parts")

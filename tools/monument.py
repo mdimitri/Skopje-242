@@ -220,13 +220,50 @@ def on_bridge(x, z, r=0.0):
     return False
 
 
+N_ARCH, N_RIVER = 10, 4         # Kamen Most today: ten arches, four of them over the Vardar
+PIER = 4.2                       # pier thickness along the bridge (m)
+
+
+def _hump(deck):
+    """The deck as one long arch: a sine hump over the chord between the two ends, high enough for every height the
+    generic profile needed (walkways under it), at most ~7 % at the ends."""
+    L, cum = deck.len, np.array(deck.cum)
+    h0, h1 = deck.h[0], deck.h[-1]
+    chord = h0 + (h1 - h0) * cum / max(L, 1e-6)
+    sn = np.sin(np.pi * cum / max(L, 1e-6))
+    need = (np.array(deck.h) - chord) / np.maximum(sn, 0.35)
+    A = float(np.clip(max(3.5, need[(cum > 0.1 * L) & (cum < 0.9 * L)].max(initial=0.0)), 3.5, 0.07 * L / math.pi))
+    deck.h = [float(v) for v in chord + A * sn]
+    return A
+
+
+def _bays(L, ground):
+    """Pier stations (arc length) for N_ARCH arches: N_RIVER equal wide ones over the lowest stretch (the river), the
+    rest shared out over both banks in proportion to their lengths."""
+    cum, g = ground
+    low = g <= g.min() + 1.0
+    s_lo, s_hi = float(cum[low].min()), float(cum[low].max())
+    ab = 5.0                                                     # solid abutments at both ends
+    s_lo, s_hi = max(s_lo, ab + 12.0), min(s_hi, L - ab - 12.0)
+    if s_hi - s_lo < N_RIVER * 9.0:                              # a narrow low stretch: widen it around its middle
+        m = (s_lo + s_hi) / 2
+        s_lo, s_hi = m - N_RIVER * 6.5, m + N_RIVER * 6.5
+    left, right = s_lo - ab, (L - ab) - s_hi
+    nl = max(1, round((N_ARCH - N_RIVER) * left / max(left + right, 1e-6)))
+    nr = max(1, N_ARCH - N_RIVER - nl)
+    st = [ab + left * k / nl for k in range(nl)]
+    st += [s_lo + (s_hi - s_lo) * k / N_RIVER for k in range(N_RIVER)]
+    st += [s_hi + right * k / nr for k in range(nr + 1)]
+    return st                                                    # N_ARCH + 1 pier / abutment stations
+
+
 def build_bridge(deck, terrain_h, add_abs, chunk_of):
-    """Kamen Most: sandstone arcade (about one 17.8 m segmental arch per span) on both flanks of the generic deck, lamp pillars on
-    the piers and gate pillars at both ends. `deck` is terrain.Deck; everything is placed at absolute heights."""
+    """Kamen Most: the deck is reshaped into one long gentle arch; under it ten stone arches on piers with cutwaters,
+    four wide ones over the river; solid sandstone body between both faces (arch soffits, spandrels), parapets and lamp
+    pillars.  `deck` is terrain.Deck (its heights are changed here, before the 3D roads and the physics use them)."""
     BRIDGE_PTS[:] = list(deck.pts)
     L = deck.len
-    nsp = max(3, round(L / 17.8))
-    span_l = L / nsp
+    _hump(deck)
 
     def at(s):
         s = max(0.0, min(L, s))
@@ -238,43 +275,104 @@ def build_bridge(deck, terrain_h, add_abs, chunk_of):
         return (ax + (bx - ax) * t, ay + (by - ay) * t, deck.h[k] + (deck.h[k + 1] - deck.h[k]) * t,
                 math.atan2(by - ay, bx - ax))
 
-    off = deck.hw + 0.25
-    n_slice = max(2, int(span_l / 1.4))
-    for side in (-1, 1):
-        for sp in range(nsp):
-            g = G()
-            for i in range(n_slice):
-                pts = []
-                for u in (i / n_slice, (i + 1) / n_slice):
-                    s = (sp + u) * span_l
-                    x, z, dh, yaw = at(s)
-                    px, pz = x - math.sin(yaw) * side * off, z + math.cos(yaw) * side * off
-                    y0 = float(terrain_h(px, pz)) - 0.4
-                    q = abs(2 * u - 1) / 0.86                              # arch occupies the middle 86 % of the span
-                    ry = max(0.6, dh - 1.0 - y0 - 0.15)
-                    bot = y0 + (ry * math.sqrt(1 - q * q) if q < 1 else 0.0)
-                    pts.append((px, pz, bot, dh, yaw))
-                (x0_, z0_, b0, d0, ya), (x1_, z1_, b1, d1, _) = pts
-                nrm = (-math.sin(ya) * side, 0, math.cos(ya) * side)
-                if side < 0:
-                    g.quad((x0_, b0, z0_), (x1_, b1, z1_), (x1_, d1, z1_), (x0_, d0, z0_), SAND, nrm)
-                else:
-                    g.quad((x1_, b1, z1_), (x0_, b0, z0_), (x0_, d0, z0_), (x1_, d1, z1_), SAND, nrm)
-            pos, uv, col = g.out()
-            if len(pos):
-                mx, mz = float(pos[:, 0].mean()), float(pos[:, 2].mean())
-                add_abs(chunk_of(mx, mz), 3, pos, uv, col)
-    # pier lamp pillars + gate pillars
-    for k in range(nsp + 1):
-        x, z, dh, yaw = at(k * span_l)
-        end = k in (0, nsp)
+    cs = np.linspace(0.0, L, max(8, int(L / 2)))
+    gr = np.array([float(terrain_h(*at(v)[:2])) for v in cs])
+    st = _bays(L, (cs, gr))
+    off = deck.hw + 0.35                                         # outer face of the masonry
+    arches = []                                                  # (s0, s1, springing, rise)
+    for a_, b_ in zip(st, st[1:]):
+        s0, s1 = a_ + PIER / 2, b_ - PIER / 2
+        span = s1 - s0
+        gmin = min(float(terrain_h(*at(v)[:2])) for v in np.linspace(s0, s1, 6))
+        top = min(at(v)[2] for v in np.linspace(s0, s1, 6)) - 1.4     # crown stays under the deck slab
+        spring = gmin + 0.6
+        rise = max(1.2, min(span / 2, top - spring))
+        arches.append((s0, s1, spring, rise))
+
+    def intrados(s):
+        for s0, s1, sp, ri in arches:
+            if s0 <= s <= s1:
+                q = (2 * (s - s0) / (s1 - s0)) - 1
+                return sp + ri * math.sqrt(max(0.0, 1 - q * q)), True
+        return None, False
+
+    step = 0.7
+    ss = sorted(set([float(v) for v in np.arange(0.0, L, step)] + [L] + [a for s0, s1, _, _ in arches for a in (s0, s1)]))
+    g = G()
+
+    def side_pt(x, z, yaw, side, d):
+        return x - math.sin(yaw) * side * d, z + math.cos(yaw) * side * d
+
+    def q2(a, b, c, d, col, n):                                  # both windings: seen from either side
+        g.quad(a, b, c, d, col, n)
+        g.quad(a, d, c, b, col, (-n[0], -n[1], -n[2]))
+
+    for s_a, s_b in zip(ss, ss[1:]):
+        xa, za, da, ya = at(s_a)
+        xb, zb, db, _ = at(s_b)
+        ia, arch_a = intrados(s_a)
+        ib, arch_b = intrados(s_b)
+        sm = (s_a + s_b) / 2
+        in_arch = intrados(sm)[1]
         for side in (-1, 1):
-            px, pz = x - math.sin(yaw) * side * (off - 0.3), z + math.cos(yaw) * side * (off - 0.3)
-            g = G()
+            pa = side_pt(xa, za, ya, side, off)
+            pb = side_pt(xb, zb, ya, side, off)
+            ga = float(terrain_h(*pa)) - 0.6
+            gb = float(terrain_h(*pb)) - 0.6
+            ba = ia if in_arch and ia is not None else ga
+            bb = ib if in_arch and ib is not None else gb
+            nrm = (-math.sin(ya) * side, 0.0, math.cos(ya) * side)
+            band = 0.9 if in_arch else 0.0                       # voussoir ring: a darker band round each arch
+            if band:
+                q2((pa[0], ba, pa[1]), (pb[0], bb, pb[1]), (pb[0], bb + band, pb[1]), (pa[0], ba + band, pa[1]), SAND2, nrm)
+            q2((pa[0], ba + band, pa[1]), (pb[0], bb + band, pb[1]), (pb[0], db + 1.0, pb[1]), (pa[0], da + 1.0, pa[1]), SAND, nrm)
+            ia_ = side_pt(xa, za, ya, side, off - 0.45)          # parapet: cap and inner face
+            ib_ = side_pt(xb, zb, ya, side, off - 0.45)
+            q2((pa[0], da + 1.0, pa[1]), (pb[0], db + 1.0, pb[1]), (ib_[0], db + 1.0, ib_[1]), (ia_[0], da + 1.0, ia_[1]), SAND2, (0, 1, 0))
+            q2((ia_[0], da, ia_[1]), (ib_[0], db, ib_[1]), (ib_[0], db + 1.0, ib_[1]), (ia_[0], da + 1.0, ia_[1]), SAND, (-nrm[0], 0, -nrm[2]))
+        if in_arch and ia is not None and ib is not None:        # the barrel vault under each arch
+            l_a, r_a = side_pt(xa, za, ya, -1, off), side_pt(xa, za, ya, 1, off)
+            l_b, r_b = side_pt(xb, zb, ya, -1, off), side_pt(xb, zb, ya, 1, off)
+            q2((l_a[0], ia, l_a[1]), (r_a[0], ia, r_a[1]), (r_b[0], ib, r_b[1]), (l_b[0], ib, l_b[1]), SAND2, (0, -1, 0))
+    # piers: cutwaters (pointed upstream / downstream) from the river bed to just above the springing
+    for k, sp_ in enumerate(st[1:-1], 1):
+        x, z, dh, yaw = at(sp_)
+        gl = float(terrain_h(x, z)) - 0.6
+        top = min(arches[k - 1][2], arches[k][2]) + 1.6
+        for side in (-1, 1):
+            base_l = (x + math.cos(yaw) * PIER / 2, z + math.sin(yaw) * PIER / 2)
+            base_r = (x - math.cos(yaw) * PIER / 2, z - math.sin(yaw) * PIER / 2)
+            fl_ = side_pt(*base_l, yaw, side, off)
+            fr_ = side_pt(*base_r, yaw, side, off)
+            tip = side_pt(x, z, yaw, side, off + 2.6)
+            for (a, b) in ((fl_, tip), (tip, fr_)):
+                nx, nz = b[1] - a[1], -(b[0] - a[0])
+                ln = math.hypot(nx, nz) or 1.0
+                q2((a[0], gl, a[1]), (b[0], gl, b[1]), (b[0], top, b[1]), (a[0], top, a[1]), SAND, (nx / ln, 0, nz / ln))
+            apex = ((fl_[0] + fr_[0]) / 2 * 0.7 + tip[0] * 0.3, top + 1.4, (fl_[1] + fr_[1]) / 2 * 0.7 + tip[1] * 0.3)
+            for (a, b) in ((fl_, tip), (tip, fr_), (fr_, fl_)):
+                g.tri((a[0], top, a[1]), (b[0], top, b[1]), apex, SAND2, (0, 1, 0))
+                g.tri((a[0], top, a[1]), apex, (b[0], top, b[1]), SAND2, (0, 1, 0))
+    pos, uv, col = g.out()
+    if len(pos):                                                 # one chunk per ~40 m piece (the mesh streams with its chunk)
+        tri = pos.reshape(-1, 3, 3)
+        ctr = tri.mean(1)
+        keys = [chunk_of(float(c[0]), float(c[2])) for c in ctr]
+        colt = col.reshape(-1, 3, 4)
+        for key in set(keys):
+            m = np.array([k_ == key for k_ in keys])
+            add_abs(key, 3, tri[m].reshape(-1, 3), np.zeros((int(m.sum()) * 3, 2), np.float32), colt[m].reshape(-1, 4))
+    # lamp pillars on the parapet over each pier + gate pillars at both ends
+    for k, sp_ in enumerate(st):
+        x, z, dh, yaw = at(sp_)
+        end = k in (0, len(st) - 1)
+        for side in (-1, 1):
+            px, pz = side_pt(x, z, yaw, side, off - 0.22)
+            gp = G()
             h = 2.6 if end else 1.7
             w = 0.9 if end else 0.6
-            g.box(px, dh, pz, w, h, w, SAND, yaw)
-            g.box(px, dh + h, pz, w + 0.2, 0.15, w + 0.2, SAND2, yaw)
-            g.box(px, dh + h + 0.15, pz, w * 0.6, 0.5, w * 0.6, (240, 226, 170), yaw)      # lantern
-            pos, uv, col = g.out()
+            gp.box(px, dh + (0.0 if end else 1.0), pz, w, h, w, SAND, yaw)
+            gp.box(px, dh + (0.0 if end else 1.0) + h, pz, w + 0.2, 0.15, w + 0.2, SAND2, yaw)
+            gp.box(px, dh + (0.0 if end else 1.0) + h + 0.15, pz, w * 0.6, 0.5, w * 0.6, (240, 226, 170), yaw)      # lantern
+            pos, uv, col = gp.out()
             add_abs(chunk_of(px, pz), 3, pos, uv, col)

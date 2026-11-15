@@ -30,8 +30,11 @@ def _at(d, s):
 def audit(w, limit):
     rows = []
     ends = [p for d in w.decks for p in (d["pts"][0], d["pts"][-1])]
+    roofs = {tuple(map(tuple, u["pts"][:1])) for u in (getattr(w, "underpass", ()) or ()) if u.get("roof")}
     for di, d in enumerate(w.decks):
         L = d["cum"][-1]
+        if tuple(map(tuple, d["pts"][:1])) in roofs:
+            continue                                       # an underpass roof: street level over the cut, not a bridge
         if L < 8 or d["hw"] < 3.0 or any(abs(x) > w.hx - 40 or abs(y) > w.hy - 40 for x, y in d["pts"]):
             continue                                       # roads only (footbridges may have steps), inside the box
         g_in = []

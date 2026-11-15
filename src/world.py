@@ -102,16 +102,50 @@ class World:
         g = {}
         cg = self.cg
         nb = len(self.buildings)
+        ug = {}                                     # road underpasses: building walls over one stop only what is up on its roof
+        for u in getattr(self, "underpass", ()) or ():
+            for (ax, ay), (bx, by), ra, rb in zip(u["pts"], u["pts"][1:], u["roof"], u["roof"][1:]):
+                for cx in range(int((min(ax, bx) - u["hw"]) // cg), int((max(ax, bx) + u["hw"]) // cg) + 1):
+                    for cy in range(int((min(ay, by) - u["hw"]) // cg), int((max(ay, by) + u["hw"]) // cg) + 1):
+                        ug.setdefault((cx, cy), []).append((ax, ay, bx, by, u["hw"], min(ra, rb)))
+
+        def over(x, y):                             # -> roof height if (x, y) is over an underpass, else None
+            for ax, ay, bx, by, hw, rf in ug.get((int(x // cg), int(y // cg)), ()):
+                dx, dy = bx - ax, by - ay
+                t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+                if math.hypot(x - ax - dx * t, y - ay - dy * t) < hw:
+                    return rf
+            return None
+        roof_posts = []
         for bi, b in enumerate(self.buildings):
             ring = b["ring"]
             m = len(ring)
             for i in range(m):
                 (ax, ay), (bx, by) = ring[i], ring[(i + 1) % m]
-                x0, x1 = sorted((ax, bx))
-                y0, y1 = sorted((ay, by))
-                for cx in range(int(x0 // cg), int(x1 // cg) + 1):
-                    for cy in range(int(y0 // cg), int(y1 // cg) + 1):
-                        g.setdefault((cx, cy), []).append((ax, ay, bx, by))
+                pieces = [(ax, ay, bx, by)]
+                if ug and any((int(px // cg), int(py // cg)) in ug for px, py in ((ax, ay), (bx, by), ((ax + bx) / 2, (ay + by) / 2))):
+                    L = math.hypot(bx - ax, by - ay)
+                    n = max(1, int(L / 0.5))
+                    pieces, run = [], None
+                    for k in range(n):
+                        f0, f1 = k / n, (k + 1) / n
+                        mx, my = ax + (bx - ax) * (f0 + f1) / 2, ay + (by - ay) * (f0 + f1) / 2
+                        rf = over(mx, my)
+                        if rf is None:
+                            run = run if run is not None else f0
+                            continue
+                        roof_posts.append((mx, my, 0.3, rf - 0.6, rf + 30.0))
+                        if run is not None:
+                            pieces.append((ax + (bx - ax) * run, ay + (by - ay) * run, ax + (bx - ax) * f0, ay + (by - ay) * f0))
+                            run = None
+                    if run is not None:
+                        pieces.append((ax + (bx - ax) * run, ay + (by - ay) * run, bx, by))
+                for pa in pieces:
+                    x0, x1 = sorted((pa[0], pa[2]))
+                    y0, y1 = sorted((pa[1], pa[3]))
+                    for cx in range(int(x0 // cg), int(x1 // cg) + 1):
+                        for cy in range(int(y0 // cg), int(y1 // cg) + 1):
+                            g.setdefault((cx, cy), []).append(pa)
             if bi % 300 == 0:
                 P(0.8 * bi / max(nb, 1), f"building collision {bi}/{nb}")
         self.cgrid = g
@@ -126,7 +160,7 @@ class World:
             t = th(x, y)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.22, t - 1.0, t + 6.5))
         self.hide_extra, self.broken_extra = {}, []
-        for p in getattr(self, "posts", ()):
+        for p in list(getattr(self, "posts", ())) + roof_posts:
             x, y, r = p[0], p[1], p[2]
             if len(p) >= 6 and p[5]:
                 self.hide_extra[(p[0], p[1])] = tuple(p[5])         # (radius, from, to): signal arm / billboard panel that falls with its pole
