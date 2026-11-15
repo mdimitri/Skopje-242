@@ -248,96 +248,108 @@ class LoadMusic:
         self._drop()
         self.title = ""
 
+    def _symbol(self, x, y, S):
+        """The radio symbol on the always-there button: a little set with an antenna, a dial and a speaker."""
+        cx, cy = x + S / 2, y + S / 2
+        u = S / 72.0 if S > 40 else 0.6
+        col = rl.WHITE
+        rl.draw_line_ex(rl.Vector2(cx - 8 * u, cy - 6 * u), rl.Vector2(cx + 14 * u, cy - 24 * u), 2.5, col)
+        rl.draw_rectangle_lines_ex(rl.Rectangle(cx - 22 * u, cy - 8 * u, 44 * u, 28 * u), 2.5, col)
+        rl.draw_circle_lines(int(cx - 9 * u), int(cy + 6 * u), 7 * u, col)
+        for k in range(3):
+            rl.draw_line_ex(rl.Vector2(cx + 6 * u, cy + (0 + 6 * k) * u), rl.Vector2(cx + 16 * u, cy + (0 + 6 * k) * u), 2.0, col)
+
     def widget(self, x=None, y=None, keys=True, room=9999, station_keys=True):
-        """The song playing now between ◀ ▶ buttons (mouse, or the Left / Right keys), with the station drop-down and logo
-        when there is room.  x, y None: corner.py puts it on the first free spot (top left by default) and shrinks it step by
-        step when the screen's content leaves little space: logo + list + bar, no logo, narrower, bar only, buttons only, hidden."""
+        """Always top left (12, 10): a radio-symbol button that is there on every screen.  It opens to the right after a hover (and
+        for a few seconds at the start), showing the station drop-down and the song bar as two stripes of the same width, and folds
+        back by itself when the mouse has been away for a while.  The button never moves; screens leave its corner free (see
+        corner.py for the label under it)."""
         if not self.ok:
             return
+        import time
         import corner
         sz = 27
         b = 30
-        multi = len(self.stations) > 1
-        tex = self._logo() if self.stations else None
-        has_logo = tex is not None and tex.width > 0
+        X, Y = 12, 10
         W, H = rl.get_screen_width(), rl.get_screen_height()
-        spot = None
-        for logo, dd, R in ((1, 1, 540), (1, 0, 540), (0, 1, 458), (0, 1, 400), (0, 0, 380), (0, 0, 300), (0, 0, 0)):
-            if (logo and not has_logo) or (dd and not multi) or (logo and multi and not dd) or (R and R > room):
-                continue
-            side = (34 if dd else 0) + b + 8
-            bw = 4 * (b + 4) + 4 if not R else R
-            fw = bw
-            fh = (34 + b + 8) if dd else (b + 8)
-            if x is None:
-                p = corner.find(W, H, fw, fh)
-            else:
-                p = (x, y) if corner.free((x, y, fw, fh), W, H) else None
-            if p is not None:
-                spot = (p[0], p[1], logo, dd, R, fw, fh, side)
-                break
-        font.MUSIC_EXTRA = 0
-        if spot is None:
-            corner.set_box(None)
-            self.menu_open = False
-            return
-        x, y, logo, dd, R, fw, fh, side = spot
-        corner.set_box((x, y, fw, fh))
-        head = None
-        room = R
-        if logo:                                                 # the station's logo, left of the drop-down and the song bar
-            sc = min((side - 6) / tex.width, (side - 6) / tex.height)
-            lw_, lh_ = tex.width * sc, tex.height * sc
-            rl.draw_rectangle(x, y, side, side, rl.Color(10, 8, 16, 190))
-            rl.draw_texture_pro(tex, rl.Rectangle(0, 0, tex.width, tex.height),
-                                rl.Rectangle(x + (side - lw_) / 2, y + (side - lh_) / 2, lw_, lh_), rl.Vector2(0, 0), 0.0, rl.WHITE)
-            rl.draw_rectangle_lines_ex(rl.Rectangle(x, y, side, side), 2, PINK)
-            x += side + 8
-            room -= side + 8
-        if dd:                                                   # station drop-down above the song bar
-            dh = 30
-            head = (x, y, max(120, min(room, 320)), dh)
-            y += dh + 4
-        if R:
-            name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, room - 166), "cond")
-            tw = font.measure_text(name, sz, "cond")
-        else:                                                    # buttons only
-            name, tw = "", -22
-        lw = 3 * (b + 4)                                         # ◀  ❚❚  ■ on the left, ▶ on the right
-        w = lw + b + 4 + tw + 30
-        rl.draw_rectangle(x, y, w, b + 8, rl.Color(10, 8, 16, 170))
+        multi = len(self.stations) > 1
+        S = 72 if multi else 38                                  # the button: as high as the two stripes together
+        SW = max(200, min(420, W - X - S - 8 - 12))              # both stripes, the same width
+        now = time.time()
+        if getattr(self, "_idle", None) is None:
+            self._idle, self._exp = now, 1.0                      # open at first, so it is seen
         m = font.pointer()
+        reach = S + (8 + SW) * self._exp
+        if (X <= m.x < X + reach and Y <= m.y < Y + S) or self.menu_open:
+            self._idle = now
+        target = 1.0 if now - self._idle < 5.0 else 0.0
+        self._exp += (target - self._exp) * min(1.0, rl.get_frame_time() * 9.0)
+        if abs(self._exp - target) < 0.01:
+            self._exp = target
+        e = self._exp
+        font.MUSIC_EXTRA = 0
+        corner.set_box((X, Y, S, S))
+        # ---- the button
+        tex = self._logo() if (self.stations and e > 0.5) else None
+        rl.draw_rectangle(X, Y, S, S, rl.Color(10, 8, 16, 200))
+        if tex is not None and tex.width > 0:
+            sc = min((S - 6) / tex.width, (S - 6) / tex.height)
+            lw_, lh_ = tex.width * sc, tex.height * sc
+            rl.draw_texture_pro(tex, rl.Rectangle(0, 0, tex.width, tex.height),
+                                rl.Rectangle(X + (S - lw_) / 2, Y + (S - lh_) / 2, lw_, lh_), rl.Vector2(0, 0), 0.0, rl.WHITE)
+        else:
+            self._symbol(X, Y, S)
+        rl.draw_rectangle_lines_ex(rl.Rectangle(X, Y, S, S), 2, PINK)
         click_in = font.clicked()
-        click = click_in and not self.menu_open                  # an open list swallows the click
-        tip = None
-        for k, bx in ((0, x + 4), (1, x + 4 + b + 4), (2, x + 4 + 2 * (b + 4)), (3, x + w - b - 4)):
-            by = y + 4
-            over = bx <= m.x < bx + b and by <= m.y < by + b
-            rl.draw_rectangle(bx, by, b, b, PINK if over else rl.Color(60, 40, 70, 230))
-            cx, cy, r = bx + b / 2, by + b / 2, b * 0.28
-            if k == 0:
-                rl.draw_triangle(rl.Vector2(cx + r, cy - r), rl.Vector2(cx - r, cy), rl.Vector2(cx + r, cy + r), rl.WHITE)
-            elif k == 1:
-                if self.paused or self.stopped:                  # shows what a click does: resume
-                    rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
+        live = e > 0.9
+        if e > 0.01:                                             # ---- the stripes, revealed from the left
+            sx = X + S + 8
+            rl.begin_scissor_mode(sx, Y, int(SW * e) + 1, H - Y)
+            head = None
+            y2 = Y
+            if multi:
+                dh = 30
+                head = (sx, Y, SW, dh)
+                y2 = Y + dh + 4
+            name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, SW - 156), "cond")
+            w = SW
+            rl.draw_rectangle(sx, y2, w, b + 8, rl.Color(10, 8, 16, 170))
+            click = click_in and live and not self.menu_open     # an open list swallows the click
+            tip = None
+            for k, bx in ((0, sx + 4), (1, sx + 4 + b + 4), (2, sx + 4 + 2 * (b + 4)), (3, sx + w - b - 4)):
+                by = y2 + 4
+                over = live and bx <= m.x < bx + b and by <= m.y < by + b
+                rl.draw_rectangle(bx, by, b, b, PINK if over else rl.Color(60, 40, 70, 230))
+                cx, cy, r = bx + b / 2, by + b / 2, b * 0.28
+                if k == 0:
+                    rl.draw_triangle(rl.Vector2(cx + r, cy - r), rl.Vector2(cx - r, cy), rl.Vector2(cx + r, cy + r), rl.WHITE)
+                elif k == 1:
+                    if self.paused or self.stopped:              # shows what a click does: resume
+                        rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
+                    else:
+                        rl.draw_rectangle(int(cx - r), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
+                        rl.draw_rectangle(int(cx + r * 0.3), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
+                elif k == 2:
+                    rl.draw_rectangle(int(cx - r), int(cy - r), int(2 * r), int(2 * r), rl.WHITE)
                 else:
-                    rl.draw_rectangle(int(cx - r), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
-                    rl.draw_rectangle(int(cx + r * 0.3), int(cy - r), int(r * 0.7), int(2 * r), rl.WHITE)
-            elif k == 2:
-                rl.draw_rectangle(int(cx - r), int(cy - r), int(2 * r), int(2 * r), rl.WHITE)
-            else:
-                rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
-            if over:
-                tip = (bx, ("Претходна", "Продолжи" if (self.paused or self.stopped) else "Пауза", "Стоп", "Следна")[k])
-                if click:
-                    (lambda: self.skip(back=True), self.toggle, self.stop, self.skip)[k]()
-        if tip:
-            tx = font.measure_text(tip[1], 20, "cond")
-            rl.draw_rectangle(tip[0], y + b + 10, tx + 12, 26, rl.Color(10, 8, 16, 220))
-            font.draw_text(tip[1], tip[0] + 6, y + b + 12, 20, rl.WHITE, bold="cond")
-        font.draw_text(name, x + lw + 12, y + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
-        if head is not None:
-            self._dropdown(head, station_keys, m, click_in)
+                    rl.draw_triangle(rl.Vector2(cx - r, cy - r), rl.Vector2(cx - r, cy + r), rl.Vector2(cx + r, cy), rl.WHITE)
+                if over:
+                    tip = (bx, ("Претходна", "Продолжи" if (self.paused or self.stopped) else "Пауза", "Стоп", "Следна")[k])
+                    if click:
+                        (lambda: self.skip(back=True), self.toggle, self.stop, self.skip)[k]()
+            font.draw_text(name, sx + 3 * (b + 4) + 12, y2 + (b + 8 - sz) // 2 - 2, sz, rl.WHITE, bold="cond")
+            if tip and not self.menu_open:
+                tx = font.measure_text(tip[1], 20, "cond")
+                rl.draw_rectangle(tip[0], y2 + b + 10, tx + 12, 26, rl.Color(10, 8, 16, 220))
+                font.draw_text(tip[1], tip[0] + 6, y2 + b + 12, 20, rl.WHITE, bold="cond")
+            if head is not None:
+                self._dropdown(head, station_keys and live, m, click_in and live)
+            rl.end_scissor_mode()
+        elif multi and station_keys:                             # folded: Q / E still change the station
+            if rl.is_key_pressed(rl.KEY_E):
+                self.station(1)
+            elif rl.is_key_pressed(rl.KEY_Q):
+                self.station(-1)
         if not keys:                                             # (screens where the arrows already move the selection)
             return
         if rl.is_key_pressed(rl.KEY_LEFT):

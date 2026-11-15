@@ -986,8 +986,9 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
         else:
             rl.clear_background(rl.Color(16, 10, 24, 255))
         _panel(x0 - 24, 6, pw + 48, H - 12)
-        _logo(x0, 4, 60)
-        font.draw_text(TXT("menu.0059").upper(), x0 + 6, 70, 22, _th["mu"], bold=CD)
+        lx = max(x0, 96) if music is not None else x0           # (the radio button owns the top left corner)
+        _logo(lx, 4, 60)
+        font.draw_text(TXT("menu.0059").upper(), lx + 6, 70, 22, _th["mu"], bold=CD)
         for i, name in enumerate(TABS):
             tx = x0 + i * tw
             on_t = i == tab

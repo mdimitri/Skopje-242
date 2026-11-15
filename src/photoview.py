@@ -1049,8 +1049,9 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         # ---- left panel: tabs
         rl.draw_rectangle(0, 0, lw, H, PANEL)
         y = 10
-        font.draw_text("ФОТОГРАМЕТРИЈА", 16, y, 28, PINK, bold="cond")
-        font.draw_text(_fit(os.path.basename(folder.rstrip("/\\")), 14, 150), lw - 166, y + 10, 14, DIM)
+        bx0_ = 96 if music is not None else 16                    # (the radio button owns the top left corner)
+        font.draw_text("ФОТОГРАМЕТРИЈА", bx0_, y, 28, PINK, bold="cond")
+        font.draw_text(_fit(os.path.basename(folder.rstrip("/\\")), 12, lw - bx0_ - 8), bx0_, y + 28, 12, DIM)
         y += 38
         tw_ = (lw - 16) // len(TABS)
         for i, tn in enumerate(TABS):
