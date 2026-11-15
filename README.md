@@ -1,166 +1,167 @@
 <h1 align="center">СКОПЈЕ · 242</h1>
-<p align="center"><b>Section 242: unlawfully taking someone else's motor vehicle.</b><br>
-<i>You are about to commit it about four hundred times.</i></p>
+<p align="center"><b>Член 242: одземање на моторно возило.</b><br>
+<i>„Тој што противправно ќе одземе туѓо моторно возило со намера да го употреби за возење, ќе се казни…“<br>
+Ти ќе го прекршиш околу четиристотини пати.</i></p>
 
-<p align="center"><img src="docs/screenshots/splash_v3.jpg" width="860" alt="Skopje 242: Rooftop Noir"></p>
+<p align="center"><img src="docs/screenshots/splash_v3.jpg" width="860" alt="Скопје · 242: Rooftop Noir"></p>
 
-<p align="center"><b>All of Skopje in 3D. Grab a car. Grab a burek. Grab a ride on the city bus. Try not to grab a slap.</b><br>
-A sandbox crime comedy set in the <i>real</i> Skopje: real streets, real hills, real river, real Stone Bridge, populated by aunties, pensioners and a taxi driver who has opinions.<br>
-Windows · Python + raylib · free · the whole game talks in Macedonian Cyrillic, street slang included.</p>
+<p align="center"><b>Целото Скопје во 3D. Земи кола. Земи бурек. Качи се на ЈСП. Не земај шамар.</b><br>
+Песочна игра со криминална комедија во <i>вистинското</i> Скопје: вистински улици, ридови, река и Камен мост, а по нив шетаат тетки, пензионери и еден таксист што има став за сè.<br>
+Windows · Python + raylib · бесплатна · цела на македонска кирилица, со улично скопски збор.</p>
 
 <p align="center">
-<a href="#play-in-two-minutes"><b>▶ Play in 2 minutes</b></a> ·
-<a href="#what-you-can-do">What you can do</a> ·
-<a href="#the-cast">The cast</a> ·
-<a href="#controls">Controls</a> ·
-<a href="#how-the-city-grows">How the city grows</a> ·
-<a href="docs/README.mk.md">README на македонски</a>
+<a href="#пушти-ја-за-две-минути"><b>▶ Пушти ја за 2 минути</b></a> ·
+<a href="#што-можеш-да-правиш">Што можеш да правиш</a> ·
+<a href="#ликовите">Ликовите</a> ·
+<a href="#команди">Команди</a> ·
+<a href="#како-никнува-градот">Како никнува градот</a> ·
+<a href="docs/README.en.md">README in English</a>
 </p>
 
 ---
 
-## Play in two minutes
+## Пушти ја за две минути
 
-1. Download or clone this repo.
-2. Double-click **`run.bat`**.
-3. Go and get a coffee. The first launch installs Python and the libraries, downloads the OpenStreetMap data and terrain, and builds the city. After that it starts in seconds.
-4. Pick a character, walk up to any car, press **`F`**. Congratulations, you are now violating Article 242.
+1. Симни го или клонирај го репото.
+2. Кликни двапати на **`run.bat`**.
+3. Оди направи кафе. Првиот пат ги става Python и библиотеките, ја симнува мапата од OpenStreetMap со теренот и го гради градот. Потоа се пушта за секунди.
+4. Избери лик, приближи се до која било кола и притисни **`F`**. Честитки, го прекрши Член 242.
 
-Updates are painless: on launch the game checks GitHub, offers the newer version and restarts itself. Your saves, settings and music stay where they are.
+Ажурирањето е безболно: при пуштање играта проверува на GitHub, ти нуди понова верзија и сама се рестартира. Зачуваните игри, поставките и музиката не се допираат.
 
-| command | what it does |
+| наредба | што прави |
 |---|---|
-| `run.bat` | play the real Skopje |
-| `run.bat refresh` | re-download the map and rebuild the city |
+| `run.bat` | играш на вистинското Скопје |
+| `run.bat refresh` | пак ја симнува мапата и го гради градот |
 
-Extras: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `--mute`.
+Дополнително: `--size 1280x720`, `--fullscreen`, `--cars N`, `--peds N`, `--hour H`, `--mute`.
 
-## What you can do
+## Што можеш да правиш
 
-### Steal anything with wheels (and a few things without)
+### Земи сè што има тркала (и неколку работи без)
 
-About a hundred vehicle models, all made of honest boxes: Yugos and Ficos, Lada Nivas, Trabants, Golf Dvojkas, the diaspora Passat loaded to the roof, taxis, police cars, ambulances, fire trucks, a double-decker city bus, the Skopje-Ohrid coach, a wedding limousine, a Belarus tractor, tankers, bikes, mopeds and e-scooters. Dents, fires and explosions are included. The tyres steer. The back end swings out. Yes, you can drift.
+Околу сто модели возила, сите од чесни коцки: југа и фиќа, лади нива, трабанти, голф двојки, пасат на дијаспора натоварен до таван, такси, полиција, брза помош, пожарна, двокатен ЈСП автобус, автобус Скопје-Охрид, свадбарска лимузина, трактор Беларус, цистерни, велосипеди, мопеди и е-тротинети. Удрени места, пожар и експлозии се вклучени. Предните тркала вртат со воланот, задниот дел се лизга. Да, може дрифт.
 
-<p align="center"><img src="docs/screenshots/hero_cars.jpg" width="900" alt="Yugo, Golf, taxi, Fico, police Skoda, ambulance, fire truck, double-decker bus, wedding limousine, tractor, medical helicopter and a БТР-80 in 3/4 view"></p>
+<p align="center"><img src="docs/screenshots/hero_cars.jpg" width="900" alt="Југо, голф, такси, фиќо, полициска шкода, брза помош, пожарна, двокатен автобус, свадбарска лимузина, трактор, медицински хеликоптер и БТР-80 од три четвртини"></p>
 
-<p align="center"><sub>A few of them, straight from the game's model renderer (labels are the internal names). Yes, the last one is an armoured personnel carrier. We'll get to that.</sub></p>
+<p align="center"><sub>Неколку од нив, право од цртачот на модели во играта (натписите се внатрешните имиња). Да, последниот е оклопен транспортер. Ќе стигнеме и до него.</sub></p>
 
-### Take the helicopter
+### Земи го хеликоптерот
 
-There are flyable medical helicopters on the hospital helipads. Fly one and the city keeps going all the way to the skyline: the near blocks are fully textured, and further out the game switches to hazed skyline tiles up to about 2.6 km away.
+На болничките хелиодроми има медицински хеликоптери што можеш да ги леташ. Додека леташ, градот не завршува пред носот: блиските блокови се целосно со текстури, а подалеку играта префрла на замаглени силуети на градот до околу 2,6 км.
 
-### Break into the army (politely, with wire cutters)
+### Влези во касарна (учтиво, со макази)
 
-Police stations and army barracks are fenced, guarded compounds with gates, checkpoints, booths and signs. Walk in and a guard warns you; stay and they cuff you (weapons gone, half your cash, you are put back on the street). Soldiers shoot anyone who barges in by car or at a run.
+Полициските станици и касарните се оградени и чувани места со порти, контролни пунктови, будки и натписи. Влези и стражарот те опоменува; остани и те врзуваат (ти го земаат оружјето и половина од парите, па те ставаат на улица). Војниците пукаат во секој што ќе упадне со кола или трчајќи.
 
-You do have an option. A pair of **Макази** (wire cutters) lies by every compound. Snip a quiet 1.6 m hole in the fence and walk in. A **БТР-80** is parked inside each barracks, and you can take it: 30 mm cannon, spent cases flying out of the turret, tracers, and a bad attitude toward lampposts.
+Има и друг начин. Кај секое такво место лежат **макази**. Пресечи тивко дупка од 1,6 м во оградата и влези. Во секоја касарна стои **БТР-80**, и можеш да го земеш: топ од 30 мм, празни гилзи што летаат од кулата, трасирни куршуми и лош однос кон уличните столбови.
 
-### Public transport, the honest way
+### Јавен превоз, на чесен начин
 
-- **City buses (ЈСП)** follow real routes, stop at every real stop and pull in to the kerb. Hop on for 40 денари.
-- **Red trains** run on the real rail line and stop at the stations. Press `F` to board and `F` to get off. Rail crossings have barriers that come down.
-- **E-scooters** wait by every second bus station. `F`, pay 30 денари, ride.
+- **ЈСП автобусите** возат по вистински линии, застануваат на секоја вистинска постојка и се влечат до рабникот. Качи се за 40 денари.
+- **Црвените возови** возат по вистинската пруга и застануваат на станиците. `F` за качување и `F` за слегување. Рампите на премините се спуштаат.
+- **Е-тротинети** чекаат кај секоја втора автобуска станица. `F`, плати 30 денари и вози.
 
-### Walk through a real shopping mall
+### Прошетај низ вистински трговски центар
 
-The **ГТЦ** (the city trading centre by the square) is walkable: one long hall, escalators, shop windows and four doors on the real building outline. Step in at a door with `F`, step out with `F`.
+**ГТЦ** (Градскиот трговски центар) се шета: долга сала, подвижни скали, излози и четири врати на вистинскиот контур на зградата. Влези на врата со `F`, излези пак со `F`.
 
-### Climb the roofs
+### Качи се на покриви
 
-Flat-roofed buildings get zig-zag fire escapes you can walk up. Up there you will find rooftop views, launch ramps between neighbouring roofs (bring a bike) and the stairs back down. The roof edge has a barrier, so only a jump takes you over.
+Рамните покриви добиваат цик-цак скали за бегство што можеш да ги искачиш. Горе те чекаат погледи, рампи за скок меѓу соседни покриви (донеси велосипед) и скали назад долу. Работ на покривот има ограда, па преку него се оди само со скок.
 
-### Tune the radio, take a polaroid
+### Пушти радио, земи полароид
 
-- **Radio:** `Q` / `E` flip stations in any car. Stations are the folders in `music/`, with station logos, a real shuffle and hiss between stations. Drop your own tracks in and they become part of the dial.
-- **Selfie:** press `P`. The game saves a polaroid-style JPEG of you and the city behind you.
+- **Радио:** `Q` / `E` ги менуваат станиците во секоја кола. Станиците се папките во `music/`, со логоа на станиците, вистинско мешање на песните и шум меѓу станиците. Стави своја музика и таа влегува во радиото.
+- **Селфи:** притисни `P`. Играта зачувува JPEG во стил на полароид, со тебе и градот зад тебе.
 
-<p align="center"><img src="docs/screenshots/selfie.jpg" width="640" alt="A selfie with the sun low over Skopje"></p>
+<p align="center"><img src="docs/screenshots/selfie.jpg" width="640" alt="Селфи со сонце ниско над Скопје"></p>
 
-### Fight
+### Тепај се
 
-Fists, brass knuckles, a chain, a bat, a machete, a pistol, a revolver, an uzi, an Ingram, a shotgun, a Kalashnikov and a **Зоља** rocket launcher, with real projectiles that hit people, cars, walls and trees. Punch a pedestrian and he'll mutter, curse you, promise you a slap and then actually fight you, each in his own voice. You earn денари for every hit, run-over and explosion. Strays love you if you punch toward them. It pets them.
+Тупаници, боксер, ланец, палка, мачета, пиштол, револвер, узи, ингрем, пумпарица, калашњиков и **зоља**, со вистински проектили што погодуваат луѓе, коли, ѕидови и дрвја. Удри пешак и тој ќе мрмори, ќе те псуе, ќе ти вети шамар и на крајот ќе се тепа, секој со свој глас. За секој удар, смачкување и експлозија добиваш денари. Кучињата скитници те сакаат ако ги „нападнеш“ со тупаница: ги милуваш.
 
-### Eat
+### Јади
 
-Kiosks sell burek with yoghurt, tulumba, kebapi and a sandwich with ajvar. Walk into a café, bank, church, school, petrol station or market and pick from the menu.
+Киосците продаваат бурек со јогурт, тулумби, кебапи и сендвич со ајвар. Влези во кафуле, банка, црква, училиште, пумпа или маркет и избери од менито.
 
-## The cast
+## Ликовите
 
-24 playable characters, each with dozens of their own lines. Pick a taxi driver, a doctor, an e-scooter kid, a selfie queen... then meet the rest of the street: aunties with a rolling pin, an old man who knows how it was before, builders, cops, the bad-tempered neighbour. Everyone speaks in a distinct synthetic voice and in three levels of language: clean, street and uncensored.
+24 лика за играње, секој со десетици свои реплики. Избери таксист, доктор, клинец на е-тротинет, селфи-кралица... па запознај ги и другите на улица: тетки со тркалач, дедо што знае како било пред, градежници, полицајци, лут сосед. Сите зборуваат со разликуван синтетички глас и на три нивоа на јазик: чисто, улица и без цензура.
 
-<p align="center"><img src="docs/screenshots/select.jpg" width="900" alt="Character selection screen with 24 characters"></p>
+<p align="center"><img src="docs/screenshots/select.jpg" width="900" alt="Екран за избор на лик со 24 лика"></p>
 
-<p align="center"><img src="docs/screenshots/likovi.jpg" width="640" alt="Character artwork"></p>
+<p align="center"><img src="docs/screenshots/likovi.jpg" width="640" alt="Уметност на ликовите"></p>
 
-## The city, up close
+## Градот одблизу
 
 | | |
 |---|---|
-| ![Street level](docs/screenshots/selfie.jpg) | ![Night](docs/screenshots/night.jpg) |
-| ![Traffic at a junction](docs/screenshots/traffic.jpg) | ![The Vardar](docs/screenshots/vardar.jpg) |
-| ![Kiosk menu](docs/screenshots/kiosk.jpg) | ![Landmark](docs/screenshots/poi.jpg) |
+| ![Улично ниво](docs/screenshots/selfie.jpg) | ![Ноќ](docs/screenshots/night.jpg) |
+| ![Сообраќај на раскрсница](docs/screenshots/traffic.jpg) | ![Вардар](docs/screenshots/vardar.jpg) |
+| ![Киоск](docs/screenshots/kiosk.jpg) | ![Знаменитост](docs/screenshots/poi.jpg) |
 
-- Real OSM streets, buildings, rivers, parks and neighbourhoods on real terrain. Hills slow cars down, the Vardar sits in its bed, bridges let you drive over or fall under.
-- 401 real traffic lights, plus overhead signal arms on the big junctions. Priority rules, junction etiquette and lane choice. Traffic that gets stuck eventually works itself out.
-- Dogs, pigeons, ducks and crows, graffiti in Cyrillic slang, rain-streaked and crumbling facades, and a smog slider (the real Skopje has some opinions on this one).
-- Day and night, with a clock you control (`[` and `]`).
+- Вистински OSM улици, згради, реки, паркови и населби врз вистински терен. Угорнините ги забавуваат колите, Вардар си лежи во коритото, а мостовите ги возиш одозгора или паѓаш под нив.
+- 401 вистински семафор, плус семафори со рачка над поголемите раскрсници. Предност, раскрсници и избор на лента. Сообраќај што ќе се заглави, на крајот сам се одврзува.
+- Кучиња, гулаби, патки и врани, графити со кирилични зборови, изабени фасади со траги од дожд и лизгач за смог (вистинското Скопје има став и за тоа).
+- Ден и ноќ, со часовник што го вртиш сам (`[` и `]`).
 
-<p align="center"><img src="docs/screenshots/smog.jpg" width="640" alt="Smog warning: visibility 20 m"></p>
+<p align="center"><img src="docs/screenshots/smog.jpg" width="640" alt="Предупредување за смог: видливост 20 м"></p>
 
-## How the city grows
+## Како никнува градот
 
-The same place, from bare ground to a lit night, in seven steps. The game builds this whole city from open data on your machine.
+Истото место, од гола земја до ноќен град, во седум чекори. Играта го гради целиот град од отворени податоци на твојот компјутер.
 
-<p align="center"><img src="docs/screenshots/build_up.gif" width="900" alt="The city grows: terrain, OSM, roads, buildings, people, lights"></p>
+<p align="center"><img src="docs/screenshots/build_up.gif" width="900" alt="Градот никнува: терен, OSM, патишта, згради, луѓе, светла"></p>
 
-| 1 · Terrain | 2 · OSM map | 3 · Bare roads | 4 · Roads and infrastructure | 5 · Buildings | 6 · People and cars | 7 · Lights |
+| 1 · Терен | 2 · OSM мапа | 3 · Голи патишта | 4 · Патишта и инфраструктура | 5 · Згради | 6 · Луѓе и коли | 7 · Светла |
 |---|---|---|---|---|---|---|
 | ![](docs/screenshots/build_1_terrain.jpg) | ![](docs/screenshots/build_2_osm.jpg) | ![](docs/screenshots/build_3_roads_bare.jpg) | ![](docs/screenshots/build_4_roads_infra.jpg) | ![](docs/screenshots/build_5_buildings.jpg) | ![](docs/screenshots/build_6_actors.jpg) | ![](docs/screenshots/build_7_lighting.jpg) |
 
-## Controls
+## Команди
 
-| key | in a car | on foot |
+| тастер | во кола | пешки |
 |---|---|---|
-| `W A S D` / arrows | drive | walk / turn |
-| `Shift` | – | run |
-| `Space` | handbrake (drift) | jump |
-| `Ctrl` | – | punch, kick or shoot |
-| `F` / `Enter` | get out | get in / take the vehicle, board a bus (40 ден.), board or leave a train, use doors and gates |
-| `H` | horn / siren | say something |
-| `1`–`4` | – | kiosk: burek, tulumba, kebapi, sandwich |
-| `Q` / `E` | radio station | – |
-| `P` | – | selfie |
-| `M` / `Tab` | map, click to teleport | map |
-| `T` / `Shift+T` | next / previous neighbourhood | same |
-| `[` / `]` | time of day −1 h / +1 h | same |
-| `L` | change character | same |
-| `N` · `F3` · `F11` · `Esc` | mute · stats · fullscreen · menu / save / load | |
+| `W A S D` / стрелки | вози | оди / врти |
+| `Shift` | – | трча |
+| `Space` | рачна (дрифт) | скока |
+| `Ctrl` | – | удар, клоца или пука |
+| `F` / `Enter` | излез | влез / одземање на возило, качување на автобус (40 ден.), качување и слегување од воз, врати и порти |
+| `H` | клаксон / сирена | кажи нешто |
+| `1`–`4` | – | киоск: бурек, тулумба, кебапи, сендвич |
+| `Q` / `E` | радио станица | – |
+| `P` | – | селфи |
+| `M` / `Tab` | мапа, клик за телепорт | мапа |
+| `T` / `Shift+T` | следна / претходна населба | исто |
+| `[` / `]` | време од денот −1 ч / +1 ч | исто |
+| `L` | смени лик | исто |
+| `N` · `F3` · `F11` · `Esc` | тивко · статистика · цел екран · мени / зачувај / вчитај | |
 
-The menu (`Esc`) has tabs for the game, the city (time, traffic, smog), the people (count, aggression), graphics and camera, and a Debug tab. The controls for the helicopter and the БТР-80 are shown on screen when you get in.
+Менито (`Esc`) има табови за играта, градот (време, сообраќај, смог), луѓето (број, агресивност), графиката и камерата, и Дебаг. Командите за хеликоптерот и БТР-80 ти се покажуваат на екранот кога ќе влезеш.
 
-## Under the bonnet
+## Што каде е
 
-| path | what is there |
+| патека | содржина |
 |---|---|
-| `run.bat`, `make_exe.bat` | start the game (and make a shortcut), build a standalone exe |
-| `src/` | the game: simulation, rendering, sound, radio, speech |
-| `text/` | all Macedonian text, by topic, with editor notes (see `text/README.md`) |
-| `tools/` | map, terrain, rail and signal download, world building, traffic analysis, checks |
-| `assets/` | splash art, icon, fonts, characters, posters |
-| `docs/` | [architecture](docs/ARCHITECTURE.md), [text sources](docs/TEXT_SOURCES.md), the slang almanac, screenshots |
+| `run.bat`, `make_exe.bat` | пушти ја играта (и направи кратенка), направи самостоен exe |
+| `src/` | играта: симулација, цртање, звук, радио, говор |
+| `text/` | сите македонски текстови (по теми, со коментари за уредникот, види `text/README.md`) |
+| `tools/` | симнување мапа, терен, пруга и семафори, градење свет, анализа на сообраќајот, проверки |
+| `assets/` | почетна слика, икона, фонтови, ликови, постери |
+| `docs/` | [архитектура](docs/ARCHITECTURE.md), [извори на текст](docs/TEXT_SOURCES.md), сленг алманах, слики |
 
-Release history: [CHANGELOG.md](CHANGELOG.md).
+Историја на изданија: [CHANGELOG.md](CHANGELOG.md).
 
-## Good to know
+## Добро е да знаеш
 
-- Windows only. The voice and the setup script need Windows.
-- The Macedonian text has not been reviewed by a language editor (see [docs/TEXT_SOURCES.md](docs/TEXT_SOURCES.md)).
-- The first run needs internet for the map and the voice. Generated data (`data/`, logs) is not in the repo.
-- Fictional. Do not take other people's vehicles in real life: that is the point of Article 242.
+- Само Windows. Гласот и скриптата за подготовка бараат Windows.
+- Македонскиот текст не го прегледал јазичен уредник (види [docs/TEXT_SOURCES.md](docs/TEXT_SOURCES.md)).
+- Првиот пат треба интернет за мапата и гласот. Генерираните податоци (`data/`, дневници) не се во репото.
+- Измислено е. Не одземај туѓи возила во живот: токму за тоа е Член 242.
 
-## Credits and licences
+## Заслуги и лиценци
 
-- Map © OpenStreetMap contributors, ODbL. Terrain: AWS Terrarium tiles (open SRTM data).
-- **Voice: Suze**, a Macedonian female RHVoice voice, © UNICEF, from the speech group of FEIT UKIM ([suze-mkd](https://github.com/RHVoice/suze-mkd)), licence **CC BY-NC-ND 4.0**. `run.bat` downloads it; it is not bundled. The RHVoice engine is LGPL-2.1+.
-- Fonts: DejaVu Sans (`assets/fonts/LICENSE_DEJAVU`) and Oswald (SIL OFL).
-- Radio: plays only the music found in `music/`.
+- Мапа © соработници на OpenStreetMap, ODbL. Терен: плочки AWS Terrarium (отворени SRTM податоци).
+- **Глас: Сузе**, македонски женски глас за RHVoice, © УНИЦЕФ, од говорната група на ФЕИТ УКИМ ([suze-mkd](https://github.com/RHVoice/suze-mkd)), лиценца **CC BY-NC-ND 4.0**. `run.bat` го симнува, не е во пакетот. Моторот RHVoice: LGPL-2.1+.
+- Фонтови: DejaVu Sans (`assets/fonts/LICENSE_DEJAVU`) и Oswald (SIL OFL).
+- Радио: се пушта само музика што ти сам ќе ја ставиш во `music/`.
