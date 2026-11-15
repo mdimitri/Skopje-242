@@ -1506,6 +1506,16 @@ def main():
         vr = (vx_ * dx + vy_ * dy) / d_
         return max(0.85, min(1.15, 343.0 / (343.0 + vr)))
 
+    SIREN_NAMES = sorted(set(vehicles.SIREN_SOUND.values()))
+    SIREN_CUT = 1.5                                              # a siren beyond 1.5x the half-view from the camera centre is not played
+
+    def siren_gain(n):
+        """n: the siren's distance from the camera centre in half-views (larger of x / y), 1 = screen edge.
+        On screen it fades gently to 0.5 at the edge; off screen it falls steeply (cubic) to silence at SIREN_CUT."""
+        if n <= 1.0:
+            return 1.0 - 0.5 * n
+        return 0.0 if n >= SIREN_CUT else 0.5 * (1.0 - (n - 1.0) / (SIREN_CUT - 1.0)) ** 3
+
     def pan_of(x, lx, d):
         return 0.5 + 0.45 * max(-1.0, min(1.0, (x - lx) / max(d, 12.0)))
 
@@ -1559,18 +1569,27 @@ def main():
             engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)
         aud.loop("ai_engine_misfire", 0.6 * max(0.0, dn_ - 0.1) * (1.0 - nd / 45.0) ** 2 if dn_ > 0 else 0.0, 0.95, "engine", pan_of(near_c.x, fx_, nd) if dn_ > 0 else 0.5, 0)
-        best, near_v = {}, {}
+        hw_, hh_ = sw / (2.0 * ppm), sh / (2.0 * ppm)            # half the ground the camera shows at this zoom (wide in the helicopter)
+        best, near_v = {}, {}                                    # per siren sound: the vehicle closest to the view, in view units
+
+        def siren_at(v):
+            n_ = max(abs(v.x - cam_x) / hw_, abs(v.y - cam_y) / hh_)          # 1 = on the screen edge, 1.5 = half a half-view beyond it
+            nm_ = vehicles.SIREN_SOUND[v.kind]
+            if n_ < best.get(nm_, SIREN_CUT):
+                best[nm_], near_v[nm_] = n_, v
         for c in sim.traffic.cars:
             if c.kind in vehicles.SIREN_SOUND and c.v > 3:
-                best[c.kind] = min(best.get(c.kind, 1e9), math.hypot(c.x - fx_, c.y - fy_))
-                near_v[c.kind] = c if math.hypot(c.x - fx_, c.y - fy_) <= best[c.kind] else near_v.get(c.kind, c)
+                siren_at(c)
         for b in sim.bodies:
             if b.kind in vehicles.SIREN_SOUND and getattr(b, "siren", False) and b.alive:
-                best[b.kind] = min(best.get(b.kind, 1e9), math.hypot(b.x - fx_, b.y - fy_))
-                near_v[b.kind] = b if math.hypot(b.x - fx_, b.y - fy_) <= best[b.kind] else near_v.get(b.kind, b)
-        hear_r = 190.0                                          # sirens are heard only within the minimap (span 380 m -> radius 190 m)
-        for k, nm in vehicles.SIREN_SOUND.items():
-            aud.loop(nm, max(0.0, 1.0 - best.get(k, 1e9) / hear_r) * 0.55 if best.get(k, 1e9) < hear_r else 0.0, doppler(near_v[k], fx_, fy_) if k in near_v else 1.0, "sfx", pan_of(near_v[k].x, fx_, best[k]) if k in near_v else 0.5)
+                siren_at(b)
+        for nm in SIREN_NAMES:                                   # by sound, not by kind: the Maritsa shares the police siren
+            v = near_v.get(nm)
+            if v is None:
+                aud.loop(nm, 0.0, 1.0, "sfx")
+                continue
+            d_ = math.hypot(v.x - fx_, v.y - fy_)
+            aud.loop(nm, 0.55 * siren_gain(best[nm]), doppler(v, fx_, fy_), "sfx", pan_of(v.x, fx_, d_))
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
         aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
