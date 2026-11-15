@@ -104,7 +104,7 @@ def project(lat, lon):
 class Capture:
     """One image and the camera it was taken with.  Pose angles in degrees: yaw from north clockwise, pitch up > 0, fov vertical."""
 
-    def __init__(self, row, folder, sizes=None):
+    def __init__(self, row, folder):
         self.idx = row.get("idx", "")
         self.file = row["file"]
         self.path = _find_image(os.path.join(folder, self.file))
@@ -125,30 +125,24 @@ class Capture:
         self.x, self.z = project(lat, lon)
         self.y = 0.0                                    # eye height, set from the terrain
         self.dyaw = self.dpitch = 0.0                   # refinement found by the "render" algorithm
-        self.W = self.H = 0
+        self._wh = None                                 # image size: read from the file the first time it is needed
         self.exists = os.path.exists(self.path)
-        st_ = None
-        if self.exists and sizes is not None:            # sizes known from an earlier read (same file size and time): no image opened
-            try:
-                s_ = os.stat(self.path)
-                st_ = [s_.st_size, int(s_.st_mtime)]
-                k_ = sizes.get(self.path)
-                if k_ and k_[:2] == st_:
-                    self.W, self.H, self.exists = k_[2], k_[3], bool(k_[4])
-                    st_ = None
-            except OSError:
-                self.exists = False
-        if self.exists and (sizes is None or st_ is not None):
+        self.status = ""                                # what the builder made of it (viewer)
+
+    def _size(self):
+        if self._wh is None:
+            self._wh = (0, 0)
             try:
                 with Image.open(self.path) as im:
-                    self.W, self.H = im.size
-                if self.W < 64 or self.H < 64 or os.path.getsize(self.path) < 2048:
-                    self.exists = False                 # an empty / error page, not a photo
-            except Exception:  # noqa: BLE001 - any unreadable file is just skipped (bad header, huge, unknown format)
-                self.exists = False
-            if st_ is not None:
-                sizes[self.path] = st_ + [self.W, self.H, int(self.exists)]
-        self.status = ""                                # what the builder made of it (viewer)
+                    self._wh = im.size
+            except Exception:  # noqa: BLE001 - any unreadable file is just skipped (bad header, unknown format)
+                pass
+            if self._wh[0] < 64 or self._wh[1] < 64:
+                self.exists = False                     # an empty / error page, not a photo
+        return self._wh
+
+    W = property(lambda self: self._size()[0])
+    H = property(lambda self: self._size()[1])
 
     def basis(self, refined=True):
         y = math.radians(self.yaw + (self.dyaw if refined else 0.0))
@@ -245,28 +239,17 @@ def _read_one(top, folder, prefix, log=None):
         if not rows or "file" not in rows[0]:
             continue
         caps, bad = [], 0
-        sp = os.path.join(folder, CACHE, "sizes.json")       # image sizes, so a restart does not open thousands of photos again
-        sizes = _read_json(sp) if os.path.exists(sp) else {}
-        n0 = len(sizes)
         for r in rows:
             if not (r.get("file") or "").strip():
                 bad += 1
                 continue
             r = dict(r, file=(prefix + "/" if prefix else "") + r["file"].strip())
             try:
-                caps.append(Capture(r, top, sizes))
+                caps.append(Capture(r, top))
             except (ValueError, TypeError, KeyError):
                 bad += 1                                 # a broken row (empty lat / heading ...) is skipped
         if bad and log:
             log(f"{p}: {bad} неисправни редови прескокнати")
-        if len(sizes) != n0:
-            try:
-                os.makedirs(os.path.dirname(sp), exist_ok=True)
-                with open(sp + ".tmp", "w", encoding="utf-8") as f:
-                    json.dump(sizes, f)
-                os.replace(sp + ".tmp", sp)
-            except OSError:
-                pass
         return caps
     return []
 
