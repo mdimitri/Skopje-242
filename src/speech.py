@@ -198,6 +198,40 @@ _SOFT = (TXT("speech.0084"), TXT("speech.0085"), TXT("speech.0086"), TXT("speech
 _OLD = (TXT("speech.0102"), TXT("speech.0103"), TXT("speech.0104"), TXT("speech.0105"), TXT("speech.0106"), TXT("speech.0107"), TXT("speech.0108"), "baba", "dedo")
 
 
+# voice gender/age of every pedestrian kind and hero, taken from how its 3D model is styled (gl3d: skirt, long hair, bun,
+# headscarf, child scale), so the voice matches what you see.  'f' female, 'm' male, 'c' child; True = old.
+PED_VOICE = {"Chichko": ("m", True), "Baba": ("f", True), "Biznismen": ("m", False), "Student": ("m", False), "Navivach": ("m", False),
+             "Dete": ("c", False), "Rabotnik": ("m", False), "Devojka": ("f", False), "Buregdzija": ("m", False), "Ti": ("m", False),
+             "Pandur": ("m", False), "Parkingar": ("m", False), "Pop": ("m", False), "Hipster": ("m", False), "Influenser": ("f", False),
+             "Telefonash": ("m", False), "Penzioner": ("m", True), "Kafana Chicko": ("m", True), "Turist": ("m", False),
+             "Gastarbajter": ("m", False), "Majka so Kolichka": ("f", False), "Partiski Aktivist": ("m", False), "Advokat": ("m", False),
+             "Teretana Brat": ("m", False), "Kiosk Chika": ("f", False), "Ribar": ("m", False), "Golabar": ("f", True), "Komunalec": ("m", False),
+             "Nevesta": ("f", False), "Dostavuvach": ("m", False), "Velosipedist": ("m", False), "Dedo na Kolo": ("m", True),
+             "Moped Tomos": ("m", False), "Glovo Skuter": ("m", False), "Trotinet Dete": ("c", False), "E-Trotinet Hipster": ("m", False),
+             "Skejter": ("m", False), "Rolerash": ("m", False), "Kocija": ("m", False), "Jogger": ("m", False), "Vojnik": ("m", False)}
+HERO_VOICE = {"kumplung": ("m", False), "maca": ("f", False), "mile": ("m", False), "stojan": ("m", False), "influenser": ("m", False),
+              "influenserka": ("f", False), "tetkica": ("f", False), "baba": ("f", True), "dedo": ("m", True), "pandur": ("m", False),
+              "doktor": ("m", False), "mali": ("c", False), "radnik": ("m", False), "burek": ("m", False), "boza": ("m", False),
+              "fitka": ("f", False), "bilder": ("m", False), "shmizla": ("f", False), "palavko": ("c", False), "srednoskolec": ("m", False),
+              "vojnik": ("m", False), "navivac": ("m", False), "administratorka": ("f", False), "nastavnica": ("f", False)}
+
+
+def voice_kind(who):
+    """-> (gender, old, hero id or None) from the model styling tables, or None for speakers that are in neither."""
+    base = (who or "").split("#")[0]
+    try:
+        import hero_names
+        for hid, full in hero_names.NAMES.items():
+            if full == base and hid in HERO_VOICE:
+                return HERO_VOICE[hid] + (hid,)
+        import vehicles
+        if base in vehicles.PED_NAMES:
+            return PED_VOICE.get(vehicles.PED_IDS[vehicles.PED_NAMES.index(base)], ("m", False)) + (None,)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def profile(who):
     """-> dict: gender 'f'/'m'/'c', k pitch factor of the (female) Suze voice, rate delta, vol, rough 0..1, soft 0..1, vib."""
     w = (who or "").lower()
@@ -222,6 +256,13 @@ def profile(who):
         p.update(k=p["k"] * 1.04, rate=p["rate"] - 1, vol=0.85, soft=0.7)
     if old:
         p.update(rate=p["rate"] - 2, vib=1.0)
+    vk = voice_kind(who)
+    if vk is not None and vk[0] != p["g"]:          # the model's styling wins over the name keywords
+        p.update(g=vk[0], k={"m": 0.8, "f": 1.0, "c": 1.28}[vk[0]] + j * 0.6)
+    if vk is not None:
+        p["vib"] = 1.0 if vk[1] else 0.0
+        if vk[0] == "f":
+            p["rough"] = 0.0
     p.setdefault("vib", 0.0)
     p["k"] = max(0.68, min(1.5, p["k"]))
     return p

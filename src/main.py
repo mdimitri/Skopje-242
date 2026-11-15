@@ -1165,7 +1165,7 @@ def main():
                     shake = max(shake, 0.5)
             elif kind == "shout":
                 spk_ = next((p_ for p_ in sim.peds.list if abs(p_.x - d["x"]) < 0.01 and abs(p_.y - d["y"]) < 0.01), None)   # the bubble follows the speaker
-                popups.add((d["who"] + ": " if d.get("who") else "") + d["text"], d["x"], d["y"], 2.6, 2.4, (255, 255, 255), 18, spk_)
+                popups.add((d["who"].split("#")[0] + ": " if d.get("who") else "") + d["text"], d["x"], d["y"], 2.6, 2.4, (255, 255, 255), 18, spk_)
             elif kind == "shout_self":
                 if sim.walker and d.get("text"):
                     popups.add(d["text"], sim.walker.x, sim.walker.y, 2.6, 3.0, (160, 255, 200), 20, sim.walker, True)

@@ -1,0 +1,149 @@
+plain Suze: measured f0 188 (formant scale 1.00 by definition)
+hero Чичко Кумплунг                m      target f0    95 a 0.85 | measured f0    97 a 0.83  OK
+hero Певаљка Маца                  f      target f0   221 a 1.05 | measured f0   216 a 1.08  OK
+hero Таксист Миле                  m      target f0   118 a 0.89 | measured f0   119 a 0.86  OK
+hero Студент Стојан                m      target f0   135 a 0.92 | measured f0   137 a 0.94  OK
+hero Инфлуенсер Давид              m      target f0   150 a 0.92 | measured f0   151 a 0.94  OK
+hero Инфлуенсерка Сара             f      target f0   243 a 1.09 | measured f0   238 a 1.10  OK
+hero Теткица Весна                 f      target f0   212 a 1.04 | measured f0   211 a 1.06  OK
+hero Баба Велика                   f old  target f0   176 a 1.00 | measured f0   176 a 1.03  OK
+hero Дедо Димче                    m old  target f0    97 a 0.91 | measured f0   101 a 0.88  OK
+hero Пандур Бобан                  m      target f0    89 a 0.80 | measured f0    90 a 0.76  OK
+hero Доктор Владимир               m      target f0   107 a 0.85 | measured f0   108 a 0.81  OK
+hero Мали                          c      target f0   304 a 1.25 | measured f0   291 a 1.29  OK
+hero Работник Момчило              m      target f0   105 a 0.89 | measured f0   105 a 0.84  OK
+hero Бурек-мајстор Благоја         m      target f0   124 a 0.92 | measured f0   124 a 0.91  OK
+hero Боза-мајстор Љупчо            m      target f0   133 a 0.92 | measured f0   135 a 0.91  OK
+hero Фит-женска Теа                f      target f0   230 a 1.09 | measured f0   227 a 1.10  OK
+hero Билдер Дарко                  m      target f0    83 a 0.77 | measured f0    85 a 0.73  OK
+hero Шмизла Кики                   f      target f0   250 a 1.10 | measured f0   242 a 1.12  OK
+hero Палавко                       c      target f0   269 a 1.16 | measured f0   254 a 1.19  OK
+hero Средношколец Михаил           m      target f0   150 a 0.92 | measured f0   152 a 0.93  OK
+hero Војник Сашо                   m      target f0   108 a 0.89 | measured f0   110 a 0.87  OK
+hero Навивач Дуле                  m      target f0   129 a 0.89 | measured f0   131 a 0.87  OK
+hero Административка Славица       f      target f0   190 a 1.00 | measured f0   190 a 1.02  OK
+hero Наставничка Снежана           f      target f0   181 a 0.98 | measured f0   183 a 0.98  OK
+Чичко #11                          m old  target f0   120 a 0.86 | measured f0   121 a 0.86  OK
+Чичко #222                         m old  target f0   105 a 0.92 | measured f0   107 a 0.93  OK
+Чичко #3333                        m old  target f0   121 a 0.90 | measured f0   122 a 0.88  OK
+Баба #11                           f old  target f0   200 a 0.98 | measured f0   199 a 0.98  OK
+Баба #222                          f old  target f0   166 a 0.99 | measured f0   166 a 1.00  OK
+Баба #3333                         f old  target f0   166 a 1.01 | measured f0   168 a 1.00  OK
+Бизнисмен #11                      m      target f0   116 a 0.84 | measured f0   117 a 0.85  OK
+Бизнисмен #222                     m      target f0   123 a 0.86 | measured f0   124 a 0.86  OK
+Бизнисмен #3333                    m      target f0   135 a 0.83 | measured f0   135 a 0.84  OK
+Студент #11                        m      target f0   111 a 0.85 | measured f0   111 a 0.85  OK
+Студент #222                       m      target f0   133 a 0.87 | measured f0   135 a 0.89  OK
+Студент #3333                      m      target f0   114 a 0.89 | measured f0   115 a 0.87  OK
+Навивач #11                        m      target f0   101 a 0.89 | measured f0   104 a 0.91  OK
+Навивач #222                       m      target f0   116 a 0.90 | measured f0   118 a 0.88  OK
+Навивач #3333                      m      target f0   114 a 0.90 | measured f0   114 a 0.89  OK
+Дете #11                           c      target f0   289 a 1.22 | measured f0   287 a 1.23  OK
+Дете #222                          c      target f0   277 a 1.16 | measured f0   274 a 1.17  OK
+Дете #3333                         c      target f0   276 a 1.17 | measured f0   270 a 1.17  OK
+Работник #11                       m      target f0   124 a 0.86 | measured f0   125 a 0.86  OK
+Работник #222                      m      target f0   115 a 0.90 | measured f0   117 a 0.89  OK
+Работник #3333                     m      target f0   133 a 0.84 | measured f0   132 a 0.85  OK
+Девојка #11                        f      target f0   219 a 1.06 | measured f0   219 a 1.06  OK
+Девојка #222                       f      target f0   205 a 1.01 | measured f0   202 a 0.98  OK
+Девојка #3333                      f      target f0   243 a 1.05 | measured f0   244 a 1.10  OK
+Бурегџија #11                      m      target f0   135 a 0.87 | measured f0   135 a 0.84  OK
+Бурегџија #222                     m      target f0   113 a 0.88 | measured f0   115 a 0.86  OK
+Бурегџија #3333                    m      target f0   117 a 0.85 | measured f0   119 a 0.86  OK
+Ти #11                             m      target f0   120 a 0.90 | measured f0   122 a 0.91  OK
+Ти #222                            m      target f0   129 a 0.86 | measured f0   131 a 0.87  OK
+Ти #3333                           m      target f0   115 a 0.86 | measured f0   116 a 0.85  OK
+Пандур #11                         m      target f0   109 a 0.87 | measured f0   111 a 0.87  OK
+Пандур #222                        m      target f0   109 a 0.86 | measured f0   110 a 0.86  OK
+Пандур #3333                       m      target f0   127 a 0.85 | measured f0   127 a 0.84  OK
+Паркинг-чувар #11                  m      target f0   115 a 0.85 | measured f0   116 a 0.87  OK
+Паркинг-чувар #222                 m      target f0   114 a 0.90 | measured f0   115 a 0.89  OK
+Паркинг-чувар #3333                m      target f0   133 a 0.84 | measured f0   135 a 0.84  OK
+Поп #11                            m      target f0   105 a 0.85 | measured f0   109 a 0.85  OK
+Поп #222                           m      target f0   115 a 0.83 | measured f0   115 a 0.84  OK
+Поп #3333                          m      target f0   125 a 0.89 | measured f0   127 a 0.91  OK
+Хипстер #11                        m      target f0   133 a 0.89 | measured f0   135 a 0.88  OK
+Хипстер #222                       m      target f0   116 a 0.86 | measured f0   117 a 0.87  OK
+Хипстер #3333                      m      target f0   108 a 0.88 | measured f0   111 a 0.87  OK
+Инфлуенсер #11                     f      target f0   220 a 1.02 | measured f0   217 a 1.04  OK
+Инфлуенсер #222                    f      target f0   223 a 1.09 | measured f0   221 a 1.12  OK
+Инфлуенсер #3333                   f      target f0   228 a 1.05 | measured f0   227 a 1.05  OK
+Со телефон #11                     m      target f0   121 a 0.86 | measured f0   123 a 0.88  OK
+Со телефон #222                    m      target f0   103 a 0.88 | measured f0   106 a 0.89  OK
+Со телефон #3333                   m      target f0   118 a 0.86 | measured f0   121 a 0.87  OK
+Пензионер #11                      m old  target f0   121 a 0.87 | measured f0   122 a 0.87  OK
+Пензионер #222                     m old  target f0   113 a 0.85 | measured f0   114 a 0.87  OK
+Пензионер #3333                    m old  target f0   100 a 0.89 | measured f0   102 a 0.89  OK
+Кафеански чичко #11                m old  target f0   115 a 0.92 | measured f0   117 a 0.93  OK
+Кафеански чичко #222               m old  target f0   107 a 0.88 | measured f0   107 a 0.87  OK
+Кафеански чичко #3333              m old  target f0   113 a 0.88 | measured f0   114 a 0.87  OK
+Турист #11                         m      target f0   110 a 0.85 | measured f0   111 a 0.84  OK
+Турист #222                        m      target f0   107 a 0.91 | measured f0   109 a 0.90  OK
+Турист #3333                       m      target f0   105 a 0.88 | measured f0   106 a 0.87  OK
+Гастарбајтер #11                   m      target f0   113 a 0.85 | measured f0   116 a 0.86  OK
+Гастарбајтер #222                  m      target f0   134 a 0.88 | measured f0   135 a 0.88  OK
+Гастарбајтер #3333                 m      target f0   110 a 0.87 | measured f0   112 a 0.89  OK
+Мајка со количка #11               f      target f0   201 a 1.00 | measured f0   199 a 1.01  OK
+Мајка со количка #222              f      target f0   206 a 1.03 | measured f0   203 a 1.03  OK
+Мајка со количка #3333             f      target f0   200 a 1.10 | measured f0   197 a 1.09  OK
+Партиски активист #11              m      target f0   106 a 0.87 | measured f0   108 a 0.87  OK
+Партиски активист #222             m      target f0   143 a 0.85 | measured f0   144 a 0.84  OK
+Партиски активист #3333            m      target f0   109 a 0.88 | measured f0   111 a 0.88  OK
+Адвокат #11                        m      target f0   118 a 0.88 | measured f0   120 a 0.88  OK
+Адвокат #222                       m      target f0   123 a 0.84 | measured f0   124 a 0.85  OK
+Адвокат #3333                      m      target f0   126 a 0.87 | measured f0   126 a 0.86  OK
+Билдер #11                         m      target f0   106 a 0.85 | measured f0   108 a 0.85  OK
+Билдер #222                        m      target f0   127 a 0.87 | measured f0   126 a 0.87  OK
+Билдер #3333                       m      target f0   129 a 0.87 | measured f0   129 a 0.89  OK
+Продавач од киоск #11              f      target f0   220 a 1.05 | measured f0   218 a 1.04  OK
+Продавач од киоск #222             f      target f0   197 a 1.00 | measured f0   197 a 1.03  OK
+Продавач од киоск #3333            f      target f0   195 a 1.00 | measured f0   196 a 1.01  OK
+Рибар #11                          m      target f0    97 a 0.85 | measured f0    99 a 0.86  OK
+Рибар #222                         m      target f0   112 a 0.87 | measured f0   113 a 0.84  OK
+Рибар #3333                        m      target f0   119 a 0.85 | measured f0   120 a 0.85  OK
+Гулабар #11                        f old  target f0   182 a 0.96 | measured f0   182 a 0.95  OK
+Гулабар #222                       f old  target f0   170 a 0.99 | measured f0   170 a 1.00  OK
+Гулабар #3333                      f old  target f0   169 a 1.03 | measured f0   170 a 1.01  OK
+Комунален инспектор #11            m      target f0   112 a 0.87 | measured f0   113 a 0.86  OK
+Комунален инспектор #222           m      target f0   132 a 0.91 | measured f0   133 a 0.89  OK
+Комунален инспектор #3333          m      target f0   104 a 0.87 | measured f0   104 a 0.87  OK
+Невеста #11                        f      target f0   183 a 1.03 | measured f0   183 a 1.02  OK
+Невеста #222                       f      target f0   199 a 1.00 | measured f0   200 a 0.99  OK
+Невеста #3333                      f      target f0   207 a 1.05 | measured f0   205 a 1.06  OK
+Доставувач #11                     m      target f0   124 a 0.86 | measured f0   124 a 0.86  OK
+Доставувач #222                    m      target f0   120 a 0.89 | measured f0   121 a 0.89  OK
+Доставувач #3333                   m      target f0   126 a 0.89 | measured f0   127 a 0.90  OK
+Велосипедист #11                   m      target f0   115 a 0.87 | measured f0   117 a 0.87  OK
+Велосипедист #222                  m      target f0   106 a 0.86 | measured f0   107 a 0.84  OK
+Велосипедист #3333                 m      target f0   112 a 0.90 | measured f0   112 a 0.92  OK
+Дедо на велосипед #11              m old  target f0    99 a 0.92 | measured f0   101 a 0.92  OK
+Дедо на велосипед #222             m old  target f0   101 a 0.90 | measured f0   103 a 0.90  OK
+Дедо на велосипед #3333            m old  target f0   109 a 0.91 | measured f0   111 a 0.92  OK
+Мопед Томос #11                    m      target f0   128 a 0.86 | measured f0   130 a 0.85  OK
+Мопед Томос #222                   m      target f0   128 a 0.86 | measured f0   129 a 0.86  OK
+Мопед Томос #3333                  m      target f0   109 a 0.85 | measured f0   111 a 0.86  OK
+Скутер за достава #11              m      target f0   121 a 0.89 | measured f0   121 a 0.88  OK
+Скутер за достава #222             m      target f0   145 a 0.84 | measured f0   147 a 0.83  OK
+Скутер за достава #3333            m      target f0   115 a 0.86 | measured f0   116 a 0.85  OK
+Дете на тротинет #11               c      target f0   277 a 1.21 | measured f0   272 a 1.23  OK
+Дете на тротинет #222              c      target f0   264 a 1.17 | measured f0   261 a 1.19  OK
+Дете на тротинет #3333             c      target f0   281 a 1.22 | measured f0   277 a 1.24  OK
+Хипстер на тротинет #11            m      target f0   116 a 0.89 | measured f0   117 a 0.89  OK
+Хипстер на тротинет #222           m      target f0   117 a 0.88 | measured f0   117 a 0.87  OK
+Хипстер на тротинет #3333          m      target f0   100 a 0.86 | measured f0   103 a 0.86  OK
+Скејтер #11                        m      target f0   114 a 0.86 | measured f0   116 a 0.86  OK
+Скејтер #222                       m      target f0   107 a 0.88 | measured f0   108 a 0.88  OK
+Скејтер #3333                      m      target f0   107 a 0.86 | measured f0   108 a 0.86  OK
+Ролер #11                          m      target f0   101 a 0.86 | measured f0   103 a 0.87  OK
+Ролер #222                         m      target f0   107 a 0.86 | measured f0   109 a 0.88  OK
+Ролер #3333                        m      target f0   123 a 0.88 | measured f0   126 a 0.88  OK
+Кочијаш #11                        m      target f0   125 a 0.89 | measured f0   126 a 0.88  OK
+Кочијаш #222                       m      target f0   112 a 0.86 | measured f0   113 a 0.87  OK
+Кочијаш #3333                      m      target f0   106 a 0.89 | measured f0   107 a 0.87  OK
+Џогер #11                          m      target f0   128 a 0.83 | measured f0   130 a 0.84  OK
+Џогер #222                         m      target f0   112 a 0.91 | measured f0   113 a 0.91  OK
+Џогер #3333                        m      target f0   119 a 0.89 | measured f0   121 a 0.89  OK
+Војник #11                         m      target f0   129 a 0.87 | measured f0   129 a 0.85  OK
+Војник #222                        m      target f0   132 a 0.84 | measured f0   132 a 0.84  OK
+Војник #3333                       m      target f0   124 a 0.87 | measured f0   126 a 0.87  OK
+mismatches: 0

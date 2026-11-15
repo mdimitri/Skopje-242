@@ -169,7 +169,7 @@ B = {
  "kumplung": ("Чичко Кумплунг", dict(f0=88, rng=1.0, alpha=.84, rough=.5, vib=.4, chest=.6, nasal=.4, rate=.88)),
  "maca": ("Певаљка Маца", dict(f0=225, rng=1.8, alpha=1.06, breath=.5, vib=.7, chest=.3, pres=.3, rate=.92)),
  "stojan": ("Студент Стојан", dict(f0=130, rng=1.1, alpha=.96, nasal=.5, tilt=1, rate=1.1)),
- "palavko": ("Палавко", dict(f0=140, rng=1.8, alpha=.98, nasal=.5, pres=.5, tilt=2, rate=1.3)),
+ "palavko": ("Палавко", dict(f0=280, rng=1.8, alpha=1.18, nasal=.5, pres=.5, tilt=2, rate=1.3)),
 }
 # signature extras per character (scaled with the level through ADD): effects that make the voice type real
 X = dict(mile=dict(fry=.5, drive=.2, spread=-.15), doktor=dict(fry=.3, spread=-.2, decl=.5), influenser=dict(wobble=1.5, spread=.2, decl=-.5),
@@ -190,43 +190,58 @@ HERO_K = 0.9      # = level L2
 PED_K = 0.6       # = level L1 for the generic pedestrian voice (each pedestrian then varies around it)
 
 
+# natural ranges of median pitch (Hz) and formant scale vs. Suze (an adult woman) per gender / age
+BAND = {("m", False): ((95, 145), (.83, .91)), ("m", True): ((95, 135), (.85, .93)),
+        ("f", False): ((180, 250), (.98, 1.10)), ("f", True): ((160, 200), (.96, 1.04)),
+        ("c", False): ((250, 340), (1.12, 1.30)), ("c", True): ((250, 340), (1.12, 1.30))}
+HERO_BAND = {("m", False): ((75, 150), (.74, .92))}           # heroes may be deeper (Билдер, Пандур)
+
+
+def _clamp(p, g, old, hero=False):
+    (f_lo, f_hi), (a_lo, a_hi) = (HERO_BAND.get((g, old)) if hero else None) or BAND[(g, old)]
+    p["f0"] = min(f_hi, max(f_lo, p["f0"]))
+    p["alpha"] = min(a_hi, max(a_lo, p["alpha"]))
+    lim = {"m": (-.2, .04), "f": (-.1, .06), "c": (-.1, .1)}[g]   # mouth/throat split must not push a voice out of its gender
+    p["spread"] = min(lim[1], max(lim[0], p.get("spread", 0.0)))
+    return p
+
+
 def params_for(who, prof):
     """Voice parameters for a speaker: heroes get their signature voice; every pedestrian ('Name#id') gets its own
-    variation of the generic voice for its kind (prof = speech.profile(who))."""
-    base = who.split("#")[0]
-    try:
-        import hero_names
-        for hid, full in hero_names.NAMES.items():
-            if full == base and hid in B:
-                return level(B[hid][1], HERO_K)
-    except Exception:  # noqa: BLE001
-        pass
-    g = prof.get("g", "m")
+    variation of the voice for its kind.  Gender/age come from the model styling (speech.voice_kind), and pitch and
+    formants are always kept inside the natural range for that gender/age."""
+    import speech
+    vk = speech.voice_kind(who)
+    g, old = (vk[0], vk[1]) if vk else (prof.get("g", "m"), bool(prof.get("vib")))
+    if vk and vk[2] in B:
+        return _clamp(level(B[vk[2]][1], HERO_K), g, old, hero=True)
     rg = random.Random(zlib.crc32(who.encode("utf-8")))
-    p = {"m": dict(f0=120., alpha=.92, chest=.3), "f": dict(f0=215., alpha=1.05, nasal=.2),
-         "c": dict(f0=300., alpha=1.22)}[g]
-    p.update(rng=1.0, rate=1.0)
-    if prof.get("rough"):
-        p.update(rough=.5, fry=.3, drive=.2)
+    p = {("m", False): dict(f0=118., alpha=.87, chest=.3), ("m", True): dict(f0=112., alpha=.89, vib=.8, rate=.88, tilt=-3, fry=.3),
+         ("f", False): dict(f0=210., alpha=1.03), ("f", True): dict(f0=180., alpha=1.0, vib=.8, rate=.88, tilt=-3),
+         ("c", False): dict(f0=290., alpha=1.2), ("c", True): dict(f0=290., alpha=1.2)}[(g, old)]
+    p.setdefault("rate", 1.0)
+    p["rng"] = 1.0
+    if prof.get("rough") and g == "m":
+        p.update(rough=.4, fry=max(p.get("fry", 0), .3), drive=.15)
     if prof.get("soft"):
-        p.update(breath=.3, tilt=-2)
-    if prof.get("vib"):
-        p.update(vib=.8, rate=.85, tilt=-3, fry=.3)
-    p = level(p, PED_K)
+        p.update(breath=.25, tilt=p.get("tilt", 0) - 1.5)
+    q = level(dict(p, f0=189., alpha=1.0), PED_K)      # colour effects at L1 strength; pitch/formants stay natural
+    q["f0"], q["alpha"], q["rate"] = p["f0"], p["alpha"], p["rate"]
+    p = q
     u = rg.uniform
-    p["f0"] *= math.exp(rg.gauss(0, .16))
-    p["alpha"] *= math.exp(rg.gauss(0, .045))
-    p["rng"] *= u(.8, 1.3)
-    p["rate"] *= u(.9, 1.1)
-    p["tilt"] += rg.gauss(0, 2)
-    p["nasal"] = max(p["nasal"], u(0, .6) if rg.random() < .5 else 0)
-    p["pres"] = u(0, .5)
-    p["wobble"] = u(0, 1.2)
-    p["spread"] += rg.gauss(0, .1)
+    p["f0"] *= math.exp(rg.gauss(0, .08))
+    p["alpha"] *= math.exp(rg.gauss(0, .025))
+    p["rng"] *= u(.85, 1.25)
+    p["rate"] *= u(.92, 1.08)
+    p["tilt"] += rg.gauss(0, 1.5)
+    p["nasal"] = max(p["nasal"], u(0, .5) if rg.random() < .4 else 0)
+    p["pres"] = u(0, .4)
+    p["wobble"] = u(0, 1.0)
+    p["spread"] += rg.gauss(0, .06)
     if g == "m":
-        p["chest"] = max(p["chest"], u(0, .6))
+        p["chest"] = max(p["chest"], u(0, .5))
         if rg.random() < .3:
-            p["fry"] = max(p["fry"], u(.2, .5))
+            p["fry"] = max(p["fry"], u(.2, .4))
     else:
-        p["breath"] = max(p["breath"], u(0, .25))
-    return p
+        p["breath"] = max(p["breath"], u(0, .2))
+    return _clamp(p, g, old)
