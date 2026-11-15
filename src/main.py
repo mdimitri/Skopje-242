@@ -425,6 +425,8 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
         if run_tool(["tools/build_world.py", "--src", osm, "--out", real], loader, "build", max_sec=3600) != 0:
             raise DownloadError(T.BUILD_FAILED)
         loader.build_finished()
+        import photobg
+        photobg.mark_built()                                   # the background run's buildings are in the world now
     try:
         return attempt(real)
     except WorldError as e:

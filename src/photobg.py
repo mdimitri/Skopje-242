@@ -24,6 +24,7 @@ _ready = False                           # the world is loaded: the run may star
 _finished = False                        # the run ended by itself this session (all photos done): not started again
 ENABLED = False                          # the setting, as last seen (the loading screen has no settings at hand)
 _line = ("", 0.0)
+_mark = [None]                           # the applied fits' hash, until the world has been built with them
 
 
 def _log(s):
@@ -101,13 +102,25 @@ def apply_pending(log=_log):
         import photogram as pg
         _st, op = pg.load_settings(PHOTOS)
         pg.apply_to_game(PHOTOS, "detail", OSM, op)
-        with open(mark, "w", encoding="utf-8") as f:
-            f.write(h)
+        _mark[0] = h                      # written once the world build with them has finished (mark_built), not before
     except Exception as e:  # noqa: BLE001 - never stop the game for it: the old buildings stay
         log(f"could not apply the fitted buildings: {type(e).__name__}: {e}")
         return False
     log(f"{len(d.get('buildings', {}))} fitted buildings applied: the world is rebuilt with them")
     return True
+
+
+def mark_built():
+    """The world build finished: the applied fits are in it, the next start need not build again.  A build cut short (the game
+    closed during it) leaves no mark, so the next start applies and builds again."""
+    if _mark[0] is None:
+        return
+    try:
+        with open(os.path.join(OSM, "photogram.src.md5"), "w", encoding="utf-8") as f:
+            f.write(_mark[0])
+        _mark[0] = None
+    except OSError:
+        pass
 
 
 def set_ready():
