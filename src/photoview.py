@@ -201,160 +201,227 @@ def _v3(p):
 
 
 class Scene:
-    """Per-material models of all loaded buildings in one look (current, or one algorithm's fit).
-    Each building's mesh parts are kept with the key they were made for (look, fit version, element switches), so a change
-    rebuilds only the buildings it touches; the rebuild runs a slice per frame (step) and the old models stay up meanwhile."""
+    """The buildings of one look (current, or the fit), in two levels of detail held in tiles.
+    Near the camera (within `radius` of the eye, the nearest MAX_NEAR): the full ДЕТАЛИ mesh, per material, in small tiles.
+    Everywhere else: the fitted box only (walls + roof, flat colours, one model per big tile), so the whole city stays on
+    screen when zoomed out at a few hundred thousand vertices.  A building's mesh is made once per key (look, fit version,
+    element switches, level) and a change re-uploads only the tiles it touches; the work runs a slice per frame (step),
+    nearest first, and the old models stay up meanwhile."""
+    TILE = {True: 160.0, False: 800.0}      # detailed / box tiles (m)
+    MAX_NEAR = 260                          # detailed buildings at most (a photo-fitted one is ~20k vertices, ~40 ms to make)
+    CACHE = 400                             # detailed meshes kept after they go far (coming back is free)
 
     def __init__(self, tex):
+        import collections
         self.tex = tex
-        self.models = []
-        self.parts = {}                      # building id -> (key, [(mat, pos, uv, col)])
+        self.parts = {}                      # building id -> (key, tile, [(mat, pos, uv, col)])
+        self.cache = collections.OrderedDict()   # detailed meshes by (id, key), most recent last
+        self.tiles = {}                      # tile -> ([models], verts)
+        self.dirty = set()
         self.todo = []
         self.want = None
-        self.stats = {"verts": 0, "blds": 0, "ms": 0.0, "rebuilt": 0}
+        self.cur = None
+        self.near_ids = set()
+        self.stats = {"verts": 0, "blds": 0, "ms": 0.0, "rebuilt": 0, "near": 0}
         self.busy = 0.0                      # 0..1 while a rebuild runs
-        self.focus, self.radius = None, 1e9
+        self.focus, self.radius, self.eye_h = None, 1e9, 0.0
         self.shown_ids = None
         self.detail = 2                      # preview of the game's ДЕТАЛИ setting (0 low .. 2 high)
+        self.t0, self.n0, self._t_up = time.time(), 0, 0.0
+        self.pool, self.pending = False, {}  # detailed meshes are made in 2 worker processes (False = not started yet)
 
     def free(self):
-        for m in self.models:
-            gl3d.free_model(m)
-        self.models = []
+        for ms, _n in self.tiles.values():
+            for m in ms:
+                gl3d.free_model(m)
+        self.tiles = {}
 
-    def _parts(self, b, algo, opts, near=True):
-        bw = pg.tools()
+    def close(self):
+        self.free()
+        if self.pool:
+            self.pool.shutdown(wait=False, cancel_futures=True)
+        self.pool, self.pending = None, {}
+
+    @staticmethod
+    def _data(b, algo, opts):
+        """What the mesh of a building needs, as plain data (it can go to a worker process)."""
         lk = b.look(algo)
         if opts is not None:
             lk["opts"] = dict(opts, kit_on=False) if b.id in (opts.get("kit_off") or ()) else opts
-        h = float(lk["h"])
-        ring = [tuple(p) for p in b.ring]
-        parts = []
-        proc = bw.photo_facade(ring, h, lk, 0.0) if near and bw.photo_on(lk) else []   # far: the fitted box only
-        tiles = bool(proc)
-        if proc:
-            parts += [(m_, tuple(g)) for m_, *g in proc]
-        else:
-            w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
-            if w:
-                parts.append((lk["mat"], w))
-            if near and bw.OSM_KIT and h >= 4:                 # the default world's element kit, as the world build makes it
-                import archkit
-                small = bool(lk.get("small"))
-                ids = archkit.osm_ids(archkit.osm_archetype(lk["mat"], h, b.area, small, b.tags),
-                                      ((int(b.c[0] * 13.7) * 92821) ^ int(b.c[1] * 7.3)) & 0x7FFFFFFF)
-                parts += [(m_, tuple(g)) for m_, *g in bw.osm_kit(ring, h, lk["mat"], lk["wallc"], lk.get("floor", 3.2), lk.get("bay", 3.4),
-                                                                  0.0, 0, b.area, small, ids)]
-        roof = lk.get("roof") if tiles else None
-        if not hasattr(b, "_tri"):
-            try:
-                b._tri = bw.triangulate(ring, [])
-            except Exception:  # noqa: BLE001
-                b._tri = ([], [])
-        verts, tri = b._tri
-        proof = bw.photo_roof(ring, h, lk, lk["roofc"], lk["wallc"]) if roof else None
-        if proof:
-            parts += [(m_, tuple(g)) for m_, *g in proof]
-        if proof is not None and roof.get("kind") != "flat":
-            pass
-        elif lk.get("small") and lk.get("pitched", True) and h < 11:
-            parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(b.area) * 0.12, lk["roofc"])))
-        else:
-            fp = bw.flat_poly(verts, tri, h, 6.0, [c * 1.02 for c in lk["roofc"]])
-            if fp:
-                parts.append((bw.MAT_ROOF, fp))
-        out = []
-        for mat, (pos, uv, col) in parts:
-            pos = np.asarray(pos, np.float32).copy()
-            pos[:, 1] += b.base
-            out.append((mat, pos, np.asarray(uv, np.float32), np.asarray(col, np.uint8)))
-        return out
+        return {"lk": lk, "ring": [tuple(p) for p in b.ring], "area": b.area, "tags": b.tags, "c": (float(b.c[0]), float(b.c[1])),
+                "base": b.base}
+
+    def _parts(self, b, algo, opts, near=True):
+        return pg.mesh_parts(self._data(b, algo, opts), near)
 
     def _near(self, b):
-        return self.focus is None or math.hypot(b.c[0] - self.focus[0], b.c[1] - self.focus[1]) < self.radius
+        return b.id in self.near_ids
 
-    def _key(self, b, algo, opts, only):
+    def _tile(self, b, near):
+        t = self.TILE[near]
+        return (near, int(b.c[0] // t), int(b.c[1] // t))
+
+    def _key(self, b, algo, opts, only, ops=None):
         a = algo if (only is None or b.id in only) else None
         f = b.fits.get(a) if a else None
         near = self._near(b)
         ko = opts is not None and b.id in (opts.get("kit_off") or ())
-        return (a, id(f), b.version, repr(sorted((k, v) for k, v in opts.items() if k != "kit_off")) if (opts is not None and f and near) else None,
-                near, ko)
+        if ops is None and opts is not None:
+            ops = repr(sorted((k, v) for k, v in opts.items() if k != "kit_off"))
+        return (a, id(f), b.version, ops if (opts is not None and f and near) else None, near, ko)
 
-    def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9, view=None):
+    def request(self, blds, algo, opts=None, only=None, focus=None, radius=1e9, view=None, eye_h=0.0):
         """Ask for this look; step() does the work.  only: building ids that show the fit (proof), the rest the current look.
-        focus / radius: buildings further away are plain fitted boxes; view: further than that nothing is built or drawn."""
-        if focus is not None and view:
-            blds = {k: b for k, b in blds.items() if math.hypot(b.c[0] - focus[0], b.c[1] - focus[1]) <= view}
+        focus / radius / eye_h: the camera; the nearest buildings within `radius` of the eye get the full mesh.  view: not
+        used any more (far buildings are cheap boxes now)."""
         self.want = (blds, algo, opts, only)
-        self.focus, self.radius = focus, radius
-        todo = [b for b in blds.values() if self.parts.get(b.id, (None,))[0] != self._key(b, algo, opts, only)]
-        if focus is not None:                       # nearest first
-            todo.sort(key=lambda b: -math.hypot(b.c[0] - focus[0], b.c[1] - focus[1]))
+        self.focus, self.radius, self.eye_h = focus, radius, eye_h
+        dist = {}
+        if focus is not None:
+            for b in blds.values():
+                dist[b.id] = math.hypot(b.c[0] - focus[0], b.c[1] - focus[1], eye_h)
+            near = sorted((d_, i_) for i_, d_ in dist.items() if d_ < radius)[:self.MAX_NEAR]
+            self.near_ids = {i_ for _d, i_ in near}
+        else:
+            self.near_ids = set(blds) if len(blds) <= self.MAX_NEAR else set()
+        ops = repr(sorted((k, v) for k, v in opts.items() if k != "kit_off")) if opts is not None else None
+        todo = [b for b in blds.values() if self.parts.get(b.id, (None,))[0] != self._key(b, algo, opts, only, ops)]
+        # buildings with nothing yet first (boxes are quick: the city is up at once), then the nearest
+        todo.sort(key=lambda b: (b.id in self.parts, dist.get(b.id, 0.0)), reverse=True)
+        for i_ in [i_ for i_ in self.parts if i_ not in blds]:        # gone from the set
+            self.dirty.add(self.parts.pop(i_)[1])
         self.todo = todo
         self.t0, self.n0 = time.time(), len(self.todo)
         self.stats["rebuilt"] = 0
         if not self.todo:
-            self._upload()
+            self._flush()
+
+    def _make(self, b, algo, opts, only, ps=None, key=None):
+        """Mesh one building (or take `ps` a worker made for `key`) and mark its tiles."""
+        key = key or self._key(b, algo, opts, only)
+        near = key[4]
+        a = algo if (only is None or b.id in only) else None
+        ck = (b.id, key)
+        if ps is None and near and ck in self.cache:
+            self.cache.move_to_end(ck)
+            ps = self.cache[ck]
+        else:
+            if ps is None:
+                ps = self._parts(b, a, opts, near)
+            if near:
+                self.cache[ck] = ps
+                while len(self.cache) > self.CACHE:
+                    self.cache.popitem(last=False)
+        old = self.parts.get(b.id)
+        if old is not None:
+            self.dirty.add(old[1])
+        tl = self._tile(b, near)
+        self.dirty.add(tl)
+        self.parts[b.id] = (key, tl, ps)
 
     def step(self, budget=0.025):
-        """Rebuild for at most `budget` seconds; -> True when the models changed."""
+        """Make meshes for at most `budget` seconds; the tiles they touched go up a few times a second (and at the end).
+        -> True when the models changed."""
         if self.want is None:
             return False
         blds, algo, opts, only = self.want
         t = time.time()
+        for fu in [f_ for f_ in self.pending if f_.done()]:      # detailed meshes back from the workers
+            b, key = self.pending.pop(fu)
+            try:
+                ps = fu.result()
+            except Exception:  # noqa: BLE001 - a broken worker: this one here, the rest inline
+                ps, self.pool = None, None
+            if self._key(b, algo, opts, only) == key:          # still wanted as it was asked for
+                self._make(b, algo, opts, only, ps, key)
+                self.stats["rebuilt"] += 1
+        if self.pool is False and self.near_ids:
+            self.pool = pg.mesh_pool(2)
         while self.todo and time.time() - t < budget:
             b = self.todo.pop()
-            self.parts[b.id] = (self._key(b, algo, opts, only), self._parts(b, algo if (only is None or b.id in only) else None, opts, self._near(b)))
+            key = self._key(b, algo, opts, only)
+            if self.pool and key[4] and (b.id, key) not in self.cache:
+                if len(self.pending) >= 6:                     # enough queued: the rest waits (nearest first stays first)
+                    self.todo.append(b)
+                    break
+                a = algo if (only is None or b.id in only) else None
+                self.pending[self.pool.submit(pg.mesh_parts, self._data(b, a, opts), True)] = (b, key)
+                continue
+            self._make(b, algo, opts, only)
             self.stats["rebuilt"] += 1
-        self.busy = 1.0 - len(self.todo) / max(1, self.n0) if self.todo else 0.0
-        if self.todo:
+        left = len(self.todo) + len(self.pending)
+        self.busy = 1.0 - left / max(1, self.n0) if left else 0.0
+        if left and time.time() - self._t_up < 0.3:
             return False
-        self._upload()
+        self._flush()
         return True
 
     def rebuild_one(self, b, blds, algo, opts):
         """One building again, now (the ОЦЕНИ guard tries it with and without its kit)."""
-        self.focus = self.focus if hasattr(self, "focus") else None
-        self.parts[b.id] = (self._key(b, algo, opts, None), self._parts(b, algo, opts, self._near(b)))
-        self.want, self.t0 = (getattr(self, "cur", None) or blds, algo, opts, None), time.time()
-        self._upload()
+        self.cache.pop((b.id, self._key(b, algo, opts, None)), None)
+        self._make(b, algo, opts, None)
+        self.cur = self.cur or blds
+        self._flush()
 
     def build(self, blds, algo, opts=None, only=None):
         """All at once (tests)."""
         self.request(blds, algo, opts, only)
-        while not self.step(10.0):
-            pass
+        while not (self.step(10.0) and not self.todo and not self.pending):
+            time.sleep(0.01)
 
     def _upload(self):
-        blds = self.cur = self.want[0]
-        self.shown_ids = set(blds)
-        acc = {}
-        nv = 0
+        """Every tile again (the ДЕТАЛИ preview level changed)."""
+        self.dirty |= {p_[1] for p_ in self.parts.values()} | set(self.tiles)
+        self._flush()
+
+    def _flush(self):
+        """Upload the tiles that changed: per material near the camera, one flat-coloured model per big box tile."""
+        self._t_up = time.time()
+        if self.want is not None:
+            self.cur = self.want[0]
+        if not self.dirty:
+            if not self.todo and not self.pending:
+                self.want = None
+            return
+        by = {}
+        for _k, tl, ps in self.parts.values():
+            if tl in self.dirty:
+                by.setdefault(tl, []).append(ps)
         skip = {18, 19} if self.detail < 1 else ({19} if self.detail < 2 else set())     # as the game's ДЕТАЛИ setting
-        for bid in blds:
-            for mat, pos, uv, col in self.parts.get(bid, (None, []))[1]:
-                if mat in skip:
-                    continue
-                e = acc.setdefault(mat, ([], [], []))
-                e[0].append(pos); e[1].append(uv); e[2].append(col)
-                nv += len(pos)
-        self.free()
         bw = pg.tools()
         names = {**pg.MATS, bw.MAT_ROOF: "roof", bw.MAT_SOLID: "white", **{m_: k for k, m_ in bw.MAT_SURF.items()},
                  bw.MAT_KIT2: "glaz", bw.MAT_KIT3: "glaz"}
-        for mat, (P, U, C) in acc.items():
-            m = gl3d.make_model(np.concatenate(P), np.concatenate(U), np.concatenate(C))
-            if m is not None:
-                gl3d.set_texture(m, self.tex.get(names.get(mat, "A"), self.tex["white"]))
-                self.models.append(m)
-        self.stats.update(verts=nv, blds=len(blds), ms=(time.time() - self.t0) * 1000)
-        self.want = None
-        self.busy = 0.0
+        for tl in self.dirty:
+            for m in self.tiles.pop(tl, ([], 0))[0]:
+                gl3d.free_model(m)
+            acc = {}
+            for ps in by.get(tl, ()):
+                for mat, pos, uv, col in ps:
+                    if mat in skip:
+                        continue
+                    e = acc.setdefault(mat if tl[0] else -1, ([], [], []))   # boxes: one model, the wall colours only
+                    e[0].append(pos); e[1].append(uv); e[2].append(col)
+            ms, nv = [], 0
+            for mat, (P, U, C) in acc.items():
+                m = gl3d.make_model(np.concatenate(P), np.concatenate(U), np.concatenate(C))
+                if m is not None:
+                    gl3d.set_texture(m, self.tex["white"] if mat == -1 else self.tex.get(names.get(mat, "A"), self.tex["white"]))
+                    ms.append(m)
+                    nv += sum(len(p_) for p_ in P)
+            if ms:
+                self.tiles[tl] = (ms, nv)
+        self.dirty = set()
+        self.shown_ids = set(self.cur or ())
+        self.stats.update(verts=sum(n_ for _m, n_ in self.tiles.values()), blds=len(self.parts), near=len(self.near_ids),
+                          ms=(time.time() - self.t0) * 1000)
+        if not self.todo and not self.pending:
+            self.want = None
+            self.busy = 0.0
 
     def draw(self):
-        for m in self.models:
-            rl.draw_model(m, rl.Vector3(0, 0, 0), 1.0, rl.WHITE)
+        for ms, _n in self.tiles.values():
+            for m in ms:
+                rl.draw_model(m, rl.Vector3(0, 0, 0), 1.0, rl.WHITE)
 
 
 class Orbit:
@@ -547,8 +614,12 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
     thumbs, quads = {}, {}
     cache = os.path.join(folder, pg.CACHE)
     os.makedirs(cache, exist_ok=True)
-    thumb_q = [c for c in caps if c.exists]          # photo thumbnails load a few per frame: the window is up at once
+    thumb_bad = set()                                # photo thumbnails load on demand (the cameras near the view), a few per frame
     ok_caps = [c for c in caps if c.exists]
+    cap_xz = np.array([[c.x, c.z] for c in ok_caps]).reshape(-1, 2)
+    bld_list = list(blds.values())
+    bld_xz = np.array([[b.c[0], b.c[1]] for b in bld_list]).reshape(-1, 2)
+    near_c, near_b = [], []                         # the cameras / building outlines drawn: only those around the view
     cen = np.mean([[c.x, 0, c.z] for c in caps], 0)
     orb = Orbit(cen)
     sel = next((c for c in caps if c.exists), None)
@@ -572,6 +643,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         op.update(style=nm_, kit=list(archkit.STYLES[nm_]), kit_scope="all")
     if "free" in test and sel is not None:
         orb.free = sel
+    if "dist=" in test:
+        orb.dist = float(test.split("dist=")[1].split(",")[0])
     if "alpha=" in test:
         alpha = float(test.split("alpha=")[1].split(",")[0])
     rt = rl.load_render_texture(480, 270)
@@ -821,15 +894,24 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         if music is not None:
             music.update()
         t_q = time.time()
-        while thumb_q and time.time() - t_q < 0.012:
-            c = thumb_q.pop(0)
+        for c in ([sel] if sel is not None else []) + (near_c if show_fr and show_ph else []):
+            if time.time() - t_q > 0.012:
+                break
+            if c.file in thumbs or c.file in thumb_bad:
+                continue
             p = os.path.join(c.cache(), os.path.splitext(os.path.basename(c.file))[0] + ".thumb.jpg")
             try:
                 if not os.path.exists(p):
                     Image.open(c.path).convert("RGB").resize((480, int(480 * c.H / max(1, c.W)))).save(p, quality=85)
                 thumbs[c.file] = rl.load_texture(p)
-            except OSError:
-                pass
+            except Exception:  # noqa: BLE001 - a broken photo: no thumbnail
+                thumb_bad.add(c.file)
+        if len(thumbs) > 360:                                   # the oldest thumbnails away from the view go (VRAM)
+            keep_ = {c.file for c in near_c} | ({sel.file} if sel is not None else set()) | ({orb.free.file} if orb.free is not None else set())
+            for f_ in [f_ for f_ in thumbs if f_ not in keep_][:len(thumbs) - 300]:
+                rl.unload_texture(thumbs.pop(f_))
+                if f_ in quads:
+                    gl3d.free_model(quads.pop(f_)[0])
         W, H = rl.get_screen_width(), rl.get_screen_height()
         lw, pw = 390, 500                                       # left / right panel widths
         m = rl.get_mouse_position()
@@ -894,17 +976,29 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         here = orb.free.eye() if orb.free is not None else orb.t          # where the camera is / looks
         if focus is None or math.hypot(here[0] - focus[0], here[2] - focus[1]) > min(lod, view, 1e6) / 4:
             focus = (float(here[0]), float(here[2]))
+        eye_h = float(orb.dist * math.sin(orb.pitch)) if orb.free is None else 2.0     # zoomed out: the eye is high, nothing near
+        if n % 10 == 1:                                         # what is drawn on top: the cameras / outlines around the view
+            zr = orb.dist if orb.free is None else 60.0
+            hx_, hz_ = float(here[0]), float(here[2])
+            if len(cap_xz):
+                dc_ = np.hypot(cap_xz[:, 0] - hx_, cap_xz[:, 1] - hz_)
+                rc_ = min(500.0, max(120.0, zr * 1.5))
+                near_c = [ok_caps[i] for i in np.argsort(dc_)[:300] if dc_[i] < rc_]
+            if len(bld_xz):
+                db_ = np.hypot(bld_xz[:, 0] - hx_, bld_xz[:, 1] - hz_)
+                rb_ = min(1500.0, max(200.0, zr * 2.0))
+                near_b = [bld_list[i] for i in np.argsort(db_)[:700] if db_[i] < rb_]
         if job is not None and job.done and kept_job is not job:     # a run here ended: its buildings stay, the rest from the background
             kept_job, bg_sig, bg_t = job, None, 0.0
             keep_ids = {b.id for b in blds.values() if algo in b.fits} if job.only else set()
         if bg_folder and not running and time.time() - bg_t > 3.0:     # the background run's new buildings, every 3 s
             bg_t = time.time()
             bg_load()
-        want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view, bg_ver)
+        want = (algo if look else None, job.version if job else 0, id(job), focus, lod, view, bg_ver, int(eye_h / max(20.0, min(lod, 1e6) / 4)))
         if opt_t is not None and time.time() - opt_t > 0.25:
             opt_t, shown = None, None
         if want != shown and (n % 30 == 0 or want[0] != (shown or (None,))[0] or not running) and opt_t is None:
-            scene.request(blds, want[0], op, None, focus, lod, view if view < 1e8 else None)
+            scene.request(blds, want[0], op, None, focus, lod, view if view < 1e8 else None, eye_h)
             shown = want
         scene.step(0.02)
         if sel is not None and sel.file in quads and quads[sel.file][1] != (sel.dyaw, sel.dpitch):
@@ -917,7 +1011,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.begin_mode_3d(cam)
         scene.draw()
         vis = scene.shown_ids
-        for b in blds.values():                                   # fitted outlines: green = from photos, blue = from neighbours
+        for b in near_b:                                          # fitted outlines: green = from photos, blue = from neighbours
             f = b.fits.get(algo) if look else None
             if not f or (vis is not None and b.id not in vis):
                 continue
@@ -929,9 +1023,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             for i in range(len(r)):
                 rl.draw_line_3d(rl.Vector3(r[i][0], hh, r[i][1]), rl.Vector3(r[(i + 1) % len(r)][0], hh, r[(i + 1) % len(r)][1]), col)
         if show_fr:
-            for c in ok_caps:
-                if focus is not None and c is not sel and math.hypot(c.x - focus[0], c.z - focus[1]) > op.get("view", 500.0):
-                    continue
+            for c in (near_c if sel is None or sel in near_c else near_c + [sel]):
                 e, pts = _frustum(c)
                 col = rl.YELLOW if c is sel else (rl.Color(60, 230, 255, 255) if c.file in proof else
                                                   (rl.Color(255, 120, 200, 255) if c.status else rl.Color(255, 255, 255, 200)))
@@ -1130,14 +1222,8 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                     scene.want = (getattr(scene, "cur", None) or blds, None, None, None)
                     scene.t0 = time.time()
                     scene._upload()
-            views = [250.0, 500.0, 800.0, 1500.0, 1e9]
-            v = _choice(16, y + 84, lw - 32, "вчитај згради до (од камерата)", views, min(views, key=lambda s_: abs(s_ - op["view"])),
-                        {v_: (f"{v_:.0f} м" if v_ < 1e8 else "сите") for v_ in views}, 13)
-            if v != op["view"]:
-                op["view"] = v
-                opts_changed()
             lods = [150.0, 250.0, 400.0, 700.0, 1e9]
-            v = _choice(16, y + 28, lw - 32, "детали до (подалеку само кутии)", lods, min(lods, key=lambda s_: abs(s_ - op["lod"])),
+            v = _choice(16, y + 28, lw - 32, "детали до (подалеку и од високо само кутии)", lods, min(lods, key=lambda s_: abs(s_ - op["lod"])),
                         {v_: (f"{v_:.0f} м" if v_ < 1e8 else "секаде") for v_ in lods}, 13)
             if v != op["lod"]:
                 op["lod"] = v
@@ -1147,7 +1233,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
             if abs(v - op["sat"]) > 1e-6:
                 op["sat"] = v
                 opts_changed()
-            y += 114
+            y += 86
             font.draw_text(f"КОМПЛЕТ ЕЛЕМЕНТИ ({len(archkit.ELEMENTS)})", 16, y, 15, INK, bold="cond")
             y += 22
             v = _toggle(16, y, cw2 - 4, "комплетот вклучен", op["kit_on"], 13)
@@ -1407,7 +1493,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
                 break
     if job is not None:
         job.stop = True
-    scene.free()
+    scene.close()
     for mm, _ in quads.values():
         gl3d.free_model(mm)
     for t in list(thumbs.values()) + list(lab_tex.values()):

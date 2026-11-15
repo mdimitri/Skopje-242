@@ -1131,6 +1131,72 @@ def write_fits(blds, algo, path):
     return len(out)
 
 
+def mesh_parts(d, near=True):
+    """One building's mesh for the viewer from Scene._data(): near = the full ДЕТАЛИ facade and roof, else the fitted box.
+    -> [(mat, pos, uv, col)].  Runs in the viewer's mesh worker processes (or inline)."""
+    bw = tools()
+    lk, ring, area, tags, c = d["lk"], d["ring"], d["area"], d["tags"], d["c"]
+    h = float(lk["h"])
+    parts = []
+    proc = bw.photo_facade(ring, h, lk, 0.0) if near and bw.photo_on(lk) else []   # far: the fitted box only
+    tiles = bool(proc)
+    if proc:
+        parts += [(m_, tuple(g)) for m_, *g in proc]
+    else:
+        w = bw.walls(ring, h, lk["wallc"], None, lk.get("floor", 3.2), lk.get("bay", 3.4))
+        if w:
+            parts.append((lk["mat"], w))
+        if near and bw.OSM_KIT and h >= 4:                 # the default world's element kit, as the world build makes it
+            import archkit
+            small = bool(lk.get("small"))
+            ids = archkit.osm_ids(archkit.osm_archetype(lk["mat"], h, area, small, tags),
+                                  ((int(c[0] * 13.7) * 92821) ^ int(c[1] * 7.3)) & 0x7FFFFFFF)
+            parts += [(m_, tuple(g)) for m_, *g in bw.osm_kit(ring, h, lk["mat"], lk["wallc"], lk.get("floor", 3.2), lk.get("bay", 3.4),
+                                                              0.0, 0, area, small, ids)]
+    roof = lk.get("roof") if tiles else None
+    try:
+        verts, tri = bw.triangulate(ring, [])
+    except Exception:  # noqa: BLE001
+        verts, tri = [], []
+    proof = bw.photo_roof(ring, h, lk, lk["roofc"], lk["wallc"]) if roof else None
+    if proof:
+        parts += [(m_, tuple(g)) for m_, *g in proof]
+    if proof is not None and roof.get("kind") != "flat":
+        pass
+    elif lk.get("small") and lk.get("pitched", True) and h < 11:
+        parts.append((bw.MAT_ROOF, bw.pyramid(ring, h, 1.8 + math.sqrt(area) * 0.12, lk["roofc"])))
+    else:
+        fp = bw.flat_poly(verts, tri, h, 6.0, [v * 1.02 for v in lk["roofc"]])
+        if fp:
+            parts.append((bw.MAT_ROOF, fp))
+    out = []
+    for mat, (pos, uv, col) in parts:
+        pos = np.asarray(pos, np.float32).copy()
+        pos[:, 1] += d["base"]
+        out.append((mat, pos, np.asarray(uv, np.float32), np.asarray(col, np.uint8)))
+    return out
+
+
+def mesh_pool(n=2):
+    """Worker processes for the viewer's detailed meshes (the window stays smooth while a big building is made), or None."""
+    import concurrent.futures as cf
+    import multiprocessing as mp
+    main = sys.modules.get("__main__")
+    mf = getattr(main, "__file__", None)
+    try:
+        if mf is not None:
+            del main.__file__                              # spawned workers must not re-run main.py (it opens a window)
+        ex = cf.ProcessPoolExecutor(n, mp_context=mp.get_context("spawn"), initializer=tools)
+        for _ in range(n):                                 # all workers start now, while main.py's name is hidden (each busy
+            ex.submit(time.sleep, 0.2)                     # task makes the pool spawn the next one)
+        return ex
+    except Exception:  # noqa: BLE001 - no processes: the viewer makes them itself
+        return None
+    finally:
+        if mf is not None:
+            main.__file__ = mf
+
+
 # ------------------------------------------------------------------------------------------------------------ the workers
 _W = {}
 
