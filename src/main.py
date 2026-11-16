@@ -1492,6 +1492,8 @@ def main():
             if g != eng_gear.get(id(b), g):
                 eng_shift[id(b)] = 6                                                                # clutch in: the revs sag for a few frames
             rpm = max(RPM_IDLE, top_rpm * fr / tops[g])
+            if g == len(tops) - 1 and g > 0:                                                        # top gear runs on past the shift rpm to max speed (1.4x -> pitch ~3.4)
+                rpm = top_rpm * tops[g - 1] + (1.4 - tops[g - 1]) * top_rpm * (fr - tops[g - 1]) / (1.0 - tops[g - 1])
             rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and fr > 0.1 else 0.0)                    # throttle lift drops the revs (engine braking)
             if fr < 0.03:
                 rpm = RPM_IDLE + 15 * math.sin(time.time() * 54) + 10 * math.sin(time.time() * 138)   # uneven idle
@@ -1500,7 +1502,7 @@ def main():
                 rpm -= 150.0 * sh_ / 6.0
                 eng_shift[id(b)] = sh_ - 1
             eng_gear[id(b)] = g
-            tgt = 0.75 + 1.75 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
+            tgt = 0.75 + 1.75 * max(0.0, min(1.6, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
         st = eng_state.get(id(b), tgt)
         st += (tgt - st) * (0.18 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
@@ -1520,11 +1522,11 @@ def main():
         pitched down so both agree where they meet.  Every other engine is silenced; a damaged light car blends in a lower, heavier
         "alt" engine (mix 0..1) so it sounds more like a truck."""
         j_ = 0                                                       # equal-power crossfade between the two layers whose rev point brackets st
-        while j_ < 2 and st > ENG_LAYERS[j_ + 1][1]:
+        while j_ < len(ENG_LAYERS) - 2 and st > ENG_LAYERS[j_ + 1][1]:
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol = min(1.0, vol * (0.68 + 0.57 * min(1.1, max(0.0, st - 0.75) / 1.75) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
+        vol = min(1.0, vol * (0.68 + 0.57 * min(1.6, max(0.0, st - 0.75) / 1.75) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
@@ -1569,7 +1571,7 @@ def main():
                     hb_, hv_ = b_, v_
         aud.loop("rotor", 0.9 * hv_, 0.55 + 0.45 * hb_.rpm if hb_ is not None else 1.0, "engine")
         if sim.mode == "car" and sim.car.kind in vehicles.FLY:
-            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi", "_x2", "_x3")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         elif sim.mode == "car":
             c = sim.car
@@ -1588,7 +1590,7 @@ def main():
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi", "_x2", "_x3")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:

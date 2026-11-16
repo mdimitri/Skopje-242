@@ -423,11 +423,11 @@ def _loopify(x, fade=0.25):
 LOOP_KEYS = frozenset(k_ for k_ in ("siren_police", "siren_amb", "siren_fire", "siren", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind",
                                     "tyre_roll_asphalt", "tyre_gravel", "fire_crackle", "jackhammer", "concrete_mixer", "street_lamp_buzz", "power_transformer_hum", "neon_buzz",
                                     "car_alarm", "engine_misfire", "engine_knock", "ai_engine_misfire", "ai_engine_knock", "rotor")) | frozenset(
-    p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_lo", "_mid", "_hi")) | {"engine"}
+    p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("",) + tuple(s_ for s_, _ in engine_synth.LAYERS if s_)) | {"engine"}
 
 
 class Audio:
-    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
+    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("",) + tuple(s_ for s_, _ in engine_synth.LAYERS if s_)) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind", "rotor")
 
     CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)
