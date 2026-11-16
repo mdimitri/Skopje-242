@@ -1462,27 +1462,40 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
+    GEARS_LIGHT = (0.15, 0.26, 0.40, 0.62, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
+    GEARS_HEAVY = (0.10, 0.19, 0.31, 0.46, 0.68, 1.0)
+    HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus")
+    RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
+
     def engine_pitch(b, nm, fr, thr):
-        """Revs follow the speed through five gears (rising, drop at each shift), a little higher under throttle, smoothed so shifts glide;
-        every car gets its own base pitch, an electric motor just whines up with speed."""
+        """A real gearbox: in each gear the revs climb from where the last shift left them up to ~3500 rpm, then drop at the upshift
+        and climb again; slowing down runs the same thing backwards (downshift when the revs fall low).  Heavy engines shift at 2800.
+        A little higher under throttle, smoothed so shifts glide; every car has its own base pitch; an electric motor just whines up."""
         base = 1.0 + ((car_seed(b) // 7) % 13 - 6) * 0.012
         if nm == "engine_ev":
             tgt = 0.6 + 1.5 * fr
         else:
-            g = min(4, int(fr * 5.0))
-            rpm = 0.3 + 0.7 * min(1.0, fr * 5.0 - g) if g > 0 else 0.25 + 0.75 * min(1.0, fr * 5.0)
-            tgt = 0.55 + 1.15 * rpm + 0.25 * thr - (0.1 if thr < 0.05 and fr > 0.1 else 0.0)        # throttle lift drops the revs (engine braking)
-            if fr < 0.03:
-                tgt = 0.55 + 0.02 * math.sin(time.time() * 54) + 0.015 * math.sin(time.time() * 138)           # uneven idle
+            tops = GEARS_HEAVY if nm in HEAVY_ENGINES else GEARS_LIGHT
+            top_rpm = 2800.0 if nm in HEAVY_ENGINES else RPM_SHIFT
+            g = eng_gear.get(id(b), 0)
+            while g < len(tops) - 1 and fr > tops[g]:
+                g += 1                                                                              # upshift at the shift rpm
+            while g > 0 and fr < tops[g - 1] * 0.86:
+                g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
             if g != eng_gear.get(id(b), g):
-                eng_shift[id(b)] = 0.3                                                                # clutch in: the revs fall for a moment at each gear change
-            sh_ = eng_shift.get(id(b), 0.0)
-            if sh_ > 0.0:
-                tgt = max(0.55, tgt - 0.5)
-                eng_shift[id(b)] = sh_ - 1 / 60
+                eng_shift[id(b)] = 6                                                                # clutch in: the revs sag for a few frames
+            rpm = max(RPM_IDLE, top_rpm * fr / tops[g])
+            rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and fr > 0.1 else 0.0)                    # throttle lift drops the revs (engine braking)
+            if fr < 0.03:
+                rpm = RPM_IDLE + 15 * math.sin(time.time() * 54) + 10 * math.sin(time.time() * 138)   # uneven idle
+            sh_ = eng_shift.get(id(b), 0)
+            if sh_ > 0:
+                rpm -= 250.0 * sh_ / 6.0
+                eng_shift[id(b)] = sh_ - 1
             eng_gear[id(b)] = g
+            tgt = 0.55 + 1.15 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
         st = eng_state.get(id(b), tgt)
-        st += (tgt - st) * (0.12 if tgt > st else 0.3)                                              # revs climb faster than they fall
+        st += (tgt - st) * (0.18 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
         if len(eng_state) > 200:
             eng_state.clear()
@@ -1551,7 +1564,7 @@ def main():
             prof = vehicles.ENGINE_SOUND[c.kind]
             thr_ = abs(inp_last.get("throttle", 0))
             hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
-            engine_layers("", prof, (0.15 + 0.35 * thr_ + 0.1 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
+            engine_layers("", prof, (0.3 + 0.6 * thr_ + 0.2 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
             aud.loop("engine_misfire", 1.3 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
             aud.loop("engine_knock", 1.3 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
@@ -1573,7 +1586,7 @@ def main():
         if near_c is not None:
             prof_ = vehicles.ENGINE_SOUND[near_c.kind]
             fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
-            engine_layers("ai_", prof_, 0.32 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
+            engine_layers("ai_", prof_, 0.22 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
         else:
             engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)

@@ -26,7 +26,7 @@ REF = (
     ("body_hit_car", -20), ("hurt_thud", -21), ("cpr_pump", -24), ("defib_zap", -23),
     # vehicles
     ("horn_jingle", -22), ("horn", -18), ("siren_distant", -29), ("siren", -15), ("train_horn", -24), ("car_alarm", -20),
-    ("engine_start", -19), ("engine_stall", -22), ("engine_misfire", -21), ("engine_knock", -21), ("ai_engine", -20), ("engine", -20),
+    ("engine_start", -19), ("engine_stall", -22), ("engine_misfire", -21), ("engine_knock", -21), ("ai_engine", -20), ("engine", -14),
     ("car_passby", -20), ("truck_passby", -19), ("tyre_roll", -30), ("tyre_gravel", -27), ("screech", -22), ("car_door", -21), ("handbrake", -24),
     ("bus_", -21), ("fuel_", -22),
     # people, animals
