@@ -272,7 +272,7 @@ def tow(b):
     b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
 
 
-CLUTCH_FLARE, CLUTCH_BITE = 0.2, 0.24                # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
+CLUTCH_FLARE, CLUTCH_BITE, CLUTCH_SETTLE = 0.2, 0.24, 0.62               # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
 
 
 def drive(p, throttle, steer_in, handbrake, dt, world):
@@ -317,7 +317,9 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     cl = 1.0
     if ct is not None and ct < CLUTCH_FLARE + CLUTCH_BITE:
         u_ = max(0.0, (ct - CLUTCH_FLARE) / CLUTCH_BITE)
-        cl = 0.15 + 0.85 * u_ * u_ * (3 - 2 * u_)
+        cl = 1.3 * (0.15 + 0.85 * u_ * u_ * (3 - 2 * u_))         # the bite pulls 30 % harder ...
+    elif ct is not None and ct < CLUTCH_FLARE + CLUTCH_BITE + CLUTCH_SETTLE:
+        cl = 1.3 - 0.3 * (ct - CLUTCH_FLARE - CLUTCH_BITE) / CLUTCH_SETTLE    # ... and eases back to the normal pull as the revs rejoin the road speed
     if throttle > 0:
         top = VMAX * dmg                          # thrust tapers off and just beats drag at the rated top speed
         xr = max(0.0, vf / top)                    # gearing: pull fades with speed, and the last gear (above ~65 % of top) only creeps
