@@ -315,7 +315,9 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
             vf -= BRAKE * dt
             p.braking = True
         else:
-            vf -= REV * max(0.0, 1 + vf / 11.0) * dt
+            rt = 0.6 * VMAX * dmg                  # reverse: half the forward top speed and half the forward pull
+            xr = max(0.0, -vf / rt)
+            vf -= 0.5 * ACC * dmg * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) * dt
     if world.hilly and not p.air:                                   # gravity along the slope: a = -g sin(angle)
         az = p.az if p.az is not None else world.ground_y(p.x, p.y)
         sl = world.slope_at(p.x, p.y, fx, fy, az, 1.4)
