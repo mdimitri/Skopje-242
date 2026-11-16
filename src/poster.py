@@ -12,7 +12,8 @@ DIR = os.path.join(ROOT, "assets", "posters")
 TITLE = "title.png"
 SPLASH = ("Skopje 242_ Rooftop Noir.png", "splash.png")     # loading screen / title menu background, in assets/
 SPLASH_DIR = os.path.join(ROOT, "assets", "splash")       # more splash art: every image here joins the slideshow
-SPLASH_EXT = (".png", ".jpg", ".jpeg", ".bmp")
+HERO = "ChatGPT Image Nov 5, 2026, 11_27_52 PM-1.png"       # always the first splash image (and the README main image)
+SPLASH_EXT = (".png", ".bmp")
 SPLASH_HOLD = 20.0                                          # seconds per image
 TEAR = 1.6                                                  # seconds of the torn-poster change
 _S = {"files": None, "tex": {}, "i": 0, "t0": 0.0, "old": None, "tear": None}
@@ -24,6 +25,10 @@ def _splash_files():
         fs += sorted(os.path.join(SPLASH_DIR, f) for f in os.listdir(SPLASH_DIR) if f.lower().endswith(SPLASH_EXT))
     except OSError:
         pass
+    hero = os.path.join(SPLASH_DIR, HERO)
+    if hero in fs:
+        fs.remove(hero)
+        fs.insert(0, hero)
     return fs
 
 
@@ -47,10 +52,10 @@ def _load(path):
 
 
 def splash():
-    """The splash image on screen now (a random one first); None if there is none."""
+    """The splash image on screen now (the hero image first); None if there is none."""
     if _S["files"] is None:
         _S["files"] = _splash_files()
-        _S["i"] = random.randrange(len(_S["files"])) if _S["files"] else 0
+        _S["i"] = 0                                          # the hero image always comes first
         _S["t0"] = time.time()
     fs = _S["files"]
     return _load(fs[_S["i"]]) if fs else None
