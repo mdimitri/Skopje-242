@@ -26,7 +26,7 @@ FIRE = {"i4": 44.0, "small": 62.0, "v8": 28.0, "diesel": 36.0, "tdi": 40.0, "bus
 def _shape(freqs, P, kind_hi, mult=1.0):
     """Fixed body/exhaust transfer function: spectral tilt, resonant peaks, a roll-off (more open for the high-rev layer)."""
     f = np.maximum(freqs, 1.0)
-    h = (f / 100.0) ** (-0.35 * P["tilt"]) * (1.0 / (1.0 + (f / (3000.0 if mult >= 2.0 else (7000.0 if kind_hi else 4200.0))) ** 2))
+    h = (f / 100.0) ** (-0.35 * P["tilt"]) * (1.0 / (1.0 + (f / (2400.0 if mult >= 2.0 else (4500.0 if kind_hi else 3200.0))) ** 2))
     h = h * (1.0 - np.exp(-f / 90.0))
     for fc, g in P["peaks"]:
         h = h + g * 0.9 * np.exp(-0.5 * ((f - fc) / (fc * 0.18)) ** 2)
@@ -63,7 +63,7 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None, mult=1.
             a *= rng.uniform(0.0, 0.25)
         body = P["body"] * rng.uniform(0.92, 1.08)
         pop = np.sin(2 * np.pi * body * tt) * np.exp(-tt * P["dec"])
-        bn = rng_state.standard_normal(m) * np.exp(-tt * 90) * P["nz"] * 0.3
+        bn = rng_state.standard_normal(m) * np.exp(-tt * 90) * P["nz"] * 0.2
         pulse = (pop + bn) * a
         if hi:
             pulse = pulse * 0.8
@@ -90,14 +90,14 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None, mult=1.
     env = np.convolve(env, np.ones(int(0.008 * SR)) / (0.008 * SR), mode="same") if not circular else np.fft.irfft(np.fft.rfft(env) * np.fft.rfft(np.ones(int(0.008 * SR)) / (0.008 * SR), n), n)
     env = env / (env.max() + 1e-9)
     roar = _noise_band(rng, n, 150, 2600 if not hi else 4200)
-    roar = roar / (np.abs(roar).max() + 1e-9) * P["roar"] * 0.18 * (0.4 if mult >= 2.0 else 1.0) * (1.5 if hi else 1.0) * (0.2 + 0.8 * env)
+    roar = roar / (np.abs(roar).max() + 1e-9) * P["roar"] * 0.1 * (0.4 if mult >= 2.0 else 1.0) * (1.5 if hi else 1.0) * (0.2 + 0.8 * env)
     tick = _noise_band(rng, n, 2500, 7500)
-    tick = tick / (np.abs(tick).max() + 1e-9) * P["tick"] * 0.18 * (0.3 if mult >= 2.0 else 1.0) * (0.1 + 0.9 * env ** 2) * (1.4 if hi else 1.0)
+    tick = tick / (np.abs(tick).max() + 1e-9) * P["tick"] * 0.06 * (0.3 if mult >= 2.0 else 1.0) * (0.1 + 0.9 * env ** 2) * (1.4 if hi else 1.0)
     out = y + roar + tick + kn / (np.abs(kn).max() + 1e-9) * P["knock"] * 0.5
     return out
 
 
-LAYERS = (("_lo", 0.7), ("", 1.0), ("_mid", 1.35), ("_hi", 1.7), ("_x2", 2.3), ("_x3", 3.3))      # name suffix, firing-rate multiplier: each layer is rendered at its own rev
+LAYERS = (("_lo", 0.7), ("", 1.0), ("_mid", 1.35), ("_hi", 1.7), ("_x2", 2.3), ("_x3", 3.3), ("_x4", 4.5))      # name suffix, firing-rate multiplier: each layer is rendered at its own rev
                                                                        # point and played near pitch 1.0, so the body/exhaust resonances stay put like on a real engine
 
 
