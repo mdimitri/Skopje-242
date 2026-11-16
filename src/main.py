@@ -888,6 +888,7 @@ def main():
     frame = 0
     t_game = 0.0
     ft_hist = []
+    fps_acc = {"t": time.perf_counter(), "n": 0, "ms": {}, "cm": time.thread_time(), "cp": time.process_time()}
     hitch_t0, hitch_n = time.perf_counter(), 0          # frames over 100 ms are written to logs/game.log with what took the time
     gc_t = [0.0, 0.0]
 
@@ -2218,6 +2219,21 @@ def main():
             parts = sorted(guard.ms.items(), key=lambda kv: -kv[1])[:6] + [("gc", gc_t[1] * 1000), ("swap", (t_now - t_sw) * 1000)]
             log(f"[hitch] {(t_now - hitch_t0) * 1000:.0f} ms ({sim.mode}): " + ", ".join(f"{k} {v:.0f}" for k, v in parts if v >= 1.0))
         hitch_t0 = t_now
+        if not a.test:                                     # every 5 s one [fps] line: where a slow frame really goes
+            for k_, v_ in guard.ms.items():
+                fps_acc["ms"][k_] = fps_acc["ms"].get(k_, 0.0) + v_
+            fps_acc["n"] += 1
+            if t_now - fps_acc["t"] >= 5.0:
+                n_, wall_ = fps_acc["n"], t_now - fps_acc["t"]
+                cpu_m, cpu_p = time.thread_time(), time.process_time()
+                tp_ = getattr(sim, "tproc", None)
+                top_ = sorted(fps_acc["ms"].items(), key=lambda kv: -kv[1])[:8]
+                log(f"[fps] {n_ / wall_:.1f} fps, {wall_ * 1000 / n_:.1f} ms/frame; main thread CPU {(cpu_m - fps_acc['cm']) * 1000 / n_:.1f} ms/frame, "
+                    f"whole process {(cpu_p - fps_acc['cp']) / wall_:.2f} cores, {threading.active_count()} threads; "
+                    f"timed parts {sum(fps_acc['ms'].values()) / n_:.1f} ms: " + ", ".join(f"{k} {v / n_:.1f}" for k, v in top_)
+                    + (f"; traffic worker {tp_.ms:.1f} ms, waited {tp_.wait_ms:.1f} ms" if tp_ is not None and tp_.ok else "; traffic in-process")
+                    + f"; cars {len(sim.traffic.cars)} peds {len(sim.peds.list)} bodies {len(sim.bodies)}")
+                fps_acc.update(t=t_now, n=0, ms={}, cm=cpu_m, cp=cpu_p)
         guard.ms.clear()
         gc_t[1] = 0.0
         if not a.test and len(ft_hist) >= 60:              # quality scaler: a slow PC thins the crowds a little instead of stuttering
