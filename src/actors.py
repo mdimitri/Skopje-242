@@ -341,14 +341,15 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
             vf = 0.0
             vl = 0.0
     sf = world.surface(p.x, p.y)
+    offr = vehicles.STYLE[p.kind] in ("suv", "pickup", "tractor", "apc", "truck")       # terrain vehicles cope with grass and dirt
     if sf == 0:
-        vf *= math.exp(-0.45 * dt)
+        vf *= math.exp((-0.08 if offr else -0.2) * dt)
     lift = 1.25 if throttle == 0 else 1.0                           # off the gas the car slows 25 % faster
     vf -= (vf * abs(vf) * 0.00085 * dt + (0.25 * dt if vf > 0 else -0.25 * dt if vf < 0 else 0)) * lift
     if handbrake:
         vf *= math.exp(-1.43 * dt)
         p.braking = True
-    grip = 1.8 if handbrake else (GRIP * 0.63 if sf == 0 else GRIP)
+    grip = 1.8 if handbrake else (GRIP * (0.9 if offr else 0.75) if sf == 0 else GRIP)
     p.slip = abs(vl - vk)
     vl = vk + (vl - vk) * math.exp(-grip * dt)
     p.vx, p.vy = fx * vf + rx * vl, fy * vf + ry * vl
