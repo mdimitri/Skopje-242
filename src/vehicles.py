@@ -382,7 +382,7 @@ for _i, _v in enumerate(_V):
         for _k, _x in enumerate(_o):
             _b[_k] = _x
     _b[0] *= 1.0                      # real top speeds (Martin 2026-11-16: no more ~110 km/h cap) ...
-    _b[1] *= 0.585                    # ... but first-gear pull of a real car (~5 m/s2); the top-gear taper is in actors.drive
+    _b[1] *= 0.76                     # ... but first-gear pull of a real car (~5 m/s2); the top-gear taper is in actors.drive
     PERF.append(tuple(_b))
 
 # ---------------------------------------------------------------------------- fighting: (hit points, chance to fight back, punch damage)
