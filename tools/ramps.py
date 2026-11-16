@@ -1001,6 +1001,146 @@ def extend_bridges(roads, log=print):
     return _carry(roads, cut, _FRESH)
 
 
+def align_twins(roads, log=print):
+    """The two decks of a dual carriageway's bridge often end at different places in OSM: the shorter one stops while
+    its twin goes on, so the deck surface, median barrier and pavements end in a stagger across the road.  The shorter
+    deck is carried on along its road to where its twin ends (when nothing joins it there)."""
+    ends, by_end, deg = _foot_roads(roads)
+    br = [(ri, rd) for ri, rd in enumerate(roads) if rd.get("bridge") and rd.get("drive") and len(rd["pts"]) >= 2
+          and len(rd["nodes"]) == len(rd["pts"])]
+    cut = {}
+    for ri, rd in br:
+        P = rd["pts"]
+        for end in (0, 1):
+            node = rd["nodes"][0 if end == 0 else -1]
+            if deg.get(node, 0) != 2 or len(by_end.get(node, ())) != 1:
+                continue
+            p, q = (P[0], P[min(1, len(P) - 1)]) if end == 0 else (P[-1], P[-2])
+            ul = math.hypot(p[0] - q[0], p[1] - q[1]) or 1.0
+            u = ((p[0] - q[0]) / ul, (p[1] - q[1]) / ul)
+            best = 0.0
+            for rj, rb in br:
+                if rj == ri or set(rb["nodes"]) & set(rd["nodes"]):
+                    continue
+                Q = rb["pts"]
+                for k in range(len(Q) - 1):          # parallel, beside this end
+                    a, b = Q[k], Q[k + 1]
+                    dx, dy = b[0] - a[0], b[1] - a[1]
+                    L = math.hypot(dx, dy) or 1e-9
+                    if abs(dx * u[0] + dy * u[1]) / L < 0.94:
+                        continue
+                    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L ** 2))
+                    lat = math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t)
+                    if lat > 16.0:
+                        continue
+                    for qe in (Q[0], Q[-1]):
+                        d = (qe[0] - p[0]) * u[0] + (qe[1] - p[1]) * u[1]
+                        if abs((qe[0] - p[0]) * -u[1] + (qe[1] - p[1]) * u[0]) < 18.0 and 0.8 < d < 40.0:
+                            best = max(best, d)
+                    break
+            if best <= 0.0:
+                continue
+            ri2, e2 = by_end[node][0]
+            if ri2 in cut:
+                continue
+            W = roads[ri2]["pts"] if e2 == 0 else roads[ri2]["pts"][::-1]
+            Wn = roads[ri2]["nodes"] if e2 == 0 else roads[ri2]["nodes"][::-1]
+            cw = [0.0]
+            for a_, b_ in zip(W, W[1:]):
+                cw.append(cw[-1] + math.hypot(b_[0] - a_[0], b_[1] - a_[1]))
+            if best > cw[-1] - 2.0 or any(deg.get(n, 0) > 2 and 0.0 < c < best + 2.0 for n, c in zip(Wn, cw)):
+                continue
+            cut[ri2] = (e2, best)
+    log(f"[ramps] twin bridges: {len(cut)} deck ends carried on to where their twin ends")
+    return _carry(roads, cut, _FRESH)
+
+
+SVC_REACH = 26.0       # a service road crossing under a bridge this close to a foot that is a junction ...
+SVC_CLEAR = 4.0        # ... stops this far from the deck's edge on both sides (two dead ends, no way through)
+
+
+def cut_service_under_feet(roads, log=print):
+    """A service road (a yard access, a car park lane) mapped straight under an interchange ramp just before the ramp
+    lands at a junction: the ramp has no room to clear it and a level crossing across a ramp is not how it is built, so
+    it ran through the deck.  The service road stops short of the ramp on both sides.  -> roads (new list)."""
+    deg = {}
+    for rd in roads:
+        if (rd.get("drive") or rd.get("walk")) and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                deg[n] = deg.get(n, 0) + 1
+    decks = []
+    for rd in roads:
+        if rd.get("bridge") and rd.get("drive") and len(rd["pts"]) >= 2 and len(rd["nodes"]) == len(rd["pts"]):
+            feet = [rd["pts"][0 if e == 0 else -1] for e in (0, 1)
+                    if deg.get(rd["nodes"][0 if e == 0 else -1], 0) > 2 or _junction_close(roads, rd["nodes"][0 if e == 0 else -1], deg)]
+            if feet:
+                decks.append((rd, feet))
+    out, n_cut = [], 0
+    for rd in roads:
+        if (rd.get("cls") != "service" or rd.get("bridge") or rd.get("tunnel") or not rd.get("drive")
+                or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"])):
+            out.append(rd)
+            continue
+        P = rd["pts"]
+        cum = [0.0]
+        for a, b in zip(P, P[1:]):
+            cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        gaps = []
+        for dk, feet in decks:
+            if set(dk["nodes"]) & set(rd["nodes"]):
+                continue
+            Q = dk["pts"]
+            for k in range(len(P) - 1):
+                for j in range(len(Q) - 1):
+                    r_ = _isect(P[k], P[k + 1], Q[j], Q[j + 1])
+                    if not r_:
+                        continue
+                    x = (P[k][0] + (P[k + 1][0] - P[k][0]) * r_[0], P[k][1] + (P[k + 1][1] - P[k][1]) * r_[0])
+                    if min(math.hypot(x[0] - f[0], x[1] - f[1]) for f in feet) > SVC_REACH:
+                        continue
+                    sv = cum[k] + (cum[k + 1] - cum[k]) * r_[0]
+                    h = dk["w"] / 2 + 2.4 + SVC_CLEAR
+                    gaps.append((sv - h, sv + h))
+        if not gaps:
+            out.append(rd)
+            continue
+        gaps.sort()
+        L, keep, s0 = cum[-1], [], 0.0
+        for g0, g1 in gaps:
+            if g0 > s0:
+                keep.append((s0, g0))
+            s0 = max(s0, g1)
+        if s0 < L:
+            keep.append((s0, L))
+        for a_, b_ in keep:
+            if b_ - a_ < 6.0:
+                continue
+            pts, nds = [], []
+            for s_, q, n in zip(cum, P, rd["nodes"]):
+                if a_ < s_ < b_:
+                    pts.append(q)
+                    nds.append(n)
+            for end_s, at_front in ((a_, True), (b_, False)):
+                if (end_s <= 0.0 and at_front) or (end_s >= L and not at_front):
+                    q, n = (P[0], rd["nodes"][0]) if at_front else (P[-1], rd["nodes"][-1])
+                else:
+                    k = max(0, min(len(P) - 2, next(i for i in range(len(cum) - 1) if cum[i + 1] >= end_s)))
+                    t = (end_s - cum[k]) / ((cum[k + 1] - cum[k]) or 1.0)
+                    q = (P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t)
+                    _FRESH[0] -= 1
+                    n = _FRESH[0]
+                if at_front:
+                    pts.insert(0, q)
+                    nds.insert(0, n)
+                else:
+                    pts.append(q)
+                    nds.append(n)
+            out.append(dict(rd, pts=pts, nodes=nds))
+        n_cut += len(gaps)
+    log(f"[ramps] interchanges: {n_cut} service roads under a ramp foot stopped short of it")
+    return out
+
+
 _FRESH = [-1_500_000_000]
 
 

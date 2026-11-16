@@ -215,6 +215,7 @@ class Out:
             if deck is not None:
                 pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
             elif self.T is not None:
+                pos, c = _refine(pos, c, self.T)
                 pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
             add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
 
@@ -513,6 +514,18 @@ class Cover:
                 return True
         return False
 
+    def low_deck(self, x, y, edges, decks, T):
+        """True when a driven deck that is still down at street level (its approach, within 1.5 m of the ground) covers
+        (x, y): a street's pavement or a footway meeting it there stops at its asphalt instead of running across it."""
+        if not decks or T is None:
+            return False
+        for i, ax, ay, bx, by, hw, rk, br in self.segs.get((int(x // self.CELL), int(y // self.CELL)), ()):
+            if br and _pdist(x, y, ax, ay, bx, by) < hw - 0.05:
+                d = decks.get(edges[i]["road"])
+                if d is not None and d.at(x, y)[0] - float(T.hs(x, y)) < 1.5:
+                    return True
+        return False
+
     def covered(self, x, y, me, bridge, my_rank=None, skip=()):
         """True when another road's asphalt (for markings: of higher precedence) lies over (x, y)."""
         c = self.CELL
@@ -540,7 +553,7 @@ def _wall(out, P, y_top, y_bot, col, shade):
             out.quad((a[0], y_top, a[1]), (b[0], y_top, b[1]), (b[0], y_bot, b[1]), (a[0], y_bot, a[1]), col, shade)
 
 
-def _slab(out, pts, fr, hw, y, inner=None):
+def _slab(out, pts, fr, hw, y, inner=None, hide=None):
     """Concrete deck body: kerb ledges, both girder faces and the underside of a bridge.  inner: {side: [extent or None
     per point]}: on a twin bridge's median side the body reaches the middle of the gap instead (no ledge there)."""
     ext = hw + 0.6
@@ -553,6 +566,8 @@ def _slab(out, pts, fr, hw, y, inner=None):
         I_ = offset(pts, fr, side * hw)
         for k in range(len(pts) - 1):
             if xs[k] is None and xs[k + 1] is None:
+                if hide is not None and hide((I_[k][0] + O_[k + 1][0]) / 2, (I_[k][1] + O_[k + 1][1]) / 2):
+                    continue                                # (the ledge would lie on another deck's carriageway)
                 if side == 1:
                     _strip(out, I_[k:k + 2], O_[k:k + 2], y - 0.01, conc, 0.95)
                 else:
@@ -605,8 +620,8 @@ class Twin:
                         continue
                     seen.add((j, k))
                     f = self.edges[j]
-                    if f["bridge"] != e["bridge"] or f["road"] == e["road"]:
-                        continue
+                    if f["bridge"] != e["bridge"] or f["road"] == e["road"] or {f["a"], f["b"]} & {e["a"], e["b"]}:
+                        continue                                                # (a ramp splitting off at a shared node: no twin)
                     (ax, ay), (bx, by) = f["pts"][k], f["pts"][k + 1]
                     sx, sy = bx - ax, by - ay
                     sl = math.hypot(sx, sy)
@@ -620,7 +635,7 @@ class Twin:
                     if not (0.0 < t < reach and -0.02 <= u <= 1.02):
                         continue
                     g = t - hw - f["w"] / 2
-                    if g > self.maxgap or (best is not None and g >= best):
+                    if g < -0.3 or g > self.maxgap or (best is not None and g >= best):     # (overlapping: a fan, not a twin)
                         continue
                     if e["bridge"]:
                         h1, h2 = self._h(i, x, y), self._h(j, x + rx * t, y + ry * t)
@@ -778,7 +793,7 @@ def _joints(edges):
     return J
 
 
-def _ribbon(e, i, J, plates):
+def _ribbon(e, i, J, plates, PT=None):
     """The edge's centreline with extra vertices where its width tapers to a shared joint and where it stops at a
     junction plate.  -> (pts, per-vertex half widths, frames, first vertex of the pavement run, last vertex)."""
     pts = e["pts"]
@@ -792,6 +807,10 @@ def _ribbon(e, i, J, plates):
         if j and abs(j[2] - hw) > 0.05:
             T = min(14.0, L * 0.4)
             taper[end] = (T, j[2])
+            marks.append(T if end == 0 else L - T)
+        elif PT and (i, end) in PT:                       # wider than the same road going on across the junction: narrows to it
+            T = min(30.0, L * 0.5)
+            taper[end] = (T, PT[(i, end)])
             marks.append(T if end == 0 else L - T)
     cut = {}
     for end in (0, 1):
@@ -1020,6 +1039,42 @@ def _corners(out, edges, plates, ribs, trims, cov, hulls):
                          (I[j][0], SW_H, I[j][1]), (200, 196, 188), 0.92)
 
 
+REFINE_TOL = 0.025                                      # a ground triangle whose terrain bulges this much above its flat face is split
+
+
+def _refine(pos, col, T, levels=5):
+    """Split ground triangles (mid-edge, 1 -> 4) wherever the terrain under them is not flat enough for the flat face to
+    stay on top of it: a 24 m ribbon piece or a junction plate over the curve of an approach embankment, a cutting or a
+    hillside let the ground mesh show through the asphalt as holes."""
+    n = len(pos) // 3
+    if n == 0:
+        return pos, col
+    tri = pos.reshape(n, 3, 3).astype(np.float64)
+    rgb = col.reshape(n, 3, 4)
+    keep_t, keep_c = [], []
+    for _ in range(levels):
+        a, b, c_ = tri[:, 0], tri[:, 1], tri[:, 2]
+        mids = np.stack([(a + b) / 2, (b + c_) / 2, (c_ + a) / 2], 1)
+        h = np.asarray(T.h(tri[:, :, 0].ravel(), tri[:, :, 2].ravel()), np.float64).reshape(-1, 3)
+        hm = np.asarray(T.h(mids[:, :, 0].ravel(), mids[:, :, 2].ravel()), np.float64).reshape(-1, 3)
+        lin = np.stack([(h[:, 0] + h[:, 1]) / 2, (h[:, 1] + h[:, 2]) / 2, (h[:, 2] + h[:, 0]) / 2], 1)
+        ext = np.max(np.hypot(tri[:, [1, 2, 0], 0] - tri[:, :, 0], tri[:, [1, 2, 0], 2] - tri[:, :, 2]), axis=1)
+        split = (np.max(hm - lin, axis=1) > REFINE_TOL) & (ext > 1.5)
+        keep_t.append(tri[~split])
+        keep_c.append(rgb[~split])
+        if not split.any():
+            tri, rgb = tri[:0], rgb[:0]
+            break
+        t, m, cc = tri[split], mids[split], rgb[split]
+        A, B, C = t[:, 0], t[:, 1], t[:, 2]
+        mab, mbc, mca = m[:, 0], m[:, 1], m[:, 2]
+        tri = np.concatenate([np.stack(q, 1) for q in ((A, mab, mca), (mab, B, mbc), (mca, mbc, C), (mab, mbc, mca))])
+        rgb = np.concatenate([cc] * 4)
+    keep_t.append(tri)
+    keep_c.append(rgb)
+    return (np.concatenate(keep_t).reshape(-1, 3).astype(np.float32), np.concatenate(keep_c).reshape(-1, 4))
+
+
 def _junctions(out, edges, plates, hulls):
     """One seamless asphalt plate over every junction where roads of different classes (or 3+ roads) meet: no steps
     between their heights, no gutter lines or end caps showing, one colour (that of the most important road)."""
@@ -1095,7 +1150,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if e["bridge"]:
         ribs[i] = (pts, [hw] * len(pts), fr, 0, len(pts) - 1)
     else:
-        ribs[i] = _ribbon(e, i, joints, plates)
+        ribs[i] = _ribbon(e, i, joints, plates, getattr(X, "ptaper", None))
     RP, RH, RF, RK0, RK1 = ribs[i]
     deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
     out.deck = deck
@@ -1115,13 +1170,23 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
         _strip(out, L2, R2, y, col)
     else:
         if not e["drive"] and not e["bridge"]:
-            lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False))
+            lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False) or cov.low_deck(x_, y_, edges, decks, T))
             if lr is not None:
                 _strip(out, lr[0], lr[1], y, col)
+        elif e["bridge"] and not e["drive"]:               # a footway mapped beside a road bridge (its pavement) that crosses
+            for k in range(len(L) - 1):                   # the carriageway: never drawn over its asphalt
+                def bad(t, k=k):
+                    l_ = (L[k][0] + (L[k + 1][0] - L[k][0]) * t, L[k][1] + (L[k + 1][1] - L[k][1]) * t)
+                    r_ = (R[k][0] + (R[k + 1][0] - R[k][0]) * t, R[k][1] + (R[k + 1][1] - R[k][1]) * t)
+                    return any(cov.covered(l_[0] + (r_[0] - l_[0]) * u, l_[1] + (r_[1] - l_[1]) * u, i, True) for u in (0.1, 0.5, 0.9))
+                ln = math.hypot(L[k + 1][0] - L[k][0], L[k + 1][1] - L[k][1])
+                for t0, t1 in _free_runs(bad, 0.0, 1.0, ln):
+                    li = lambda A, t: (A[k][0] + (A[k + 1][0] - A[k][0]) * t, A[k][1] + (A[k + 1][1] - A[k][1]) * t)
+                    _strip(out, [li(L, t0), li(L, t1)], [li(R, t0), li(R, t1)], y, col)
+            if deck is not None:
+                _stairs(out, AP, L, R, deck, y)
         else:
             _strip(out, L, R, y, col)
-            if deck is not None and not e["drive"]:
-                _stairs(out, AP, L, R, deck, y)
     # round fill at both ends so mitred junctions have no gaps
     for p, end_ in ((pts[0], 0), (pts[-1], 1)):
         if (i, end_) in joints:                            # shared cross-section: nothing to fill
@@ -1147,18 +1212,25 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
             gs = X.twin.gaps(i, DP, DF, hw, side) if getattr(X, "twin", None) else [None] * len(DP)
             I_, O_ = offset(DP, DF, side * hw), offset(DP, DF, side * (hw + bsw))
             bp = getattr(X, "bpart", {}).get(i, ())
+
+            def hit(x_, y_):                               # another carriageway's asphalt: a deck it meets, or a street
+                if cov.covered_by(x_, y_, bp):             # alongside / joining it while the deck is still down at its level
+                    return True
+                if deck is None or T is None or not cov.covered(x_, y_, i, False):
+                    return False
+                return deck.at(x_, y_)[0] - float(T.hs(x_, y_)) < 1.5
             for k in range(len(DP) - 1):                   # (never over a deck it splits from / merges into: trimmed where
                 if gs[k] is not None and gs[k + 1] is not None:     # that deck's carriageway starts)
                     continue
                 runs = ((0.0, 1.0),)
-                if bp and any(cov.covered_by(q[0], q[1], bp) for q in (I_[k], O_[k], I_[k + 1], O_[k + 1])):
+                if any(hit(q[0], q[1]) for q in (I_[k], O_[k], I_[k + 1], O_[k + 1], ((I_[k][0] + O_[k + 1][0]) / 2, (I_[k][1] + O_[k + 1][1]) / 2))):
                     def bad(t, k=k):
                         for u in (0.04, 0.5, 0.96):
                             px_ = I_[k][0] + (I_[k + 1][0] - I_[k][0]) * t
                             py_ = I_[k][1] + (I_[k + 1][1] - I_[k][1]) * t
                             ox_ = O_[k][0] + (O_[k + 1][0] - O_[k][0]) * t
                             oy_ = O_[k][1] + (O_[k + 1][1] - O_[k][1]) * t
-                            if cov.covered_by(px_ + (ox_ - px_) * u, py_ + (oy_ - py_) * u, bp):
+                            if hit(px_ + (ox_ - px_) * u, py_ + (oy_ - py_) * u):
                                 return True
                         return False
                     ln = math.hypot(DP[k + 1][0] - DP[k][0], DP[k + 1][1] - DP[k][1])
@@ -1207,7 +1279,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                     ip, op = lerp(I0, I1, t), lerp(O0, O1, t)
                     for u in (0.04, 0.5, 0.96):
                         px_, py_ = ip[0] + (op[0] - ip[0]) * u, ip[1] + (op[1] - ip[1]) * u
-                        if cov.covered(px_, py_, i, False, skip=skip):
+                        if cov.covered(px_, py_, i, False, skip=skip) or cov.low_deck(px_, py_, edges, decks, T):
                             return True
                         for q in near_k:                    # inside of a tight bend: the offset folds over the road's own asphalt
                             if _pdist(px_, py_, RP[q][0], RP[q][1], RP[q + 1][0], RP[q + 1][1]) < hmin:
@@ -1251,7 +1323,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
         _markings(out, cov, i, e, pts, fr, y + 0.025)
     if deck is not None:                                   # girders + piers under the deck
-        _slab(out, slab_pf[0], slab_pf[1], hw + bsw, y, inner)
+        _slab(out, slab_pf[0], slab_pf[1], hw + bsw, y, inner, hide=lambda x_, y_: cov.covered(x_, y_, i, True))
         if do_piers:
             _piers(pout, piers, deck, T)
     out.deck = None
@@ -1279,10 +1351,29 @@ def _prepare(edges, joints, plates, decks, T):
         if e_["bridge"] and e_["drive"] and len(e_["pts"]) >= 2:
             bn.setdefault(e_["a"], []).append(k_)
             bn.setdefault(e_["b"], []).append(k_)
+    X.ptaper = {}                                          # a carriageway that goes on across a junction narrower (fewer lanes):
+    for nd, (lst, _hw) in plates.items():                  # the wider side tapers to it, so the kerbs and lanes line up
+        for (k1, e1) in lst:
+            A = edges[k1]
+            if not A["ow"] or not A["drive"]:
+                continue
+            d1 = _away(A, e1)
+            for (k2, e2) in lst:
+                B = edges[k2]
+                if k2 == k1 or not B["ow"] or B["w"] >= A["w"] - 0.5 or e2 == e1:
+                    continue
+                d2 = _away(B, e2)
+                if d1[0] * d2[0] + d1[1] * d2[1] < -0.94:
+                    X.ptaper[(k1, e1)] = B["w"] / 2
     X.bpart, X.bbias = {}, {}
-    for ks in bn.values():
+    dn = {}                                                # every carriageway at a deck's ends (a side road joining at the
+    for k_, e_ in enumerate(edges):                        # bridge foot too): the deck's pavement stops where its asphalt starts
+        if e_["drive"] and len(e_["pts"]) >= 2 and _base(e_["cls"]) in RANK:
+            dn.setdefault(e_["a"], []).append(k_)
+            dn.setdefault(e_["b"], []).append(k_)
+    for nd, ks in bn.items():
         for k_ in ks:
-            X.bpart.setdefault(k_, set()).update(q for q in ks if q != k_)
+            X.bpart.setdefault(k_, set()).update(q for q in dn.get(nd, ()) if q != k_)
         if len(ks) >= 3:
             for r_, k_ in enumerate(sorted(ks, key=lambda q: (-rank_of(edges[q]["cls"]), -edges[q]["w"], q))):
                 X.bbias[k_] = max(X.bbias.get(k_, 0.0), FAN_DROP * r_)

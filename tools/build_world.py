@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 71
+VERSION = 72
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2345,8 +2345,10 @@ def main():
     upass = underpass.plan(roads, T)                         # road tunnels are dug in (ramps, roof): see tools/underpass.py
     roads = lift_over_tunnels(roads, extra=underpass.bridge_lines(upass))
     roads = __import__("ramps").extend_footbridges(roads)         # footbridge spans get room for their stairs
+    roads = __import__("ramps").cut_service_under_feet(roads)    # a yard lane under a ramp foot: stops short of the ramp
     roads = __import__("ramps").trim_bridge_feet(roads)           # a path crossing just before a bridge foot junction: at grade
     roads = __import__("ramps").extend_bridges(roads)             # street bridge ends carried on over a way right under them
+    roads = __import__("ramps").align_twins(roads)                # a twin deck ends where the other one does (no stagger)
     frac(0.1, "rivers")
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
     T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
