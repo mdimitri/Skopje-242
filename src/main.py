@@ -1469,7 +1469,7 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
-    SHIFT_KMH = {"engine_moto": (25, 45, 70, 95), "engine_tractor": (8, 14, 21), "heavy": (15, 27, 40, 55), "light": (30, 50, 75, 105)}   # road speed at which each gear hits its shift rpm (by real speed, so a city drive goes through the gears whatever the top speed)
+    SHIFT_KMH = {"engine_moto": (25, 45, 70, 95), "engine_tractor": (8, 14, 21), "heavy": (20, 38, 60), "light": (30, 50, 75, 105)}   # road speed at which each gear hits its shift rpm (by real speed, so a city drive goes through the gears whatever the top speed)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus", "engine_tractor")
     ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.6), "engine_v8": (0.7, 2.0), "engine_bus": (0.7, 2.3),
                  "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
@@ -1497,8 +1497,9 @@ def main():
             while g > 0 and v < sh[g - 1] * 0.86:
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
             now = time.time()
-            if g > eng_gear.get(id(b), g):                                                          # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
-                eng_shift[id(b)] = (now, 0.5 if heavy else 0.35, eng_state.get(id(b), 1.0))
+            lt = now - eng_launch.get(id(b), -99.0)
+            if g > eng_gear.get(id(b), g) and lt >= 1.8:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
+                eng_shift[id(b)] = (now, 0.4 if heavy else 0.35, eng_state.get(id(b), 1.0))
             if g < len(sh):
                 rpm = top_rpm * v / sh[g]
             else:                                                                                   # top gear: from the last shift on to 1.4x shift rpm at top speed
@@ -1512,10 +1513,14 @@ def main():
             elif thr < 0.1:
                 eng_launch.pop(id(b), None)
             lt = now - eng_launch.get(id(b), -99.0)
-            if lt < 1.8 and g == 0:
-                flare, bite = (1500.0, 1100.0) if heavy else (2600.0, 1400.0)
-                lr = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.45 if lt < 0.45 else (flare + (bite - flare) * (lt - 0.45) / 0.525 if lt < 0.975 else bite)
-                rpm = max(rpm, lr)
+            if lt < 1.8:                                                                            # the clutch slips: the revs do not follow the road speed yet
+                flare, bite = (1700.0, 1050.0) if heavy else (2800.0, 1300.0)
+                if lt < 0.45:
+                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.45                                 # foot down, clutch in: revs flare
+                elif lt < 0.975:
+                    rpm = flare + (bite - flare) * (lt - 0.45) / 0.525                              # clutch bites: the load drags the revs down
+                else:
+                    rpm = bite + (rpm - bite) * (lt - 0.975) / 0.825                                # clutch fully up: back onto the road speed
             elif v < 1.5 and thr < 0.05:
                 rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
             eng_gear[id(b)] = g
