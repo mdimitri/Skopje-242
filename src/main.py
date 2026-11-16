@@ -2182,7 +2182,8 @@ def main():
         worst_bake = max(worst_bake, streamer.bake_ms)
         # ------------------------------------------------ draw
         rl.begin_drawing()
-        present.begin()
+        dof_on = bool(cfg.get("dof")) and sf_on                 # depth of field: the free 3D views only
+        present.begin(dof_on)
         try:
             rl.clear_background(rl.Color(26, 28, 32, 255))
             renderer.indoor = gtc if indoor_ else None           # in the mall: its hall instead of the city around
@@ -2195,6 +2196,11 @@ def main():
                     selfie.haze(sf_hy, sim.clock.dark, sw)
             else:
                 guard.run("render", renderer.draw, cam, Hc, rect, ppm, sim, particles, t_game)
+            if dof_on:
+                o_ = sim.car if sim.mode == "car" and sim.car is not None else sim.walker
+                if o_ is not None and cfg.get("dof_k", 1.0) > 0.0:
+                    present.set_dof(cfg.get("dof_k", 1.0), math.dist((cam.position.x, cam.position.y, cam.position.z), (o_.x, foc_h, o_.y)),
+                                    *renderer._clip)
             if lod and not indoor_:
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, sf_on)
             if cfg.get("smog", 1) and not sf_on:

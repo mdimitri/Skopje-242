@@ -29,6 +29,7 @@ ap.add_argument("--world", default="")
 ap.add_argument("--size", default="", help="window size; default: the resolution in settings.json")
 ap.add_argument("--view", default="top", choices=("top", "chase"), help="top-down or 3rd-person (chase) camera")
 ap.add_argument("--hour", default="")
+ap.add_argument("--dof", type=float, default=0.0, help="depth of field strength (1 = 100%%) in the chase view; 0 = off")
 ap.add_argument("--prof", action="store_true")
 ap.add_argument("--tag", default="")
 ap.add_argument("extra", nargs="*", help="more arguments for main.py (after --)")
@@ -64,6 +65,8 @@ _sinit = settings_mod.Settings.__init__
 def _settings(self, *x, **kw):
     _sinit(self, *x, **kw)
     self["debug_chase"] = a.view == "chase"          # in memory only, settings.json is not written
+    if a.dof > 0:
+        self["dof"], self["dof_k"] = True, a.dof
 settings_mod.Settings.__init__ = _settings
 
 import main as M  # noqa: E402
