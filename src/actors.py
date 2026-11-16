@@ -272,7 +272,7 @@ def tow(b):
     b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
 
 
-CLUTCH_FLARE, CLUTCH_BITE = 0.34, 0.40               # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
+CLUTCH_FLARE, CLUTCH_BITE = 0.2, 0.24                # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
 
 
 def drive(p, throttle, steer_in, handbrake, dt, world):

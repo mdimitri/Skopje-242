@@ -1498,14 +1498,13 @@ def main():
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
             now = time.time()
             lt = now - eng_launch.get(id(b), -99.0)
-            if g > eng_gear.get(id(b), g) and lt >= 1.77:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
+            if g > eng_gear.get(id(b), g) and lt >= 1.06:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
                 eng_shift[id(b)] = (now, 0.4 if heavy else 0.35, eng_state.get(id(b), 1.0))
             if g < len(sh):
                 rpm = top_rpm * v / sh[g]
-            else:                                                                                   # top gear: from the last shift on to 1.4x shift rpm at top speed
-                lo_ = sh[-1] if sh else 0.0
-                r0 = top_rpm * (sh[-2] / sh[-1] if len(sh) > 1 else 0.6) if sh else 0.0
-                rpm = r0 + (1.4 * top_rpm - r0) * (v - lo_) / max(1.0, vmax - lo_)
+            else:                                                                                   # top gear: climbs a little slower than 4th and never reaches the shift rpm
+                r0 = top_rpm * sh[-2] / sh[-1]
+                rpm = r0 + 0.9 * top_rpm / sh[-1] * (v - sh[-1])
             rpm = max(RPM_IDLE, rpm)
             rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and v > 10 else 0.0)                     # throttle lift drops the revs (engine braking)
             if v < 10.0 and thr > 0.2 and id(b) not in eng_launch:
@@ -1513,14 +1512,14 @@ def main():
             elif thr < 0.1:
                 eng_launch.pop(id(b), None)
             lt = now - eng_launch.get(id(b), -99.0)
-            if lt < 1.77:                                                                           # the clutch slips: the revs do not follow the road speed yet
+            if lt < 1.06:                                                                           # the clutch slips: the revs do not follow the road speed yet
                 flare, bite = (2550.0, 1050.0) if heavy else (4200.0, 1300.0)
-                if lt < 0.34:
-                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.34                                 # foot down, clutch in: revs flare
-                elif lt < 0.74:
-                    rpm = flare + (bite - flare) * (lt - 0.34) / 0.40                              # clutch bites: the load drags the revs down
+                if lt < 0.2:
+                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.2                                 # foot down, clutch in: revs flare
+                elif lt < 0.44:
+                    rpm = flare + (bite - flare) * (lt - 0.2) / 0.24                              # clutch bites: the load drags the revs down
                 else:
-                    rpm = bite + (rpm - bite) * (lt - 0.74) / 1.03                                # clutch fully up: back onto the road speed
+                    rpm = bite + (rpm - bite) * (lt - 0.44) / 0.62                                # clutch fully up: back onto the road speed
             elif v < 1.5 and thr < 0.05:
                 rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
             eng_gear[id(b)] = g
