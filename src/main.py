@@ -1469,7 +1469,7 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
-    SHIFT_KMH = {"engine_moto": (38, 68, 105, 142), "engine_tractor": (12, 21, 32), "heavy": (30, 57, 90), "light": (45, 75, 112, 158)}   # road speed at which each gear hits its shift rpm (by real speed, so a city drive goes through the gears whatever the top speed)
+    SHIFT_FR = (0.3, 0.48, 0.66, 0.84)     # 5 gears for every engine: shift speeds as a share of the top speed   # road speed at which each gear hits its shift rpm (by real speed, so a city drive goes through the gears whatever the top speed)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus", "engine_tractor")
     ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.6), "engine_v8": (0.7, 2.0), "engine_bus": (0.7, 2.3),
                  "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
@@ -1489,7 +1489,7 @@ def main():
             heavy = nm in HEAVY_ENGINES
             vmax = vehicles.PERF[b.kind][0] * 3.6
             v = fr * vmax
-            sh = [k for k in SHIFT_KMH.get(nm, SHIFT_KMH["heavy" if heavy else "light"]) if k < vmax * 0.85]
+            sh = [k * vmax for k in SHIFT_FR]
             top_rpm = 2800.0 if heavy else RPM_SHIFT
             g = min(len(sh), eng_gear.get(id(b), 0))
             while g < len(sh) and v > sh[g]:

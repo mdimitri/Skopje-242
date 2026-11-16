@@ -425,6 +425,8 @@ LOOP_KEYS = frozenset(k_ for k_ in ("siren_police", "siren_amb", "siren_fire", "
                                     "car_alarm", "engine_misfire", "engine_knock", "ai_engine_misfire", "ai_engine_knock", "rotor")) | frozenset(
     p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto", "engine_tractor") for h_ in ("",) + tuple(s_ for s_, _ in engine_synth.LAYERS if s_)) | {"engine"}
 
+ENGINE_STREAMS = frozenset(n_ for n_ in LOOP_KEYS if "engine_" in n_ and "misfire" not in n_ and "knock" not in n_)
+
 
 class Audio:
     LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto", "engine_tractor") for h_ in ("",) + tuple(s_ for s_, _ in engine_synth.LAYERS if s_)) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
@@ -435,6 +437,7 @@ class Audio:
     def __init__(self, mute=False, root=None, dry=False):
         self.ok = False
         self.snd = {}
+        self.mus, self._mplay = {}, set()              # engine layers as seamless looping streams; the ones playing now
         self.dyn = []                                   # (sound, path) for speech clips, unloaded when finished
         self.master = 0.8
         self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0, "traffic": 0.5}
@@ -478,6 +481,10 @@ class Audio:
                 p = os.path.join(self._tmp, name + ".wav")
                 _save(p, x)
                 self.snd[name] = rl.load_sound(p)
+                if name in ENGINE_STREAMS:                                  # engine layers loop seamlessly as streams: a Sound restarted when it
+                    m_ = rl.load_music_stream(p)                            # ends left a gap (a tick every loop); streams wrap without one
+                    m_.looping = True
+                    self.mus[name] = m_
             self.ok = True
         except Exception:  # noqa: BLE001
             self.ok = False
@@ -607,7 +614,9 @@ class Audio:
             self.play(name, vol * k, pitch, bus, pan, far=far)
 
     def update(self):
-        """Play the sounds whose travel time has passed."""
+        """Play the sounds whose travel time has passed; feed the engine streams that are playing."""
+        for n_ in self._mplay:
+            rl.update_music_stream(self.mus[n_])
         if self.pend:
             now = time.perf_counter()
             due = [q for q in self.pend if q[0] <= now]
@@ -658,6 +667,22 @@ class Audio:
             if self.dry:
                 if vol > 0.01:
                     self._pick(name, False, variant)
+                return
+            m_ = self.mus.get(name)
+            if m_ is not None and not self.lib.get(soundcat.ALIAS.get(name, name)):
+                if self.cabin and not name.startswith("engine_"):
+                    vol *= CABIN
+                if vol <= 0.01 or self.muted:
+                    if name in self._mplay:
+                        rl.stop_music_stream(m_)
+                        self._mplay.discard(name)
+                    return
+                rl.set_music_volume(m_, min(1.0, vol * self.zk.get(bus, 1.0)) * self.master * self.bus.get(bus, 1.0))
+                rl.set_music_pitch(m_, pitch)
+                rl.set_music_pan(m_, pan)
+                if name not in self._mplay:
+                    rl.play_music_stream(m_)
+                    self._mplay.add(name)
                 return
             s = self._cur.get(name)
             muff = self.cabin and not name.startswith("engine_")     # inside a car: everything but your own engine through the body
@@ -735,6 +760,8 @@ class Audio:
                 rl.unload_sound(s)
             for s, _mb in self._ls.values():
                 rl.unload_sound(s)
+            for m_ in self.mus.values():
+                rl.unload_music_stream(m_)
             rl.close_audio_device()
         except Exception:  # noqa: BLE001
             pass
