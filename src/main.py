@@ -1469,8 +1469,8 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
-    GEARS_LIGHT = (0.09, 0.16, 0.27, 0.47, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
-    GEARS_HEAVY = (0.07, 0.13, 0.22, 0.35, 0.56, 1.0)
+    GEARS_LIGHT = (0.34, 0.49, 0.70, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
+    GEARS_HEAVY = (0.24, 0.34, 0.49, 0.70, 1.0)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus")
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
 
