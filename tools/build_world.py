@@ -31,6 +31,7 @@ VERSION = 70
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
+ROADS_ONLY = os.environ.get("SK242_ROADS_ONLY", "")   # a path: dump the road network after the bridge decks and stop (tools/road_audit.py)
 NCX = int(2 * HX / CELL)
 NCY = int(2 * HY / CELL)
 
@@ -75,7 +76,7 @@ def lift_over_tunnels(roads, margin=8.0, extra=()):
         u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den
         return t if 0 < t < 1 and 0 < u < 1 else None
 
-    fresh = [-1]
+    fresh = [-1_000_000_000]                     # node ids of the cut ends: a range of their own (connect_roads counts down from -2)
     out = []
     for rd in roads:
         if rd.get("tunnel") or rd["bridge"] or not (rd["drive"] or rd["walk"]) or len(rd["nodes"]) != len(rd["pts"]) or rd["layer"] < 0:
@@ -123,7 +124,7 @@ def lift_over_tunnels(roads, margin=8.0, extra=()):
     return out
 
 
-def connect_roads(roads, radius=7.0, drive_radius=12.0):
+def connect_roads(roads, radius=7.0, drive_radius=15.0):
     """Join dead ends that stop just short of another road (a gap in the data): the end moves onto the nearest vertex or onto a new
     junction node inserted into that road.  Same level only (never bridges, never motorways), the end must point at the road.
     A street end may reach drive_radius, a path only radius."""
@@ -176,8 +177,8 @@ def connect_roads(roads, radius=7.0, drive_radius=12.0):
                 d = math.hypot(p[0] - qx, p[1] - qy)
                 if d > (drive_radius if rd["drive"] else radius) or d < 0.05:
                     continue
-                if (qx - p[0]) * dx + (qy - p[1]) * dy < 0.2 * d:         # not pointing at it: a parallel neighbour
-                    continue
+                if (qx - p[0]) * dx + (qy - p[1]) * dy < (0.2 if d <= 12.0 else 0.7) * d:   # not pointing at it: a parallel neighbour
+                    continue                                       # (a long reach must point straight at it)
                 if best is None or d < best[0]:
                     best = (d, ri2, k, t, qx, qy)
             if best is None:
@@ -204,6 +205,40 @@ def connect_roads(roads, radius=7.0, drive_radius=12.0):
             r2["nodes"].insert(k + 1, nid_)
     print(f"[build] connected {merged + snapped} dead ends to nearby roads ({snapped} new junctions)")
     return merged + snapped
+
+
+def open_oneway_traps(roads, hx, hy, edge=60.0):
+    """A one-way street whose start nothing drives into, or whose end nothing drives out of (a parking aisle whose exit is
+    a footpath, a street whose feeder is tagged private), traps or starves every car on it: such a way becomes two-way.
+    Not near the map's edge, where the cut-off half of a dual road is a one-way stub on purpose."""
+    n_open = 0
+    while True:
+        cin, cout = {}, {}
+        for rd in roads:
+            if not rd["drive"] or len(rd["nodes"]) != len(rd["pts"]):
+                continue
+            for k, n in enumerate(rd["nodes"]):
+                if not rd["ow"] or k > 0:
+                    cin[n] = cin.get(n, 0) + 1
+                if not rd["ow"] or k < len(rd["nodes"]) - 1:
+                    cout[n] = cout.get(n, 0) + 1
+        hit = 0
+        for rd in roads:
+            if not (rd["drive"] and rd["ow"]) or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
+                continue
+            if rd.get("junction") == "roundabout" or rd["cls"] in ("motorway", "trunk"):
+                continue
+            (sx, sy), (ex, ey) = rd["pts"][0], rd["pts"][-1]
+            if min(hx - abs(sx), hy - abs(sy), hx - abs(ex), hy - abs(ey)) < edge:
+                continue
+            if cin.get(rd["nodes"][0], 0) == 0 or cout.get(rd["nodes"][-1], 0) == 0:
+                rd["ow"] = 0
+                hit += 1
+        n_open += hit
+        if not hit:
+            break
+    print(f"[build] {n_open} one-way dead ends opened to two-way traffic")
+    return n_open
 
 
 def _inside(x, y, ring):
@@ -2301,7 +2336,7 @@ def main():
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
                           "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes, "turn": (t.get("turn:lanes:forward") or (t.get("turn:lanes", "") if ow else ""), t.get("turn:lanes:backward", "")),
-                          "tunnel": tunnel})
+                          "tunnel": tunnel, "junction": t.get("junction", "")})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
     phase("roads")                                           # the bar above ended at 100 %: the slow steps after it keep it moving
@@ -2309,6 +2344,7 @@ def main():
     import underpass
     upass = underpass.plan(roads, T)                         # road tunnels are dug in (ramps, roof): see tools/underpass.py
     roads = lift_over_tunnels(roads, extra=underpass.bridge_lines(upass))
+    roads = __import__("ramps").extend_footbridges(roads)         # footbridge spans get room for their stairs
     frac(0.1, "rivers")
     water_a = np.asarray(surf, dtype=np.uint8) == 1          # water before roads/bridges are painted over it
     T = terrain_mod.carve_water(T, water_a & (np.asarray(lakes, dtype=np.uint8) == 1), CELL)
@@ -2354,6 +2390,8 @@ def main():
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
         jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
     T_b = underpass.StreetTerrain(T, underpass.street_grid(upass))       # buildings over a covered road stand on its roof slab
+    if ROADS_ONLY:                                             # tools/road_audit.py: the road pipeline without the building meshes
+        jobs_ = []
     hide_ = party_walls(jobs_, T_b)
     jobs_ = [j_ + (hd_,) for j_, hd_ in zip(jobs_, hide_)]
     bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
@@ -2399,6 +2437,7 @@ def main():
     phase("graph")
 
     connect_roads(roads)
+    open_oneway_traps(roads, HX, HY)
     try:                                                        # round 29: trampled desire-line paths over open ground
         import footpaths
         worn = footpaths.generate(roads, buildings, bld, surf, rails, [q for q in _read_list(os.path.join(a.src, "map_pois.json")) if len(q) == 4],
@@ -2492,6 +2531,7 @@ def main():
     try:                                                        # approaches: embankments and vertical curves into the roads (after twin_decks: it would kink them again)
         _barr = np.asarray(bld)
         __import__("ramps").smooth(T, decks, roads, lambda x, y: bool(_barr[min(NCY - 1, max(0, int((y + HY) / CELL))), min(NCX - 1, max(0, int((x + HX) / CELL)))]), HX, HY)
+        __import__("ramps").footbridges(T, decks, roads)          # footbridges over streets: a level top and stairs
     except Exception as ex:  # noqa: BLE001 - the old profiles stay
         import traceback
         traceback.print_exc()
@@ -2499,6 +2539,12 @@ def main():
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
+    if ROADS_ONLY:                                             # tools/road_audit.py reads this and stops here
+        with open(ROADS_ONLY, "wb") as f_:
+            pickle.dump({"roads": roads, "edges": edges, "decks": decks, "upass": upass, "T": T, "hx": HX, "hy": HY,
+                         "buildings": [(b_["ring"], b_["h"]) for b_ in buildings]}, f_, protocol=4)
+        print(f"[build] roads-only dump: {ROADS_ONLY}")
+        raise SystemExit(0)
     stage("props")
     phase("places")
 

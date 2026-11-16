@@ -635,6 +635,11 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 s += r.uniform(9, 18)                       # round 8: 4x benches and bins
 
     # ---------------------------------------------------------------- bridges: parapets along the deck
+    twin = roads3d.Twin(edges, decks)                       # the median side of a twin bridge has a barrier, not a parapet
+    e_of = {}
+    for i_, e_ in enumerate(edges):
+        if e_["bridge"] and e_["drive"]:
+            e_of.setdefault(e_["road"], i_)
     for ri, rd in enumerate(span(roads, 0.75, 0.8, "bridge parapets")):
         if not rd["bridge"] or not (rd["drive"] or rd["walk"]):
             continue
@@ -656,6 +661,8 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 cx, cy = x1 + dx * t, y1 + dy * t
                 walked += step
                 for side in (-1, 1):
+                    if ri in e_of and twin.gap(e_of[ri], cx, cy, -dy, dx, side, w / 2) is not None:
+                        continue
                     ox, oy = cx - dy * side * (w / 2 + 3.0), cy + dx * side * (w / 2 + 3.0)
                     px, py = cx - dy * side * hw, cy + dx * side * hw
                     if deck is not None:

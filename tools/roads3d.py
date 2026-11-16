@@ -31,6 +31,8 @@ MARK = {"primary", "secondary", "tertiary", "trunk", "motorway", "unclassified",
 FOOT = {"pedestrian", "footway", "path", "steps", "cycleway", "track"}
 SW_W, SW_H = 2.0, 0.16
 BRIDGE_SW = 2.4                                          # extra deck width per side on a driven bridge: a real pavement to walk on
+TWIN_GAP = 2 * BRIDGE_SW + 3.0                           # a parallel carriageway this close (asphalt edge to edge) is the dual road's twin
+MEDIAN_H = 0.8                                           # concrete barrier between the two decks of a twin bridge
 Y_BASE, Y_STEP = 0.05, 0.016
 PIECE = 24.0                                             # longest ribbon piece (also keeps pieces inside their chunk)
 SAG = 0.012                                              # allowed gap between a flat piece and the curved terrain (m)
@@ -48,8 +50,8 @@ def _pieces(ln, ax, ay, bx, by, base=PIECE):
             sag = max(sag, abs(_T.hs(ax + (bx - ax) * t, ay + (by - ay) * t) - (h0 + (h1 - h0) * t)))
         n = max(n, int(math.ceil(math.sqrt(sag / SAG))))
         q = getattr(_T, "q", None)
-        if q is not None and min(q.at_s(ax + (bx - ax) * t, ay + (by - ay) * t) for t in (0.0, 0.25, 0.5, 0.75, 1.0)) < -0.01:
-            return min(max(n, int(math.ceil(ln / 1.5))), int(math.ceil(ln)))     # river quays: 1 m ground detail, follow it
+        if q is not None and max(abs(q.at_s(ax + (bx - ax) * t, ay + (by - ay) * t)) for t in (0.0, 0.25, 0.5, 0.75, 1.0)) > 0.01:
+            return min(max(n, int(math.ceil(ln / 1.5))), int(math.ceil(ln)))     # quays / embankments: 1 m ground detail, follow it
     return min(n, max(1, int(math.ceil(ln / 3.0))))
 SLAB = 0.9                                               # bridge deck thickness
 
@@ -530,17 +532,155 @@ def _wall(out, P, y_top, y_bot, col, shade):
             out.quad((a[0], y_top, a[1]), (b[0], y_top, b[1]), (b[0], y_bot, b[1]), (a[0], y_bot, a[1]), col, shade)
 
 
-def _slab(out, pts, fr, hw, y):
-    """Concrete deck body: kerb ledges, both girder faces and the underside of a bridge."""
+def _slab(out, pts, fr, hw, y, inner=None):
+    """Concrete deck body: kerb ledges, both girder faces and the underside of a bridge.  inner: {side: [extent or None
+    per point]}: on a twin bridge's median side the body reaches the middle of the gap instead (no ledge there)."""
     ext = hw + 0.6
-    Lo, Ro = offset(pts, fr, ext), offset(pts, fr, -ext)
-    Li, Ri = offset(pts, fr, hw), offset(pts, fr, -hw)
     conc = (176, 172, 164)
-    _strip(out, Li, Lo, y - 0.01, conc, 0.95)
-    _strip(out, Ro, Ri, y - 0.01, conc, 0.95)
-    _wall(out, Lo, y - 0.01, y - SLAB, conc, 0.78)
-    _wall(out, Ro, y - 0.01, y - SLAB, conc, 0.78)
-    _strip(out, Lo, Ro, y - SLAB, (120, 118, 114), 0.62)
+    side_pts = {}
+    for side in (1, -1):
+        xs = (inner or {}).get(side) or [None] * len(pts)
+        O_ = [(p[0] + f[0][0] * (x if x is not None else ext) * side * f[1], p[1] + f[0][1] * (x if x is not None else ext) * side * f[1])
+              for p, f, x in zip(pts, fr, xs)]
+        I_ = offset(pts, fr, side * hw)
+        for k in range(len(pts) - 1):
+            if xs[k] is None and xs[k + 1] is None:
+                if side == 1:
+                    _strip(out, I_[k:k + 2], O_[k:k + 2], y - 0.01, conc, 0.95)
+                else:
+                    _strip(out, O_[k:k + 2], I_[k:k + 2], y - 0.01, conc, 0.95)
+        _wall(out, O_ if side == 1 else O_, y - 0.01, y - SLAB, conc, 0.78)
+        side_pts[side] = O_
+    _strip(out, side_pts[1], side_pts[-1], y - SLAB, (120, 118, 114), 0.62)
+
+
+class Twin:
+    """The other carriageway of a dual road: for a drivable edge, how wide is the gap (m, between the two asphalt edges)
+    to a parallel drivable way beside it on one side?  Bridges pair with bridges at about the same deck height, streets
+    with streets (one-way pieces).  Used so a twin bridge's median gets one barrier instead of two pavements and two
+    parapets, and a narrow street median gets one kerbed island instead of two pavements lying on top of each other."""
+    CELL = 16.0
+
+    def __init__(self, edges, decks=None, maxgap=TWIN_GAP):
+        self.edges, self.decks, self.maxgap = edges, decks or {}, maxgap
+        self.g = {}
+        for j, e in enumerate(edges):
+            if not e["drive"] or len(e["pts"]) < 2 or _base(e["cls"]) in FOOT:
+                continue
+            if not e["bridge"] and not e["ow"]:
+                continue
+            for k in range(len(e["pts"]) - 1):
+                (ax, ay), (bx, by) = e["pts"][k], e["pts"][k + 1]
+                for cx in range(int(min(ax, bx) // self.CELL), int(max(ax, bx) // self.CELL) + 1):
+                    for cy in range(int(min(ay, by) // self.CELL), int(max(ay, by) // self.CELL) + 1):
+                        self.g.setdefault((cx, cy), []).append((j, k))
+
+    def _h(self, j, x, y):
+        d = self.decks.get(self.edges[j]["road"]) if self.edges[j]["bridge"] else None
+        return d.at(x, y)[0] if d is not None else None
+
+    def gap(self, i, x, y, nx, ny, side, hw):
+        """Gap from edge i's asphalt edge (centre (x, y), unit normal (nx, ny), side +1 / -1, half width hw) to the twin's
+        asphalt edge, or None when there is no twin within maxgap on that side."""
+        e = self.edges[i]
+        if not e["drive"] or (not e["bridge"] and not e["ow"]):
+            return None
+        rx, ry = nx * side, ny * side
+        reach = hw + self.maxgap + 12.0
+        seen, best = set(), None
+        n = int(reach // (self.CELL / 2)) + 1
+        for q in range(n + 1):
+            px, py = x + rx * reach * q / n, y + ry * reach * q / n
+            for c in ((int(px // self.CELL), int(py // self.CELL)),):
+                for j, k in self.g.get(c, ()):
+                    if j == i or (j, k) in seen:
+                        continue
+                    seen.add((j, k))
+                    f = self.edges[j]
+                    if f["bridge"] != e["bridge"] or f["road"] == e["road"]:
+                        continue
+                    (ax, ay), (bx, by) = f["pts"][k], f["pts"][k + 1]
+                    sx, sy = bx - ax, by - ay
+                    sl = math.hypot(sx, sy)
+                    if sl < 1e-6 or abs(sx * ny - sy * nx) / sl < 0.9:          # not running alongside
+                        continue
+                    den = rx * sy - ry * sx
+                    if abs(den) < 1e-9:
+                        continue
+                    t = ((ax - x) * sy - (ay - y) * sx) / den
+                    u = ((ax - x) * ry - (ay - y) * rx) / den
+                    if not (0.0 < t < reach and -0.02 <= u <= 1.02):
+                        continue
+                    g = t - hw - f["w"] / 2
+                    if g > self.maxgap or (best is not None and g >= best):
+                        continue
+                    if e["bridge"]:
+                        h1, h2 = self._h(i, x, y), self._h(j, x + rx * t, y + ry * t)
+                        if h1 is None or h2 is None or abs(h1 - h2) > 2.0:
+                            continue                                            # a deck on another level
+                    best = g
+        return best
+
+    def gaps(self, i, P, fr, hw, side):
+        return [self.gap(i, p[0], p[1], f[0][0], f[0][1], side, hw) for p, f in zip(P, fr)]
+
+
+def _dense(pts, step=4.0):
+    """The polyline with extra collinear points every <= step m (same shape, finer twin decisions)."""
+    out = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(math.ceil(math.hypot(b[0] - a[0], b[1] - a[1]) / step)))
+        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+    return out
+
+
+STAIR_G = 0.25                                           # a walk deck steeper than this is a flight of stairs
+RISER = 0.17
+
+
+def _stairs(out, P, L, R, deck, y):
+    """Treads and risers over the steep parts of a footbridge (its ramp stays underneath as the walking surface)."""
+    col, rcol = (176, 172, 166), (150, 146, 140)
+    for k in range(len(P) - 1):
+        ln = math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1])
+        if ln < 0.3:
+            continue
+        h0, h1 = deck.at(*P[k])[0], deck.at(*P[k + 1])[0]
+        if abs(h1 - h0) / ln < STAIR_G:
+            continue
+        n = max(1, int(round(abs(h1 - h0) / RISER)))
+        for j in range(n):
+            t0, t1 = j / n, (j + 1) / n
+            hT = h0 + (h1 - h0) * (t1 if h1 > h0 else t0)        # the tread is level at the top of its riser
+            hL = h0 + (h1 - h0) * (t0 if h1 > h0 else t1)
+            tr = t0 if h1 > h0 else t1                           # the riser stands at the low end of the tread
+            def at(A, B, t):
+                return (A[k][0] + (A[k + 1][0] - A[k][0]) * t, A[k][1] + (A[k + 1][1] - A[k][1]) * t)
+            corners = [at(L, L, t0), at(L, L, t1), at(R, R, t1), at(R, R, t0)]
+            q = [(cx, y + 0.02 + hT - deck.at(cx, cz)[0], cz) for cx, cz in corners]
+            out.quad(q[0], q[1], q[2], q[3], col)
+            a_, b_ = at(L, L, tr), at(R, R, tr)
+            ha, hb = deck.at(*a_)[0], deck.at(*b_)[0]
+            out.quad((a_[0], y + 0.02 + hT - ha, a_[1]), (b_[0], y + 0.02 + hT - hb, b_[1]), (b_[0], y + hL - hb, b_[1]),
+                     (a_[0], y + hL - ha, a_[1]), rcol, 0.85)
+
+
+def _median(out, P, fr, hw, gaps, side, y):
+    """A twin bridge's half of the median: deck surface out to the middle of the gap, and a concrete barrier there."""
+    for k in range(len(P) - 1):
+        g0, g1 = gaps[k], gaps[k + 1]
+        if g0 is None or g1 is None or min(g0, g1) < 0.4:
+            continue
+        seg, f = P[k:k + 2], fr[k:k + 2]
+        m0, m1 = hw + g0 / 2, hw + g1 / 2
+        I_ = offset(seg, f, side * hw)
+        M = [(seg[0][0] + f[0][0][0] * m0 * side * f[0][1], seg[0][1] + f[0][0][1] * m0 * side * f[0][1]),
+             (seg[1][0] + f[1][0][0] * m1 * side * f[1][1], seg[1][1] + f[1][0][1] * m1 * side * f[1][1])]
+        B = [(seg[0][0] + f[0][0][0] * (m0 - 0.22) * side * f[0][1], seg[0][1] + f[0][0][1] * (m0 - 0.22) * side * f[0][1]),
+             (seg[1][0] + f[1][0][0] * (m1 - 0.22) * side * f[1][1], seg[1][1] + f[1][0][1] * (m1 - 0.22) * side * f[1][1])]
+        _strip(out, I_, B, y + 0.005, (150, 149, 147))
+        _wall(out, B, y + MEDIAN_H, y, (198, 197, 194), 0.9)
+        _strip(out, B, M, y + MEDIAN_H, (204, 203, 200))
 
 
 def _hull(P):
@@ -939,6 +1079,8 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     cls, pts, w = _base(e["cls"]), e["pts"], e["w"]
     if len(pts) < 2:
         return
+    if e["bridge"] and decks and decks.get(e["road"]) is not None:
+        pts = _dense(pts, 3.0)                             # a vertex every 3 m: the deck's humps and flights, not chords across them
     fr = _frames(pts)
     y = y_of(e)
     hw = w / 2
@@ -970,6 +1112,8 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                 _strip(out, lr[0], lr[1], y, col)
         else:
             _strip(out, L, R, y, col)
+            if deck is not None and not e["drive"]:
+                _stairs(out, AP, L, R, deck, y)
     # round fill at both ends so mitred junctions have no gaps
     for p, end_ in ((pts[0], 0), (pts[-1], 1)):
         if (i, end_) in joints:                            # shared cross-section: nothing to fill
@@ -986,11 +1130,29 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
             a, b, c2 = ring[k], ring[(k + 1) % 12], ring[(k + 2) % 12]
             out.quad((p[0], y + 0.003, p[1]), (a[0], y + 0.003, a[1]), (b[0], y + 0.003, b[1]), (c2[0], y + 0.003, c2[1]), col)
     bsw = BRIDGE_SW if (e["bridge"] and e["drive"]) else 0.0
+    inner = None
     if bsw:                                                # bridge pavements: raised strips with a kerb face on both flanks of the carriageway
+        DP = _dense(pts)                                   # ... except on the median side of a twin bridge: a barrier there
+        DF = _frames(DP)
+        inner = {}
         for side in (1, -1):
-            I_, O_ = offset(pts, fr, side * hw), offset(pts, fr, side * (hw + bsw))
-            _strip(out, I_, O_, SW_H, (178, 174, 166))
-            _wall(out, I_, SW_H, y, (200, 196, 188), 0.92)
+            gs = X.twin.gaps(i, DP, DF, hw, side) if getattr(X, "twin", None) else [None] * len(DP)
+            I_, O_ = offset(DP, DF, side * hw), offset(DP, DF, side * (hw + bsw))
+            k = 0
+            while k < len(DP) - 1:
+                if gs[k] is not None and gs[k + 1] is not None:
+                    k += 1
+                    continue
+                j = k
+                while j < len(DP) - 1 and not (gs[j] is not None and gs[j + 1] is not None):
+                    j += 1
+                _strip(out, I_[k:j + 1], O_[k:j + 1], SW_H, (178, 174, 166))
+                _wall(out, I_[k:j + 1], SW_H, y, (200, 196, 188), 0.92)
+                k = j
+            if any(g is not None for g in gs):
+                _median(out, DP, DF, hw, gs, side, y)
+                inner[side] = [hw + max(0.0, g) / 2 if g is not None else None for g in gs]
+    slab_pf = (DP, DF) if inner else (pts, fr)
     # pavements with a curb face, trimmed exactly where another road's asphalt starts (never drawn over it)
     if cls in SIDEWALK and not e["bridge"]:
         skip = partners.get(i, ())
@@ -1000,10 +1162,18 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
             if sw_:                                         # wider pavement beside diagonal bays, eased back to normal over the last 6 m of each end
                 dd = [min(math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]), math.hypot(q[0] - pts[-1][0], q[1] - pts[-1][1])) for q in RP]
                 sw_ = [SW_W + (sw_ - SW_W) * min(1.0, max(0.0, (d_ - 10.0) / 6.0)) for d_ in dd]
+            if e["ow"] and getattr(X, "twin", None):          # a narrow median: each carriageway's pavement goes to its middle only
+                gs = [X.twin.gap(i, q[0], q[1], f[0][0], f[0][1], side, h) for q, f, h in zip(RP, RF, RH)]
+                if any(g is not None and g < 2 * SW_W for g in gs):
+                    base_w = sw_ if isinstance(sw_, list) else [sw_ or SW_W] * len(RP)
+                    sw_ = [min(b_, max(0.0, g / 2)) if g is not None else b_ for b_, g in zip(base_w, gs)]
             outer = _offset_v(RP, RF, RH, side, sw_ or SW_W)
+            narrow = sw_ if isinstance(sw_, list) else None
             piece = 0
             first = last = None
             for k in range(RK0, RK1):                       # from the plate's cut to the plate's cut (or the shared joint)
+                if narrow is not None and narrow[k] < 0.02 and narrow[k + 1] < 0.02:
+                    continue                                # the carriageways touch: no median here
                 ln = math.hypot(RP[k + 1][0] - RP[k][0], RP[k + 1][1] - RP[k][1])
                 nsub = _pieces(ln, RP[k][0], RP[k][1], RP[k + 1][0], RP[k + 1][1], 10.0)
                 I0, I1, O0, O1 = inner[k], inner[k + 1], outer[k], outer[k + 1]
@@ -1062,7 +1232,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
         _markings(out, cov, i, e, pts, fr, y + 0.025)
     if deck is not None:                                   # girders + piers under the deck
-        _slab(out, pts, fr, hw + bsw, y)
+        _slab(out, slab_pf[0], slab_pf[1], hw + bsw, y, inner)
         if do_piers:
             _piers(pout, piers, deck, T)
     out.deck = None
@@ -1071,6 +1241,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
 def _prepare(edges, joints, plates, decks, T):
     X = _X()
     X.edges, X.joints, X.plates, X.decks, X.T = edges, joints, plates, decks, T
+    X.twin = Twin(edges, decks)
     partners = {}                                          # edge -> the edges it continues into at a shared joint (they never cut its pavement)
     jn = {}
     for (k_, end_) in joints:
