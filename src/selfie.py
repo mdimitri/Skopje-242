@@ -94,16 +94,31 @@ class Selfie:
         return g
 
     def topdown(self, cam, world, f, dt):
-        """The tilted overhead camera: pulled in along its line to the focus f=(x, y, z) while a tall building is in the way, eased back out."""
+        """The tilted overhead camera: when a tall building would swallow it, it swings up towards straight overhead
+        round the focus f=(x, y, z), at the same distance (zoom never changes), and eases back once clear."""
         p = cam.position
-        s = self.clip(world, f, (p.x, p.z, p.y), (0.0, 0.5, -0.5), False)
-        cs = getattr(self, "td_", 1.0)
-        cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)
-        self.td_ = cs
-        if cs < 0.999:
-            cs = max(cs, 0.3)
-            cam.position = V3(f[0] + (p.x - f[0]) * cs, f[2] + (p.y - f[2]) * cs, f[1] + (p.z - f[1]) * cs)
+        dz, dy = p.z - f[1], p.y - f[2]
+        R = math.hypot(dz, dy)
+        e0 = math.atan2(dz, dy)                            # tilt off vertical
+        want = e0
+        for k in (1.0, 0.5, 0.0):
+            e = e0 * k
+            if self.free(world, f, (p.x, f[1] + math.sin(e) * R, f[2] + math.cos(e) * R)):
+                want = e
+                break
+        else:
+            want = 0.0
+        e = getattr(self, "td_", e0)
+        e = want if (want < e or dt <= 0) else e + (want - e) * min(1.0, 3.0 * dt)
+        self.td_ = e
+        if e < e0 - 1e-4:
+            cam.position = V3(p.x, f[2] + math.cos(e) * R, f[1] + math.sin(e) * R)
         return cam
+
+    def free(self, world, f, p):
+        """True when nothing of a building stands between the focus f and the camera spot p (3 rays, walls only)."""
+        L = math.hypot(p[0] - f[0], p[1] - f[1])
+        return L < 1e-6 or self.clip(world, f, p, (0.0, 0.5, -0.5), False) >= 1.0 - 0.5 / L - 1e-6
 
     def clip(self, world, f, p, offs=(0.0, 0.4, -0.4, 0.8, -0.8), solid=True):
         """Fraction (0..1) of the way from the focus f=(x, y, z) to the wanted camera p that is free of buildings and trees / posts.
@@ -150,37 +165,33 @@ class Selfie:
         up += max(lp, 0.0) * back
         lift = max(-lp, 0.0) * 30.0                     # mouse up: the camera tilts up towards the sky
         fz_ = az + 1.2
-        orb = getattr(self, "orb_", 0.0)                   # building wall behind the avatar: swing round it (still looking at the avatar) before pulling in
-        if getattr(o, "indoor", None) is None:
-            best_, s_ = orb, -1.0
-            for d_ in (0.0,) + tuple(sorted((0.35, -0.35, 0.7, -0.7, 1.05, -1.05), key=lambda v: abs(v - orb))):
-                a_ = h + d_
-                c_ = self.clip(world, (o.x, o.y, fz_), (o.x - math.cos(a_) * back, o.y - math.sin(a_) * back, az + up), (0.0, 0.5, -0.5), False)
-                if c_ > s_ + 0.05:
-                    best_, s_ = d_, c_
-                if c_ >= 0.97:
-                    break
-            orb += (best_ - orb) * min(1.0, 2.5 * dt)
-        else:
-            orb = 0.0
-        self.orb_ = orb
-        h += orb
-        px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
-        self.yaw = h
-        want = (px, pz, az + up)
-        s = self.clip(world, (o.x, o.y, fz_), want, (0.0, 0.4, -0.4, 0.8, -0.8), False)
         ind = getattr(o, "indoor", None)
-        if ind is not None:                                # in the mall: its walls, not the building's shell (cam_fit below)
-            s = 1.0
-        cs = getattr(self, "cs_", 1.0)
-        cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)       # shrinks at once (never inside a wall), eases back out
-        self.cs_ = cs
-        cs = max(cs, 0.04)
-        px, pz = o.x + (px - o.x) * cs, o.y + (pz - o.y) * cs
-        if ind is not None:
+        R, e0 = math.hypot(back, up - 1.2), math.atan2(up - 1.2, back)
+        orb, el = getattr(self, "orb_", 0.0), getattr(self, "el_", e0)    # building wall behind the avatar: swing round it / up over it,
+        if ind is None:                                                     # same distance (never zooms), always looking at the avatar
+            best_ = None
+            for e_ in (e0, max(e0, 0.9), max(e0, 1.3)):
+                for d_ in (0.0,) + tuple(sorted((0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.8, -1.8, 3.1), key=lambda v: abs(v - orb))):
+                    a_ = h + d_
+                    if self.free(world, (o.x, o.y, fz_), (o.x - math.cos(a_) * R * math.cos(e_), o.y - math.sin(a_) * R * math.cos(e_),
+                                                          fz_ + R * math.sin(e_))):
+                        best_ = (d_, e_)
+                        break
+                if best_ is not None:
+                    break
+            d_, e_ = best_ if best_ is not None else (orb, max(e0, 1.3))
+            k_ = min(1.0, 3.0 * dt)
+            orb += (d_ - orb) * k_
+            el = e_ if e_ > el else el + (e_ - el) * k_
+        else:
+            orb, el = 0.0, e0
+        self.orb_, self.el_ = orb, el
+        h += orb
+        self.yaw = h
+        px, pz = o.x - math.cos(h) * R * math.cos(el), o.y - math.sin(h) * R * math.cos(el)
+        cy_ = fz_ + R * math.sin(el)
+        if ind is not None:                                # in the mall: its own walls and ceiling
             px, pz = ind.cam_fit(px, pz)
-        cy_ = fz_ + (az + up - fz_) * cs + (1.0 - cs) * 3.5     # pulled in: also higher, looking down at the avatar
-        if ind is not None:
             cy_ = min(cy_, az + ind.cam_top(px, pz))        # under the mall's ceiling (lower in the corridors and doors)
         cam = rl.Camera3D(V3(px, cy_, pz), V3(o.x + math.cos(h) * ahead, az + 0.4 + lift, o.y + math.sin(h) * ahead), UP, FOVY, rl.CAMERA_PERSPECTIVE)
         self.cam = cam
