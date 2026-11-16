@@ -97,9 +97,14 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None):
     return out
 
 
-def loop(kind, hi=False, dur=1.6, seed=0):
+LAYERS = (("_lo", 0.7), ("", 1.0), ("_mid", 1.35), ("_hi", 1.7))      # name suffix, firing-rate multiplier: each layer is rendered at its own rev
+                                                                       # point and played near pitch 1.0, so the body/exhaust resonances stay put like on a real engine
+
+
+def loop(kind, mult=1.0, dur=1.6, seed=0):
+    hi = mult >= 1.3
     n = int(SR * dur)
-    rate = FIRE[kind] * (1.6 if hi else 1.0)
+    rate = FIRE[kind] * mult
     # a slow rev wobble over the loop (periodic, so it still wraps) keeps the idle from sounding like a machine
     t = np.arange(n) / SR
     wob = 1 + 0.012 * np.sin(2 * np.pi * (1.0 / dur) * t + seed) + 0.006 * np.sin(2 * np.pi * (3.0 / dur) * t + 2 * seed)

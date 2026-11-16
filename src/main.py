@@ -93,6 +93,7 @@ if rl.is_window_ready() and not any(x.split("=")[0] in ("--test", "--sound-dry",
 
 import strings as T   # noqa: E402
 import audio as audio_mod   # noqa: E402
+import engine_synth   # noqa: E402
 import radio as radio_mod   # noqa: E402
 import menu as menu_mod   # noqa: E402
 import savegame   # noqa: E402
@@ -1507,19 +1508,25 @@ def main():
     LIGHT_ENGINES = ("engine_i4", "engine_small", "engine_v8", "engine_tdi", "engine_moto")
     ENG_KINDS = ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto")
 
+    ENG_LAYERS = engine_synth.LAYERS
+
     def engine_layers(pre, prof, vol, st, pan, seed, alt=None, mix=0.0):
         """Two recordings per engine, a low-rev and a high-rev one, crossfaded (equal power) as the revs climb; the high one is
         pitched down so both agree where they meet.  Every other engine is silenced; a damaged light car blends in a lower, heavier
         "alt" engine (mix 0..1) so it sounds more like a truck."""
-        w = max(0.0, min(1.0, (st - 0.85) / 0.7))
-        lo, hi = math.cos(w * 1.5708), math.sin(w * 1.5708)
+        j_ = 0                                                       # equal-power crossfade between the two layers whose rev point brackets st
+        while j_ < 2 and st > ENG_LAYERS[j_ + 1][1]:
+            j_ += 1
+        w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
+        wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
+        vol *= 0.7 + 0.3 * min(1.0, st / 1.4)                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
                 aud.loop(pre + nm, v_, p_, "engine", pan, seed)
             else:
-                aud.loop(pre + nm, v_ * lo, p_, "engine", pan, seed)
-                aud.loop(pre + nm + "_hi", v_ * hi, p_ / 1.6, "engine", pan, seed)
+                for sfx_, m_ in ENG_LAYERS:
+                    aud.loop(pre + nm + sfx_, v_ * wt.get(sfx_, 0.0), p_ / m_, "engine", pan, seed)
 
     def doppler(b, lx, ly):
         """Pitch shift of a moving source: higher while it comes towards you, lower once it passes."""
@@ -1557,7 +1564,7 @@ def main():
                     hb_, hv_ = b_, v_
         aud.loop("rotor", 0.9 * hv_, 0.55 + 0.45 * hb_.rpm if hb_ is not None else 1.0, "engine")
         if sim.mode == "car" and sim.car.kind in vehicles.FLY:
-            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         elif sim.mode == "car":
             c = sim.car
@@ -1576,7 +1583,7 @@ def main():
             aud.loop("tyre_roll_asphalt", min(0.45, c.speed / 35.0) if on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
             aud.loop("tyre_gravel", min(0.45, c.speed / 25.0) if not on_road and c.speed > 2 else 0.0, 0.8 + c.speed / 60.0, "sfx")
         else:
-            for nm in ENG_KINDS + tuple(n_ + "_hi" for n_ in ENG_KINDS) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
+            for nm in ENG_KINDS + tuple(n_ + s_ for n_ in ENG_KINDS for s_ in ("_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "screech", "tyre_roll_asphalt", "tyre_gravel"):
                 aud.loop(nm, 0.0)
         near_c, nd = None, 45.0                                  # engine hum of the closest moving traffic car (quiet, fades with distance)
         for c in sim.traffic.cars:

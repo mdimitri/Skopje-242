@@ -77,8 +77,8 @@ def build():
             x = x + _lp(rng.standard_normal(n).astype(np.float32), 8) * noise
         return x / np.abs(x).max() * 0.55
     for i_, k_ in enumerate(engine_synth.PROFILES):                          # one low-rev and one high-rev layer per engine character (see engine_synth.py)
-        S["engine_" + k_] = engine_synth.loop(k_, False, 1.6, i_)
-        S["engine_" + k_ + "_hi"] = engine_synth.loop(k_, True, 1.6, i_ + 20)
+        for j_, (sfx_, mult_) in enumerate(engine_synth.LAYERS):
+            S["engine_" + k_ + sfx_] = engine_synth.loop(k_, mult_, 1.6, i_ + 10 * j_)
     ev = np.sin(2 * np.pi * 400 * t) * 0.6 + np.sin(2 * np.pi * 800 * t) * 0.25 + np.sin(2 * np.pi * 1200 * t) * 0.1
     S["engine_ev"] = ev / np.abs(ev).max() * 0.35                           # electric whine: Tesla
     S["engine"] = S["engine_i4"]
@@ -423,11 +423,11 @@ def _loopify(x, fade=0.25):
 LOOP_KEYS = frozenset(k_ for k_ in ("siren_police", "siren_amb", "siren_fire", "siren", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind",
                                     "tyre_roll_asphalt", "tyre_gravel", "fire_crackle", "jackhammer", "concrete_mixer", "street_lamp_buzz", "power_transformer_hum", "neon_buzz",
                                     "car_alarm", "engine_misfire", "engine_knock", "ai_engine_misfire", "ai_engine_knock", "rotor")) | frozenset(
-    p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) | {"engine"}
+    p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_lo", "_mid", "_hi")) | {"engine"}
 
 
 class Audio:
-    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
+    LOOPS = tuple(p_ + n_ + h_ for p_ in ("ai_", "") for n_ in ("engine_i4", "engine_small", "engine_v8", "engine_diesel", "engine_truck", "engine_ev", "engine_tdi", "engine_bus", "engine_moto") for h_ in ("", "_lo", "_mid", "_hi")) + ("engine_misfire", "engine_knock", "ai_engine_misfire", "siren_police", "siren_amb",
              "siren_fire", "screech", "spray", "construction", "city", "birds", "crickets", "crowd", "traffic", "wind", "rotor")
 
     CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)
