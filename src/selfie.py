@@ -77,78 +77,54 @@ class Selfie:
         rect = (wk.x - VIEW, wk.y - VIEW, wk.x + VIEW, wk.y + VIEW)
         return cam, rect
 
-    def _walls(self, world):
-        """Building walls with their roof height, in 16 m cells (made once per world)."""
-        g = getattr(world, "_cam_walls", None)
-        if g is None:
-            g = {}
-            for b in world.buildings:
-                ring = b["ring"]
-                top = world.th(*ring[0]) + b.get("h", 8.0)
-                for i in range(len(ring)):
-                    (ax, ay), (bx, by) = ring[i], ring[(i + 1) % len(ring)]
-                    for cx in range(int(min(ax, bx) // 16), int(max(ax, bx) // 16) + 1):
-                        for cy in range(int(min(ay, by) // 16), int(max(ay, by) // 16) + 1):
-                            g.setdefault((cx, cy), []).append((ax, ay, bx, by, top))
-            world._cam_walls = g
-        return g
+    def tunnel(self, world, o):
+        """-> (blend 0..1, heading) when o is down in a covered road underpass: 0 -> 1 over the first 10% of its length, back over the last 10%."""
+        best = (0.0, 0.0)
+        for u in getattr(world, "underpass", None) or ():
+            P = u["pts"]
+            cum = u.get("_cum")
+            if cum is None:
+                cum = [0.0]
+                for (ax, ay), (bx, by) in zip(P, P[1:]):
+                    cum.append(cum[-1] + math.hypot(bx - ax, by - ay))
+                u["_cum"] = cum
+            L = cum[-1]
+            if L < 1.0:
+                continue
+            for i, ((ax, ay), (bx, by)) in enumerate(zip(P, P[1:])):
+                dx, dy = bx - ax, by - ay
+                l2 = dx * dx + dy * dy or 1e-9
+                t = max(0.0, min(1.0, ((o.x - ax) * dx + (o.y - ay) * dy) / l2))
+                if math.hypot(o.x - ax - dx * t, o.y - ay - dy * t) < u["hw"] and o.az is not None and o.az < u["roof"][i] - 2.0:
+                    sd = cum[i] + t * (cum[i + 1] - cum[i])
+                    k = max(0.0, min(1.0, min(sd, L - sd) / (0.1 * L)))
+                    if k > best[0]:
+                        hd = math.atan2(dy, dx)
+                        if math.cos(o.h - hd) < 0:                 # face the way the avatar goes
+                            hd += math.pi
+                        best = (k, hd)
+        return best
 
-    def topdown(self, cam, world, f, dt):
-        """The tilted overhead camera: when a tall building would swallow it, it swings up towards straight overhead
-        round the focus f=(x, y, z), at the same distance (zoom never changes), and eases back once clear."""
-        p = cam.position
-        dz, dy = p.z - f[1], p.y - f[2]
-        R = math.hypot(dz, dy)
-        e0 = math.atan2(dz, dy)                            # tilt off vertical
-        want = e0
-        for k in (1.0, 0.5, 0.0):
-            e = e0 * k
-            if self.free(world, f, (p.x, f[1] + math.sin(e) * R, f[2] + math.cos(e) * R)):
-                want = e
-                break
-        else:
-            want = 0.0
-        e = getattr(self, "td_", e0)
-        e = want if (want < e or dt <= 0) else e + (want - e) * min(1.0, 3.0 * dt)
-        self.td_ = e
-        if e < e0 - 1e-4:
-            cam.position = V3(p.x, f[2] + math.cos(e) * R, f[1] + math.sin(e) * R)
-        return cam
-
-    def free(self, world, f, p):
-        """True when nothing of a building stands between the focus f and the camera spot p (3 rays, walls only)."""
-        L = math.hypot(p[0] - f[0], p[1] - f[1])
-        return L < 1e-6 or self.clip(world, f, p, (0.0, 0.5, -0.5), False) >= 1.0 - 0.5 / L - 1e-6
-
-    def clip(self, world, f, p, offs=(0.0, 0.4, -0.4, 0.8, -0.8), solid=True):
-        """Fraction (0..1) of the way from the focus f=(x, y, z) to the wanted camera p that is free of buildings and trees / posts.
-        Three parallel rays (centre and 0.6 m either side) so the lens keeps clear of corners; the camera sits 0.7 m short of a hit."""
-        walls, solids = self._walls(world), (world.pgrid if solid else {})
-        fx, fy, fz = f
-        dx, dy, dz = p[0] - fx, p[1] - fy, p[2] - fz
-        L = math.hypot(dx, dy)
-        if L < 1e-6:
-            return 1.0
-        nx, ny = -dy / L, dx / L
-        best = 1.0
-        for off in offs:
-            ox, oy = fx + nx * off, fy + ny * off
-            for cx in range(int(min(ox, ox + dx) // 16), int(max(ox, ox + dx) // 16) + 1):
-                for cy in range(int(min(oy, oy + dy) // 16), int(max(oy, oy + dy) // 16) + 1):
-                    for ax, ay, bx, by, top in walls.get((cx, cy), ()):
-                        ex, ey = bx - ax, by - ay
-                        den = dx * ey - dy * ex
-                        if abs(den) < 1e-9:
-                            continue
-                        t = ((ax - ox) * ey - (ay - oy) * ex) / den
-                        u = ((ax - ox) * dy - (ay - oy) * dx) / den
-                        if 0.0 <= t < best and 0.0 <= u <= 1.0 and fz + dz * t < top + 0.5:
-                            best = t
-                    for x, y, r, lo, hi in solids.get((cx, cy), ()):
-                        t = max(0.0, min(1.0, ((x - ox) * dx + (y - oy) * dy) / (L * L)))
-                        if t < best and math.hypot(ox + dx * t - x, oy + dy * t - y) < r + 0.35 and lo - 0.3 < fz + dz * t < hi + 0.3:
-                            best = max(0.0, t - r / L)
-        return max(0.0, best - 0.5 / L)
+    def tunnel_cam(self, cam, o, world, dt):
+        """Top view -> low wide 3rd-person view through a covered underpass (under its ceiling), blended by tunnel()."""
+        k, hd = self.tunnel(world, o)
+        k_ = getattr(self, "tk_", 0.0)
+        k_ += (k - k_) * min(1.0, 8.0 * dt)                # just smooths the step at the mouths
+        self.tk_ = k_
+        if k_ < 1e-3:
+            return cam
+        d = (hd - getattr(self, "th_", hd) + math.pi) % math.tau - math.pi
+        self.th_ = getattr(self, "th_", hd) + d * min(1.0, 3.0 * dt)
+        h = self.th_
+        self.yaw = h
+        az = o.az
+        P = (o.x - math.cos(h) * 7.0, az + 2.7, o.y - math.sin(h) * 7.0)      # 4.4 m headroom: well under the ceiling
+        T = (o.x + math.cos(h) * 3.0, az + 1.0, o.y + math.sin(h) * 3.0)
+        p, t = cam.position, cam.target
+        s = k_ * k_ * (3 - 2 * k_)
+        m = lambda a, b: a + (b - a) * s
+        return rl.Camera3D(V3(m(p.x, P[0]), m(p.y, P[1]), m(p.z, P[2])), V3(m(t.x, T[0]), m(t.y, T[1]), m(t.z, T[2])),
+                           UP, m(cam.fovy, FOVY * 1.12), rl.CAMERA_PERSPECTIVE)
 
     def chase(self, sim, world, dt):
         """Debug street-level chase camera: slightly behind and above the avatar (or car), looking where it faces."""
@@ -164,32 +140,10 @@ class Selfie:
         lp = getattr(self, "look_pitch", 0.0)
         up += max(lp, 0.0) * back
         lift = max(-lp, 0.0) * 30.0                     # mouse up: the camera tilts up towards the sky
-        fz_ = az + 1.2
         ind = getattr(o, "indoor", None)
-        R, e0 = math.hypot(back, up - 1.2), math.atan2(up - 1.2, back)
-        orb, el = getattr(self, "orb_", 0.0), getattr(self, "el_", e0)    # building wall behind the avatar: swing round it / up over it,
-        if ind is None:                                                     # same distance (never zooms), always looking at the avatar
-            best_ = None
-            for e_ in (e0, max(e0, 0.9), max(e0, 1.3)):
-                for d_ in (0.0,) + tuple(sorted((0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.8, -1.8, 3.1), key=lambda v: abs(v - orb))):
-                    a_ = h + d_
-                    if self.free(world, (o.x, o.y, fz_), (o.x - math.cos(a_) * R * math.cos(e_), o.y - math.sin(a_) * R * math.cos(e_),
-                                                          fz_ + R * math.sin(e_))):
-                        best_ = (d_, e_)
-                        break
-                if best_ is not None:
-                    break
-            d_, e_ = best_ if best_ is not None else (orb, max(e0, 1.3))
-            k_ = min(1.0, 3.0 * dt)
-            orb += (d_ - orb) * k_
-            el = e_ if e_ > el else el + (e_ - el) * k_
-        else:
-            orb, el = 0.0, e0
-        self.orb_, self.el_ = orb, el
-        h += orb
         self.yaw = h
-        px, pz = o.x - math.cos(h) * R * math.cos(el), o.y - math.sin(h) * R * math.cos(el)
-        cy_ = fz_ + R * math.sin(el)
+        px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
+        cy_ = az + up
         if ind is not None:                                # in the mall: its own walls and ceiling
             px, pz = ind.cam_fit(px, pz)
             cy_ = min(cy_, az + ind.cam_top(px, pz))        # under the mall's ceiling (lower in the corridors and doors)

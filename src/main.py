@@ -2125,15 +2125,22 @@ def main():
             present.set_shift((cx_s - cx_) * kx_, (cz_s - cz_) * kz_)
             cx_, cz_ = cx_s, cz_s
         cam, Hc, rect = renderer.camera(cx_, cz_, ppm, sw, sh, cam_h)
-        if not sf_on and not ch_on:                # tall buildings: the overhead camera never ends up inside one
-            selfie.topdown(cam, world, (cx_, cz_, cam_h), dt)
+        tun_ = False
+        if not sf_on and not ch_on:                # down in a covered underpass: the top view blends into a low 3rd-person view
+            o_ = sim.car if sim.mode == "car" else sim.walker
+            if o_ is not None:
+                cam_t = selfie.tunnel_cam(cam, o_, world, dt)
+                if cam_t is not cam:
+                    cam, Hc, tun_ = cam_t, 0.0, True
+                    f_ = selfie_mod.VIEW
+                    rect = (min(rect[0], o_.x - f_), min(rect[1], o_.y - f_), max(rect[2], o_.x + f_), max(rect[3], o_.y + f_))
         if sf_on:
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0
         elif ch_on:
             cam, rect = selfie.chase(sim, world, dt)
             Hc = 0.0
-        sf_on = sf_on or ch_on
+        sf_on = sf_on or ch_on or tun_
         if cfg["scale"] == 0 and sf_on:             # the free cameras too: orientation and sideways position on the pixel lattice, the rest as a shift
             cam, shf_ = present_mod.snap_cam(cam, sw, sh)
             present.set_shift(*shf_)
