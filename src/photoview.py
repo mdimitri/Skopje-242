@@ -1,4 +1,4 @@
-"""The photogrammetric builder's screen (title menu -> ФОТОГРАМЕТРИЈА): pick the photo folder, watch src/photogram.py fit the
+"""The photogrammetric builder's screen (title menu -> ФОТОГРАДИТЕЛ): pick the photo folder, watch src/photogram.py fit the
 buildings in 3D, compare algorithms, send the result to the game.
 
 Mouse: right drag = turn, middle drag / Shift + right drag = pan, wheel = zoom, left click on a camera = pick that capture.
@@ -119,7 +119,7 @@ def ask_folder(music=None):
         rl.clear_background(rl.Color(12, 10, 16, 255))
         rl.draw_rectangle(px, py, pw, ph, PANEL)
         rl.draw_rectangle(px, py, pw, 4, PINK)
-        font.draw_text("ФОТОГРАМЕТРИЈА: ИЗБЕРИ ПАПКА СО СНИМКИ", px + 20, py + 16, 28, PINK, bold="cond")
+        font.draw_text("ФОТОГРАДИТЕЛ: ИЗБЕРИ ПАПКА СО СНИМКИ", px + 20, py + 16, 28, PINK, bold="cond")
         # drives
         dx = px + 20
         for d in drives:
@@ -574,7 +574,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.clear_background(rl.Color(12, 10, 16, 255))
         font.draw_text(msg, 40, H // 2, 28, INK, bold="cond")
         rl.end_drawing()
-    splash("ФОТОГРАМЕТРИЈА: текстури ...")
+    splash("ФОТОГРАДИТЕЛ: текстури ...")
     tex, tex_np = game_textures()
     try:
         caps = pg.read_manifest(folder)
@@ -583,7 +583,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         while time.time() - t0 < 4 and not rl.window_should_close():
             splash(f"Нема manifest.csv во {folder} ({e})")
         return None
-    splash(f"ФОТОГРАМЕТРИЈА: {len(caps)} снимки, згради околу нив ...")
+    splash(f"ФОТОГРАДИТЕЛ: {len(caps)} снимки, згради околу нив ...")
     blds = pg.load_city(osm_dir, caps)
     import photobg
     pf = os.path.abspath(photobg.PHOTOS)
@@ -1103,7 +1103,7 @@ def run(aud=None, music=None, folder=None, osm_dir=None, frames=None, shot=None,
         rl.draw_rectangle(0, 0, lw, H, PANEL)
         y = 10
         bx0_ = 96 if music is not None else 16                    # (the radio button owns the top left corner)
-        font.draw_text("ФОТОГРАМЕТРИЈА", bx0_, y, 28, PINK, bold="cond")
+        font.draw_text("ФОТОГРАДИТЕЛ", bx0_, y, 28, PINK, bold="cond")
         font.draw_text(_fit(os.path.basename(folder.rstrip("/\\")), 12, lw - bx0_ - 8), bx0_, y + 28, 12, DIM)
         y += 38
         tw_ = (lw - 16) // len(TABS)

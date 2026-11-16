@@ -177,7 +177,7 @@ class Row:
         self.lo, self.hi, self.fmt, self.note = lo, hi, fmt, note
 
 
-TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", "Контроли", TXT("menu.0003")]   # Игра · Градот · Луѓето · Графика · Контроли · Звук
+TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", "Контроли", TXT("menu.0003"), "Дебаг"]   # Игра · Градот · Луѓето · Графика · Контроли · Звук · Дебаг
 
 
 _cfg = None
@@ -197,7 +197,7 @@ def _rows(in_game, slots=(), settings_only=False):
     dens = [f"{d:g}x".replace(".", ",") for d in S.DENSITY]
     H = lambda t: Row("head", t)
     R = [
-        # tabs: 0 Игра · 1 Градот · 2 Луѓето · 3 Графика · 4 Контроли · 5 Звук  (new labels live here until they can be added to text/)
+        # tabs: 0 Игра · 1 Градот · 2 Луѓето · 3 Графика · 4 Контроли · 5 Звук · 6 Дебаг  (new labels live here until they can be added to text/)
         (1, H("Време")),
         (1, Row("slider", TXT("menu.0027"), "hour", lo=0.0, hi=23.99, fmt=lambda v: f"{int(v):02d}:{int((v % 1) * 60):02d}")),
         (1, Row("choice", TXT("menu.0028"), "time_speed", spd, bar=True, note=TXT("menu.0029"))),
@@ -237,13 +237,6 @@ def _rows(in_game, slots=(), settings_only=False):
         (4, H("Глувче")),
         (4, Row("choice", "Глувче во трето лице", "mouse_mode", S.MOUSE_MODE, note="следење: камерата оди зад ликот/колата, глувчето не прави ништо; или управување/слободно гледање со глувчето")),
         (4, Row("slider", "Осетливост на глувчето", "mouse_sens", lo=0.2, hi=3.0, fmt=xz, note="вртење со глувчето во гледната точка од улица")),
-        (4, H("Дебаг")),
-        (4, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
-        (4, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
-        (4, Row("toggle", "Алатки за развивачи", "debug_tools", note="го прикажува копчето ФОТОГРАМЕТРИЈА на почетното мени (не се зачувува)")),
-        (4, Row("toggle", "Фотограметрија во позадина", "photogram_bg", note="ги пресметува зградите од снимките во папката Photogrametry додека играте; напредокот се чува. Во светот влегуваат од ФОТОГРАМЕТРИЈА → ПРИМЕНИ ВО ИГРАТА")),
-        (4, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
-        (4, Row("toggle", "Без апсење", "debug_nolaw", note="полиција и војска не те бркаат и не те апсат (за дебагирање, не се зачувува)")),
         (5, H("Јачина")),
         (5, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
         (5, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
@@ -254,6 +247,13 @@ def _rows(in_game, slots=(), settings_only=False):
         (5, H("Говор")),
         (5, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
         (5, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (6, H("Дебаг")),
+        (6, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
+        (6, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
+        (6, Row("toggle", "Алатки за развивачи", "debug_tools", note="го прикажува копчето ФОТОГРАДИТЕЛ на почетното мени (не се зачувува)")),
+        (6, Row("toggle", "Фотограметрија во позадина", "photogram_bg", note="ги пресметува зградите од снимките во папката Photogrametry додека играте; напредокот се чува. Во светот влегуваат од ФОТОГРАДИТЕЛ → ПРИМЕНИ ВО ИГРАТА")),
+        (6, Row("toggle", "Телепортирање на мапата", "debug", note="исклучено: на мапата се користи навигација (стрелка до целта)")),
+        (6, Row("toggle", "Без апсење", "debug_nolaw", note="полиција и војска не те бркаат и не те апсат (за дебагирање, не се зачувува)")),
     ]
     if settings_only:                    # opened from the title menu: only the options, and a way back
         return R + [(0, Row("action", BACK, "play"))]
@@ -609,8 +609,15 @@ def _slot_picker(aud=None, music=None, latest=0):
         rl.end_drawing()
 
 
-def _confirm_rebuild():
-    """Themed warning card before a rebuild of an existing world.  -> True to go on."""
+_PG_WARN = (("Внимание: фотограмметрија во позадина", 44, None),
+            ("Ја оптоварува машината додека играте: за ~11.000 снимки трае 100+ минути.", 28, None),
+            ("Готовите снимки се чуваат и продолжува, но ако поставките на градителот", 28, None),
+            ("се сменети, сè се пресметува од ново. По завршувањето, светот", 28, None),
+            ("се гради повторно при следното стартување.", 28, None))
+
+
+def _confirm_rebuild(lines=None, yes="Изгради повторно"):
+    """Themed warning card before a rebuild of an existing world (or `lines` = [title, text, ...]).  -> True to go on."""
     t0 = time.time()
     sel = 1
     while not rl.window_should_close():
@@ -638,13 +645,13 @@ def _confirm_rebuild():
         _veil(W, H)
         _panel(px, py, pw, ph)
         y = py + 30
-        for txt, sz, col in (("Повторно градење на светот", 48, _th["fg"]),
+        for txt, sz, col in (lines or (("Повторно градење на светот", 48, _th["fg"]),
                              ("Ова трае долго (од неколку минути до половина час).", 32, _th["mu"]),
-                             ("Светот ќе се изгради од почеток, па играта продолжува.", 32, _th["mu"])):
+                             ("Светот ќе се изгради од почеток, па играта продолжува.", 32, _th["mu"]))):
             txt = font.fit(txt, sz, pw - 60, "cond")
-            font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col, bold="cond")
+            font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col or (_th["fg"] if sz > 40 else _th["mu"]), bold="cond")
             y += sz + 22
-        for i, (lab, (bx, byy)) in enumerate(zip(("Изгради повторно", "Откажи"), rects)):
+        for i, (lab, (bx, byy)) in enumerate(zip((yes, "Откажи"), rects)):
             _btn(bx, byy, bw, bh, lab, sel == i, 32)
         rl.end_drawing()
     return False
@@ -703,7 +710,7 @@ def title_menu(aud=None, music=None, cfg=None):
                 return "rebuild"
             t_open = time.time()
         # the photogrammetric building fitter: its own button bottom left (P on the keyboard), see src/photoview.py
-        plab = "ФОТОГРАМЕТРИЈА"
+        plab = "ФОТОГРАДИТЕЛ"
         pbw = font.measure_text(plab, bsz, "cond") + 3 * bsz
         pbx, pby = 16, H - bbh - 16
         if pbx + pbw > x0 - 12:                                        # a narrow window: top left
@@ -873,6 +880,8 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             if r.kind == "choice":
                 cfg[r.key] = (cfg[r.key] + d) % len(r.options) if not r.bar else max(0, min(len(r.options) - 1, cfg[r.key] + d))
             elif r.kind == "toggle":
+                if r.key == "photogram_bg" and not cfg[r.key] and not _confirm_rebuild(_PG_WARN, "Вклучи"):
+                    return True
                 cfg[r.key] = not cfg[r.key]
             elif r.kind == "slider":
                 span = r.hi - r.lo
