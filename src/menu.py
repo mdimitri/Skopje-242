@@ -241,6 +241,7 @@ def _rows(in_game, slots=(), settings_only=False):
         (5, Row("slider", TXT("menu.0019"), "vol_master", fmt=pct)),
         (5, Row("slider", TXT("menu.0020"), "vol_sfx", fmt=pct)),
         (5, Row("slider", TXT("menu.0021"), "vol_engine", fmt=pct)),
+        (5, Row("slider", "Мотори во сообраќајот", "vol_traffic", fmt=pct, note="колку гласно се другите возила, како дел од јачината на моторите")),
         (5, Row("slider", TXT("menu.0022"), "vol_ambient", fmt=pct)),
         (5, Row("slider", TXT("menu.0023"), "vol_speech", fmt=pct)),
         (5, Row("slider", TXT("menu.0024"), "vol_radio", fmt=pct)),

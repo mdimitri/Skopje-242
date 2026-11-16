@@ -701,7 +701,7 @@ def main():
     def apply_cfg(c, first=False):
         """Push the menu settings into the running game."""
         aud.master = 0.0 if a.mute else c["vol_master"]
-        aud.bus.update({"sfx": c["vol_sfx"], "engine": c["vol_engine"], "ambient": c["vol_ambient"], "speech": c["vol_speech"]})
+        aud.bus.update({"sfx": c["vol_sfx"], "engine": c["vol_engine"], "traffic": c["vol_engine"] * c.get("vol_traffic", 0.5), "ambient": c["vol_ambient"], "speech": c["vol_speech"]})
         if not first and c["hour"] != hour_set[0]:      # only when the slider moved: any other setting (street view...) used to snap the clock back to the saved hour
             sim.clock.hour = c["hour"]
         hour_set[0] = c["hour"]
@@ -1475,6 +1475,7 @@ def main():
                  "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
     eng_launch = {}
+    eng_prevv = {}
 
     def engine_pitch(b, nm, fr, thr):
         """A real manual gearbox by road speed: in each gear the revs climb up to ~3500 rpm (2800 heavy), drop at the upshift and
@@ -1495,8 +1496,9 @@ def main():
                 g += 1                                                                              # upshift at the shift rpm
             while g > 0 and v < sh[g - 1] * 0.86:
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
-            if g != eng_gear.get(id(b), g):
-                eng_shift[id(b)] = 6                                                                # clutch in: the revs sag for a few frames
+            now = time.time()
+            if g > eng_gear.get(id(b), g):                                                          # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
+                eng_shift[id(b)] = (now, 0.5 if heavy else 0.35, eng_state.get(id(b), 1.0))
             if g < len(sh):
                 rpm = top_rpm * v / sh[g]
             else:                                                                                   # top gear: from the last shift on to 1.4x shift rpm at top speed
@@ -1505,25 +1507,27 @@ def main():
                 rpm = r0 + (1.4 * top_rpm - r0) * (v - lo_) / max(1.0, vmax - lo_)
             rpm = max(RPM_IDLE, rpm)
             rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and v > 10 else 0.0)                     # throttle lift drops the revs (engine braking)
-            now = time.time()
-            if v < 2.0 and thr > 0.2 and id(b) not in eng_launch:
-                eng_launch[id(b)] = now                                                             # pulling away: clutch launch
-            elif v < 1.0 and thr < 0.1:
+            if v < 10.0 and thr > 0.2 and id(b) not in eng_launch:
+                eng_launch[id(b)] = now                                                             # pulling away / gas from a crawl under 10 km/h: clutch launch
+            elif thr < 0.1:
                 eng_launch.pop(id(b), None)
             lt = now - eng_launch.get(id(b), -99.0)
-            if lt < 1.2 and g == 0:
+            if lt < 1.8 and g == 0:
                 flare, bite = (1500.0, 1100.0) if heavy else (2600.0, 1400.0)
-                lr = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.3 if lt < 0.3 else (flare + (bite - flare) * (lt - 0.3) / 0.35 if lt < 0.65 else bite)
+                lr = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.45 if lt < 0.45 else (flare + (bite - flare) * (lt - 0.45) / 0.525 if lt < 0.975 else bite)
                 rpm = max(rpm, lr)
             elif v < 1.5 and thr < 0.05:
                 rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
-            sh_ = eng_shift.get(id(b), 0)
-            if sh_ > 0:
-                rpm -= 150.0 * sh_ / 6.0
-                eng_shift[id(b)] = sh_ - 1
             eng_gear[id(b)] = g
+            sh_ = eng_shift.get(id(b))
             p0_, ps_ = ENG_PITCH.get(nm, (0.75, 2.55))
             tgt = p0_ + ps_ * max(0.0, min(1.6, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
+            if sh_ is not None:
+                t_, d_, st0 = sh_
+                if now - t_ < d_:                                                                   # mid-shift: the revs drop from where they were towards ~70 % of the new gear's
+                    tgt = st0 + (min(tgt, st0) * 0.85 - st0) * (now - t_) / d_
+                else:
+                    del eng_shift[id(b)]
         st = eng_state.get(id(b), tgt)
         st += (tgt - st) * (0.18 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
@@ -1552,10 +1556,10 @@ def main():
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
-                aud.loop(pre + nm, v_, p_, "engine", pan, seed)
+                aud.loop(pre + nm, v_, p_, "traffic" if pre else "engine", pan, seed)
             else:
                 for sfx_, m_ in ENG_LAYERS:
-                    aud.loop(pre + nm + sfx_, v_ * wt.get(sfx_, 0.0), p_ / m_, "engine", pan, seed)
+                    aud.loop(pre + nm + sfx_, v_ * wt.get(sfx_, 0.0), p_ / m_, "traffic" if pre else "engine", pan, seed)
 
     def doppler(b, lx, ly):
         """Pitch shift of a moving source: higher while it comes towards you, lower once it passes."""
@@ -1623,7 +1627,11 @@ def main():
         if near_c is not None:
             prof_ = vehicles.ENGINE_SOUND[near_c.kind]
             fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))
-            engine_layers("ai_", prof_, 0.22 * (1.0 - nd / 45.0) ** 2 * (0.5 + 0.5 * fr_), engine_pitch(near_c, prof_, fr_, 0.6) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
+            v0_ = eng_prevv.get(id(near_c), near_c.v)
+            eng_prevv.clear()
+            eng_prevv[id(near_c)] = near_c.v
+            thr_ai = 0.6 if near_c.v > v0_ + 0.005 or (near_c.v > 0.5 and near_c.v >= v0_) else 0.0          # on the gas while it speeds up or holds speed
+            engine_layers("ai_", prof_, (0.65 + 0.3 * thr_ai + 0.1 * fr_) * (1.0 - nd / 45.0) ** 1.5, engine_pitch(near_c, prof_, fr_, thr_ai) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
         else:
             engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)

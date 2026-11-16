@@ -437,7 +437,7 @@ class Audio:
         self.snd = {}
         self.dyn = []                                   # (sound, path) for speech clips, unloaded when finished
         self.master = 0.8
-        self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0}
+        self.bus = {"sfx": 1.0, "ambient": 1.0, "speech": 1.0, "engine": 1.0, "traffic": 0.5}
         self.cabin = False                              # you sit in a car: the world outside is muffled (low-passed, quieter)
         self._cur_far = {}
         self.muted = False
@@ -619,7 +619,7 @@ class Audio:
     def set_zoom(self, c):
         """c: 0 = camera far out, 1 = right down in the street.  Close: street detail and speech.  Far: those fade, the muffled city and wind bed takes over."""
         self.zoom = c
-        self.zk = {"sfx": 0.3 + 0.7 * c, "engine": 0.35 + 0.65 * c, "ambient": 0.3 + 0.7 * c, "speech": 0.08 + 0.92 * c ** 1.3}
+        self.zk = {"sfx": 0.3 + 0.7 * c, "engine": 0.35 + 0.65 * c, "traffic": 0.35 + 0.65 * c, "ambient": 0.3 + 0.7 * c, "speech": 0.08 + 0.92 * c ** 1.3}
 
     BED = ("city", "wind", "amb_city_far", "amb_wind_high", "amb_wind_trees", "amb_hill_wind")
 
