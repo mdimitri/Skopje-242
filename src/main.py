@@ -1498,7 +1498,7 @@ def main():
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
             now = time.time()
             lt = now - eng_launch.get(id(b), -99.0)
-            if g > eng_gear.get(id(b), g) and lt >= 2.25:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
+            if g > eng_gear.get(id(b), g) and lt >= 1.77:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
                 eng_shift[id(b)] = (now, 0.4 if heavy else 0.35, eng_state.get(id(b), 1.0))
             if g < len(sh):
                 rpm = top_rpm * v / sh[g]
@@ -1513,14 +1513,14 @@ def main():
             elif thr < 0.1:
                 eng_launch.pop(id(b), None)
             lt = now - eng_launch.get(id(b), -99.0)
-            if lt < 2.25:                                                                           # the clutch slips: the revs do not follow the road speed yet
+            if lt < 1.77:                                                                           # the clutch slips: the revs do not follow the road speed yet
                 flare, bite = (2550.0, 1050.0) if heavy else (4200.0, 1300.0)
-                if lt < 0.56:
-                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.56                                 # foot down, clutch in: revs flare
-                elif lt < 1.22:
-                    rpm = flare + (bite - flare) * (lt - 0.56) / 0.66                              # clutch bites: the load drags the revs down
+                if lt < 0.34:
+                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.34                                 # foot down, clutch in: revs flare
+                elif lt < 0.74:
+                    rpm = flare + (bite - flare) * (lt - 0.34) / 0.40                              # clutch bites: the load drags the revs down
                 else:
-                    rpm = bite + (rpm - bite) * (lt - 1.22) / 1.03                                # clutch fully up: back onto the road speed
+                    rpm = bite + (rpm - bite) * (lt - 0.74) / 1.03                                # clutch fully up: back onto the road speed
             elif v < 1.5 and thr < 0.05:
                 rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
             eng_gear[id(b)] = g

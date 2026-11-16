@@ -272,6 +272,9 @@ def tow(b):
     b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
 
 
+CLUTCH_FLARE, CLUTCH_BITE = 0.34, 0.40               # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
+
+
 def drive(p, throttle, steer_in, handbrake, dt, world):
     VMAX, ACC, STEER, GRIP, _M = vehicles.PERF[p.kind]
     if p.player_car:                                   # the chosen hero's driving skill: top speed and pull-away
@@ -305,10 +308,20 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     vf = p.vx * fx + p.vy * fy
     vl = p.vx * rx + p.vy * ry
     p.braking = False
+    ct = getattr(p, "clutch_t", None)             # clutch launch (gas from under 10 km/h): little pull while the revs flare, then it builds as the clutch bites
+    if throttle > 0.2:
+        ct = 0.0 if ct is None and 0.0 <= vf < 10 / 3.6 else (ct + dt if ct is not None else None)
+    else:
+        ct = None
+    p.clutch_t = ct
+    cl = 1.0
+    if ct is not None and ct < CLUTCH_FLARE + CLUTCH_BITE:
+        u_ = max(0.0, (ct - CLUTCH_FLARE) / CLUTCH_BITE)
+        cl = 0.15 + 0.85 * u_ * u_ * (3 - 2 * u_)
     if throttle > 0:
         top = VMAX * dmg                          # thrust tapers off and just beats drag at the rated top speed
         xr = max(0.0, vf / top)                    # gearing: pull fades with speed, and the last gear (above ~65 % of top) only creeps
-        vf += (ACC * dmg * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
+        vf += (ACC * dmg * cl * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
         p.braking = vf < 0
     elif throttle < 0:
         if vf > 0.8:
