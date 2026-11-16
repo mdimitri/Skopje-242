@@ -18,9 +18,10 @@ PROFILES = {
     "tdi":    dict(pat=(1.0, 0.93, 0.95, 0.9), tj=0.079, aj=0.135, body=119.0, dec=50, nz=0.258, knock=0.846, roar=0.245, tick=0.28, peaks=((450, 0.8), (2200, 0.9)), tilt=0.991),
     "bus":    dict(pat=(1.0, 0.9, 0.95, 0.85, 0.97, 0.92), tj=0.094, aj=0.181, body=75.3, dec=35, nz=0.387, knock=0.826, roar=0.236, tick=0.076, peaks=((250, 1.0), (1200, 0.7)), tilt=1.193),
     "truck":  dict(pat=(1.0, 0.85, 0.95, 0.9, 0.8, 0.97), tj=0.1, aj=0.135, body=56.5, dec=30, nz=0.32, knock=0.608, roar=0.204, tick=0.15, peaks=((200, 1.0), (900, 0.8), (2500, 0.5)), tilt=1.112),
+    "tractor": dict(pat=(1.0, 0.8, 0.95), tj=0.12, aj=0.2, body=60, dec=26, nz=0.3, knock=0.9, roar=0.18, tick=0.12, peaks=((180, 1.0), (700, 0.8), (1800, 0.5)), tilt=1.0),
     "moto":   dict(pat=(1.0, 0.6), tj=0.09, aj=0.2, body=180, dec=80, nz=0.48, knock=0.2, roar=0.24, tick=0.21, peaks=((900, 1.0), (2500, 0.9)), tilt=0.7),
 }
-FIRE = {"i4": 44.0, "small": 62.0, "v8": 28.0, "diesel": 36.0, "tdi": 40.0, "bus": 30.0, "truck": 24.0, "moto": 52.0}
+FIRE = {"i4": 44.0, "small": 62.0, "v8": 28.0, "diesel": 36.0, "tdi": 40.0, "bus": 30.0, "truck": 24.0, "tractor": 16.0, "moto": 52.0}
 
 
 def _shape(freqs, P, kind_hi, mult=1.0):
