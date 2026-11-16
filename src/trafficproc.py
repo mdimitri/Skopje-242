@@ -16,6 +16,7 @@ Anything the worker cannot do (it fails to start, raises, or dies) puts the cars
 are ordinary Car objects with the full state, so Traffic.update simply takes over.
 SK242_TRAFFIC_PROC=0 turns it off."""
 import os
+import math
 import random
 import sys
 import time
@@ -197,6 +198,7 @@ class TrafficProc:
         self.ok = False
         self.ms = 0.0                       # the worker's own time for the last frame (ms)
         self.wait_ms = 0.0                  # how long the game waited for it in the last frame
+        self.dt_acc = 0.0                   # frame time the worker has not heard of yet (it was still busy)
         ctx = mp.get_context("spawn")
         self.conn, child = ctx.Pipe()
         main = sys.modules.get("__main__")
@@ -259,6 +261,17 @@ class TrafficProc:
             return False
         tr, sim = self.tr, self.sim
         cur = tr.cars
+        if self.pending and not self.conn.poll() and self.dt_acc < 0.1:
+            # The worker is still on the last frame: never wait for it (that held the whole game to the worker's pace,
+            # 8-10 fps with one core busy).  Cars glide on along their heading; the worker gets the summed dt next time.
+            self.dt_acc += dt
+            self.wait_ms = 0.0
+            for c in cur:
+                if c.v:
+                    c.x += math.cos(c.h) * c.v * dt
+                    c.y += math.sin(c.h) * c.v * dt
+            return True
+        dt, self.dt_acc = dt + self.dt_acc, 0.0
         live = set()
         adds = []
         for c in cur:                                             # what the game itself changed since the last frame

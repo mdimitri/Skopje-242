@@ -301,6 +301,7 @@ class Streamer:
         self.tex = tex
         self.max_ground, self.max_mesh = max_ground, max_mesh
         self.lite_keys = set()
+        self.stale = set()                       # chunks whose meshes are redone (a prop broke) while the old ones keep drawing
         self.detail = 2                          # the ДЕТАЛИ setting (main.py): 0 leaves out facade relief, 0-1 the clutter
         self.ground = {}      # key -> [rt, last_used]
         self.meshes = {}      # key -> [{mat: model}, last_used]
@@ -407,6 +408,7 @@ class Streamer:
                     gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
                 out[mat] = m
         del self._part[key]
+        self.stale.discard(key)
         old = self.meshes.get(key)
         if old:                                                  # low-quality set swapped for the full one only now
             for m in old[0].values():
@@ -458,9 +460,8 @@ class Streamer:
             ch = self.world.chunks.get(key)
             bb = ch.get("bb") if ch else None
             if bb is None or (bb[0] - 5 < x < bb[2] + 5 and bb[1] - 5 < y < bb[3] + 5):
-                for m in self.meshes[key][0].values():
-                    gl3d.free_model(m)
-                del self.meshes[key]
+                self.stale.add(key)                              # old meshes stay on screen until the new ones are complete (freeing them made the chunk blink out)
+                self._drop_part(key)
 
     def get_meshes(self, key):
         e = self.meshes.get(key)
@@ -476,7 +477,7 @@ class Streamer:
         n = 0
         for key in wanted:
             need_g = key not in self.ground and key not in self.bad
-            up = key in self.meshes and key in self.lite_keys and key not in lite           # came close: swap the low-quality meshes for full ones
+            up = key in self.meshes and ((key in self.lite_keys and key not in lite) or key in self.stale)           # came close: swap the low-quality meshes for full ones
             need_m = want_meshes and (key not in self.meshes or up) and key not in self.bad and key in self.world.chunks
             if key in self.ground:
                 self.ground[key][1] = self.frame
