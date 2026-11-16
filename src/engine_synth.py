@@ -95,6 +95,9 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None, mult=1.
     tick = _noise_band(rng, n, 2500, 7500)
     tick = tick / (np.abs(tick).max() + 1e-9) * P["tick"] * 0.06 * (0.3 if mult >= 2.0 else 1.0) * (0.1 + 0.9 * env ** 2) * (1.4 if hi else 1.0)
     out = y + roar + tick + kn / (np.abs(kn).max() + 1e-9) * P["knock"] * 0.5
+    if P["knock"] >= 0.6:                                              # big diesels: a clean harmonic growl locked to the firing rate under the rough knock, so the rev climb is clearly heard
+        tone = sum(np.sin(2 * np.pi * k_ * ph[:n] + k_) / k_ ** 0.9 for k_ in range(1, 7))
+        out = out + tone / (np.abs(tone).max() + 1e-9) * 0.45 * (0.6 + 0.4 * env)
     return out
 
 
