@@ -223,6 +223,8 @@ class Present:
 
     def ui_layer(self):
         """Everything drawn after this call is the HUD: it goes into its own transparent buffer and is not shifted."""
+        if self.stage == 1:
+            return
         rl.end_texture_mode()
         rl.begin_texture_mode(self.ui)
         rl.clear_background(rl.BLANK)

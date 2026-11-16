@@ -2208,6 +2208,8 @@ def main():
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("dust", sim.works.draw_dust, cam, cam_x, cam_y, sw, sh, t_game, world.ground_y(cam_x, cam_y), ppm)
+            if present.dof:                             # depth of field blurs only the world: the texts and markers from here on go to the sharp HUD layer
+                present.ui_layer()
             if indoor_:
                 guard.run("mall_labels", gtc.labels, cam, sw, sh)
             guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
