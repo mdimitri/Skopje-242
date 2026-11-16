@@ -38,7 +38,7 @@ if __name__ == "__main__":
     subprocess.run(["/home/user/rhvoice/RHVoice/build/linux/test/RHVoice-test", "-o", raw], input=TEXT.encode(), check=True,
                    env=dict(os.environ, RHVOICE_DATA_PATH="/home/user/rhvoice/data"))
     x, sr = sf.read(raw)
-    t = time.time(); cache = V.analyse(x, sr); ta = time.time() - t
+    t = time.time(); cache = V.analyse(x, sr, fast=False); ta = time.time() - t
     print("analysis %.2fs for %.1fs of speech" % (ta, len(x) / sr))
     for fn, name, p in C:
         t = time.time()

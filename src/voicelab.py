@@ -17,12 +17,34 @@ SR = 24000
 FP = 5.0  # ms frame period
 
 
-def analyse(x, sr=SR):
+def _fill(f0, gap=10):
+    """bridge short unvoiced holes (<= gap frames) inside voiced stretches: DIO drops some voiced frames that HARVEST keeps"""
+    v = np.flatnonzero(f0 > 0)
+    for a, b in zip(v[:-1], v[1:]):
+        if 1 < b - a <= gap:
+            f0[a + 1:b] = np.exp(np.interp(np.arange(a + 1, b), [a, b], np.log([f0[a], f0[b]])))
+    return f0
+
+
+def analyse(x, sr=SR, fast=True):
+    """fast (the game): DIO + StoneMask pitch with gap filling, aperiodicity on every 2nd frame -> ~4x quicker than
+    HARVEST + full D4C (about 0.25 s instead of 1 s for a 4 s line) with near-identical pitch.  fast=False: the
+    slow reference analysis used for the sample renders."""
     x = np.ascontiguousarray(x, np.float64)
-    f0, t = pw.harvest(x, sr, f0_floor=70.0, f0_ceil=500.0, frame_period=FP)
-    f0 = pw.stonemask(x, f0, t, sr)
+    if not fast:
+        f0, t = pw.harvest(x, sr, f0_floor=70.0, f0_ceil=500.0, frame_period=FP)
+        f0 = pw.stonemask(x, f0, t, sr)
+        return f0, pw.cheaptrick(x, f0, t, sr), pw.d4c(x, f0, t, sr)
+    f0, t = pw.dio(x, sr, f0_floor=70.0, f0_ceil=500.0, frame_period=FP, allowed_range=0.3, channels_in_octave=2, speed=2)
+    f0 = _fill(pw.stonemask(x, f0, t, sr))
     sp = pw.cheaptrick(x, f0, t, sr)
-    ap = pw.d4c(x, f0, t, sr)
+    nb = sp.shape[1]
+    fr = np.arange(nb) * (sr / 2) / (nb - 1)
+    hiss = sp[:, fr > 3000].sum(1) > sp[:, (fr > 100) & (fr < 1000)].sum(1)       # fricatives (s, sh, f) are not voiced
+    f0[hiss] = 0.0
+    i = np.arange(0, len(f0), 2)
+    ap = pw.d4c(x, np.ascontiguousarray(f0[i]), np.ascontiguousarray(t[i]), sr)
+    ap = np.ascontiguousarray(np.repeat(ap, 2, 0)[:len(f0)])
     return f0, sp, ap
 
 

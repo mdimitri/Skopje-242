@@ -441,7 +441,7 @@ class SpeechWorker:
 
     def request(self, key, text, who):
         eff = 1 if (self.engine == 1 and self.neural.state in ("ready", "idle")) else 0
-        if eff and self.colour and _voicelab() is not None:
+        if eff and self.colour and (not _VL or _VL[0] is not None):     # (imported on the speech thread, never here)
             eff = 2
         ck = (key, eff)
         if ck in self.cache:
@@ -453,8 +453,18 @@ class SpeechWorker:
         except queue.Full:
             pass
 
+    def flush(self):
+        """Drop lines still waiting to be synthesised (a priority line replaces them: no backlog of stale speech)."""
+        try:
+            while True:
+                self.q.get_nowait()
+        except queue.Empty:
+            pass
+
     def _run(self):
         self.neural.load()                          # COM objects live on this thread
+        if self.colour:
+            _voicelab()                             # import pyworld here, not on the game thread at the first line
         while not self.dead:
             try:
                 key, text, who, eff = self.q.get(timeout=0.3)

@@ -927,6 +927,7 @@ def main():
         key = (text, who or "")
         if prio:
             pend_say.clear()
+            spk.flush()
         pend_say[key] = (vol, prio, t_game)
         spk.request(key, text, who or "")
 
