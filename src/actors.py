@@ -279,7 +279,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         ACC *= HERO["acc"]
     if p.exploded or (p.health <= 0 and p.ctl is not None):   # a burnt-out wreck never drives again; a burning AI car stops
         throttle, steer_in, handbrake = 0.0, 0.0, True
-    BRAKE, REV = 22.0 + ACC, 9.0
+    BRAKE, REV = (22.0 + ACC) * 1.3, 9.0                  # brakes (and braking with reverse) stop 30 % harder
     L_ = vehicles.DIMS[p.kind][0]
     semi = p.kind == vehicles.SEMI
     wb = vehicles.SEMI_WB if semi else L_ * 0.62 if L_ < 6 else 3.7 + (L_ - 6) * 0.35   # long vehicles: wheelbase, not length; a semi: the tractor's own
@@ -329,7 +329,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     lift = 1.25 if throttle == 0 else 1.0                           # off the gas the car slows 25 % faster
     vf -= (vf * abs(vf) * 0.00085 * dt + (0.25 * dt if vf > 0 else -0.25 * dt if vf < 0 else 0)) * lift
     if handbrake:
-        vf *= math.exp(-1.1 * dt)
+        vf *= math.exp(-1.43 * dt)
         p.braking = True
     grip = 1.8 if handbrake else (GRIP * 0.63 if sf == 0 else GRIP)
     p.slip = abs(vl - vk)

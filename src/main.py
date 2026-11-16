@@ -1472,8 +1472,8 @@ def main():
     GEARS_LIGHT = (0.34, 0.49, 0.70, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
     GEARS_HEAVY = (0.24, 0.34, 0.49, 0.70, 1.0)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus", "engine_tractor")
-    ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.4), "engine_v8": (0.7, 2.0), "engine_bus": (0.65, 1.9),
-                 "engine_diesel": (0.65, 1.8), "engine_truck": (0.6, 1.7), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
+    ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.6), "engine_v8": (0.7, 2.0), "engine_bus": (0.7, 2.3),
+                 "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
 
     def engine_pitch(b, nm, fr, thr):
@@ -1529,7 +1529,7 @@ def main():
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol = min(1.0, vol * (0.68 + 0.57 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
+        vol = min(1.0, vol * (0.75 + 0.5 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
@@ -1582,7 +1582,7 @@ def main():
             prof = vehicles.ENGINE_SOUND[c.kind]
             thr_ = abs(inp_last.get("throttle", 0))
             hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
-            engine_layers("", prof, (0.3 + 0.6 * thr_ + 0.2 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
+            engine_layers("", prof, (0.65 + 0.3 * thr_ + 0.1 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
             aud.loop("engine_misfire", 1.3 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
             aud.loop("engine_knock", 1.3 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
