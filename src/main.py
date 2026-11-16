@@ -2066,6 +2066,8 @@ def main():
             present.set_shift((cx_s - cx_) * kx_, (cz_s - cz_) * kz_)
             cx_, cz_ = cx_s, cz_s
         cam, Hc, rect = renderer.camera(cx_, cz_, ppm, sw, sh, cam_h)
+        if not sf_on and not ch_on:                # tall buildings: the overhead camera never ends up inside one
+            selfie.topdown(cam, world, (cx_, cz_, cam_h), dt)
         if sf_on:
             cam, rect = selfie.camera(sim, world)
             Hc = 0.0

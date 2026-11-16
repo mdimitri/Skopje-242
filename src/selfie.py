@@ -93,7 +93,19 @@ class Selfie:
             world._cam_walls = g
         return g
 
-    def clip(self, world, f, p):
+    def topdown(self, cam, world, f, dt):
+        """The tilted overhead camera: pulled in along its line to the focus f=(x, y, z) while a tall building is in the way, eased back out."""
+        p = cam.position
+        s = self.clip(world, f, (p.x, p.z, p.y), (0.0, 0.5, -0.5))
+        cs = getattr(self, "td_", 1.0)
+        cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)
+        self.td_ = cs
+        if cs < 0.999:
+            cs = max(cs, 0.3)
+            cam.position = V3(f[0] + (p.x - f[0]) * cs, f[2] + (p.y - f[2]) * cs, f[1] + (p.z - f[1]) * cs)
+        return cam
+
+    def clip(self, world, f, p, offs=(0.0, 0.4, -0.4, 0.8, -0.8)):
         """Fraction (0..1) of the way from the focus f=(x, y, z) to the wanted camera p that is free of buildings and trees / posts.
         Three parallel rays (centre and 0.6 m either side) so the lens keeps clear of corners; the camera sits 0.7 m short of a hit."""
         walls, solids = self._walls(world), world.pgrid
@@ -104,7 +116,7 @@ class Selfie:
             return 1.0
         nx, ny = -dy / L, dx / L
         best = 1.0
-        for off in (0.0, 0.4, -0.4, 0.8, -0.8):
+        for off in offs:
             ox, oy = fx + nx * off, fy + ny * off
             for cx in range(int(min(ox, ox + dx) // 16), int(max(ox, ox + dx) // 16) + 1):
                 for cy in range(int(min(oy, oy + dy) // 16), int(max(oy, oy + dy) // 16) + 1):
