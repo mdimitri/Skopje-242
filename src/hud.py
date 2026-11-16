@@ -455,15 +455,7 @@ class Hud:
             kmh = int(c.speed * 3.6)
             font.draw_text(f"{kmh}", sw - 190, sh - 78, 54, rl.Color(250, 220, 80, 255))
             font.draw_text(TXT("hud.0011"), sw - 78, sh - 52, 20, rl.Color(250, 220, 80, 255))
-            if self.radio_line:
-                font.draw_text(font.fit(self.radio_line, 17, 520), sw - 540, sh - 24, 17, rl.Color(190, 235, 255, 230))
-                lg = self.radio_logo
-                if lg is not None and lg.width > 0:
-                    sc = 36 / max(lg.width, lg.height)
-                    rl.draw_texture_pro(lg, rl.Rectangle(0, 0, lg.width, lg.height),
-                                        rl.Rectangle(sw - 584, sh - 44, lg.width * sc, lg.height * sc), rl.Vector2(0, 0), 0.0, rl.WHITE)
-                if self.radio_keys:
-                    font.draw_text(font.fit(self.radio_keys, 14, 430), sw - 540, sh - 42, 14, rl.Color(150, 190, 210, 200))
+            # (the car radio's station / song / keys live in the top-left radio button now)
             hp = max(0.0, c.health) / 100.0
             self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
             self._big(f"{c.name}  {int(max(0, c.health))}%", sw - 260, sh - 136, 24, rl.Color(255, 255, 255, 240))
