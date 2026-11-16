@@ -322,7 +322,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         cl = 1.3 - 0.3 * (ct - CLUTCH_FLARE - CLUTCH_BITE) / CLUTCH_SETTLE    # ... and eases back to the normal pull as the revs rejoin the road speed
     if throttle > 0:
         top = VMAX * dmg                          # thrust tapers off and just beats drag at the rated top speed
-        xr = max(0.0, vf / top)                    # gearing: pull fades with speed, and the last gear (above ~65 % of top) only creeps
+        xr = min(1.0, max(0.0, vf / top))                    # gearing: pull fades with speed, and the last gear (above ~65 % of top) only creeps
         vf += (ACC * dmg * cl * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
         p.braking = vf < 0
     elif throttle < 0:
@@ -331,7 +331,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
             p.braking = True
         else:
             rt = 0.6 * VMAX * dmg                  # reverse: half the forward top speed and half the forward pull
-            xr = max(0.0, -vf / rt)
+            xr = min(1.0, max(0.0, -vf / rt))
             vf -= 0.5 * ACC * dmg * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) * dt
     if world.hilly and not p.air:                                   # gravity along the slope: a = -g sin(angle)
         az = p.az if p.az is not None else world.ground_y(p.x, p.y)
