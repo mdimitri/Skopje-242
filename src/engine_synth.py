@@ -57,13 +57,13 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None):
     rng_state = np.random.default_rng(seed + 1)
     for i, s in enumerate(idx):
         per = SR / max(r[min(s, n - 1)], 1.0)
-        s = int(s + rng.normal(0, P["tj"] * per))
-        a = P["pat"][i % len(P["pat"])] * (1 + rng.normal(0, P["aj"]))
+        s = int(s + rng.normal(0, P["tj"] * 0.5 * per))
+        a = P["pat"][i % len(P["pat"])] * (1 + rng.normal(0, P["aj"] * 0.6))
         if misfire is not None and rng.random() < misfire[min(s % n, n - 1)]:
             a *= rng.uniform(0.0, 0.25)
         body = P["body"] * rng.uniform(0.92, 1.08)
         pop = np.sin(2 * np.pi * body * tt) * np.exp(-tt * P["dec"])
-        bn = rng_state.standard_normal(m) * np.exp(-tt * 90) * P["nz"]
+        bn = rng_state.standard_normal(m) * np.exp(-tt * 90) * P["nz"] * 0.45
         pulse = (pop + bn) * a
         if hi:
             pulse = pulse * 0.8
@@ -90,9 +90,9 @@ def render(kind, rate, n, seed=0, hi=False, circular=True, misfire=None):
     env = np.convolve(env, np.ones(int(0.008 * SR)) / (0.008 * SR), mode="same") if not circular else np.fft.irfft(np.fft.rfft(env) * np.fft.rfft(np.ones(int(0.008 * SR)) / (0.008 * SR), n), n)
     env = env / (env.max() + 1e-9)
     roar = _noise_band(rng, n, 150, 2600 if not hi else 4200)
-    roar = roar / (np.abs(roar).max() + 1e-9) * P["roar"] * (1.5 if hi else 1.0) * (0.35 + 0.65 * env)
+    roar = roar / (np.abs(roar).max() + 1e-9) * P["roar"] * 0.35 * (1.5 if hi else 1.0) * (0.2 + 0.8 * env)
     tick = _noise_band(rng, n, 2500, 7500)
-    tick = tick / (np.abs(tick).max() + 1e-9) * P["tick"] * (0.25 + 0.75 * env ** 2) * (1.4 if hi else 1.0)
+    tick = tick / (np.abs(tick).max() + 1e-9) * P["tick"] * 0.35 * (0.1 + 0.9 * env ** 2) * (1.4 if hi else 1.0)
     out = y + roar + tick + kn / (np.abs(kn).max() + 1e-9) * P["knock"] * 0.5
     return out
 

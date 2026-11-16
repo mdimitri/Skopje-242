@@ -1469,8 +1469,8 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
-    GEARS_LIGHT = (0.15, 0.26, 0.40, 0.62, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
-    GEARS_HEAVY = (0.10, 0.19, 0.31, 0.46, 0.68, 1.0)
+    GEARS_LIGHT = (0.09, 0.16, 0.27, 0.47, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
+    GEARS_HEAVY = (0.07, 0.13, 0.22, 0.35, 0.56, 1.0)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus")
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
 
@@ -1497,10 +1497,10 @@ def main():
                 rpm = RPM_IDLE + 15 * math.sin(time.time() * 54) + 10 * math.sin(time.time() * 138)   # uneven idle
             sh_ = eng_shift.get(id(b), 0)
             if sh_ > 0:
-                rpm -= 250.0 * sh_ / 6.0
+                rpm -= 150.0 * sh_ / 6.0
                 eng_shift[id(b)] = sh_ - 1
             eng_gear[id(b)] = g
-            tgt = 0.55 + 1.15 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
+            tgt = 0.5 + 1.35 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
         st = eng_state.get(id(b), tgt)
         st += (tgt - st) * (0.18 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
@@ -1524,7 +1524,7 @@ def main():
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol *= 0.7 + 0.3 * min(1.0, st / 1.4)                        # louder as the revs climb
+        vol *= 0.45 + 0.55 * min(1.0, max(0.0, st - 0.5) / 1.35)                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
