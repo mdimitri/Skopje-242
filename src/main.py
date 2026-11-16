@@ -1,5 +1,6 @@
 """Скопје 242 - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
 import os, sys
+import platform
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # embedded Python (._pth) does not add the script folder
 from texts import TXT  # noqa: E402
 import argparse
@@ -533,6 +534,10 @@ def main():
     if a.fullscreen or cfg["fullscreen"]:
         set_borderless(True)
     rl.set_target_fps(0 if a.test else 144)
+    import cpusched
+    _n = cpusched.game()
+    if _n:
+        log(f"[cpu] {os.cpu_count()} logical CPUs, {platform.processor() or '?'}; {_n}")
 
     import photobg
     photobg.ENABLED = bool(cfg["photogram_bg"])
@@ -889,7 +894,7 @@ def main():
     frame = 0
     t_game = 0.0
     ft_hist = []
-    fps_acc = {"t": time.perf_counter(), "n": 0, "ms": {}, "cm": time.thread_time(), "cp": time.process_time()}
+    fps_acc = {"t": time.perf_counter(), "n": 0, "ms": {}, "cm": time.thread_time(), "cp": time.process_time(), "cpus": set()}
     hitch_t0, hitch_n = time.perf_counter(), 0          # frames over 100 ms are written to logs/game.log with what took the time
     gc_t = [0.0, 0.0]
 
@@ -2230,6 +2235,7 @@ def main():
             for k_, v_ in guard.ms.items():
                 fps_acc["ms"][k_] = fps_acc["ms"].get(k_, 0.0) + v_
             fps_acc["n"] += 1
+            fps_acc["cpus"].add(cpusched.cpu_now())
             if t_now - fps_acc["t"] >= 5.0:
                 n_, wall_ = fps_acc["n"], t_now - fps_acc["t"]
                 cpu_m, cpu_p = time.thread_time(), time.process_time()
@@ -2239,8 +2245,9 @@ def main():
                     f"whole process {(cpu_p - fps_acc['cp']) / wall_:.2f} cores, {threading.active_count()} threads; "
                     f"timed parts {sum(fps_acc['ms'].values()) / n_:.1f} ms: " + ", ".join(f"{k} {v / n_:.1f}" for k, v in top_)
                     + (f"; traffic worker {tp_.ms:.1f} ms, waited {tp_.wait_ms:.1f} ms" if tp_ is not None and tp_.ok else "; traffic in-process")
-                    + f"; cars {len(sim.traffic.cars)} peds {len(sim.peds.list)} bodies {len(sim.bodies)}")
-                fps_acc.update(t=t_now, n=0, ms={}, cm=cpu_m, cp=cpu_p)
+                    + f"; cars {len(sim.traffic.cars)} peds {len(sim.peds.list)} bodies {len(sim.bodies)}"
+                    + f"; frame thread on CPUs {sorted(fps_acc['cpus'])}")
+                fps_acc.update(t=t_now, n=0, ms={}, cm=cpu_m, cp=cpu_p, cpus=set())
         guard.ms.clear()
         gc_t[1] = 0.0
         if not a.test and len(ft_hist) >= 60:              # quality scaler: a slow PC thins the crowds a little instead of stuttering

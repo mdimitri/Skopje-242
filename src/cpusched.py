@@ -33,3 +33,46 @@ def _apply(prio, eco):
 def worker():
     """A background worker process: efficiency cores, low priority."""
     return _apply(BELOW_NORMAL, True)
+
+
+def game():
+    """The game process: tell Windows never to throttle it (no EcoQoS, no timer coalescing), so its frame thread is not parked
+    on an efficiency core at a low clock.  -> a short note for game.log about the CPU and the power source."""
+    import os
+    if sys.platform != "win32" or os.environ.get("SK242_NOSCHED"):
+        return ""
+    note = []
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _PPT(ctypes.Structure):
+            _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
+        k = ctypes.windll.kernel32
+        st = _PPT(1, _EXECUTION_SPEED | 0x4, 0)          # execution speed + ignore timer resolution: both forced OFF (high QoS)
+        ok = k.SetProcessInformation(k.GetCurrentProcess(), _PROCESS_POWER_THROTTLING, ctypes.byref(st), ctypes.sizeof(st))
+        tt = _PPT(1, _EXECUTION_SPEED, 0)
+        ok2 = k.SetThreadInformation(k.GetCurrentThread(), 3, ctypes.byref(tt), ctypes.sizeof(tt))   # ThreadPowerThrottling
+        note.append(f"throttling off: process {'ok' if ok else 'failed'}, frame thread {'ok' if ok2 else 'failed'}")
+
+        class _SPS(ctypes.Structure):
+            _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte), ("BatteryLifePercent", ctypes.c_ubyte),
+                        ("SystemStatusFlag", ctypes.c_ubyte), ("BatteryLifeTime", wintypes.DWORD), ("BatteryFullLifeTime", wintypes.DWORD)]
+        ps = _SPS()
+        if k.GetSystemPowerStatus(ctypes.byref(ps)):
+            note.append({0: "on battery", 1: "on AC power"}.get(ps.ACLineStatus, "power unknown")
+                        + (", battery saver ON" if ps.SystemStatusFlag else ""))
+    except Exception as e:  # noqa: BLE001
+        note.append(f"throttling not changed ({e})")
+    return "; ".join(note)
+
+
+def cpu_now():
+    """Logical CPU the calling thread runs on right now (Windows), or -1."""
+    if sys.platform != "win32":
+        return -1
+    try:
+        import ctypes
+        return int(ctypes.windll.kernel32.GetCurrentProcessorNumber())
+    except Exception:  # noqa: BLE001
+        return -1
