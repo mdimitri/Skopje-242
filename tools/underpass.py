@@ -209,6 +209,60 @@ def inside(g, x, y, cell=16.0):
     return False
 
 
+def street_grid(plans, cell=16.0):
+    """Lookup of the covered stretches (the roof slab) with the street level over them: cell -> [(ax, ay, bx, by, hw, top_a, top_b)]."""
+    g = {}
+    for p in plans:
+        X, hw, top, cov = p["pts"], p["hw"] + 1.5, p["top"], p["cover"]       # + the dug margin outside the retaining walls
+        for k in range(len(X) - 1):
+            if not (cov[k] and cov[k + 1]):
+                continue
+            (ax, ay), (bx, by) = X[k], X[k + 1]
+            for cx in range(int((min(ax, bx) - hw) // cell), int((max(ax, bx) + hw) // cell) + 1):
+                for cy in range(int((min(ay, by) - hw) // cell), int((max(ay, by) + hw) // cell) + 1):
+                    g.setdefault((cx, cy), []).append((ax, ay, bx, by, hw + 0.3, float(top[k]), float(top[k + 1])))
+    return g
+
+
+def street(g, x, y, cell=16.0):
+    """Street level over a covered stretch at (x, y), or None when (x, y) is not over one."""
+    for ax, ay, bx, by, hw, ta, tb in g.get((int(x // cell), int(y // cell)), ()):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+        if math.hypot(x - ax - dx * t, y - ay - dy * t) <= hw:
+            return ta + (tb - ta) * t
+    return None
+
+
+class StreetTerrain:
+    """The terrain as buildings see it: over a covered underpass the ground is the roof slab (the street), not the dug floor, so a
+    building standing over the road sits on the slab and leaves the road open below it instead of walling it in."""
+
+    def __init__(self, T, g):
+        self._T, self._g = T, g
+
+    def __getattr__(self, name):
+        if name in ("_T", "_g"):                  # not set yet (unpickling in a worker)
+            raise AttributeError(name)
+        return getattr(self._T, name)
+
+    def hs(self, x, y):
+        v = self._T.hs(x, y)
+        st = street(self._g, x, y)
+        return v if st is None else st
+
+    def h(self, x, y):
+        v = self._T.h(x, y)
+        if np.ndim(v) == 0:
+            return self.hs(x, y) if street(self._g, x, y) is not None else v
+        v = np.array(v, np.float64)
+        for i, (px, py) in enumerate(zip(np.ravel(x), np.ravel(y))):
+            st = street(self._g, px, py)
+            if st is not None:
+                v.flat[i] = st
+        return v
+
+
 def cut(T, plans, hx, hy):
     """Dig the floors into T's fine overlay (vertical walls at hw).  -> posts changed."""
     import quays

@@ -2353,10 +2353,11 @@ def main():
                 ys_ = [p[1] for p in o2]
                 bi_.update(ring=o2, v=v2, tri=tri2, bb=(min(xs_), min(ys_), max(xs_), max(ys_)), area=ar)
         jobs_.append((key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit))
-    hide_ = party_walls(jobs_, T)
+    T_b = underpass.StreetTerrain(T, underpass.street_grid(upass))       # buildings over a covered road stand on its roof slab
+    hide_ = party_walls(jobs_, T_b)
     jobs_ = [j_ + (hd_,) for j_, hd_ in zip(jobs_, hide_)]
     bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
-    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
+    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T_b,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
         for m_, pos_, uv_, col_ in adds_:
             mesh.add(binf_[0], m_, pos_, uv_, col_)
