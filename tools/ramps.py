@@ -305,8 +305,6 @@ def _under(ugrid, p, tang, e0, e1, cleared=True, ways=None):
             continue
         if abs(dx * tx + dy * ty) / math.sqrt(l2) > 0.87:     # within 30 degrees of the deck: along it, not under it
             continue
-        if not cleared and c < 4.0:
-            continue                                          # a path near a deck still at grade: the quays handle those
         if not cleared and min(math.hypot(p[0] - e[0], p[1] - e[1]) for e in (e0, e1)) < 20.0:
             # near the foot of a deck still at grade: only a street that really passes under the deck's centreline here
             # counts (it crosses it, away from the deck's ends); a street running into the bridge foot is a junction
@@ -325,6 +323,194 @@ def _under(ugrid, p, tang, e0, e1, cleared=True, ways=None):
         if ways is not None:
             ways.add(ri)
     return best
+
+
+def _arc(P, p):
+    """Arc length along polyline P of the point nearest to p."""
+    best, s0, out = None, 0.0, 0.0
+    for a, b in zip(P, P[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
+        d = math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t)
+        if best is None or d < best:
+            best, out = d, s0 + t * math.sqrt(l2)
+        s0 += math.sqrt(l2)
+    return out
+
+
+def _components(dlist):
+    """Deck pieces that share ends -> (node of each piece end {(i, e): node}, node points [p], groups of piece indices
+    that meet three or more at some node: interchanges, solved as one network by _network)."""
+    nodes, pos = {}, []
+    grid = {}
+    for i, d in enumerate(dlist):
+        for e in (0, 1):
+            p = d.pts[0 if e == 0 else -1]
+            hit = None
+            for kx in (-1, 0, 1):
+                for ky in (-1, 0, 1):
+                    k = _key(p)
+                    for n in grid.get((k[0] + kx, k[1] + ky), ()):
+                        if math.hypot(p[0] - pos[n][0], p[1] - pos[n][1]) <= JOIN:
+                            hit = n
+            if hit is None:
+                hit = len(pos)
+                pos.append(p)
+                grid.setdefault(_key(p), []).append(hit)
+            nodes[(i, e)] = hit
+    par = list(range(len(dlist)))
+
+    def root(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    at = {}
+    for (i, e), n in nodes.items():
+        at.setdefault(n, []).append(i)
+    for n, lst in at.items():
+        for j in lst[1:]:
+            par[root(j)] = root(lst[0])
+    branch = {root(lst[0]) for lst in at.values() if len(lst) >= 3}
+    groups = {}
+    for i in range(len(dlist)):
+        if root(i) in branch:
+            groups.setdefault(root(i), []).append(i)
+    return nodes, pos, list(groups.values())
+
+
+def _network(T, dlist, group, nodes, pos, roads, rindex, ugrid, stats):
+    """An interchange (deck pieces meeting three or more at a node: ramps, a raised ring, a junction up on the
+    structure) as one height plan, so every piece meeting at a node has the same height there (no joints), the
+    clearance a way under any piece needs spreads over the whole network at <= G_MAX (G_SHORT where the approaches
+    are short), and every ground road leaving the network climbs to it on an embankment.  -> (deck writes, approach
+    items, eased ends)."""
+    X, H, own = [], [], []                                # 1 m samples: position, old height, piece (or -1: approach)
+    adj = []
+    nid = {}
+
+    def sample(p, h, o):
+        X.append(p)
+        H.append(h)
+        own.append(o)
+        adj.append([])
+        return len(X) - 1
+
+    def link(a, b):
+        L = math.hypot(X[a][0] - X[b][0], X[a][1] - X[b][1])
+        adj[a].append((b, L))
+        adj[b].append((a, L))
+    for n in {nodes[(i, e)] for i in group for e in (0, 1)}:
+        d_, e_ = next((dlist[i], e) for i in group for e in (0, 1) if nodes[(i, e)] == n)
+        nid[n] = sample(tuple(pos[n]), d_.h[0 if e_ == 0 else -1], -2)
+    pieces = {}
+    for i in group:
+        d = dlist[i]
+        R = _resample(d.pts, 1.0)
+        s = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff([p[0] for p in R]), np.diff([p[1] for p in R])))])
+        h = np.interp(s, d.cum, d.h)
+        ids = [nid[nodes[(i, 0)]]]
+        for k in range(1, len(R) - 1):
+            ids.append(sample(R[k], float(h[k]), i))
+            link(ids[-2], ids[-1])
+        ids.append(nid[nodes[(i, 1)]])
+        link(ids[-2], ids[-1])
+        pieces[i] = ids
+    deck_n = len(X)
+    apps, terms = [], []
+    for n, k0 in nid.items():                             # every ground road leaving a node: an approach
+        p = X[k0]
+        for b in _branches(roads, rindex, p, (1.0, 0.0), -1.01):
+            A, hw = _approach(roads, rindex, p, b, A_MAX, lo=0.9)
+            if not A or len(A) < 2:
+                continue
+            R = _resample(A, 1.0)
+            ids = [k0]
+            for q in R[1:]:
+                ids.append(sample(q, T.hs(*q), -1))
+                link(ids[-2], ids[-1])
+            apps.append((ids, hw))
+            terms.append(ids[-1])
+    Xa = np.array(X, np.float64)
+    t = np.array([T.hs(x, y) for x, y in Xa])
+    Ha = np.array(H)
+    req = np.full(len(X), -1e9)
+    t_ref = float(np.median(t[terms])) if terms else float(np.median(t))
+    for i, ids in pieces.items():                         # clearance over the ways under each piece
+        d = dlist[i]
+        for j, k in enumerate(ids):
+            a, b = ids[max(0, j - 2)], ids[min(len(ids) - 1, j + 2)]
+            c = _under(ugrid, Xa[k], Xa[b] - Xa[a], d.pts[0], d.pts[-1], cleared=Ha[k] - t[k] >= 2.0)
+            if c > 0:
+                req[k] = max(req[k], t[k] + c + SLAB)
+            elif Ha[k] - t[k] > LIFT_MIN and t[k] < t_ref - LIFT_MIN:     # over a dip (water, a gully): kept
+                req[k] = max(req[k], Ha[k])
+    ground_end = {nid[n] for n in nid if any(ids[0] == nid[n] for ids, _ in apps)}
+    floor = t.copy()
+    dist_g = _spread(adj, {k: 0.0 for k in ground_end}, len(X))
+    floor[:deck_n] = np.where(dist_g[:deck_n] > 6.0, t[:deck_n] + 0.35, t[:deck_n])
+    is_term = np.zeros(len(X), bool)
+    is_term[terms] = True
+    for g in (G_MAX, 0.085, G_SHORT, 0.12):               # the gentlest grade whose cones are down by the approach ends
+        cone = _cone(adj, req, g)
+        if not terms or np.all(cone[is_term] <= t[is_term] + 0.05):
+            break
+    stats["short"] += g > G_MAX + 1e-6
+    prof = np.maximum(cone, floor)
+    prof[is_term] = t[is_term]
+    fixed = is_term.copy()
+    for _ in range(int(W * W / 6)):                       # vertical curves: ~ a W m moving average along every road
+        nb = np.array([sum(prof[b] for b, _ in a) / len(a) if a else prof[k] for k, a in enumerate(adj)])
+        prof = np.where(fixed, prof, 0.5 * prof + 0.5 * nb)
+    prof = np.maximum(prof, floor)
+    lift = prof - t
+    writes = [(i, Xa[ids], prof[ids]) for i, ids in pieces.items()]
+    items = []
+    for ids, hw in apps:
+        items.append((Xa[ids], lift[ids], hw))
+        stats["approaches"] += 1
+        stats["lifted_m"] = max(stats["lifted_m"], float(lift[ids].max()))
+    eased = {i: tuple(pieces[i][-e] in ground_end and len(adj[pieces[i][-e]]) <= 2 for e in (0, 1)) for i in pieces}
+    stats["network_pieces"] = stats.get("network_pieces", 0) + len(group)
+    return writes, items, eased
+
+
+def _spread(adj, src, n):
+    """Graph distance from the sources {sample: start distance}."""
+    import heapq
+    dist = np.full(n, 1e9)
+    hp = [(v, k) for k, v in src.items()]
+    for v, k in hp:
+        dist[k] = v
+    heapq.heapify(hp)
+    while hp:
+        v, k = heapq.heappop(hp)
+        if v > dist[k]:
+            continue
+        for b, L in adj[k]:
+            if v + L < dist[b]:
+                dist[b] = v + L
+                heapq.heappush(hp, (v + L, b))
+    return dist
+
+
+def _cone(adj, req, g):
+    """max over requirements r of req_r - g * graph distance(r, .)."""
+    import heapq
+    h = req.copy()
+    hp = [(-v, k) for k, v in enumerate(req) if v > -1e8]
+    heapq.heapify(hp)
+    while hp:
+        v, k = heapq.heappop(hp)
+        v = -v
+        if v < h[k]:
+            continue
+        for b, L in adj[k]:
+            if v - g * L > h[b]:
+                h[b] = v - g * L
+                heapq.heappush(hp, (-h[b], b))
+    return h
 
 
 def smooth(T, decks, roads, blocked, hx, hy, log=print):
@@ -347,7 +533,17 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                     ugrid.setdefault((cx, cy), []).append((a[0], a[1], b[0], b[1], hw_, c_, ri))
     items, stats = [], {"chains": 0, "approaches": 0, "short": 0, "lifted_m": 0.0, "no_room": 0, "ends_eased": 0}
     done = []
+    cnodes, cpos, groups = _components(dlist)
+    in_net = {i for g_ in groups for i in g_}
+    for g_ in groups:
+        writes, its, eased = _network(T, dlist, g_, cnodes, cpos, roads, rindex, ugrid, stats)
+        items += its
+        for i, Pw, hw_ in writes:
+            _write(dlist, [(i, False)], Pw, [0] * len(Pw), hw_)
+            done.append(([(i, False)], Pw, [0] * len(Pw), hw_, eased[i]))
     for chain in _chains(dlist):
+        if any(i in in_net for i, _ in chain):
+            continue
         # the chain's centreline at 1 m, which piece / sample each point came from, and the old heights
         P, H, own = [], [], []
         for ci, (i, rev) in enumerate(chain):
@@ -368,7 +564,7 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             continue
         tg = np.array([T.hs(x, y) for x, y in P])
         # approaches at both ends, walked away from the bridge
-        app, side_app = [], []
+        app, side_app, loops = [], [], []
         for end in (0, 1):
             p = P[0] if end == 0 else P[-1]
             q = P[min(3, Ld - 1)] if end == 0 else P[max(0, Ld - 4)]
@@ -386,6 +582,8 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                         Ab, hwb = _approach(roads, rindex, p, b_, A_MAX, lo=0.9)
                         if Ab:
                             side_app.append((end, np.array(_resample(Ab, 1.0), np.float64), hwb))
+            else:                                             # a loop ramp that dives under this deck and merges at its foot
+                loops.append((end, p))                        # climbs back up with it (decided once the ways under are known)
             app.append((_resample(A, 1.0) if A else [tuple(p)], hw))
         A0 = np.array(app[0][0][::-1], np.float64)           # far end first
         A1 = np.array(app[1][0], np.float64)
@@ -407,9 +605,10 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                     break
                 if t[k] - G_APP * dd > max(req[ke], t[ke]) + 0.05:
                     req[ke] = t[k] - G_APP * dd
+        under_ = set()
         for k in range(n0, n0 + Ld):                          # a street / path crossing under the deck anywhere (also within 24 m
             c = _under(ugrid, X[k], X[min(k + 2, len(X) - 1)] - X[max(k - 2, 0)], P[0], P[-1],   # of an end, where make_deck
-                       cleared=H[k - n0] - t[k] >= 2.0)      # kept no clearance): full headroom + the slab
+                       cleared=H[k - n0] - t[k] >= 2.0, ways=under_)      # kept no clearance): full headroom + the slab
             if c > 0:
                 need = t[k] + c + SLAB
                 if max((need - t[0]) / max(1.0, s[k] - s[0]), (need - t[-1]) / max(1.0, s[-1] - s[k])) > G_SHORT:
@@ -445,12 +644,23 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
         # back to the deck pieces
         newH = prof[n0:n0 + Ld]
         _write(dlist, chain, P, own, newH)
-        done.append((chain, P, own, newH))
+        done.append((chain, P, own, newH, (True, True)))
         for A, lo, hi in ((A0, 0, n0 + 1), (A1, n0 + Ld - 1, len(X))):
             if len(A) >= 2:
                 items.append((X[lo:hi], lift[lo:hi], app[0][1] if lo == 0 else app[1][1]))
                 stats["approaches"] += 1
                 stats["lifted_m"] = max(stats["lifted_m"], float(lift[lo:hi].max()))
+        for end, p in loops:
+            for ri, vi in _near(rindex, p):
+                Q = roads[ri]["pts"]
+                if ri not in under_ or math.hypot(Q[vi][0] - p[0], Q[vi][1] - p[1]) > JOIN:
+                    continue
+                nxt = Q[vi - 1] if vi > 0 else Q[min(1, len(Q) - 1)]
+                d_ = (nxt[0] - p[0], nxt[1] - p[1])
+                dl_ = math.hypot(*d_) or 1.0
+                Ab, hwb = _approach(roads, rindex, p, (d_[0] / dl_, d_[1] / dl_), A_MAX, lo=0.9)
+                if Ab:
+                    side_app.append((end, np.array(_resample(Ab, 1.0), np.float64), hwb))
         for end, Ab, hwb in side_app:                         # the other roads leaving a junction at the bridge foot
             le = float(lift[n0] if end == 0 else lift[n0 + Ld - 1])
             sb = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(Ab, axis=0).T))])
@@ -481,7 +691,7 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                 for cx in range(int((p[0] - 160) // 32), int((p[0] + 160) // 32) + 1):
                     for cy in range(int((p[1] - 160) // 32), int((p[1] + 160) // 32) + 1):
                         for ri in ws:
-                            kg.setdefault((cx, cy), set()).add((p[0], p[1], ri))
+                            kg.setdefault((cx, cy), set()).add((p[0], p[1], ri, round(_arc(roads[ri]["pts"], p), 1)))
 
     def clogs(x, y, v):
         """Most a post may be raised: on a way that passes under a deck it stays down below the deck and climbs at
@@ -496,21 +706,21 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
             if math.hypot(x - ax - dx * t, y - ay - dy * t) < hw:
                 mine.add(ri)
-        dmin = min((math.hypot(x - px, y - py) for px, py, ri in cr if ri in mine), default=None)
-        return False if dmin is None else max(0.0, (dmin - 8.0) * G_MAX)
+        sp = {ri: _arc(roads[ri]["pts"], (x, y)) for ri in mine}
+        dmin = min((abs(sp[ri] - sc) for px, py, ri, sc in cr if ri in mine), default=None)     # along the way (a loop
+        return False if dmin is None else max(0.0, (dmin - 8.0) * G_MAX)                    # ramp climbs all its length)
     stats["posts"] = _lift_overlay(T, items, lambda x, y, v: True if blocked(x, y) else clogs(x, y, v), hx, hy, segs)
-    for chain, P, own, newH in done:                            # an embankment that could not be raised (a building, a way
+    for chain, P, own, newH, ease in done:                            # an embankment that could not be raised (a building, a way
         s_ = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(P, axis=0).T))])   # passing under another deck) leaves the deck
         L_ = s_[-1]                                             # end hanging over the road: ease the deck down to the ground there
         corr = np.zeros(len(P))
-        for end, q in ((0, P[0]), (1, P[-1])):
-            dlt = (newH[0] if end == 0 else newH[-1]) - T.hs(q[0], q[1])
-            if abs(dlt) <= END_TOL:
-                continue
-            R_ = max(8.0, abs(dlt) / G_EASE)
-            dist = s_ if end == 0 else L_ - s_
-            corr += dlt * np.clip(1.0 - dist / R_, 0.0, 1.0)
-            stats["ends_eased"] += 1
+        dl = [newH[0] - T.hs(P[0][0], P[0][1]), newH[-1] - T.hs(P[-1][0], P[-1][1])]
+        dl = [v if abs(v) > END_TOL and ease[e] else 0.0 for e, v in enumerate(dl)]
+        R_ = [max(8.0, abs(v) / G_EASE) for v in dl]
+        stats["ends_eased"] += sum(1 for v in dl if v)
+        Lm = max(L_, 1e-6)                                      # (each easing ends by the other end: a short deck never
+        corr = (dl[0] * np.clip(1.0 - s_ / min(R_[0], Lm), 0.0, 1.0)      # sinks below both its ends)
+                + dl[1] * np.clip(1.0 - (L_ - s_) / min(R_[1], Lm), 0.0, 1.0))
         if corr.any():
             _write(dlist, chain, P, own, newH - corr)
     log(f"[ramps] {stats['chains']} bridge chains smoothed, {stats['approaches']} approach embankments "
@@ -687,4 +897,331 @@ def extend_footbridges(roads, log=print):
         out.append(dict(rd, pts=A_[0], nodes=A_[1], bridge=True, layer=max(rd.get("layer", 0), 1)))
         out.append(dict(rd, pts=B_[0], nodes=B_[1]))
     log(f"[ramps] footbridges: {n_ext} ends carried on along the footway for their stairs")
+    return out
+
+
+PAST = 7.0             # a bridge end carried on along its road reaches this far past the way it must clear
+NEAR_END = 16.0        # ... when that way crosses within this distance of the end (on the deck or on the road beyond)
+
+
+def extend_bridges(roads, log=print):
+    """A street bridge whose end lands right on a way passing under it (a quay path under a river bridge's end, a slip
+    road under an overpass end): the deck has no room left to clear it, so either the way runs into the girder or the
+    road beyond climbs in a step.  The road continuing straight on from that end is cut further on and the cut piece
+    becomes part of the bridge, so the deck spans the way and comes down to the road after it.  -> roads (new list)."""
+    idx, grid = [], {}
+    for ri, rd in enumerate(roads):
+        if rd.get("bridge") or rd.get("tunnel") or not (rd.get("drive") or rd.get("walk")) or len(rd["pts"]) < 2:
+            continue
+        for a, b in zip(rd["pts"], rd["pts"][1:]):
+            k = len(idx)
+            idx.append((a, b, rd["w"] / 2 + (1.5 if rd.get("drive") else 0.5), set(rd.get("nodes") or ()), ri))
+            for cx in range(int(min(a[0], b[0]) // 32), int(max(a[0], b[0]) // 32) + 1):
+                for cy in range(int(min(a[1], b[1]) // 32), int(max(a[1], b[1]) // 32) + 1):
+                    grid.setdefault((cx, cy), []).append(k)
+    by_end = {}
+    for ri, rd in enumerate(roads):
+        if rd.get("bridge") or rd.get("tunnel") or not rd.get("drive") or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]):
+            continue
+        by_end.setdefault(rd["nodes"][0], []).append((ri, 0))
+        by_end.setdefault(rd["nodes"][-1], []).append((ri, 1))
+    deg = {}
+    for rd in roads:
+        if (rd.get("drive") or rd.get("walk")) and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                deg[n] = deg.get(n, 0) + 1
+
+    def crossings(P, skip_nodes, skip_ri):
+        """[(s along P, half width of the crossing way)] of the ways crossing P (not those joining it)."""
+        out, s0 = [], 0.0
+        for (ax, ay), (bx, by) in zip(P, P[1:]):
+            sl = math.hypot(bx - ax, by - ay) or 1e-9
+            seen = set()
+            for cx in range(int(min(ax, bx) // 32), int(max(ax, bx) // 32) + 1):
+                for cy in range(int(min(ay, by) // 32), int(max(ay, by) // 32) + 1):
+                    for k in grid.get((cx, cy), ()):
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                        (px, py), (qx, qy), hw, nds, ri2 = idx[k]
+                        if ri2 in skip_ri or nds & skip_nodes:
+                            continue
+                        rx, ry, sx, sy = bx - ax, by - ay, qx - px, qy - py
+                        den = rx * sy - ry * sx
+                        if abs(den) < 1e-9:
+                            continue
+                        t = ((px - ax) * sy - (py - ay) * sx) / den
+                        u = ((px - ax) * ry - (py - ay) * rx) / den
+                        if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+                            sin = abs(den) / (sl * (math.hypot(sx, sy) or 1.0))
+                            out.append((s0 + t * sl, hw / max(sin, 0.35)))
+            s0 += sl
+        return out
+
+    cut, n_ext = {}, 0
+    for rd in roads:
+        if not rd.get("bridge") or not rd.get("drive") or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]):
+            continue
+        P = rd["pts"]
+        L = _poly_len(P)
+        for end in (0, 1):
+            node = rd["nodes"][0 if end == 0 else -1]
+            if deg.get(node, 0) > 2:
+                continue                                  # a junction at the bridge foot: ramps lifts it with its branches
+            cands = by_end.get(node, ())
+            if len(cands) != 1 or cands[0][0] in cut:
+                continue
+            ri2, e2 = cands[0]
+            W = roads[ri2]["pts"] if e2 == 0 else roads[ri2]["pts"][::-1]
+            Wn = roads[ri2]["nodes"] if e2 == 0 else roads[ri2]["nodes"][::-1]
+            # the deck's last NEAR_END m, walked from the end inwards (s < 0: on the deck), then the road beyond (s > 0)
+            D = P[::-1] if end == 1 else P
+            need = 0.0
+            mine = set(rd["nodes"]) | set(Wn)                 # ways sharing a node with either cross at grade
+            for s, hw in crossings(D, mine, {ri2}):
+                if s < NEAR_END:
+                    need = max(need, PAST + hw - s)       # past a way under the deck end: the end moves on beyond it
+            Lw = _poly_len(W)
+            for s, hw in crossings(W, mine, {ri2}):
+                if s < NEAR_END:
+                    need = max(need, s + hw + PAST)
+            if need <= 0.0:
+                continue                                  # nothing under the end
+            need = max(need, 8.0)                         # (a deck piece needs some length to ramp over it)
+            if need > Lw - 2.0:
+                continue                                  # the road ends (a junction) too soon
+            cw = [0.0]
+            for a_, b_ in zip(W, W[1:]):
+                cw.append(cw[-1] + math.hypot(b_[0] - a_[0], b_[1] - a_[1]))
+            if any(deg.get(n, 0) > 2 and 0.0 < c < need + 2.0 for n, c in zip(Wn, cw)):
+                continue                                  # a side street joins within it: it would land on the deck
+            cut[ri2] = (e2, need)
+            n_ext += 1
+    log(f"[ramps] street bridges: {n_ext} ends carried on along their road over a way passing under them")
+    return _carry(roads, cut, _FRESH)
+
+
+_FRESH = [-1_500_000_000]
+
+
+def _carry(roads, cut, fresh):
+    """{road index: (end, metres)}: that much of the road from that end becomes part of the bridge it continues."""
+    out = []
+    for ri, rd in enumerate(roads):
+        if ri not in cut:
+            out.append(rd)
+            continue
+        end, m = cut[ri]
+        P, N = (rd["pts"], rd["nodes"]) if end == 0 else (rd["pts"][::-1], rd["nodes"][::-1])
+        acc, k = 0.0, 0
+        while k < len(P) - 1:
+            sl = math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1])
+            if acc + sl >= m:
+                break
+            acc += sl
+            k += 1
+        t = (m - acc) / (math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) or 1.0)
+        c_ = (P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t)
+        fresh[0] -= 1
+        A_ = (list(P[:k + 1]) + [c_], list(N[:k + 1]) + [fresh[0]])
+        B_ = ([c_] + list(P[k + 1:]), [fresh[0]] + list(N[k + 1:]))
+        if end == 1:
+            A_ = (A_[0][::-1], A_[1][::-1])
+            B_ = (B_[0][::-1], B_[1][::-1])
+        out.append(dict(rd, pts=A_[0], nodes=A_[1], bridge=True, layer=max(rd.get("layer", 0), 1)))
+        out.append(dict(rd, pts=B_[0], nodes=B_[1]))
+    return out
+
+
+def _foot_roads(roads):
+    """Bridge-end node -> [(bridge road, end)], node -> the one drivable road leaving it, node degrees."""
+    ends, by_end, deg = [], {}, {}
+    for ri, rd in enumerate(roads):
+        if (rd.get("drive") or rd.get("walk")) and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                deg[n] = deg.get(n, 0) + 1
+        if len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]) or not rd.get("drive") or rd.get("tunnel"):
+            continue
+        if rd.get("bridge"):
+            ends += [(ri, 0), (ri, 1)]
+        else:
+            by_end.setdefault(rd["nodes"][0], []).append((ri, 0))
+            by_end.setdefault(rd["nodes"][-1], []).append((ri, 1))
+    return ends, by_end, deg
+
+
+BANK = 1.0             # road ground this much below the ground further on: still in the channel / gully under the bridge
+
+
+def extend_to_banks(roads, T, log=print):
+    """A street bridge over a stream or a gully whose OSM end stops short of the bank: the road beyond it starts down in
+    the cut (the water / quay overlay digs the channel wider than the mapped bridge), so the deck end sits in the pit
+    and the road climbs out of it in a cliff.  The road straight on is carried on as bridge to where its ground stops
+    being lower than the bank ahead.  Runs after the quays overlay exists, before the graph.  -> roads (new list)."""
+    ends, by_end, deg = _foot_roads(roads)
+    cut, n_ext = {}, 0
+    for ri, end in ends:
+        rd = roads[ri]
+        node = rd["nodes"][0 if end == 0 else -1]
+        cands = by_end.get(node, ())
+        if deg.get(node, 0) > 2 or len(cands) != 1 or cands[0][0] in cut:
+            continue
+        ri2, e2 = cands[0]
+        W = roads[ri2]["pts"] if e2 == 0 else roads[ri2]["pts"][::-1]
+        Wn = roads[ri2]["nodes"] if e2 == 0 else roads[ri2]["nodes"][::-1]
+        R = _resample(W, 1.0)
+        if len(R) < 4:
+            continue
+        g = np.array([T.hs(x, y) for x, y in R])
+        L = len(R) - 1
+        last = -1
+        for k in range(min(L, 40)):
+            ahead = g[k + 1:min(L, k + 5) + 1]             # a cliff (> 20 %) climbing out of the cut, not a hill road
+            if len(ahead) and ahead.max() - g[k] > BANK:
+                last = k
+        if last < 0:
+            continue
+        m = last + 8.0                                    # over the cliff and a little onto the bank
+        cw = [0.0]
+        for a_, b_ in zip(W, W[1:]):
+            cw.append(cw[-1] + math.hypot(b_[0] - a_[0], b_[1] - a_[1]))
+        if m > cw[-1] - 2.0 or any(deg.get(n, 0) > 2 and 0.0 < c < m + 2.0 for n, c in zip(Wn, cw)):
+            continue
+        cut[ri2] = (e2, m)
+        n_ext += 1
+    log(f"[ramps] street bridges: {n_ext} ends carried on to the bank of the cut they span")
+    return _carry(roads, cut, _FRESH)
+
+
+FOOT_TRIM = 14.0       # a path crossing a bridge this close to a foot that is a junction crosses that road at grade
+
+
+def _isect(a, b, c, d):
+    rx, ry, sx, sy = b[0] - a[0], b[1] - a[1], d[0] - c[0], d[1] - c[1]
+    den = rx * sy - ry * sx
+    if abs(den) < 1e-9:
+        return None
+    t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den
+    u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den
+    return (t, u) if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0 else None
+
+
+def _split_at(rd, k, t, nid):
+    """Insert node nid at fraction t of segment k of road rd (in place) -> the new vertex index."""
+    a, b = rd["pts"][k], rd["pts"][k + 1]
+    rd["pts"].insert(k + 1, (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+    rd["nodes"].insert(k + 1, nid)
+    return k + 1
+
+
+def _junction_close(roads, node, deg, reach=12.0):
+    """The one road going on from a bridge foot reaches a junction within `reach` m (no room to carry the bridge on)."""
+    for rd in roads:
+        if rd.get("bridge") or not rd.get("drive") or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
+            continue
+        if node == rd["nodes"][0]:
+            far = rd["nodes"][-1]
+        elif node == rd["nodes"][-1]:
+            far = rd["nodes"][0]
+        else:
+            continue
+        return _poly_len(rd["pts"]) < reach and deg.get(far, 0) > 2
+    return False
+
+
+def trim_bridge_feet(roads, log=print):
+    """A street bridge whose foot is a junction, with a footway / cycleway crossing it just before that foot: the deck
+    cannot climb over the path there (the junction holds the end down), so the path ran into the girder.  In the
+    city these paths cross the street at grade where the bridge has landed: the last metres of the bridge become
+    ordinary road and the path gets a crossing node on it.  -> roads (new list)."""
+    deg = {}
+    for rd in roads:
+        if (rd.get("drive") or rd.get("walk")) and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                deg[n] = deg.get(n, 0) + 1
+    paths = [(ri, rd) for ri, rd in enumerate(roads) if rd.get("walk") and not rd.get("drive") and not rd.get("bridge")
+             and not rd.get("tunnel") and len(rd["pts"]) >= 2 and len(rd["nodes"]) == len(rd["pts"])]
+    grid = {}
+    for ri, rd in paths:
+        for k, (a, b) in enumerate(zip(rd["pts"], rd["pts"][1:])):
+            for cx in range(int(min(a[0], b[0]) // 32), int(max(a[0], b[0]) // 32) + 1):
+                for cy in range(int(min(a[1], b[1]) // 32), int(max(a[1], b[1]) // 32) + 1):
+                    grid.setdefault((cx, cy), []).append((ri, k))
+    out, n_trim = [], 0
+    fresh = _FRESH
+    for rd in roads:
+        if not rd.get("bridge") or not rd.get("drive") or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]):
+            out.append(rd)
+            continue
+        L = _poly_len(rd["pts"])
+        cuts = []                                         # (s along the bridge of the trim, crossings to node)
+        for end in (0, 1):
+            node = rd["nodes"][0 if end == 0 else -1]
+            if deg.get(node, 0) <= 2 and not _junction_close(roads, node, deg):
+                continue
+            P = rd["pts"] if end == 0 else rd["pts"][::-1]
+            s0, hits = 0.0, []
+            for k, (a, b) in enumerate(zip(P, P[1:])):
+                sl = math.hypot(b[0] - a[0], b[1] - a[1])
+                if s0 > FOOT_TRIM:
+                    break
+                seen = set()
+                for cx in range(int(min(a[0], b[0]) // 32), int(max(a[0], b[0]) // 32) + 1):
+                    for cy in range(int(min(a[1], b[1]) // 32), int(max(a[1], b[1]) // 32) + 1):
+                        for ri2, k2 in grid.get((cx, cy), ()):
+                            if (ri2, k2) in seen or set(roads[ri2]["nodes"]) & set(rd["nodes"]):
+                                continue
+                            seen.add((ri2, k2))
+                            r_ = _isect(a, b, roads[ri2]["pts"][k2], roads[ri2]["pts"][k2 + 1])
+                            if r_ and s0 + r_[0] * sl < FOOT_TRIM:
+                                hits.append((s0 + r_[0] * sl, ri2, k2, r_[1], roads[ri2]["w"] / 2))
+                s0 += sl
+            if hits:
+                s_cut = max(h[0] + h[4] + 2.0 for h in hits)
+                if s_cut < L - 6.0:
+                    cuts.append((end, s_cut, hits))
+        if len(cuts) == 2 and cuts[0][1] + cuts[1][1] > L - 6.0:
+            cuts = cuts[:1]                               # both feet: only if a bridge is left between them
+        if not cuts:
+            out.append(rd)
+            continue
+        # cut the bridge: ground pieces at the trimmed feet, the bridge in the middle
+        pieces = [dict(rd, pts=list(rd["pts"]), nodes=list(rd["nodes"]))]
+        for end, s_cut, hits in cuts:
+            cur = pieces[0] if end == 0 else pieces[-1]
+            P, N = (cur["pts"], cur["nodes"]) if end == 0 else (cur["pts"][::-1], cur["nodes"][::-1])
+            acc, k = 0.0, 0
+            while k < len(P) - 2 and acc + math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) < s_cut:
+                acc += math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1])
+                k += 1
+            sl = math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) or 1.0
+            t = min(0.99, max(0.01, (s_cut - acc) / sl))
+            c_ = (P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t)
+            fresh[0] -= 1
+            foot = dict(rd, pts=list(P[:k + 1]) + [c_], nodes=list(N[:k + 1]) + [fresh[0]], bridge=False, layer=0)
+            rest = dict(rd, pts=[c_] + list(P[k + 1:]), nodes=[fresh[0]] + list(N[k + 1:]))
+            for s, ri2, k2, u, hw in hits:                # the path's crossing node, on the ground piece and on the path
+                fp = foot["pts"]
+                for j in range(len(fp) - 1):
+                    w = roads[ri2]
+                    seg = None
+                    for kk in range(len(w["pts"]) - 1):
+                        r_ = _isect(fp[j], fp[j + 1], w["pts"][kk], w["pts"][kk + 1])
+                        if r_:
+                            seg = (kk, r_)
+                            break
+                    if seg:
+                        fresh[0] -= 1
+                        _split_at(foot, j, seg[1][0], fresh[0])
+                        _split_at(w, seg[0], seg[1][1], fresh[0])
+                        break
+            if end == 1:
+                foot = dict(foot, pts=foot["pts"][::-1], nodes=foot["nodes"][::-1])
+                rest = dict(rest, pts=rest["pts"][::-1], nodes=rest["nodes"][::-1])
+                pieces = pieces[:-1] + [rest, foot]
+            else:
+                pieces = [foot, rest] + pieces[1:]
+            n_trim += 1
+        out += pieces
+    log(f"[ramps] street bridges: {n_trim} feet at a junction trimmed back past a path that now crosses at grade")
     return out

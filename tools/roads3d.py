@@ -31,6 +31,7 @@ MARK = {"primary", "secondary", "tertiary", "trunk", "motorway", "unclassified",
 FOOT = {"pedestrian", "footway", "path", "steps", "cycleway", "track"}
 SW_W, SW_H = 2.0, 0.16
 BRIDGE_SW = 2.4                                          # extra deck width per side on a driven bridge: a real pavement to walk on
+FAN_DROP = 0.03                                         # deck pieces overlapping where ramps split / merge on a bridge: each lesser one this much lower
 TWIN_GAP = 2 * BRIDGE_SW + 3.0                           # a parallel carriageway this close (asphalt edge to edge) is the dual road's twin
 MEDIAN_H = 0.8                                           # concrete barrier between the two decks of a twin bridge
 Y_BASE, Y_STEP = 0.05, 0.016
@@ -504,6 +505,13 @@ class Cover:
         """Is any other road's centreline indexed in this cell (cheap pre-check before sampling covered())?"""
         c = self.CELL
         return any(sg[0] != me and sg[0] not in skip for sg in self.segs.get((int(x // c), int(y // c)), ()))
+
+    def covered_by(self, x, y, ids):
+        """True when the asphalt of one of the roads `ids` lies over (x, y)."""
+        for i, ax, ay, bx, by, hw, rk, br in self.segs.get((int(x // self.CELL), int(y // self.CELL)), ()):
+            if i in ids and _pdist(x, y, ax, ay, bx, by) < hw - 0.05:
+                return True
+        return False
 
     def covered(self, x, y, me, bridge, my_rank=None, skip=()):
         """True when another road's asphalt (for markings: of higher precedence) lies over (x, y)."""
@@ -1082,7 +1090,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if e["bridge"] and decks and decks.get(e["road"]) is not None:
         pts = _dense(pts, 3.0)                             # a vertex every 3 m: the deck's humps and flights, not chords across them
     fr = _frames(pts)
-    y = y_of(e)
+    y = y_of(e) - getattr(X, "bbias", {}).get(i, 0.0)
     hw = w / 2
     if e["bridge"]:
         ribs[i] = (pts, [hw] * len(pts), fr, 0, len(pts) - 1)
@@ -1138,17 +1146,28 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
         for side in (1, -1):
             gs = X.twin.gaps(i, DP, DF, hw, side) if getattr(X, "twin", None) else [None] * len(DP)
             I_, O_ = offset(DP, DF, side * hw), offset(DP, DF, side * (hw + bsw))
-            k = 0
-            while k < len(DP) - 1:
-                if gs[k] is not None and gs[k + 1] is not None:
-                    k += 1
+            bp = getattr(X, "bpart", {}).get(i, ())
+            for k in range(len(DP) - 1):                   # (never over a deck it splits from / merges into: trimmed where
+                if gs[k] is not None and gs[k + 1] is not None:     # that deck's carriageway starts)
                     continue
-                j = k
-                while j < len(DP) - 1 and not (gs[j] is not None and gs[j + 1] is not None):
-                    j += 1
-                _strip(out, I_[k:j + 1], O_[k:j + 1], SW_H, (178, 174, 166))
-                _wall(out, I_[k:j + 1], SW_H, y, (200, 196, 188), 0.92)
-                k = j
+                runs = ((0.0, 1.0),)
+                if bp and any(cov.covered_by(q[0], q[1], bp) for q in (I_[k], O_[k], I_[k + 1], O_[k + 1])):
+                    def bad(t, k=k):
+                        for u in (0.04, 0.5, 0.96):
+                            px_ = I_[k][0] + (I_[k + 1][0] - I_[k][0]) * t
+                            py_ = I_[k][1] + (I_[k + 1][1] - I_[k][1]) * t
+                            ox_ = O_[k][0] + (O_[k + 1][0] - O_[k][0]) * t
+                            oy_ = O_[k][1] + (O_[k + 1][1] - O_[k][1]) * t
+                            if cov.covered_by(px_ + (ox_ - px_) * u, py_ + (oy_ - py_) * u, bp):
+                                return True
+                        return False
+                    ln = math.hypot(DP[k + 1][0] - DP[k][0], DP[k + 1][1] - DP[k][1])
+                    runs = _free_runs(bad, 0.0, 1.0, ln)
+                for t0, t1 in runs:
+                    li = lambda A, t: (A[k][0] + (A[k + 1][0] - A[k][0]) * t, A[k][1] + (A[k + 1][1] - A[k][1]) * t)
+                    Ia, Ib, Oa, Ob = li(I_, t0), li(I_, t1), li(O_, t0), li(O_, t1)
+                    _strip(out, [Ia, Ib], [Oa, Ob], SW_H, (178, 174, 166))
+                    _wall(out, [Ia, Ib], SW_H, y, (200, 196, 188), 0.92)
             if any(g is not None for g in gs):
                 _median(out, DP, DF, hw, gs, side, y)
                 inner[side] = [hw + max(0.0, g) / 2 if g is not None else None for g in gs]
@@ -1255,6 +1274,18 @@ def _prepare(edges, joints, plates, decks, T):
             deg[e_["a"]] = deg.get(e_["a"], 0) + 1
             deg[e_["b"]] = deg.get(e_["b"], 0) + 1
     X.partners, X.deg = partners, deg
+    bn = {}                                                # driven decks by node: where three or more meet (ramps splitting
+    for k_, e_ in enumerate(edges):                        # up on the structure) they overlap; lesser ones sit a little lower
+        if e_["bridge"] and e_["drive"] and len(e_["pts"]) >= 2:
+            bn.setdefault(e_["a"], []).append(k_)
+            bn.setdefault(e_["b"], []).append(k_)
+    X.bpart, X.bbias = {}, {}
+    for ks in bn.values():
+        for k_ in ks:
+            X.bpart.setdefault(k_, set()).update(q for q in ks if q != k_)
+        if len(ks) >= 3:
+            for r_, k_ in enumerate(sorted(ks, key=lambda q: (-rank_of(edges[q]["cls"]), -edges[q]["w"], q))):
+                X.bbias[k_] = max(X.bbias.get(k_, 0.0), FAN_DROP * r_)
     return X
 
 
