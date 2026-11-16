@@ -96,7 +96,7 @@ class Selfie:
     def topdown(self, cam, world, f, dt):
         """The tilted overhead camera: pulled in along its line to the focus f=(x, y, z) while a tall building is in the way, eased back out."""
         p = cam.position
-        s = self.clip(world, f, (p.x, p.z, p.y), (0.0, 0.5, -0.5))
+        s = self.clip(world, f, (p.x, p.z, p.y), (0.0, 0.5, -0.5), False)
         cs = getattr(self, "td_", 1.0)
         cs = s if (s < cs or dt <= 0) else cs + (s - cs) * min(1.0, 3.0 * dt)
         self.td_ = cs
@@ -105,10 +105,10 @@ class Selfie:
             cam.position = V3(f[0] + (p.x - f[0]) * cs, f[2] + (p.y - f[2]) * cs, f[1] + (p.z - f[1]) * cs)
         return cam
 
-    def clip(self, world, f, p, offs=(0.0, 0.4, -0.4, 0.8, -0.8)):
+    def clip(self, world, f, p, offs=(0.0, 0.4, -0.4, 0.8, -0.8), solid=True):
         """Fraction (0..1) of the way from the focus f=(x, y, z) to the wanted camera p that is free of buildings and trees / posts.
         Three parallel rays (centre and 0.6 m either side) so the lens keeps clear of corners; the camera sits 0.7 m short of a hit."""
-        walls, solids = self._walls(world), world.pgrid
+        walls, solids = self._walls(world), (world.pgrid if solid else {})
         fx, fy, fz = f
         dx, dy, dz = p[0] - fx, p[1] - fy, p[2] - fz
         L = math.hypot(dx, dy)
@@ -149,11 +149,26 @@ class Selfie:
         lp = getattr(self, "look_pitch", 0.0)
         up += max(lp, 0.0) * back
         lift = max(-lp, 0.0) * 30.0                     # mouse up: the camera tilts up towards the sky
+        fz_ = az + 1.2
+        orb = getattr(self, "orb_", 0.0)                   # building wall behind the avatar: swing round it (still looking at the avatar) before pulling in
+        if getattr(o, "indoor", None) is None:
+            best_, s_ = orb, -1.0
+            for d_ in (0.0,) + tuple(sorted((0.35, -0.35, 0.7, -0.7, 1.05, -1.05), key=lambda v: abs(v - orb))):
+                a_ = h + d_
+                c_ = self.clip(world, (o.x, o.y, fz_), (o.x - math.cos(a_) * back, o.y - math.sin(a_) * back, az + up), (0.0, 0.5, -0.5), False)
+                if c_ > s_ + 0.05:
+                    best_, s_ = d_, c_
+                if c_ >= 0.97:
+                    break
+            orb += (best_ - orb) * min(1.0, 2.5 * dt)
+        else:
+            orb = 0.0
+        self.orb_ = orb
+        h += orb
         px, pz = o.x - math.cos(h) * back, o.y - math.sin(h) * back
         self.yaw = h
-        fz_ = az + 1.2
         want = (px, pz, az + up)
-        s = self.clip(world, (o.x, o.y, fz_), want)
+        s = self.clip(world, (o.x, o.y, fz_), want, (0.0, 0.4, -0.4, 0.8, -0.8), False)
         ind = getattr(o, "indoor", None)
         if ind is not None:                                # in the mall: its walls, not the building's shell (cam_fit below)
             s = 1.0
