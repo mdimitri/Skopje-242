@@ -307,7 +307,8 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     p.braking = False
     if throttle > 0:
         top = VMAX * dmg                          # thrust tapers off and just beats drag at the rated top speed
-        vf += (ACC * dmg * max(0.0, 1 - (vf / top) ** 3) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
+        xr = max(0.0, vf / top)                    # gearing: pull fades with speed, and the last gear (above ~65 % of top) only creeps
+        vf += (ACC * dmg * max(0.0, 1 - xr ** 3) * (0.3 + 0.7 * (1 - xr) ** 1.5) + (vf * vf * 0.00085 + 0.25) * min(1.0, vf / top) if vf >= 0 else BRAKE) * dt * throttle
         p.braking = vf < 0
     elif throttle < 0:
         if vf > 0.8:
