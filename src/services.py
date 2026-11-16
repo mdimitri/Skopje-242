@@ -11,6 +11,7 @@ import slang
 import vehicles
 
 AMBULANCE, FIRE_ENGINE = 48, 49
+MAX_CALLS = 5                                  # emergencies one ambulance / fire engine serves per call-out
 
 
 def _wrap(a):
@@ -33,6 +34,8 @@ class Job:
         self.work_t = 0.0
         self.spray_t = 0.0
         self.said = False
+        self.queue = []                  # more emergencies on the same screen, served one by one before the crew drive off
+        self.done = 0
         self.age = 0.0
         self.off = self.off_goal = self.off_t = self.cool = 0.0     # detour sideways round a blockage (see _ctl)
 
@@ -153,6 +156,14 @@ class Services:
     def request(self, kind, target, x, y, delay=3.5):
         if (kind == "amb" and not self.amb_on) or (kind == "fire" and not self.fire_on):
             return False
+        for j in self.jobs:                      # one call-out serves up to MAX_CALLS emergencies that are within one screen of the vehicle
+            if j.kind == kind and j.state != "leave":
+                if target in j.queue:
+                    return True
+                if j.target is not target and len(j.queue) + j.done + 1 < MAX_CALLS:
+                    if self._on_screen(j, x, y):
+                        j.queue.append(target)
+                        return True
         for j in self.jobs:
             if j.kind == kind and (j.target is target or math.hypot(j.x - x, j.y - y) < 14.0) and j.state != "leave":
                 return True
@@ -161,8 +172,16 @@ class Services:
         self.jobs.append(Job(kind, target, x, y, delay + self.rng.uniform(0, 3)))
         return True
 
+    def _on_screen(self, j, x, y):
+        """(x, y) within one screen of the call-out: inside the camera's ground rectangle, or 90 m of the vehicle / first call."""
+        cx, cy = (j.body.x, j.body.y) if j.body is not None else (j.x, j.y)
+        vr = getattr(self.sim, "view_rect", None)
+        if vr is not None and vr[0] <= x <= vr[2] and vr[1] <= y <= vr[3] and vr[0] <= cx <= vr[2] and vr[1] <= cy <= vr[3]:
+            return True
+        return math.hypot(cx - x, cy - y) < 90.0
+
     def has_job_for(self, target):
-        return any(j.target is target and j.state != "leave" for j in self.jobs)
+        return any((j.target is target or target in j.queue) and j.state != "leave" for j in self.jobs)
 
     # ------------------------------------------------------------------ per-frame
     def update(self, dt):
@@ -173,7 +192,7 @@ class Services:
                 self._step(j, dt)
             except Exception:  # noqa: BLE001 - a broken job must never take the game down
                 self._abort(j)
-            if j.age > 180:
+            if j.age > 180 + 60 * j.done:
                 self._abort(j)
 
     def _abort(self, j):
@@ -338,6 +357,20 @@ class Services:
             p.anim += sp * dt
         return d
 
+    def _next(self, j):
+        """Finished one emergency: walk on to the nearest waiting one (state 'work' again), or False if none is left."""
+        j.queue = [t for t in j.queue if (t.mode in ("dead", "air") if isinstance(t, actors.Ped)
+                                          else t.health <= 0 if isinstance(t, actors.Walker) else not t.out)]
+        if not j.queue:
+            return False
+        j.queue.sort(key=lambda t: (t.x - j.target.x) ** 2 + (t.y - j.target.y) ** 2)
+        j.target = j.queue.pop(0)
+        j.done += 1
+        j.work_t = j.spray_t = 0.0
+        j.said = False
+        j.state = "work"
+        return True
+
     def _leave(self, j):
         sim = self.sim
         b = j.body
@@ -348,7 +381,7 @@ class Services:
         path = self.route(b.x, b.y, sp[0], sp[1]) if sp else []
         j.state = "leave"
         j.path, j.pi = path if len(path) > 1 else [(b.x, b.y), (b.x + 400, b.y)], 0
-        j.age = 100.0
+        j.age = 100.0 + 60 * j.done
 
     def _step(self, j, dt):
         sim = self.sim
@@ -402,7 +435,7 @@ class Services:
                     if math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5:
                         self._face(c, tgt.x, tgt.y)
                 arrived = all(math.hypot(c.x - tgt.x, c.y - tgt.y) < 1.5 for c in j.crew)
-                if arrived or j.work_t > 25:
+                if arrived or j.work_t > 25 + math.hypot(b.x - tgt.x, b.y - tgt.y) / 3.0:
                     j.state = "treat"
                     j.work_t = 0.0
             else:
@@ -420,7 +453,7 @@ class Services:
                 spraying = [c for c in j.crew if c.pose == "spray"]
                 if spraying:
                     j.spray_t += dt
-                if j.spray_t > 8.0 or j.work_t > 40:
+                if j.spray_t > 8.0 or j.work_t > 40 + math.hypot(b.x - tgt.x, b.y - tgt.y) / 3.0:
                     tgt.out = True
                     tgt.fire_lvl = 0.0
                     if not tgt.exploded:
@@ -431,7 +464,8 @@ class Services:
                         c.pose = None
                     sim.stats["fires_out"] = sim.stats.get("fires_out", 0) + 1
                     sim.ev("extinguished", x=tgt.x, y=tgt.y)
-                    self._leave(j)
+                    if not self._next(j):
+                        self._leave(j)
         elif j.state == "treat":
             j.work_t += dt
             for i, c in enumerate(j.crew):
@@ -448,7 +482,8 @@ class Services:
                     c.pose = None
                 self._revive(tgt)
                 sim.ev("shout", text=self.rng.choice((TXT("services.0013"), TXT("services.0014"), TXT("services.0015"))), x=tgt.x, y=tgt.y, who=TXT("services.0016"))
-                self._leave(j)
+                if not self._next(j):
+                    self._leave(j)
         elif j.state == "leave":
             if self._ctl(j, dt, 13.0, False) or math.hypot(b.x - sim.focus()[0], b.y - sim.focus()[1]) > 330:
                 self._abort_light(j)
