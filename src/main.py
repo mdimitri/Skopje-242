@@ -2200,7 +2200,7 @@ def main():
                 o_ = sim.car if sim.mode == "car" and sim.car is not None else sim.walker
                 if o_ is not None and cfg.get("dof_k", 1.0) > 0.0:
                     present.set_dof(cfg.get("dof_k", 1.0), math.dist((cam.position.x, cam.position.y, cam.position.z), (o_.x, foc_h, o_.y)),
-                                    *renderer._clip)
+                                    *renderer._clip, cfg.get("dof_g", 0.4))
             if lod and not indoor_:
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, sf_on)
             if cfg.get("smog", 1) and not sf_on:

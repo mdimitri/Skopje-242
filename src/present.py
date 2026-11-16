@@ -40,10 +40,16 @@ uniform sampler2D texture1;     // its depth (a depth texture attached to the sa
 uniform vec2 px;
 uniform vec4 dof;               // x = blur radius at full defocus (buffer pixels), y = focus distance (m), z = near, w = far
 uniform float aa;               // 1: sharp pixels still go through FXAA
+uniform float gam;              // depth gamma: depth / far distance ^ gam drives the blur (1 = linear in distance, <1 blurs nearer, >1 only far away)
 out vec4 finalColor;
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float lin(vec2 uv) { float d = texture(texture1, uv).r * 2.0 - 1.0; return 2.0 * dof.z * dof.w / (dof.w + dof.z - d * (dof.w - dof.z)); }
-float coc(float z) { return dof.x * clamp((abs(1.0 - dof.y / z) - 0.12) * 1.4, 0.0, 1.0); }    // pixels; the middle band stays sharp
+float enc(float z) { return pow(clamp(z / dof.w, 0.0, 1.0), gam); }
+float coc(float z) {                                   // pixels; 0 at the focus, full radius at the camera and at the far plane, the middle band stays sharp
+    float t = enc(z), tf = enc(dof.y);
+    float x = (t > tf ? (t - tf) / max(1.0 - tf, 1e-3) : (tf - t) / max(tf, 1e-3));
+    return dof.x * clamp((x - 0.05) * 1.1, 0.0, 1.0);
+}
 void main() {
     vec2 uv = fragTexCoord;
     float c0 = coc(lin(uv));
@@ -166,10 +172,11 @@ class Present:
             self.loc = rl.get_shader_location(self.sh, "px")
         return self.sh
 
-    def set_dof(self, strength, focus, near, far):
+    def set_dof(self, strength, focus, near, far, gamma=1.0):
         """This frame's world is a free 3D view: blur by depth around `focus` metres (strength 1 = 8 px at full defocus on a 1080-line frame).
         Call after the world is drawn, before end(); not calling it (or strength 0) leaves the frame exactly as without the effect."""
         self.dof = (strength * 8.0 * vh / 1080.0, max(1.0, focus), near, far) if strength > 0.01 and vh > 0 else None
+        self.dof_g = gamma
 
     def _depth_tex(self):
         """A depth texture in place of the render texture's depth renderbuffer (sampled by the blur; same storage, no extra pass)."""
@@ -240,10 +247,11 @@ class Present:
         if dof:
             if self.dsh is None:
                 self.dsh = rl.load_shader_from_memory(self._VS, DOF_FS)
-                self.dloc = {k: rl.get_shader_location(self.dsh, k) for k in ("px", "dof", "aa", "texture1")}
+                self.dloc = {k: rl.get_shader_location(self.dsh, k) for k in ("px", "dof", "aa", "gam", "texture1")}
             sh = self.dsh
             rl.set_shader_value(sh, self.dloc["px"], rl.ffi.new("float[2]", [1.0 / vw, 1.0 / vh]), rl.SHADER_UNIFORM_VEC2)
             rl.set_shader_value(sh, self.dloc["dof"], rl.ffi.new("float[4]", list(dof)), rl.SHADER_UNIFORM_VEC4)
+            rl.set_shader_value(sh, self.dloc["gam"], rl.ffi.new("float *", float(getattr(self, "dof_g", 1.0))), rl.SHADER_UNIFORM_FLOAT)
             rl.set_shader_value(sh, self.dloc["aa"], rl.ffi.new("float *", 1.0 if fxaa else 0.0), rl.SHADER_UNIFORM_FLOAT)
             rl.begin_shader_mode(sh)
             rl.set_shader_value_texture(sh, self.dloc["texture1"], rl.Texture(self.depth, self.rt.texture.width, self.rt.texture.height, 1, 19))
