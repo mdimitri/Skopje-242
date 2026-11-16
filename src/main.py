@@ -1500,7 +1500,7 @@ def main():
                 rpm -= 150.0 * sh_ / 6.0
                 eng_shift[id(b)] = sh_ - 1
             eng_gear[id(b)] = g
-            tgt = 0.5 + 1.35 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
+            tgt = 0.75 + 1.1 * max(0.0, min(1.1, (rpm - RPM_IDLE) / (top_rpm - RPM_IDLE)))
         st = eng_state.get(id(b), tgt)
         st += (tgt - st) * (0.18 if tgt > st else 0.3)                                              # revs climb faster than they fall
         eng_state[id(b)] = st
@@ -1524,7 +1524,7 @@ def main():
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol = min(1.0, vol * (0.68 + 0.57 * min(1.1, max(0.0, st - 0.5) / 1.35) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
+        vol = min(1.0, vol * (0.68 + 0.57 * min(1.1, max(0.0, st - 0.75) / 1.1) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
