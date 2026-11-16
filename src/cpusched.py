@@ -48,12 +48,14 @@ def game():
 
         class _PPT(ctypes.Structure):
             _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG), ("StateMask", wintypes.ULONG)]
-        k = ctypes.windll.kernel32
-        st = _PPT(1, _EXECUTION_SPEED | 0x4, 0)          # execution speed + ignore timer resolution: both forced OFF (high QoS)
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.GetCurrentProcess.restype = k.GetCurrentThread.restype = wintypes.HANDLE      # (a plain int restype cut the handle: the calls failed)
+        k.SetProcessInformation.argtypes = k.SetThreadInformation.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
+        st = _PPT(1, _EXECUTION_SPEED, 0)          # execution speed + ignore timer resolution: both forced OFF (high QoS)
         ok = k.SetProcessInformation(k.GetCurrentProcess(), _PROCESS_POWER_THROTTLING, ctypes.byref(st), ctypes.sizeof(st))
         tt = _PPT(1, _EXECUTION_SPEED, 0)
         ok2 = k.SetThreadInformation(k.GetCurrentThread(), 3, ctypes.byref(tt), ctypes.sizeof(tt))   # ThreadPowerThrottling
-        note.append(f"throttling off: process {'ok' if ok else 'failed'}, frame thread {'ok' if ok2 else 'failed'}")
+        note.append(f"throttling off: process {'ok' if ok else 'failed %d' % ctypes.get_last_error()}, frame thread {'ok' if ok2 else 'failed %d' % ctypes.get_last_error()}")
 
         class _SPS(ctypes.Structure):
             _fields_ = [("ACLineStatus", ctypes.c_ubyte), ("BatteryFlag", ctypes.c_ubyte), ("BatteryLifePercent", ctypes.c_ubyte),
