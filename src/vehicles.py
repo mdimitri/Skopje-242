@@ -416,7 +416,7 @@ for _i in (25, 26, 28, 29, 43, 45, 46):
 for _i in (0, 7, 9, 10, 14, 15, 17, 18, 19, 41, 44):
     _ENGINE[_i] = "engine_small"
 _ENGINE[42] = "engine_ev"
-ENGINE_SOUND = [_ENGINE.get(i, "engine_tractor" if STYLE[i] == "tractor" else "engine_i4") for i in range(N)]
+ENGINE_SOUND = ["engine_tractor" if STYLE[i] == "tractor" else _ENGINE.get(i, "engine_i4") for i in range(N)]
 _HORN = {56: "horn_jingle", 58: "horn_jingle"}
 for _i in (6, 49, 50, 51, 55, 57, 30, 34, *HEAVY):
     _HORN[_i] = "horn_truck"

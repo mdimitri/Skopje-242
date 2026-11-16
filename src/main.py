@@ -1469,36 +1469,54 @@ def main():
             s_ = seeds[id(b)] = zlib.crc32(f"{b.kind}/{getattr(b, 'color', 0)}/{seeds['n']}".encode()) % 100000
         return s_
 
-    GEARS_LIGHT = (0.34, 0.49, 0.70, 1.0)                 # speed (fraction of top speed) at which each gear reaches its shift rpm
-    GEARS_HEAVY = (0.24, 0.34, 0.49, 0.70, 1.0)
+    SHIFT_KMH = {"engine_moto": (25, 45, 70, 95), "engine_tractor": (8, 14, 21), "heavy": (15, 27, 40, 55), "light": (30, 50, 75, 105)}   # road speed at which each gear hits its shift rpm (by real speed, so a city drive goes through the gears whatever the top speed)
     HEAVY_ENGINES = ("engine_diesel", "engine_truck", "engine_bus", "engine_tractor")
     ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.6), "engine_v8": (0.7, 2.0), "engine_bus": (0.7, 2.3),
                  "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
+    eng_launch = {}
 
     def engine_pitch(b, nm, fr, thr):
-        """A real gearbox: in each gear the revs climb from where the last shift left them up to ~3500 rpm, then drop at the upshift
-        and climb again; slowing down runs the same thing backwards (downshift when the revs fall low).  Heavy engines shift at 2800.
-        A little higher under throttle, smoothed so shifts glide; every car has its own base pitch; an electric motor just whines up."""
+        """A real manual gearbox by road speed: in each gear the revs climb up to ~3500 rpm (2800 heavy), drop at the upshift and
+        climb again; slowing down runs it backwards.  The top gear runs on to 1.4x at top speed.  Pulling away from standstill
+        plays a clutch launch: the revs flare, the clutch bites and drags them down, then they climb with the speed.
+        Smoothed so shifts glide; every car has its own base pitch; an electric motor just whines up."""
         base = 1.0 + ((car_seed(b) // 7) % 13 - 6) * 0.012
         if nm == "engine_ev":
             tgt = 0.6 + 1.5 * fr
         else:
-            tops = GEARS_HEAVY if nm in HEAVY_ENGINES else GEARS_LIGHT
-            top_rpm = 2800.0 if nm in HEAVY_ENGINES else RPM_SHIFT
-            g = eng_gear.get(id(b), 0)
-            while g < len(tops) - 1 and fr > tops[g]:
+            heavy = nm in HEAVY_ENGINES
+            vmax = vehicles.PERF[b.kind][0] * 3.6
+            v = fr * vmax
+            sh = [k for k in SHIFT_KMH.get(nm, SHIFT_KMH["heavy" if heavy else "light"]) if k < vmax * 0.85]
+            top_rpm = 2800.0 if heavy else RPM_SHIFT
+            g = min(len(sh), eng_gear.get(id(b), 0))
+            while g < len(sh) and v > sh[g]:
                 g += 1                                                                              # upshift at the shift rpm
-            while g > 0 and fr < tops[g - 1] * 0.86:
+            while g > 0 and v < sh[g - 1] * 0.86:
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
             if g != eng_gear.get(id(b), g):
                 eng_shift[id(b)] = 6                                                                # clutch in: the revs sag for a few frames
-            rpm = max(RPM_IDLE, top_rpm * fr / tops[g])
-            if g == len(tops) - 1 and g > 0:                                                        # top gear runs on past the shift rpm to max speed (1.4x -> pitch ~4.6)
-                rpm = top_rpm * tops[g - 1] + (1.4 - tops[g - 1]) * top_rpm * (fr - tops[g - 1]) / (1.0 - tops[g - 1])
-            rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and fr > 0.1 else 0.0)                    # throttle lift drops the revs (engine braking)
-            if fr < 0.03:
-                rpm = RPM_IDLE + 15 * math.sin(time.time() * 54) + 10 * math.sin(time.time() * 138)   # uneven idle
+            if g < len(sh):
+                rpm = top_rpm * v / sh[g]
+            else:                                                                                   # top gear: from the last shift on to 1.4x shift rpm at top speed
+                lo_ = sh[-1] if sh else 0.0
+                r0 = top_rpm * (sh[-2] / sh[-1] if len(sh) > 1 else 0.6) if sh else 0.0
+                rpm = r0 + (1.4 * top_rpm - r0) * (v - lo_) / max(1.0, vmax - lo_)
+            rpm = max(RPM_IDLE, rpm)
+            rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and v > 10 else 0.0)                     # throttle lift drops the revs (engine braking)
+            now = time.time()
+            if v < 2.0 and thr > 0.2 and id(b) not in eng_launch:
+                eng_launch[id(b)] = now                                                             # pulling away: clutch launch
+            elif v < 1.0 and thr < 0.1:
+                eng_launch.pop(id(b), None)
+            lt = now - eng_launch.get(id(b), -99.0)
+            if lt < 1.2 and g == 0:
+                flare, bite = (1500.0, 1100.0) if heavy else (2600.0, 1400.0)
+                lr = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.3 if lt < 0.3 else (flare + (bite - flare) * (lt - 0.3) / 0.35 if lt < 0.65 else bite)
+                rpm = max(rpm, lr)
+            elif v < 1.5 and thr < 0.05:
+                rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
             sh_ = eng_shift.get(id(b), 0)
             if sh_ > 0:
                 rpm -= 150.0 * sh_ / 6.0
@@ -1513,6 +1531,7 @@ def main():
             eng_state.clear()
             eng_gear.clear()
             eng_shift.clear()
+            eng_launch.clear()
         return st * base
 
     LIGHT_ENGINES = ("engine_i4", "engine_small", "engine_v8", "engine_tdi", "engine_moto")
@@ -1529,7 +1548,7 @@ def main():
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol = min(1.0, vol * (0.75 + 0.5 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
+        vol = min(1.0, vol * (0.95 + 0.4 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
