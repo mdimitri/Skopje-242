@@ -440,6 +440,19 @@ def _strip(out, L, R, y, col, shade=TOP):
             out.quad((l0[0], y, l0[1]), (l1[0], y, l1[1]), (r1[0], y, r1[1]), (r0[0], y, r0[1]), col, shade)
 
 
+def _gutter(out, A, B, y, col, hit):
+    """Gutter strip between offset polylines A and B, left out where hit(x, y) (another road's asphalt over it)."""
+    for i in range(len(A) - 1):
+        mid = lambda t: ((A[i][0] + B[i][0]) / 2 + ((A[i + 1][0] + B[i + 1][0]) - (A[i][0] + B[i][0])) / 2 * t,
+                         (A[i][1] + B[i][1]) / 2 + ((A[i + 1][1] + B[i + 1][1]) - (A[i][1] + B[i][1])) / 2 * t)
+        ln = math.hypot(A[i + 1][0] - A[i][0], A[i + 1][1] - A[i][1])
+        busy = any(hit(*mid(t)) for t in (0.0, 0.5, 1.0)) or ln > 6.0
+        runs = _free_runs(lambda t: hit(*mid(t)), 0.0, 1.0, ln) if busy else ((0.0, 1.0),)
+        for t0, t1 in runs:
+            li = lambda P, t: (P[i][0] + (P[i + 1][0] - P[i][0]) * t, P[i][1] + (P[i + 1][1] - P[i][1]) * t)
+            _strip(out, [li(A, t0), li(A, t1)], [li(B, t0), li(B, t1)], y, col)
+
+
 def _pdist(px, py, ax, ay, bx, by):
     dx, dy = bx - ax, by - ay
     l2 = dx * dx + dy * dy
@@ -1165,8 +1178,9 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
         g = 0.42
         L2, R2 = _offset_v(AP, AF, AH, 1, -g), _offset_v(AP, AF, AH, -1, -g)
         dark = tuple(c * 0.8 for c in col)
-        _strip(out, L, L2, y, dark)
-        _strip(out, R2, R, y, dark)
+        jn = partners.get(i, ())
+        for A_, B_ in ((L, L2), (R2, R)):                  # (not where another road's asphalt lies over it: a merging
+            _gutter(out, A_, B_, y, dark, lambda x_, y_: cov.covered(x_, y_, i, e["bridge"], skip=jn))  # slip road)
         _strip(out, L2, R2, y, col)
     else:
         if not e["drive"] and not e["bridge"]:

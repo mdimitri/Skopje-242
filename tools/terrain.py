@@ -183,11 +183,12 @@ def resample(pts, step=3.0):
     return out, cum
 
 
-def twin_decks(decks, T=None, keep_end=3.0, blend=4.0):
+def twin_decks(decks, T=None, keep_end=3.0, blend=4.0, max_dh=1e9):
     """Side-by-side decks (the two carriageways of a dual road, a footbridge alongside) whose bodies overlap get one
     surface: each deck is raised (never lowered) towards the other's height wherever they overlap, faded out over
     `blend` m of extra distance, ends on the terrain (T) left there (a joint with the next deck mid-span is not).  Without this the higher deck's underside and parapet
-    showed through the lower deck's road (up to 1.5 m apart, tools/ride_audit.py).  -> samples raised."""
+    showed through the lower deck's road (up to 1.5 m apart, tools/ride_audit.py).  A deck more than max_dh above is
+    another level, not a twin.  -> samples raised."""
     ds = list(decks.values()) if isinstance(decks, dict) else list(decks)
     box = []
     for d in ds:
@@ -208,7 +209,7 @@ def twin_decks(decks, T=None, keep_end=3.0, blend=4.0):
                     hb, sb, dl = b.at(x, y)
                     if dl >= reach + blend or sb <= 0.0 or sb >= b.len:
                         continue
-                    if hb > new[i][k] + 0.01:
+                    if new[i][k] + 0.01 < hb < a.h[k] + max_dh:     # (max_dh: not a deck passing over this one)
                         wgt = min(1.0, (reach + blend - dl) / blend)
                         new[i][k] = max(new[i][k], a.h[k] + wgt * (hb - a.h[k]))
         for d, h in zip(ds, new):

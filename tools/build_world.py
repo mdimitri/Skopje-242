@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 72
+VERSION = 73
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2342,10 +2342,13 @@ def main():
     phase("roads")                                           # the bar above ended at 100 %: the slow steps after it keep it moving
     frac(0.02, "bridges over tunnels")
     import underpass
+    roads = __import__("ramps").cut_service_under_feet(roads)    # a yard lane under a ramp foot: stops short of the ramp
+    roads = __import__("ramps").level_minor_bridges(roads)        # a field track "bridge" sitting on a street: level crossing
+    roads = __import__("ramps").ground_bridge_tails(roads, T)     # a bridge way running on along the bank past a side road
+    roads = __import__("ramps").sink_under_interchanges(roads, T)    # a ramp cluster over a boulevard: ramps at grade, boulevard sunk
     upass = underpass.plan(roads, T)                         # road tunnels are dug in (ramps, roof): see tools/underpass.py
     roads = lift_over_tunnels(roads, extra=underpass.bridge_lines(upass))
     roads = __import__("ramps").extend_footbridges(roads)         # footbridge spans get room for their stairs
-    roads = __import__("ramps").cut_service_under_feet(roads)    # a yard lane under a ramp foot: stops short of the ramp
     roads = __import__("ramps").trim_bridge_feet(roads)           # a path crossing just before a bridge foot junction: at grade
     roads = __import__("ramps").extend_bridges(roads)             # street bridge ends carried on over a way right under them
     roads = __import__("ramps").align_twins(roads)                # a twin deck ends where the other one does (no stagger)
@@ -2441,6 +2444,7 @@ def main():
     phase("graph")
 
     roads = __import__("ramps").extend_to_banks(roads, T)         # bridge ends that stop down in the cut they span
+    roads = __import__("ramps").detach_low_joins(roads)           # a side road joining a bridge mid-span: stops short of it
     connect_roads(roads)
     open_oneway_traps(roads, HX, HY)
     try:                                                        # round 29: trampled desire-line paths over open ground
@@ -2535,7 +2539,90 @@ def main():
     print(f"[build] bridges: {terrain_mod.twin_decks(decks, T)} deck samples raised to the deck beside them")
     try:                                                        # approaches: embankments and vertical curves into the roads (after twin_decks: it would kink them again)
         _barr = np.asarray(bld)
-        __import__("ramps").smooth(T, decks, roads, lambda x, y: bool(_barr[min(NCY - 1, max(0, int((y + HY) / CELL))), min(NCX - 1, max(0, int((x + HX) / CELL)))]), HX, HY)
+        __import__("ramps").smooth(T, decks, roads, lambda x, y: bool(_barr[min(NCY - 1, max(0, int((y + HY) / CELL))), min(NCX - 1, max(0, int((x + HX) / CELL)))]), HX, HY,
+                                  rail=[w[4] for w in _read_list(os.path.join(a.src, "rail.json")) if w[0] == "way" and w[1] == "rail" and not w[2] and not w[3]])
+        _old = {ri: np.array(d.h, np.float64) for ri, d in decks.items()}
+        print(f"[build] bridges: {terrain_mod.twin_decks(decks, T, keep_end=0.0, blend=8.0, max_dh=2.0)} deck samples raised to their twin after smoothing")
+        _ends = {}                                              # ... the raise spread along the deck and on into the next
+        for ri, d in decks.items():                           # piece at no more than 7 % (no hump, no step at a joint)
+            for e_, p_ in ((0, d.pts[0]), (-1, d.pts[-1])):
+                _ends.setdefault((round(p_[0] * 2), round(p_[1] * 2)), []).append((ri, e_))
+        _up = {ri: np.array(d.h, np.float64) - _old[ri] for ri, d in decks.items()}
+
+        def _spread():
+            for _ in range(4):
+                for ri, d in decks.items():
+                    u, ds = _up[ri], np.diff(np.asarray(d.cum, np.float64))
+                    for k in range(1, len(u)):
+                        u[k] = max(u[k], u[k - 1] - 0.07 * ds[k - 1])
+                    for k in range(len(u) - 2, -1, -1):
+                        u[k] = max(u[k], u[k + 1] - 0.07 * ds[k])
+                for lst in _ends.values():
+                    if len(lst) > 1:
+                        m = max(_up[ri][e_] for ri, e_ in lst)
+                        for ri, e_ in lst:
+                            _up[ri][e_] = m
+            for ri, d in decks.items():
+                d.h = list(_old[ri] + _up[ri])
+        _spread()
+        _g0 = {(ri, e_): T.hs(*d.pts[e_]) for ri, d in decks.items() for e_ in (0, -1)}
+        _knoll, _S = {}, __import__("quays").QSTEP              # a twin's end raised with it: the ground beyond climbs to it at 5 %
+        _under_deck = set()                                     # (never under a deck: the ways passing beneath keep their headroom)
+        for d in decks.values():
+            hi = [h_ - T.hs(x_, y_) >= 1.5 for (x_, y_), h_ in zip(d.pts, d.h)]
+            for k in range(len(d.pts) - 1):
+                if not (hi[k] and hi[k + 1]):
+                    continue                                    # (a deck end on the ground: its approach is raised)
+                (ax_, ay_), (bx_, by_) = d.pts[k], d.pts[k + 1]
+                for px in range(int((min(ax_, bx_) - d.hw + HX) // _S), int((max(ax_, bx_) + d.hw + HX) // _S) + 2):
+                    for py in range(int((min(ay_, by_) - d.hw + HY) // _S), int((max(ay_, by_) + d.hw + HY) // _S) + 2):
+                        x_, y_ = px * _S - HX, py * _S - HY
+                        dx_, dy_ = bx_ - ax_, by_ - ay_
+                        t_ = min(1.0, max(0.0, ((x_ - ax_) * dx_ + (y_ - ay_) * dy_) / (dx_ * dx_ + dy_ * dy_ or 1e-9)))
+                        if math.hypot(x_ - ax_ - dx_ * t_, y_ - ay_ - dy_ * t_) <= d.hw:
+                            _under_deck.add((px, py))
+        for d in decks.values():
+            for p_, h_ in ((d.pts[0], d.h[0]), (d.pts[-1], d.h[-1])):
+                up = h_ - T.hs(*p_)
+                if not 0.1 < up < 1.0:
+                    continue
+                R = d.hw + up / 0.05
+                for px in range(int((p_[0] - R + HX) // _S), int((p_[0] + R + HX) // _S) + 2):
+                    for py in range(int((p_[1] - R + HY) // _S), int((p_[1] + R + HY) // _S) + 2):
+                        x_, y_ = px * _S - HX, py * _S - HY
+                        if (px, py) in _under_deck or _barr[min(NCY - 1, max(0, int((y_ + HY) / CELL))), min(NCX - 1, max(0, int((x_ + HX) / CELL)))]:
+                            continue                          # (not under a building)
+                        v = up - 0.05 * max(0.0, math.hypot(x_ - p_[0], y_ - p_[1]) - d.hw)      # (fading to nothing)
+                        if v > 0.02:
+                            _knoll[(px, py)] = max(_knoll.get((px, py), 0.0), v)
+        if _knoll:
+            __import__("ramps").merge_posts(T, _knoll, HX, HY)
+            for (ri, e_), g0 in _g0.items():                    # another deck's end on that ground comes up with it
+                g1 = T.hs(*decks[ri].pts[e_])
+                if abs(_old[ri][e_] - g0) < 0.15 and g1 > decks[ri].h[e_] + 0.05:
+                    _up[ri][e_] = g1 - _old[ri][e_]
+            _spread()
+        _hs = {ri: _old[ri] + _up[ri] for ri in decks}         # an end the ground could not come up to (a building, a way
+        for ri, d in decks.items():                           # under a deck): back down onto it, the raise fading in from
+            for e_ in (0, -1):                                # there, on along the next pieces too
+                g_ = T.hs(*d.pts[e_])
+                if d.h[e_] - g_ > 0.1 and abs(_old[ri][e_] - g_) < 0.15:
+                    _hs[ri][e_] = max(g_, _old[ri][e_])
+        for _ in range(4):                                    # (no steeper than 7 % or than the deck already was)
+            for ri, d in decks.items():
+                o_, h, ds = _old[ri], _hs[ri], np.diff(np.asarray(d.cum, np.float64))
+                for k in range(1, len(h)):
+                    h[k] = min(h[k], h[k - 1] + max(0.07 * ds[k - 1], o_[k] - o_[k - 1]))
+                for k in range(len(h) - 2, -1, -1):
+                    h[k] = min(h[k], h[k + 1] + max(0.07 * ds[k], o_[k] - o_[k + 1]))
+                np.maximum(h, o_, out=h)
+            for lst in _ends.values():
+                if len(lst) > 1:
+                    m = min(_hs[ri][e_] for ri, e_ in lst)
+                    for ri, e_ in lst:
+                        _hs[ri][e_] = m
+        for ri, d in decks.items():
+            d.h = list(_hs[ri])
         __import__("ramps").footbridges(T, decks, roads)          # footbridges over streets: a level top and stairs
     except Exception as ex:  # noqa: BLE001 - the old profiles stay
         import traceback

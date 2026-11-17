@@ -215,6 +215,16 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         gx, gy = int(x // 40), int(y // 40)
         return any(math.hypot(px - x, py - y) < 40 for dx in (-1, 0, 1) for dy in (-1, 0, 1) for px, py in agrid.get((gx + dx, gy + dy), ()))
 
+    feet = {}                                   # bridge / tunnel ends: their approaches are shaped, a shortcut there gets torn
+    for rd in roads:
+        if (rd.get("bridge") or rd.get("tunnel")) and len(rd["pts"]) > 1:
+            for x, y in (rd["pts"][0], rd["pts"][-1]):
+                feet.setdefault((int(x // 40), int(y // 40)), []).append((x, y))
+
+    def by_foot(x, y):
+        gx, gy = int(x // 40), int(y // 40)
+        return any(math.hypot(px - x, py - y) < 25 for dx in (-1, 0, 1) for dy in (-1, 0, 1) for px, py in feet.get((gx + dx, gy + dy), ()))
+
     # ---- 1: cut-throughs ------------------------------------------------------------------------------------
     order = list(range(len(S)))
     rnd.shuffle(order)
@@ -225,7 +235,9 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         if a in used:
             continue
         ax, ay, ra = S[a][0], S[a][1], S[a][2]
-        cands = [(d, b) for d, b in near(ax, ay, 22.0, 80.0) if S[b][2] != ra and b not in used]
+        if by_foot(ax, ay):
+            continue
+        cands = [(d, b) for d, b in near(ax, ay, 22.0, 80.0) if S[b][2] != ra and b not in used and not by_foot(S[b][0], S[b][1])]
         rnd.shuffle(cands)
         for d, b in cands[:10]:
             bx, by = S[b][0], S[b][1]

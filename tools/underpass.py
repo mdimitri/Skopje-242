@@ -285,6 +285,8 @@ def cut(T, plans, hx, hy):
                     tc = min(1.0, max(0.0, t))
                     if math.hypot(x - ax - dx * tc, y - ay - dy * tc) > hw + 1.2:          # the floor runs under the retaining wall (at hw + 0.3)
                         continue
+                    if p.get("keep") and p["keep"](x, y):            # (a railway's cutting stops at the street beside it)
+                        continue
                     f = fl[k] + (fl[k + 1] - fl[k]) * tc
                     if f < want.get((px, py), 1e9):
                         want[(px, py)] = f

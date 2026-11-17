@@ -289,6 +289,9 @@ def _write(dlist, chain, P, own, newH):
         d.h = [float(v) for v in hd]
 
 
+FOOT_JOIN = 6.0       # a way with a vertex this near a deck end starts at the junction there: it does not pass under
+
+
 def _under(ugrid, p, tang, e0, e1, cleared=True, ways=None):
     """Headroom a way crossing under deck point p (deck direction `tang`) needs, or 0.  Ways running along the deck (the
     approach roads it joins, parallel streets) or touching the bridge's ends do not count.  Unless the deck already `cleared` the ground there by 2 m, paths and streets
@@ -317,8 +320,8 @@ def _under(ugrid, p, tang, e0, e1, cleared=True, ways=None):
             v = ((ax - cx_) * (ey_ - cy_) - (ay - cy_) * (ex_ - cx_)) / den
             if not (0.0 <= u <= 1.0 and 0.02 < v < 0.98):
                 continue
-        if any(math.hypot(q[0] - e[0], q[1] - e[1]) < 3.0 for q in ((ax, ay), (bx, by)) for e in (e0, e1)):
-            continue
+        if any(math.hypot(q[0] - e[0], q[1] - e[1]) < FOOT_JOIN for q in ((ax, ay), (bx, by)) for e in (e0, e1)):
+            continue                                       # (a street leaving the junction at the foot: not under it)
         best = max(best, c)
         if ways is not None:
             ways.add(ri)
@@ -513,8 +516,9 @@ def _cone(adj, req, g):
     return h
 
 
-def smooth(T, decks, roads, blocked, hx, hy, log=print):
-    """See the module docstring.  decks: {road index: terrain.Deck} (changed in place)."""
+def smooth(T, decks, roads, blocked, hx, hy, log=print, rail=()):
+    """See the module docstring.  decks: {road index: terrain.Deck} (changed in place).  rail: ground railway lines
+    ([(x, y), ...]) that a deck crossing them must clear by RAIL_CLEAR."""
     dlist = [d for d in decks.values() if d.hw >= 3.0]          # carriageways (footbridges keep their steps / grades)
     rindex = {}
     for ri, rd in enumerate(roads):
@@ -531,6 +535,12 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             for cx in range(int((min(a[0], b[0]) - hw_) // 16), int((max(a[0], b[0]) + hw_) // 16) + 1):
                 for cy in range(int((min(a[1], b[1]) - hw_) // 16), int((max(a[1], b[1]) + hw_) // 16) + 1):
                     ugrid.setdefault((cx, cy), []).append((a[0], a[1], b[0], b[1], hw_, c_, ri))
+    rail = [list(map(tuple, pts)) for pts in rail if len(pts) >= 2]
+    for j, pts in enumerate(rail):                              # (index -1 - j: railway j, never embanked)
+        for a, b in zip(pts, pts[1:]):
+            for cx in range(int((min(a[0], b[0]) - 2.5) // 16), int((max(a[0], b[0]) + 2.5) // 16) + 1):
+                for cy in range(int((min(a[1], b[1]) - 2.5) // 16), int((max(a[1], b[1]) + 2.5) // 16) + 1):
+                    ugrid.setdefault((cx, cy), []).append((a[0], a[1], b[0], b[1], 2.5, RAIL_CLEAR, -1 - j))
     items, stats = [], {"chains": 0, "approaches": 0, "short": 0, "lifted_m": 0.0, "no_room": 0, "ends_eased": 0}
     done = []
     cnodes, cpos, groups = _components(dlist)
@@ -690,7 +700,7 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                     continue
                 for cx in range(int((p[0] - 160) // 32), int((p[0] + 160) // 32) + 1):
                     for cy in range(int((p[1] - 160) // 32), int((p[1] + 160) // 32) + 1):
-                        for ri in ws:
+                        for ri in (r_ for r_ in ws if r_ >= 0):
                             kg.setdefault((cx, cy), set()).add((p[0], p[1], ri, round(_arc(roads[ri]["pts"], p), 1)))
 
     def clogs(x, y, v):
@@ -704,7 +714,7 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
             dx, dy = bx - ax, by - ay
             l2 = dx * dx + dy * dy or 1e-9
             t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
-            if math.hypot(x - ax - dx * t, y - ay - dy * t) < hw:
+            if ri >= 0 and math.hypot(x - ax - dx * t, y - ay - dy * t) < hw:
                 mine.add(ri)
         sp = {ri: _arc(roads[ri]["pts"], (x, y)) for ri in mine}
         dmin = min((abs(sp[ri] - sc) for px, py, ri, sc in cr if ri in mine), default=None)     # along the way (a loop
@@ -723,11 +733,65 @@ def smooth(T, decks, roads, blocked, hx, hy, log=print):
                 + dl[1] * np.clip(1.0 - (L_ - s_) / min(R_[1], Lm), 0.0, 1.0))
         if corr.any():
             _write(dlist, chain, P, own, newH - corr)
+    stats["dug"] = _dig_under(T, decks, roads, ugrid, hx, hy, rail)
     log(f"[ramps] {stats['chains']} bridge chains smoothed, {stats['approaches']} approach embankments "
         f"(highest {stats['lifted_m']:.1f} m, {stats['posts']} posts), {stats['short']} approaches too short for "
         f"{G_MAX:.0%} (steeper there), {stats['no_room']} deck points over a way left low (no room to climb), "
         f"{stats['ends_eased']} deck ends eased onto ground that could not be raised")
     return stats
+
+
+RAIL_CLEAR = 5.3      # headroom over a railway (the trains' pantograph height + margin)
+G_RAIL_DIG = 0.025    # ... and the grade a railway cutting under a low street bridge climbs out at
+G_DIG = 0.08          # a way under a deck that still lacks headroom is dug down, its floor climbing back out at this grade
+
+
+def _dig_under(T, decks, roads, ugrid, hx, hy, rail=()):
+    """Last resort for headroom: where a deck could not climb high enough over a way passing under it (the ground falls
+    away steeply, a junction holds the deck's foot down), the way is lowered into a cutting by what is missing, the
+    floor climbing back out at G_DIG on both sides.  -> number of ways dug."""
+    import underpass
+    want = {}                                              # way -> [(arc s, metres missing)]
+    for d in decks.values():
+        if d.hw < 3.0:
+            continue
+        for a, b, ha, hb in zip(d.pts, d.pts[1:], d.h, d.h[1:]):
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            for k in range(int(L // 1.5) + 1):
+                f = min(1.0, k * 1.5 / (L or 1.0))
+                p = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+                hd = ha + (hb - ha) * f
+                ws = set()
+                c = _under(ugrid, p, (b[0] - a[0], b[1] - a[1]), d.pts[0], d.pts[-1], cleared=hd - float(T.hs(*p)) >= 2.0, ways=ws)
+                if c <= 0.0:
+                    continue
+                for ri in ws:
+                    lack = float(T.hs(*p)) + c + SLAB - 0.3 - hd
+                    if lack > 0.1:
+                        want.setdefault(ri, []).append((_arc(roads[ri]["pts"] if ri >= 0 else rail[-1 - ri], p), lack))
+    def on_road(x, y):
+        """Under a street's or path's surface (+0.5 m)."""
+        for ax, ay, bx, by, hw, c, ri in ugrid.get((int(x // 16), int(y // 16)), ()):
+            if ri < 0:
+                continue
+            dx, dy = bx - ax, by - ay
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy or 1e-9)))
+            if math.hypot(x - ax - dx * t, y - ay - dy * t) < roads[ri]["w"] / 2 + 0.5:
+                return True
+        return False
+    plans = []
+    for ri, lst in want.items():
+        rd = roads[ri] if ri >= 0 else {"pts": rail[-1 - ri], "w": 4.4}
+        g_ = G_DIG if ri >= 0 else G_RAIL_DIG                  # (a railway's cutting climbs out at a train's grade)
+        X = np.array(_resample(rd["pts"], 1.0), np.float64)
+        s = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(X, axis=0).T))])
+        dig = np.zeros(len(X))
+        for sk, lk in lst:
+            dig = np.maximum(dig, lk + 0.5 - np.abs(s - sk) * g_)
+        dig = np.clip(dig, 0.0, None)
+        top = np.array([T.hs(x, y) for x, y in X])
+        plans.append({"pts": X, "floor": top - dig, "hw": rd["w"] / 2 + 0.3, "keep": None if ri >= 0 else on_road})
+    return underpass.cut(T, plans, hx, hy) and len(plans) if plans else 0
 
 
 STAIR_MAX = 1.0        # steepest footbridge flight (45 degrees)
@@ -909,6 +973,7 @@ def extend_bridges(roads, log=print):
     road under an overpass end): the deck has no room left to clear it, so either the way runs into the girder or the
     road beyond climbs in a step.  The road continuing straight on from that end is cut further on and the cut piece
     becomes part of the bridge, so the deck spans the way and comes down to the road after it.  -> roads (new list)."""
+    _sync_fresh(roads)
     idx, grid = [], {}
     for ri, rd in enumerate(roads):
         if rd.get("bridge") or rd.get("tunnel") or not (rd.get("drive") or rd.get("walk")) or len(rd["pts"]) < 2:
@@ -1005,6 +1070,7 @@ def align_twins(roads, log=print):
     """The two decks of a dual carriageway's bridge often end at different places in OSM: the shorter one stops while
     its twin goes on, so the deck surface, median barrier and pavements end in a stagger across the road.  The shorter
     deck is carried on along its road to where its twin ends (when nothing joins it there)."""
+    _sync_fresh(roads)
     ends, by_end, deg = _foot_roads(roads)
     br = [(ri, rd) for ri, rd in enumerate(roads) if rd.get("bridge") and rd.get("drive") and len(rd["pts"]) >= 2
           and len(rd["nodes"]) == len(rd["pts"])]
@@ -1063,6 +1129,7 @@ def cut_service_under_feet(roads, log=print):
     """A service road (a yard access, a car park lane) mapped straight under an interchange ramp just before the ramp
     lands at a junction: the ramp has no room to clear it and a level crossing across a ramp is not how it is built, so
     it ran through the deck.  The service road stops short of the ramp on both sides.  -> roads (new list)."""
+    _sync_fresh(roads)
     deg = {}
     for rd in roads:
         if (rd.get("drive") or rd.get("walk")) and len(rd["nodes"]) == len(rd["pts"]):
@@ -1141,7 +1208,299 @@ def cut_service_under_feet(roads, log=print):
     return out
 
 
+SINK_PAD = 4.0         # the covered stretch of a road sunk under an interchange reaches this far past the deck's edge
+
+
+def sink_under_interchanges(roads, T=None, log=print):
+    """An interchange mapped as a cluster of short ramp bridges (three or more meeting at a node: a raised ring, ramps
+    splitting on the structure) over a boulevard: there is no room for the ramps to climb 5 m and come back down
+    between their junctions, so the cluster became a tangle of steep, overlapping decks.  Built instead like the
+    city's underpasses: the cluster's roads stay at street level (ordinary roads with ordinary junctions) and the
+    boulevard passing under them is sunk in a short covered cutting (tunnel=True: tools/underpass.py digs it, with
+    ramps, and lift_over_tunnels carries the streets over its roof).  -> roads (new list)."""
+    _sync_fresh(roads)
+    br = [ri for ri, rd in enumerate(roads) if rd.get("bridge") and rd.get("drive") and len(rd["pts"]) >= 2
+          and len(rd["nodes"]) == len(rd["pts"]) and not rd.get("tunnel")]
+    at = {}
+    for ri in br:
+        for n in (roads[ri]["nodes"][0], roads[ri]["nodes"][-1]):
+            at.setdefault(n, []).append(ri)
+    par = {ri: ri for ri in br}
+
+    def root(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    for lst in at.values():
+        for j in lst[1:]:
+            par[root(j)] = root(lst[0])
+    hub = {root(lst[0]) for lst in at.values() if len(lst) >= 3}
+    deg = {}
+    for rd in roads:
+        if rd.get("drive") and len(rd["nodes"]) == len(rd["pts"]):
+            for n in rd["nodes"]:
+                deg[n] = deg.get(n, 0) + 1
+    comp = {}
+    for ri in br:
+        comp.setdefault(root(ri), []).append(ri)
+
+    def dip(pieces):                                       # spans a river / gully: a real bridge, never brought down
+        if T is None:
+            return True
+        feet = [T.hs(*roads[ri]["pts"][e]) for ri in pieces for e in (0, -1)]
+        low = min(float(T.hs(*p)) for ri in pieces for p in _resample(roads[ri]["pts"], 3.0))
+        return low < min(feet) - 2.0
+
+    def near_foot(pieces, x):                              # a crossing this close to a foot that is a junction
+        for ri in pieces:
+            for e in (0, -1):
+                n, p = roads[ri]["nodes"][e], roads[ri]["pts"][e]
+                if deg.get(n, 0) > 2 and len(at.get(n, ())) == 1 and math.hypot(x[0] - p[0], x[1] - p[1]) < 20.0:
+                    return True
+        return False
+    sink, flat = {}, set()                                 # road -> [(s0, s1)] to sink; bridge roads to bring down
+    for rt, pieces in comp.items():
+        if dip(pieces):
+            continue
+        nodes = {n for ri in pieces for n in roads[ri]["nodes"]}
+        hits = []
+        for rj, rd in enumerate(roads):
+            if (rd.get("bridge") or rd.get("tunnel") or not rd.get("drive") or len(rd["pts"]) < 2
+                    or len(rd["nodes"]) != len(rd["pts"]) or set(rd["nodes"]) & nodes or rd.get("cls") == "service"):
+                continue
+            P = rd["pts"]
+            cum = [0.0]
+            for a, b in zip(P, P[1:]):
+                cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+            for ri in pieces:
+                Q = roads[ri]["pts"]
+                for k in range(len(P) - 1):
+                    for j in range(len(Q) - 1):
+                        r_ = _isect(P[k], P[k + 1], Q[j], Q[j + 1])
+                        if not r_:
+                            continue
+                        dx, dy = Q[j + 1][0] - Q[j][0], Q[j + 1][1] - Q[j][1]
+                        ex, ey = P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]
+                        sin = abs(dx * ey - dy * ex) / ((math.hypot(dx, dy) * math.hypot(ex, ey)) or 1.0)
+                        h = (roads[ri]["w"] / 2 + 2.4) / max(sin, 0.35) + SINK_PAD
+                        sv = cum[k] + (cum[k + 1] - cum[k]) * r_[0]
+                        x = (P[k][0] + ex * r_[0], P[k][1] + ey * r_[0])
+                        hits.append((rj, sv - h, sv + h, near_foot(pieces, x)))
+        if not hits or rt not in hub:
+            continue                                       # (a plain overpass with room for its ramps stays a bridge)
+        hits = [h[:3] for h in hits]
+        for rj, a_, b_ in hits:
+            sink.setdefault(rj, []).append((a_, b_))
+        flat.update(pieces)
+    if not sink:
+        return roads
+    out = []
+    for ri, rd in enumerate(roads):
+        if ri in flat:
+            out.append(dict(rd, bridge=False, layer=0))
+            continue
+        if ri not in sink:
+            out.append(rd)
+            continue
+        P, N = rd["pts"], rd["nodes"]
+        cum = [0.0]
+        for a, b in zip(P, P[1:]):
+            cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        iv = sorted(sink[ri])
+        merged = []
+        for a_, b_ in iv:
+            a_, b_ = max(0.0, a_), min(cum[-1], b_)
+            if merged and a_ <= merged[-1][1] + 6.0:
+                merged[-1][1] = max(merged[-1][1], b_)
+            else:
+                merged.append([a_, b_])
+        marks = {}                                         # arc length -> (point, node) of the cut points
+        for a_, b_ in merged:
+            for s_ in (a_, b_):
+                if 0.5 < s_ < cum[-1] - 0.5:
+                    k = max(0, min(len(P) - 2, next(i for i in range(len(cum) - 1) if cum[i + 1] >= s_)))
+                    t = (s_ - cum[k]) / ((cum[k + 1] - cum[k]) or 1.0)
+                    _FRESH[0] -= 1
+                    marks[s_] = ((P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t), _FRESH[0])
+        seq = sorted([(c, p, n) for c, p, n in zip(cum, P, N)] + [(s_, p, n) for s_, (p, n) in marks.items()], key=lambda q: q[0])
+        bounds = [0.0] + sorted(marks) + [cum[-1]]
+        for a_, b_ in zip(bounds, bounds[1:]):
+            part = [q for q in seq if a_ - 1e-6 <= q[0] <= b_ + 1e-6]
+            if len(part) < 2:
+                continue
+            mid = (a_ + b_) / 2
+            tun = any(m0 <= mid <= m1 for m0, m1 in merged)
+            out.append(dict(rd, pts=[q[1] for q in part], nodes=[q[2] for q in part], tunnel=tun or rd.get("tunnel", False)))
+    log(f"[ramps] interchanges: {len(flat)} ramp decks brought down to street level, "
+        f"{sum(len(v) for v in sink.values())} crossings of the road under them sunk in a covered cutting")
+    return out
+
+
+def level_minor_bridges(roads, log=print):
+    """A field track or yard lane mapped as a short bridge over a street, with no room for any ramp (it sat on the
+    street, 0 m clear): it becomes a level crossing, a junction on both roads.  -> roads (changed in place)."""
+    _sync_fresh(roads)
+    n_lv = 0
+    for rd in roads:                                       # a tunnel too short to dig (< 8 m: a culvert under a field track)
+        if not (rd.get("tunnel") and rd.get("drive") and len(rd["pts"]) >= 2 and len(rd["nodes"]) == len(rd["pts"])
+                and _poly_len(rd["pts"]) < 8.0):          # is a level crossing with whatever crosses it
+            continue
+        rd["tunnel"], rd["layer"] = False, 0
+        for r2 in roads:
+            if r2 is rd or not (r2.get("drive") or r2.get("walk")) or len(r2["pts"]) < 2 or len(r2["nodes"]) != len(r2["pts"]):
+                continue
+            hit = next(((k, j, r_) for k in range(len(rd["pts"]) - 1) for j in range(len(r2["pts"]) - 1)
+                        for r_ in [_isect(rd["pts"][k], rd["pts"][k + 1], r2["pts"][j], r2["pts"][j + 1])]
+                        if r_ and 0.02 < r_[0] < 0.98 and 0.02 < r_[1] < 0.98), None)
+            if hit:
+                k, j, (t, u) = hit
+                _FRESH[0] -= 1
+                _split_at(rd, k, t, _FRESH[0])
+                _split_at(r2, j, u, _FRESH[0])
+                r2["bridge"], r2["layer"] = False, 0
+                n_lv += 1
+    for rd in roads:
+        if (not rd.get("bridge") or not rd.get("drive") or rd.get("cls") not in ("track", "service")
+                or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]) or _poly_len(rd["pts"]) > 40.0):
+            continue
+        hit = None
+        for r2 in roads:
+            if (r2 is rd or r2.get("bridge") or (r2.get("tunnel") and _poly_len(r2["pts"]) > 12.0) or not r2.get("drive") or len(r2["pts"]) < 2
+                    or len(r2["nodes"]) != len(r2["pts"]) or set(r2["nodes"]) & set(rd["nodes"])):
+                continue
+            for k in range(len(rd["pts"]) - 1):
+                for j in range(len(r2["pts"]) - 1):
+                    r_ = _isect(rd["pts"][k], rd["pts"][k + 1], r2["pts"][j], r2["pts"][j + 1])
+                    if r_ and 0.02 < r_[0] < 0.98 and 0.02 < r_[1] < 0.98:
+                        hit = (r2, k, j, r_)
+                        break
+                if hit:
+                    break
+            if hit:
+                break
+        if not hit:
+            continue
+        r2, k, j, (t, u) = hit
+        _FRESH[0] -= 1
+        _split_at(rd, k, t, _FRESH[0])
+        _split_at(r2, j, u, _FRESH[0])
+        rd["bridge"], rd["layer"] = False, 0
+        if r2.get("layer", 0) < 0 or r2.get("tunnel"):
+            r2["layer"], r2["tunnel"] = 0, False
+        n_lv += 1
+    log(f"[ramps] {n_lv} track / yard-lane bridges sitting on a street made level crossings")
+    return roads
+
+
+TAIL_MAX = 25.0       # longest bank tail of a bridge way made ordinary road (longer may span a street)
+
+
+def ground_bridge_tails(roads, T, log=print):
+    """OSM often draws a short bridge (a culvert, a stream) as a longer way running on along the bank, with a side road
+    joining that bank part at grade: the deck was pinned to the ground at the join and stepped there.  The part of the
+    bridge between such a join and its foot, over ground no lower than the join, becomes ordinary road.  -> roads."""
+    joins = {}
+    for rd in roads:
+        if not rd.get("bridge") and not rd.get("tunnel") and rd.get("drive") and len(rd["nodes"]) >= 2:
+            for n in (rd["nodes"][0], rd["nodes"][-1]):
+                joins[n] = joins.get(n, 0) + 1
+    out, n_tail = [], 0
+    for rd in roads:
+        P, N = rd["pts"], rd.get("nodes") or []
+        if not rd.get("bridge") or not rd.get("drive") or len(P) < 3 or len(N) != len(P):
+            out.append(rd)
+            continue
+        g = [float(T.hs(*p)) for p in P]
+        lo, hi = 0, len(P) - 1                           # the span that stays a bridge
+        for k in range(1, len(P) - 1):
+            if N[k] in joins and min(g[:k + 1]) > g[k] - 1.5 and _poly_len(P[:k + 1]) < TAIL_MAX:
+                lo = k                                   # nothing low between the start and this join
+        for k in range(len(P) - 2, 0, -1):
+            if N[k] in joins and min(g[k:]) > g[k] - 1.5 and _poly_len(P[k:]) < TAIL_MAX:
+                hi = k
+        if lo == 0 and hi == len(P) - 1 or hi - lo < 1:
+            out.append(rd)
+            continue
+        if lo > 0:
+            out.append(dict(rd, pts=P[:lo + 1], nodes=N[:lo + 1], bridge=False, layer=0))
+            n_tail += 1
+        out.append(dict(rd, pts=P[lo:hi + 1], nodes=N[lo:hi + 1]))
+        if hi < len(P) - 1:
+            out.append(dict(rd, pts=P[hi:], nodes=N[hi:], bridge=False, layer=0))
+            n_tail += 1
+    log(f"[ramps] {n_tail} bridge tails running on along the bank past a side road made ordinary road")
+    return out
+
+
+def detach_low_joins(roads, log=print):
+    """A side road that OSM joins to a bridge in the middle of its span (after ground_bridge_tails took the bank tails
+    off): the deck lifts over what it spans, so the junction stood under or on a cliff of it and cars stepped up.  The
+    side road stops short of the bridge instead (a dead end beside it).  -> roads (changed in place)."""
+    _sync_fresh(roads)
+    br = [rd for rd in roads if rd.get("bridge") and rd.get("drive") and len(rd["pts"]) >= 2 and len(rd["nodes"]) == len(rd["pts"])]
+    at_end = {}
+    for i, rd in enumerate(br):
+        for e in (0, -1):
+            at_end.setdefault(rd["nodes"][e], []).append(i)
+    seen, inner = set(), {}
+    for i0 in range(len(br)):                              # bridges chained end to end (one OSM bridge in several ways)
+        if i0 in seen:
+            continue
+        P, N, W = list(br[i0]["pts"]), list(br[i0]["nodes"]), br[i0]["w"]
+        seen.add(i0)
+        for fwd in (True, False):
+            while True:
+                n = N[-1] if fwd else N[0]
+                nxt = [j for j in at_end.get(n, ()) if j not in seen]
+                if len(at_end.get(n, ())) != 2 or len(nxt) != 1:
+                    break
+                j = nxt[0]
+                q, m = br[j]["pts"], br[j]["nodes"]
+                if (m[0] == n) != fwd:
+                    q, m = q[::-1], m[::-1]
+                a_, b_ = (P[-2], P[-1]) if fwd else (P[1], P[0])          # it must go straight on (not a fork / hairpin)
+                c_ = q[1] if fwd else q[-2]
+                u_, v_ = (b_[0] - a_[0], b_[1] - a_[1]), (c_[0] - b_[0], c_[1] - b_[1])
+                if u_[0] * v_[0] + u_[1] * v_[1] < 0.5 * math.hypot(*u_) * math.hypot(*v_):
+                    break
+                seen.add(j)
+                P, N = (P + list(q[1:]), N + list(m[1:])) if fwd else (list(q[:-1]) + P, list(m[:-1]) + N)
+        for n in N[1:-1]:                                  # (any join mid-span: the deck climbs over what it spans and
+            inner[n] = W / 2 + 2.4 + 1.0                   # treated the side road as passing under it, digging it down)
+    n_det = 0
+    for rd in roads:
+        if rd.get("bridge") or not rd.get("drive") or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"]):
+            continue
+        for e in (0, -1):
+            n = rd["nodes"][e]
+            if n not in inner:
+                continue
+            P = rd["pts"] if e == 0 else rd["pts"][::-1]
+            N = rd["nodes"] if e == 0 else rd["nodes"][::-1]
+            back, acc, k = inner[n], 0.0, 0
+            while k < len(P) - 1 and acc + math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) < back:
+                acc += math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1])
+                k += 1
+            if k >= len(P) - 1:
+                continue
+            t = (back - acc) / (math.hypot(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]) or 1.0)
+            q = (P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t)
+            _FRESH[0] -= 1
+            P2, N2 = [q] + list(P[k + 1:]), [_FRESH[0]] + list(N[k + 1:])
+            rd["pts"], rd["nodes"] = (P2, N2) if e == 0 else (P2[::-1], N2[::-1])
+            n_det += 1
+    log(f"[ramps] {n_det} side roads joining a bridge mid-span stopped short of it")
+    return roads
+
+
 _FRESH = [-1_500_000_000]
+
+
+def _sync_fresh(roads):
+    """New node ids continue below every id already in the roads: the build's phases may each load this module afresh,
+    and a counter restarting at its first value gave two far-apart junctions one id (the graph joined them)."""
+    _FRESH[0] = min([_FRESH[0]] + [min(rd["nodes"]) for rd in roads if rd.get("nodes")])
 
 
 def _carry(roads, cut, fresh):
@@ -1198,6 +1557,7 @@ def extend_to_banks(roads, T, log=print):
     the cut (the water / quay overlay digs the channel wider than the mapped bridge), so the deck end sits in the pit
     and the road climbs out of it in a cliff.  The road straight on is carried on as bridge to where its ground stops
     being lower than the bank ahead.  Runs after the quays overlay exists, before the graph.  -> roads (new list)."""
+    _sync_fresh(roads)
     ends, by_end, deg = _foot_roads(roads)
     cut, n_ext = {}, 0
     for ri, end in ends:

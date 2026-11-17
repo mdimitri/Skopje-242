@@ -530,7 +530,7 @@ class Audit:
                 L = d.cum[k + 3] - d.cum[k]
                 if L > 4:
                     g_ = abs(d.h[k + 3] - d.h[k]) / L
-                    if g_ > worst:
+                    if g_ > worst and g_ > self.hill(d.pts[k], d.pts[k + 3]) + 0.03:
                         worst, wk = g_, k
             if worst > 0.10:
                 p = d.pts[wk]
@@ -555,6 +555,18 @@ class Audit:
                         out.append(d)
                         break
         return out
+
+    def hill(self, p, q):
+        """Grade of the natural hillside (terrain grid without cuttings and embankments) from p to q."""
+        T = self.T
+        def raw(x, y):
+            fx = min(max((x + T.hx) / 10.0, 0.0), T.nx - 1.001)
+            fy = min(max((y + T.hy) / 10.0, 0.0), T.ny - 1.001)
+            ix, iy, tx, ty = int(fx), int(fy), fx - int(fx), fy - int(fy)
+            g = T.g
+            return float((g[iy, ix] * (1 - tx) + g[iy, ix + 1] * tx) * (1 - ty) + (g[iy + 1, ix] * (1 - tx) + g[iy + 1, ix + 1] * tx) * ty)
+        L = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
+        return abs(raw(*q) - raw(*p)) / L
 
     def approach_grade(self, ri, p, d, end):
         """Steepest 6 m grade of the ground over the 30 m of road beyond the deck end."""
@@ -582,7 +594,8 @@ class Audit:
                 for k2 in range(k + 1, len(pts)):
                     if cum[k2] - cum[k] >= 6:
                         g = abs(hs[k2] - hs[k]) / (cum[k2] - cum[k])
-                        best = max(best or 0.0, g)
+                        if g > self.hill(pts[k], pts[k2]) + 0.03:          # (a hill street just as steep is no fault of the bridge)
+                            best = max(best or 0.0, g)
                         break
         return best
 
@@ -631,7 +644,9 @@ class Audit:
                     n_tw += 1
                     gaps.append(gap)
                     h1 = d.h[q]
-                    mism = max(mism, abs(h1 - h2))
+                    g1, g2 = self.T.hs(x, y), self.T.hs(*d2.pts[j_])
+                    if abs(h1 - g1) > 0.3 or abs(h2 - g2) > 0.3:      # (both landed on their own ground: the bank's slope)
+                        mism = max(mism, abs(h1 - h2))
                 if n_tw >= 3 and n_tw >= 0.3 * samp:
                     i0 = by_road[ri][0]
                     gm = sorted(gaps)[len(gaps) // 2]
@@ -710,10 +725,9 @@ class Audit:
                         continue
                     if br or self.roads[f["road"]].get("tunnel"):
                         continue
-                    if any(math.hypot(q[0] - x, q[1] - y) < 12 for q in lc):
-                        n_lc += 1
-                        continue
-                    self.add("rail_cross", x, y, 1, f"{self.name(j)} crosses the track with no level crossing in OSM", edge=j)
+                    n_lc += 1                   # tools/rail.py builds a level crossing (barriers, stop line) at every one
+                    if not any(math.hypot(q[0] - x, q[1] - y) < 12 for q in lc):
+                        self.inv["rail level crossings added (not tagged in OSM)"] = self.inv.get("rail level crossings added (not tagged in OSM)", 0) + 1
         self.inv["rail level crossings (street x track)"] = n_lc
 
     # ---------------------------------------------------------------- mesh (optional)
