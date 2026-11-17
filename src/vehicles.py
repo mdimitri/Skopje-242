@@ -11,10 +11,10 @@ ARMY = (78, 92, 52)                                           # olive drab of th
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
 _V = [
     ("Zastava Yugo", "hatch", 3.85, 1.67, 1.38, 6, None, ""),
-    ("Golf Dvojka", "hatch", 4.05, 1.83, 1.40, 7, None, ""),
+    ("Golf Dvojka", "hatch", 3.985, 1.665 / 0.93, 1.415, 7, None, ""),
     ("Kombi", "van", 4.50, 1.90, None, 3, None, ""),
     ("Lada Niva", "suv", 3.75, 1.83, 1.64, 3, None, ""),
-    ("Mercedes 190", "sedan", 4.40, 1.85, 1.38, 5, None, ""),
+    ("Mercedes 190", "sedan", 4.420, 1.678 / 0.93, 1.383, 5, None, ""),
     ("Taxi Zlatna Zolta", "taxi", 4.40, 1.85, None, 3, (238, 192, 28), ""),
     ("Gradski Avtobus", "bus", 9.60, 2.40, None, 1, (232, 232, 236), ""),
     ("Fico", "mini", 3.20, 1.75, 1.36, 3, None, ""),
@@ -36,7 +36,7 @@ _V = [
     ("Opel Kadett", "hatch", 4.00, 1.80, 1.4, 4, None, ""),
     ("Opel Astra Karavan", "wagon", 4.50, 1.85, 1.5, 3, None, ""),
     ("Audi 80 Bachok", "sedan", 4.50, 1.85, 1.4, 3, None, ""),
-    ("BMW E36 Bavarka", "sedan", 4.43, 1.85, 1.37, 3, BLACK, "spoiler"),
+    ("BMW E36 Bavarka", "sedan", 4.433, 1.698 / 0.93, 1.393, 3, BLACK, ""),
     ("BMW X5 Chorbadzija", "suv", 4.70, 2.00, 1.75, 2, BLACK, ""),
     ("Mercedes 124 Taksist", "sedan", 4.70, 1.90, None, 3, (222, 214, 190), ""),
     ("Mercedes S Mafijash", "sedan", 5.20, 2.00, 1.45, 1, BLACK, ""),
@@ -122,7 +122,8 @@ _V = [
 N = len(_V)
 IDS = [v[0] for v in _V]
 STYLE = [v[1] for v in _V]
-DIMS = [(v[2], v[3] * 0.93, _STYLE[v[1]][0], _STYLE[v[1]][1], v[4] or _STYLE[v[1]][2]) for v in _V]   # L, W, y0, belt, roof
+_BELT_HEIGHT = {"Golf Dvojka": 0.850, "Mercedes 190": 0.905, "BMW E36 Bavarka": 0.920}
+DIMS = [(v[2], v[3] * 0.93, _STYLE[v[1]][0], _BELT_HEIGHT.get(v[0], _STYLE[v[1]][1]), v[4] or _STYLE[v[1]][2]) for v in _V]   # L, W, y0, belt, roof
 FIXED = [v[6] for v in _V]
 EXTRA = [v[7] for v in _V]
 BUS = 6
