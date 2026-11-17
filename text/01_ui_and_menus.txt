@@ -58,7 +58,7 @@ menu.0014 = Имиња на улици и места
 menu.0015 = Зум кога пешачиш
 
 # [shown via Row(…) · argument `note`]
-menu.0016 = скролот на глувчето го менува привремено
+menu.0016 = тркалцето на глувчето привремено го менува зумот
 
 # [shown via Row(…)]
 menu.0017 = Зум кога возиш
@@ -141,7 +141,7 @@ menu.0051 = Избери лик
 # sentence: ⟨f'{name} – {money}'⟩ ден. на старт
 menu.0052 = \sден. на старт
 menu.0053 = L  Вчитај игра
-menu.0054 = Стрелки / глушец избери   Enter потврди   L вчитај зачувана игра
+menu.0054 = Стрелки / глувче: избери   Enter: потврди   L: вчитај зачувана игра
 
 # --- function/class `run` · data `(flash, flash_t)` (3 texts) ---
 # purpose: Blocks until the player resumes or quits. `apply(cfg)` is called after every change; `save_fn(slot)` saves the game. -> 'play' | 'quit' | 'chars' (back to the character screen) | 'load1'..'load5'
@@ -883,7 +883,7 @@ strings.0078 = Нема повеќе нови податоци
 strings.0079 = Зачуваните податоци се за друго подрачје – се преземаат одново.
 
 # [second_pass]
-strings.0080 = Втор обид за делови што не успеаја:
+strings.0080 = Втор обид за деловите што не се презедоа:
 
 # [total_limit]
 strings.0081 = Истече вкупното време – продолжувам со тоа што го имам.
@@ -903,7 +903,7 @@ strings.0085 = Серверите не се достапни – продолж�
 # --- module level · data `PARTIAL` (1 texts) ---
 # used in: main.py > ensure_world
 
-strings.0086 = Мапата е непотполна – играта ќе работи со тоа што е преземено; следниот пат ќе го дополни.
+strings.0086 = Мапата е нецелосна. Играта ќе го користи преземеното и ќе ја дополни мапата следниот пат.
 
 # --- module level · data `FALLBACK_DEMO` (1 texts) ---
 # used in: main.py > ensure_world
@@ -913,4 +913,4 @@ strings.0087 = Нема податоци за градот – се корист
 # --- module level · data `CLOSE_TO_EXIT` (1 texts) ---
 # used in: ui.py > fatal_screen
 
-strings.0088 = Затворете го прозорецот за излез.
+strings.0088 = Затвори го прозорецот за да излезеш.
