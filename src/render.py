@@ -1148,7 +1148,7 @@ class Renderer:
             if m is None:
                 continue
             hx, _dl = gl3d.door_geom(b.kind)
-            W = vehicles.DIMS[b.kind][1]
+            W = gl3d.visual_dims(b.kind)[1]
             ang = -1.25 * b.door * (1.0 - 0.15 * (1.0 - b.door))
             M = rl.matrix_multiply(rl.matrix_rotate_y(ang), rl.matrix_translate(hx, 0.0, -(W / 2 + 0.03)))
             M = rl.matrix_multiply(M, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_x(b.roll), rl.matrix_rotate_z(b.pitch)),

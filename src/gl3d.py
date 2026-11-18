@@ -511,12 +511,12 @@ def _wheel_face(vs, cs, cx, cy, z, R, rim, hub):
     """One wheel face, built from a handful of triangles in layers (z steps of 4 mm): ('steel', n) a pressed-steel wheel with a hubcap and n
     ventilation slots, ('alloy', n) n tapered spokes over a dark dish with a centre cap, ('multi', n) the same with a bright outer lip,
     ('truck', n) a flat disc with n hand holes and a centre nut.  Every pattern is rotation-visible and cheap (25-55 triangles)."""
-    kind, n = rim
+    kind, n = rim[:2]
     if kind in ("golf_steel", "w201_15_hole", "e36_style_14"):
         carbody.draw_period_rim(vs, cs, cx, cy, z, R, rim)
         return
     hub = np.asarray(hub, np.float32)
-    r = R * 0.80
+    r = R * (rim[2] if len(rim) == 3 else 0.80)
 
     def tri(p0, p1, p2, zz, col):
         vs.extend(((p0[0], p0[1], zz), (p1[0], p1[1], zz), (p2[0], p2[1], zz)))
@@ -546,6 +546,12 @@ def _wheel_face(vs, cs, cx, cy, z, R, rim, hub):
         for k in range(n):
             a = tau * (k + 0.5) / n
             quad(r * 0.66, r * 0.93, a - 0.11, a + 0.11, a - 0.14, a + 0.14, z + 0.004, hub * 0.2)
+    elif kind == "hubcap":
+        disc(r, hub*0.89, z)
+        for k in range(n):
+            a = tau*(k+0.5)/n
+            quad(r*0.60, r*0.86, a-0.10, a+0.10, a-0.15, a+0.15, z+0.004, hub*0.38)
+        disc(r*0.40, hub*1.07, z+0.01, 8)
     elif kind in ("alloy", "multi"):
         disc(r, hub * 0.22, z)
         if kind == "multi":
@@ -612,10 +618,8 @@ def _truck_cab(parts, box, quad, A, gl, body_c, L, W, y0, belt, roof, cl, ex):
 
     xf, cw = L / 2, W * 0.98
     yb, ys, yt, rk = belt - 0.05, belt + 0.85, roof, 0.45
-    if ex in ("armytruck", "fire"):
-        rk = 0.18 if ex == "armytruck" else 0.29
-    elif ex == "tanker":
-        rk = 0.57
+    rk = {"armytruck": 0.12, "fire": 0.28, "tanker": 0.38, "garbage": 0.34,
+          "mixer": 0.50, "cargo": 0.35, "semi": 0.48}.get(ex, rk)
     xr = xf - cl
     prof = [(xf - 0.02, yb), (xf - 0.02, ys), (xf - 0.02 - rk, yt), (xr, yt), (xr, yb)]
     dark, chrome = (30, 30, 34), (196, 198, 204)
@@ -632,9 +636,12 @@ def _truck_cab(parts, box, quad, A, gl, body_c, L, W, y0, belt, roof, cl, ex):
         quad((xf + 0.01, ys - 0.38, s * cw * 0.40 - 0.12), (0, 0, 0.24), (0, 0.22, 0), (1, 0, 0), (255, 244, 180))
     quad((xf - 0.02, yb, -cw / 2), (0, 0, cw), (0, ys - yb, 0), (1, 0, 0), body_c)                            # lower front
     quad((xf + 0.012, yb + 0.22, -cw * 0.3), (0, 0, cw * 0.6), (0, ys - yb - 0.4, 0), (1, 0, 0), (28, 28, 32), 2, 1)   # grille
-    bars = 5 if ex in ("cargo", "semi") else 4
+    bars = {"armytruck": 5, "fire": 3, "cargo": 2, "semi": 3, "tanker": 4, "garbage": 2, "mixer": 3}.get(ex, 3)
+    trim = chrome if ex in ("fire", "tanker") else (77, 81, 85)
     for k in range(bars):
-        quad((xf + 0.016, yb + 0.27 + k * (0.39 / bars), -cw * 0.3), (0, 0, cw * 0.6), (0, 0.025, 0), (1, 0, 0), chrome)
+        quad((xf + 0.016, yb + 0.27 + k * (0.39 / bars), -cw * 0.3), (0, 0, cw * 0.6), (0, 0.032, 0), (1, 0, 0), trim)
+    if ex in ("cargo", "semi", "garbage", "mixer"):
+        quad((xf+0.022, yb+0.51, -cw*0.26), (0,0,cw*0.52), (0,0.036,0), (1,0,0), (185,192,200))
     poly([(xf - 0.02, ys, -cw / 2), (xf - 0.02, ys, cw / 2), (xf - 0.02 - rk, yt, cw / 2), (xf - 0.02 - rk, yt, -cw / 2)], (0.9, 0.45, 0), body_c)   # screen surround
     g0 = (xf - 0.005, ys + 0.1, cw / 2 - 0.1)
     poly([(g0[0], g0[1], -g0[2]), (g0[0], g0[1], g0[2]), (g0[0] - rk + 0.07, yt - 0.12, g0[2]), (g0[0] - rk + 0.07, yt - 0.12, -g0[2])], (0.9, 0.45, 0), gl((1, 0.4, 0)))
@@ -723,7 +730,7 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                     quad((xb + 0.4, belt + 0.8, s * (W * 0.48 + 0.01)), (cgl - 0.8, 0, 0), (0, 0.25, 0), (0, 0, s), (30, 100, 56))
             if ex == "fire":
                 for s in (-1, 1):
-                    box(cgx, belt + 1.5, s * 0.4, cgl * 0.9, 0.06, 0.08, (210, 210, 214))
+                    box(cgx, belt + 1.5, s * 0.4, cgl * 0.82, 0.06, 0.08, (210, 210, 214))
                 for k in range(6):
                     box(xb + 0.8 + k * (cgl - 1.2) / 5, belt + 1.5, 0, 0.06, 0.05, 0.8, (210, 210, 214))
                 for s in (-1, 1):
@@ -827,17 +834,17 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
         wheel(0.62, 0.34, 0.05)
         wheel(-0.62, 0.34, 0.05)
         for a, b, radius, color in (
-            ((-0.31, 0.79, 0), (0.47, 0.78, 0), 0.025, bc),
+            ((-0.32, 0.73, 0), (0.47, 0.79, 0), 0.022, bc),
             ((-0.24, 0.33, 0), (0.47, 0.78, 0), 0.026, bc),
-            ((-0.24, 0.33, 0), (-0.31, 0.79, 0), 0.022, bc),
-            ((-0.62, 0.34, 0), (-0.31, 0.79, 0), 0.018, bc),
+            ((-0.24, 0.33, 0), (-0.32, 0.73, 0), 0.022, bc),
+            ((-0.62, 0.34, 0), (-0.32, 0.73, 0), 0.018, bc),
             ((-0.62, 0.34, 0), (-0.24, 0.33, 0), 0.018, bc),
             ((0.62, 0.34, 0), (0.47, 0.78, 0), 0.022, steel),
         ):
             _tri_parts(_tube(a, b, radius, 4), lambda q: color, parts)
         box(0.5, 0.88, 0, 0.05, 0.05, 0.5, dark)                  # handlebar
         box(0.5, 0.64, 0, 0.04, 0.26, 0.04, steel)                # stem
-        box(-0.3, 0.79, 0, 0.045, 0.08, 0.04, steel)
+        box(-0.32, 0.73, 0, 0.029, 0.13, 0.029, steel)
         box(-0.3, 0.855, 0, 0.26, 0.07, 0.12, dark)                # saddle
         box(0.02, 0.28, 0, 0.18, 0.18, 0.05, steel)               # chainring
         box(0.6, 0.72, 0, 0.08, 0.1, 0.11, (236, 232, 210))       # lamp (one, on the centre line, like a real bike)
@@ -846,7 +853,8 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
     elif ex == "kick":
         wheel(0.46, 0.14, 0.05)
         wheel(-0.46, 0.14, 0.05)
-        box(0.0, 0.14, 0, 0.95, 0.07, 0.24, dark)                 # deck
+        box(-0.025, 0.121, 0, 0.79, 0.065, 0.157, dark)
+        box(-0.029, 0.187, 0, 0.67, 0.009, 0.145, (57, 60, 66))                 # deck
         _tri_parts(_tube((0.46, 0.14, 0), (0.33, 1.05, 0), 0.026, 6), lambda q: steel, parts)
         box(0.33, 1.02, 0, 0.05, 0.05, 0.5, dark)                 # bars
         box(-0.5, 0.22, 0, 0.18, 0.04, 0.2, bc)                   # brake plate
@@ -858,30 +866,38 @@ def _bike_parts(ex, body_c, A, box, quad, parts, bake=True):
         r = 0.27 if mo else 0.24
         wheel(0.68, r, 0.1)
         wheel(-0.68, r, 0.1)
-        box(-0.05, 0.28, 0, 1.0, 0.1, 0.34, dark)                 # floor / frame
-        box(-0.5, 0.55, 0, 0.65, 0.34, 0.3, bc)                   # rear body
+        if mo:
+            box(-0.05, 0.33, 0, 0.58, 0.071, 0.11, dark)
+            box(-0.36, 0.63, 0, 0.46, 0.12, 0.16, bc)             # fuel tank below the saddle
+            for side in (-1,1):
+                quad((-0.66, r, side*0.080), (0.31,0.36,0), (0.037,0,0), (0,0,side), steel)
+        else:
+            box(-0.05, 0.249, 0, 0.81, 0.128, 0.29, dark)
+            box(-0.48, 0.49, 0, 0.62, 0.235, 0.32, bc)
         if mo:
             _tri_parts(_tube((-0.31, 0.40, 0), (0.48, 0.82, 0), 0.052, 6), lambda q: bc, parts)
-            _tri_parts(_tube((0.68, r, 0), (0.48, 0.84, 0), 0.023, 6), lambda q: steel, parts)
+            _tri_parts(_tube((0.68, r, 0), (0.48, 0.84, 0), 0.023, 4), lambda q: steel, parts)
         else:
-            box(0.45, 0.34, 0, 0.14, 0.59, 0.37, bc)               # scooter leg shield
+            box(0.48, 0.34, 0, 0.15, 0.65, 0.37, bc)               # scooter leg shield
             box(-0.40, 0.35, 0, 0.31, 0.245, 0.28, bc)              # under-seat fairing
             points = [(0.68 + (r + 0.04) * math.cos(a), r + (r + 0.04) * math.sin(a))
                       for a in np.linspace(0.49, 2.62, 5)]
             for (x, y), (xx, yy) in zip(points, points[1:]):
                 quad((x, y, -0.069), (xx-x, yy-y, 0), (0, 0, 0.138), (0, 1, 0), bc)
-        box(0.0, 0.76 if mo else 0.7, 0, 0.58, 0.1, 0.26, dark)   # seat
-        _tri_parts(_tube((0.46, 0.77, 0), (0.55, 1.01, 0), 0.035, 5), lambda q: steel, parts)
+        box(-0.28, 0.743 if mo else 0.688, 0, 0.51, 0.076, 0.21 if mo else 0.27, dark)   # seat
+        if mo:
+            _tri_parts(_tube((0.46, 0.77, 0), (0.55, 1.01, 0), 0.035, 5), lambda q: steel, parts)
         box(0.55, 0.98, 0, 0.1, 0.07, 0.62, dark)                 # handlebar
         box(0.62, 0.96, 0, 0.12, 0.14, 0.2, bc)                   # headlight housing
         quad((0.685, 0.9, -0.08), (0, 0, 0.16), (0, 0.1, 0), (1, 0, 0), (255, 244, 180))
         quad((-0.835, 0.55, -0.1), (0, 0, 0.2), (0, 0.1, 0), (-1, 0, 0), (210, 30, 30))
-        box(-0.82, 0.44, 0, 0.1, 0.12, 0.2, (236, 236, 230))      # plate
+        box(-0.78, 0.36, 0, 0.055, 0.096, 0.16, (236, 236, 230))      # plate
         if mo:
             box(0.0, 0.5, 0.26, 0.5, 0.2, 0.1, steel)              # engine cover
         else:
-            box(-0.82, 0.84, 0, 0.3, 0.36, 0.38, bc)               # delivery box
-            box(-0.82, 1.2, 0, 0.32, 0.05, 0.4, bc)
+            box(-0.72, 0.72, 0, 0.37, 0.035, 0.31, dark)
+            box(-0.73, 0.755, 0, 0.36, 0.31, 0.375, bc)            # rack-mounted delivery top case
+            box(-0.73, 1.052, 0, 0.378, 0.054, 0.395, bc)
 
 
 _HELI_ST = [   # fuselage stations (x, half width, bottom y, top y), nose to the clamshell doors (MBB/Kawasaki BK117)
@@ -976,6 +992,8 @@ def _heli_parts(body_c, A, box, quad, parts):
         if x > 3.02:
             return wh                                      # radome nose cap
         if 1.15 < x and f > 0.44 and not (f > 0.93 and x < 1.9):
+            if abs(z) < 0.075:
+                return (222, 225, 229)
             return glass                                   # long sloping windscreen running down to the low nose
         if x > 2.15 and 0.14 < f < 0.38 and abs(z) > 0.18:
             return glass                                   # chin windows either side of the nose
@@ -1030,7 +1048,8 @@ def _heli_parts(body_c, A, box, quad, parts):
         _tri_parts(_tube((1.9, 0.08, z), (2.25, 0.3, z), 0.06), lambda q: dark, parts, lambda q: (q[0], q[1], z))
         for cx in (1.2, -0.9):
             _tri_parts(_tube((cx, 0.08, z), (cx, 0.42, sd * 0.7), 0.055), lambda q: dark, parts, lambda q: (cx, q[1], q[2] * 0.8))
-        box(0.3, 0.32, sd * 0.98, 0.7, 0.04, 0.16, grey)
+        box(0.28, 0.32, sd * 0.98, 0.81, 0.043, 0.18, grey)
+        quad((-0.62, 0.91, sd*0.983), (0.91, 0, 0), (0, 0.081, 0), (0, 0, sd), red)
     _tri_parts(_tube((1.2, 0.42, -0.7), (1.2, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (1.2, 0.42, q[2]))
     _tri_parts(_tube((-0.9, 0.42, -0.7), (-0.9, 0.42, 0.7), 0.055), lambda q: dark, parts, lambda q: (-0.9, 0.42, q[2]))
     # lights: landing light under the nose, beacons, nav lights, searchlight
@@ -1123,7 +1142,7 @@ def _apc_wheel(cx, cy, cz, face=0, R=0.60, wd=0.42):
     """BTR-80 wheel, axis along z: tall KI-80 off-road tyre with staggered tread lugs, deep sidewall, small green hub with the
     tyre-inflation cap.  Returns (verts, colours) like _cyl."""
     vs, cs = [], []
-    tyre, side, hub, dark = np.array((30, 30, 30), np.float32), np.array((38, 38, 37), np.float32), A_ARMY * 1.12, np.array((26, 28, 24), np.float32)
+    tyre, side, hub, dark = np.array((30, 30, 30), np.float32), np.array((38, 38, 37), np.float32), A_ARMY * 1.04, np.array((39, 42, 33), np.float32)
     n = 28
     za, zm, zb = cz - wd / 2, cz, cz + wd / 2
 
@@ -1438,6 +1457,37 @@ _TYRE_R = {"mini": 0.27, "hatch": 0.30, "sedan": 0.31, "taxi": 0.31, "wagon": 0.
 
 
 
+_COMMERCIAL_RIMS = {
+    "Gradski Avtobus": ("truck", 8, 0.61), "Avtobus Skopje-Ohrid": ("hubcap", 8, 0.62),
+    "JSP Dvokatnik": ("truck", 10, 0.61), "JSP Zglobni": ("truck", 10, 0.60),
+    "Pozharna": ("truck", 10, 0.59), "Smetar Kamion": ("truck", 8, 0.59),
+    "Betonjerka": ("truck", 10, 0.60), "Kamion Tovarnik": ("truck", 8, 0.62),
+    "Tir Rinfuz": ("truck", 10, 0.59), "Cisterna Gorivo": ("truck", 10, 0.59),
+    "Traktor IMT": ("steel", 6, 0.64), "Voen Kamion": ("steel", 8, 0.58),
+    "Voen Hamer": ("steel", 8, 0.61), "Voena Niva": ("steel", 8, 0.60),
+}
+
+_COMMERCIAL_WIDTH_HEIGHT = {
+    "Gradski Avtobus": (2.50, 3.12), "Avtobus Skopje-Ohrid": (2.55, 3.65),
+    "JSP Dvokatnik": (2.50, 4.20), "JSP Zglobni": (2.55, 3.10),
+    "Pozharna": (2.41, 3.21), "Smetar Kamion": (2.50, 3.28),
+    "Betonjerka": (2.50, 3.72), "Kamion Tovarnik": (2.44, 3.46),
+    "Tir Rinfuz": (2.51, 3.91), "Cisterna Gorivo": (2.49, 3.48),
+    "Voen Hamer": (2.16, 1.83), "Voena Niva": (1.68, 1.64), "Voen Kamion": (2.49, 3.08),
+}
+
+
+def visual_dims(kind):
+    kind %= V.N
+    name = V.IDS[kind]
+    dims = V.DIMS[kind]
+    if name in _COMMERCIAL_WIDTH_HEIGHT:
+        length, _, bottom, belt, _ = dims
+        width, height = _COMMERCIAL_WIDTH_HEIGHT[name]
+        return length, width, bottom, belt, height
+    return carbody.render_dims(name, dims)
+
+
 def _wheel_layout(st, L, name=None):
     """(x, radius, width) of every wheel pair, the front axle first."""
     if name is not None and st in carbody.LOFT_STYLES and carbody.has(name):          # the real car's axle positions and tyre size
@@ -1445,7 +1495,13 @@ def _wheel_layout(st, L, name=None):
         r = lay["tr"] or _TYRE_R.get(st, 0.34)
         return [(lay["ax_f"], r, 0.7 * r), (lay["ax_r"], r, 0.7 * r)]
     if name == "JSP Zglobni":
-        return [(L * 0.33, 0.5, 0.30), (-L * 0.13, 0.5, 0.30), (-L * 0.36, 0.5, 0.30)]
+        return [(L * 0.30, 0.493, 0.30), (-L * 0.08, 0.493, 0.30), (-L * 0.34, 0.493, 0.30)]
+    if name == "Voen Hamer":
+        return [(L*0.326, 0.432, 0.252), (-L*0.347, 0.432, 0.252)]
+    if name == "Voena Niva":
+        return [(L*0.294, 0.347, 0.178), (-L*0.292, 0.347, 0.178)]
+    if name in ("Pozharna", "Kamion Tovarnik"):
+        return [(L*0.328, 0.48, 0.28), (-L*0.27, 0.48, 0.30)]
     if L > 11:
         return [(L * 0.34, 0.5, 0.3), (-L * 0.28, 0.5, 0.3), (-L * 0.38, 0.5, 0.3)]
     r = _TYRE_R.get(st, 0.34)                                      # real tyre radii: 13" Yugo ~0.28 m, SUV ~0.38 m
@@ -1479,7 +1535,7 @@ def front_wheel(kind):
     if style == "bike":
         x, r, m = _bike_wheel_model(kind)
         return x, r, 0.0, m
-    L, W = V.DIMS[kind][:2]
+    L, W = visual_dims(kind)[:2]
     semi = V.EXTRA[kind] == "semi"
     wx, wr, wd = _wheel_layout(style, V.SEMI_TRACTOR_L if semi else L, name)[0]
     wx += V.SEMI_SHIFT if semi else 0.0
@@ -1489,7 +1545,7 @@ def front_wheel(kind):
         track = APC_TRACK
     else:
         hub = np.array(lay["hub"] if lay else (158, 158, 164), np.float32)
-        rim = lay["rim"] if lay else ("truck", 5)
+        rim = lay["rim"] if lay else _COMMERCIAL_RIMS.get(name, ("truck", 5))
         v, c = _cyl(0.0, 0.0, 0.0, wr, wd, np.array((26, 26, 28), np.float32), hub, 16 if lay else 12, rim)
         track = carbody.wheel_track(W, wd) if lay else W / 2 - 0.02
     rgba = np.empty((len(v), 4), np.uint8)
@@ -1505,14 +1561,14 @@ def rear_axles(kind):
     if V.STYLE[kind] == "bike":
         x, r, m = _bike_wheel_model(kind)
         return [(-x, r, 0.0, m)]
-    L, W = V.DIMS[kind][:2]
+    L, W = visual_dims(kind)[:2]
     semi = V.EXTRA[kind] == "semi"
     name = V.IDS[kind]
     out = []
     for wx, wr, wd in _wheel_layout(V.STYLE[kind], V.SEMI_TRACTOR_L if semi else L, name)[1:]:
         lay = carbody.layout(name, L) if carbody.has(name) else None
         hub = np.array(lay["hub"] if lay else (176, 178, 184), np.float32)
-        rim = lay["rim"] if lay else ("truck", 5)
+        rim = lay["rim"] if lay else _COMMERCIAL_RIMS.get(name, ("truck", 5))
         track = carbody.wheel_track(W, wd) if lay else W / 2 - 0.02
         vs, cs = [], []
         for s in (-1, 1):
@@ -1557,7 +1613,7 @@ def car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fals
 def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
     """Vertices/colours of a car in local space (x forward, y up, z right); dents = [(lx, lz, nx, nz, mag)]."""
     kind = kind % V.N
-    L, W, y0, belt, roof = V.DIMS[kind]
+    L, W, y0, belt, roof = visual_dims(kind)
     st = V.STYLE[kind]
     name = V.IDS[kind]
     ex = V.EXTRA[kind]
@@ -1646,17 +1702,27 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
     if L > 11:
         nwin = 8 if name == "JSP Zglobni" else 9
     if name == "JSP Dvokatnik":
-        ft, rt, stp = 0.014, 0.006, 0.035
+        ft, rt, stp, nwin = 0.020, 0.012, 0.026, 6
+    elif name == "JSP Zglobni":
+        ft, rt, stp = 0.036, 0.013, 0.023
     elif ex == "coach":
-        ft, rt, stp = 0.10, 0.017, 0.065
+        ft, rt, stp, nwin = 0.12, 0.023, 0.046, 7
+    elif st == "bus":
+        ft, rt, stp, nwin = 0.065, 0.016, 0.018, 5
+    elif name == "Voen Hamer":
+        cl_f, cx_f, ft, rt, stp, nwin = 0.44, -0.015, 0.21, 0.028, 0.08, 2
+    elif name == "Voena Niva":
+        cl_f, cx_f, ft, rt, stp, nwin = 0.68, -0.105, 0.21, 0.13, 0.05, 2
     era = _ERA.get(_ERA_OF.get(V.IDS[kind]))
     if era is not None:
         ft, rt, stp = max(0.0, ft + era[3]), max(0.0, rt + era[4]), stp + era[5]
     cl, cx = L * cl_f, L * cx_f
     if st == "truck":                                                      # forward-control cab, 2.3-2.5 m long, flush with the nose
-        cl = min(2.45, 0.27 * L)
+        cab_fraction = {"fire": 0.40, "armytruck": 0.29, "cargo": 0.28, "semi": 0.40,
+                        "tanker": 0.24, "garbage": 0.31, "mixer": 0.27}.get(ex, 0.27)
+        cl = min(2.85, cab_fraction*L)
         cx = L / 2 - cl / 2
-        roof = belt + 1.9
+        roof = min(top_h - 0.06, belt + (2.10 if ex == "semi" else 1.69))
     parts[:] = [(_shape_body(v, kind, st, L, W, y0, belt, cx, cl), c, d) for v, c, d in parts]
     H, cw = roof - belt, W * 0.9
     # ---- cabin (everything in `cab` gets the taper applied)
@@ -1726,7 +1792,24 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
     if st not in ("bus", "van"):
         quad((xf + 0.006, y0 + 0.16, -0.22 * W), (0, 0, 0.44 * W), (0, belt - y0 - 0.38, 0), (1, 0, 0), (28, 28, 32), 2, 1)       # grille
     if st == "bus":
-        quad((xf + 0.006, y0 + 0.05, -0.20 * W), (0, 0, 0.40 * W), (0, 0.35, 0), (1, 0, 0), (28, 28, 32))
+        if dd:
+            panel, trim = (154, 27, 35), (235, 227, 207)
+        elif ex == "coach":
+            panel, trim = (44, 49, 56), (171, 178, 185)
+        elif name == "JSP Zglobni":
+            panel, trim = (39, 41, 47), (138, 147, 156)
+        else:
+            panel, trim = (38, 37, 43), (189, 193, 195)
+        quad((xf + 0.011, y0 + 0.16, -0.437*W), (0, 0, 0.874*W),
+             (0, 0.26, 0), (1, 0, 0), panel)
+        quad((xf + 0.013, y0 + 0.409, -0.437*W), (0, 0, 0.874*W),
+             (0, 0.027, 0), (1, 0, 0), trim)
+        for side in (-1, 1):
+            if dd or name == "Gradski Avtobus":
+                _disc(xf+0.016, y0+0.305, side*W*0.366, 0.10, 0.015, (220, 226, 220), parts, 9, "x")
+            else:
+                quad((xf+0.017, y0+0.23, side*W*0.366-0.13), (0, 0, 0.26),
+                     (0, 0.095, 0), (1, 0, 0), (215, 224, 224))
     if st == "van":
         quad((xf + 0.006, belt - 0.5, -0.04), (0, 0, 0.08), (0, 0.42, 0), (1, 0, 0), (210, 210, 214))                       # VW "V"
     bump_c = (120, 122, 128) if st not in ("bus", "taxi") else (60, 62, 66)
@@ -1761,6 +1844,16 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
             box((xb + bx0) / 2, belt, s * (W / 2 - 0.05), bx0 - xb, 0.28, 0.08, tuple(body_c * 0.95))
         box(xb + 0.05, belt, 0, 0.08, 0.28, W - 0.1, tuple(body_c * 0.95))
         box(bx0 - 0.05, belt, 0, 0.08, 0.3, W - 0.1, tuple(body_c * 0.9))
+    if name == "Voen Hamer":
+        for side in (-1,1):
+            box(xf-L*0.152, y0+0.14, side*(W/2-0.064), 0.86, 0.19, 0.17, body_c*0.79)
+            _disc(xf+0.008, belt-0.095, side*W*0.375, 0.12, 0.015, (200,203,188), parts, 8, "x")
+        for i in range(-3, 4):
+            quad((xf+0.019, y0+0.225, i*0.079-0.025), (0,0,0.05), (0,0.19,0), (1,0,0), (42,47,42))
+    if name == "Voena Niva":
+        for side in (-1,1):
+            _disc(xf+0.008, belt-0.115, side*W*0.37, 0.103, 0.015, (214,218,208), parts, 8, "x")
+            quad((xf+0.016, belt-0.018, side*W*0.37-0.082), (0,0,0.165), (0,0.048,0), (1,0,0), (204,128,60))
     if st == "suv" and name != "Voen Hamer":
         box(xb - 0.2, y0 + 0.1, 0, 0.18, 0.62, 0.62, (30, 30, 32), True)
         box(xb - 0.3, y0 + 0.2, 0, 0.02, 0.42, 0.42, (70, 72, 76), True)
@@ -1793,9 +1886,9 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
             for side in (-1, 1):
                 quad((x, y0, side*W*0.513), (0.029, 0, 0), (0, roof-y0, 0), (0, 0, side), (70, 71, 74))
     if st == "tractor":
-        box(xf - 0.88, belt - 0.06, 0, 1.63, 0.32, W * 0.55, body_c * 0.93)
+        box(xf - 0.78, belt - 0.06, 0, 1.43, 0.35, W * 0.40, body_c * 0.96)
         for k in range(5):
-            quad((xf - 0.057, belt-0.012+k*0.050, -W*0.23), (0, 0, W*0.46), (0, 0.021, 0), (1, 0, 0), (65, 69, 72))
+            quad((xf - 0.057, belt-0.012+k*0.050, -W*0.184), (0, 0, W*0.368), (0, 0.021, 0), (1, 0, 0), (65, 69, 72))
         for side in (-1, 1):
             box(xb + 0.75, 1.59, side*W*0.43, 1.10, 0.10, 0.37, body_c)
     if st == "bus":
@@ -1812,7 +1905,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
         if steer_wheels:
             continue                                                        # the front pair is drawn separately, turned
         for s in (-1, 1):
-            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((176, 178, 184)), 12, ("truck", 5), s)
+            v, c = _cyl(wx, wr, s * (W / 2 - 0.02), wr, wd_, A((26, 26, 28)), A((176, 178, 184)), 12, _COMMERCIAL_RIMS.get(name, ("truck", 5)), s)
             parts.append((v, c, False))
 
     if fixed == V.ARMY:
@@ -1882,6 +1975,8 @@ def trailer_arrays(wheels=True):
         quad((-T + 0.4, y0 - 0.02, zs), (T - 0.6, 0, 0), (0, 0.12, 0), (0, 0, sd), (40, 42, 46))   # lower skirt rail
         for k in range(1, 5):
             quad((-k * T/5 + 0.04, y0+0.025, zs+sd*0.005), (0.15, 0, 0), (0, 0.058, 0), (0, 0, sd), (227, 143, 52))
+        for x in np.linspace(-T+0.60, -0.07, 12):
+            quad((x, y0+0.12, zs+sd*0.004), (0.039, 0, 0), (0, 0.62, 0), (0, 0, sd), (114, 121, 130))
         for k in range(1, 6):                                                        # panel ribs
             quad((-k * T / 6.0, y0 + 0.1, zs), (0.05, 0, 0), (0, top - y0 - 0.2, 0), (0, 0, sd), (176, 178, 184))
         box(-T + 0.15, y0 + 0.2, sd * (W / 2 - 0.2), 0.1, 0.18, 0.2, (210, 30, 30))      # tail lamps
@@ -1955,7 +2050,7 @@ def door_geom(kind):
 
 def door_model(kind, color):
     """The swinging door panel; hinge at the origin, panel along -x, outer face toward -z."""
-    L, W, y0, belt, roof = V.DIMS[kind]
+    L, W, y0, belt, roof = visual_dims(kind)
     _hx, dl = door_geom(kind)
     fixed = V.FIXED[kind]
     two = color >= 12 and fixed is None

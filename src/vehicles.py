@@ -66,7 +66,7 @@ _V = [
     ("Pajak Vlechna Sluzhba", "pickup", 5.60, 2.00, 1.90, 1, (240, 200, 30), "tow"),
     ("Burek Dostava", "van", 4.60, 1.95, 2.10, 2, (240, 200, 60), "burek"),
     ("Makedonska Posta", "van", 5.00, 2.00, 2.30, 1, (240, 200, 30), "post"),
-    ("Traktor IMT", "tractor", 4.00, 1.95, 2.60, 1, (50, 100, 170), ""),
+    ("Traktor IMT", "tractor", 4.00, 1.95, 2.60, 1, (164, 39, 37), ""),
     ("Svadbarska Limuzina", "limo", 6.60, 2.00, None, 1, WHITE_, "ribbons"),
     ("Avtobus Skopje-Ohrid", "bus", 12.0, 2.40, 3.40, 1, WHITE_, "coach"),
     ("Sladoled Kombe", "van", 4.30, 1.90, 2.10, 1, (240, 170, 200), "icecream"),

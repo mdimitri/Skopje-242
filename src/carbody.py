@@ -7,6 +7,8 @@ import math
 
 import numpy as np
 
+from vehicle_look import ROAD, WINDOW_PILLARS
+
 LOFT_STYLES = ("hatch", "sedan", "taxi", "mini", "wagon", "suv", "van", "limo", "pickup")
 
 # profile knots: fc cowl (bonnet end / windscreen foot), fr1 roof front, fr0 roof rear, fd rear-glass foot (deck start);
@@ -140,10 +142,13 @@ _ALLOY = ("BMW E46 Tjunirana", "Golf Shestka Uvezen", "Seat Leon Kupra", "Tesla 
           "Mercedes S Mafijash", "Audi A6 Nemachka", "Mercedes E Klasa W211", "Passat B6 TDI", "Range Rover Ortak", "BMW E39 520d")
 
 
-def _rim(name):
-    """Choose the rim construction and the count of its vents or spokes."""
+def _rim(name, tyre):
     if name in _PERIOD_RIMS:
         return _PERIOD_RIMS[name]
+    if name in ROAD:
+        diameter, style, count = ROAD[name][4]
+        ratio = float(np.clip(diameter * 0.0127 / tyre, 0.43, 0.81))
+        return style, count, ratio
     if name in _ALLOY:
         return ("alloy", 7 if name.startswith(("Mercedes", "Audi")) else 5)
     if name.startswith(("Zastava", "Lada", "Fiat 126", "Fico", "Moskvich", "Renault 4", "Trabant", "Wartburg")):
@@ -175,21 +180,35 @@ def spec(name, L):
     s = dict(_BASE)
     s.update(ARCH[arch])
     s.update(ov)
+    if name in ROAD:
+        (length, _, _, wheelbase, overhang), levels, *_ = ROAD[name]
+        fc, roof0, roof1, fd, belt, nose, deck, tail = levels
+        s.update(fc=fc/100, fr1=roof0/100, fr0=roof1/100, fd=fd/100,
+                 dn=(belt-nose)*L/length, dd=(deck-belt)*L/length, dt=(deck-tail)*L/length)
+        wbr = wheelbase/length
+        fo = overhang / length * L
+    else:
+        fo = (1-wbr) * L * s["pf"]
     s["arch"], s["wb"] = arch, wbr * L
-    fo = (L - s["wb"]) * s["pf"]
     s["ax_f"], s["ax_r"] = L / 2 - fo, L / 2 - fo - s["wb"]
     fc, fr1, fr0, fd = s["fc"], s["fr1"], s["fr0"], s["fd"]
-    fw0 = fc + 0.30 * (fr1 - fc)
-    pw = 0.11 / L
-    if s["win"] == "cab":
-        wins = [(fw0, fw0 + 0.80 / L)]
+    fw0 = fc + 0.20 * (fr1 - fc)
+    pw = 0.085 / L
+    if name in WINDOW_PILLARS:
+        partitions = WINDOW_PILLARS[name]
+        wins = list(zip((fw0, *(f/100+pw/2 for f in partitions[:-1])),
+                        (*(f/100-pw/2 for f in partitions[:-1]), partitions[-1]/100)))
+    elif s["win"] == "cab":
+        wins = [(fw0, min(fw0 + 1.13/L, fr0))]
     else:
         fwe = fr0 + s["fwe"] * (fd - fr0)
         n = s["nw"]
         wl = (fwe - fw0 - pw * (n - 1)) / n
         wins = [(fw0 + k * (wl + pw), fw0 + k * (wl + pw) + wl) for k in range(n)]
     s["wins"] = wins
-    s["seams"] = [fw0 - 0.10 / L, (wins[0][1] + wins[1][0]) / 2 if len(wins) > 1 else wins[0][1] + 0.05 / L, wins[min(1, len(wins) - 1)][1] + 0.06 / L]
+    s["seams"] = [fw0 - 0.10 / L]
+    s["seams"].extend((a[1] + b[0])/2 for a, b in zip(wins, wins[1:]))
+    s["seams"].append(wins[-1][1] + 0.035/L)
     s["fw0"] = fw0
     _CACHE[name] = (L, s)
     return s
@@ -200,6 +219,16 @@ def wheel_track(W, tyre_width):
     return W / 2 - tyre_width / 2 - 0.052
 
 
+def render_dims(name, dims):
+    """Scale reference proportions to the existing vehicle length."""
+    if name not in ROAD:
+        return dims
+    reference, profile, *_ = ROAD[name]
+    length, _, lower_edge, _, _ = dims
+    scale = length/reference[0]
+    return length, reference[1]*scale, lower_edge, profile[4]*scale, reference[2]*scale
+
+
 def layout(name, L):
     """What gl3d needs besides the mesh: roof centre / length, wheel axles, tyre radius, driver's door hinge and length."""
     s = spec(name, L)
@@ -207,7 +236,7 @@ def layout(name, L):
     cx = (X(s["fr1"]) + X(s["fr0"])) / 2
     cl = X(s["fr1"]) - X(s["fr0"])
     hinge = X(s["seams"][0])
-    return dict(hub=(176, 178, 184) if name in _ALLOY else (128, 130, 136), rim=_rim(name), cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
+    return dict(hub=(176, 178, 184) if name in _ALLOY else (128, 130, 136), rim=_rim(name, s["tr"] or 0.3), cx=cx, cl=cl, ax_f=s["ax_f"], ax_r=s["ax_r"], tr=s["tr"], hinge=hinge, door=max(0.6, hinge - X(s["seams"][1])),
                 mirror=X(s["fc"]) - 0.02)
 
 
@@ -221,12 +250,14 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     ht = hd - s["dt"]
     knots_f = [0.0, fc * 0.5, fc, fr1, fr0, fd, 1.0]
     knots_y = [hn, hn + (hc - hn) * 0.62 + s["hood"], hc, roof, roof, hd, ht]
-    detailed = name in ("Golf Dvojka", "Mercedes 190", "BMW E36 Bavarka")
+    detailed = name in ("Golf Dvojka", "Mercedes 190", "Taxi Zlatna Zolta", "BMW E36 Bavarka")
+    vintage_fenders = name == "Pachuvka 2CV"
+    tall_tail = name in ROAD and ROAD[name][3][0] == "pillar"
     arch_r = tyre_r + 0.045
     arch_e = math.sqrt(arch_r ** 2 - (tyre_r - yb) ** 2)
     fs = {0.0, 0.035, 0.09, 0.94, 0.977, 1.0, fc, fr1, fr0, fd,
           fc * 0.5, (fc + fr1) / 2, (fr0 + fd) / 2, (fr1 + fr0) / 2}
-    arch_samples = (-1, -.86, -.62, -.32, 0, .32, .62, .86, 1) if detailed else (-1, -.81, -.48, 0, .48, .81, 1)
+    arch_samples = (-1, -.86, -.62, -.32, 0, .32, .62, .86, 1) if detailed and name != "Taxi Zlatna Zolta" else (-1, -.81, -.48, 0, .48, .81, 1)
     for axle in (s["ax_f"], s["ax_r"]):
         fs.update((L / 2 - axle + d * arch_e) / L for d in arch_samples)
     for a, b in s["wins"]:
@@ -239,10 +270,14 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     F = np.array(F)
     S = len(F)
     P = np.zeros((S, 12, 3), np.float32)
+    if vintage_fenders:
+        knots_y[1:3] = [hn+(hc-hn)*0.44, hc-0.018]
     if fr0 > fr1 + 0.02:
         knots_f.insert(4, (fr1 + fr0) / 2)
-        crown = 0.025 + 0.04 * s["rnd"]
-        knots_y[3:5] = [roof - crown, roof - 0.01, roof - crown + 0.006]
+        crown = 0.017 + 0.055 * s["rnd"]
+        if name in ("Fico", "Pachuvka 2CV", "Fiat 126 Peglica", "Smart Sitnichka"):
+            crown += 0.046
+        knots_y[3:5] = [roof - crown, roof - 0.01, roof - crown + 0.004]
     ty = np.interp(F, knots_f, knots_y)
 
     def arch_floor(x):
@@ -251,21 +286,41 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
 
     def half_width(x):
         u = abs(x) / (L / 2)
-        return W / 2 * (1 - s["rnd"] * 0.16 * np.clip((u - 0.62) / 0.38, 0, 1) ** 2)
+        width = W/2 * (1 - s["rnd"] * 0.23 * np.clip((u - 0.56) / 0.44, 0, 1)**2)
+        if vintage_fenders:
+            dx = min(abs(x-s["ax_f"]), abs(x-s["ax_r"]))
+            width *= 0.67 + 0.33 * math.exp(-(dx/0.46)**2)
+        return width
     wins, seams = s["wins"], s["seams"]
     for i, f in enumerate(F):
         x = X(f)
         w = half_width(x)
         t_ = ty[i]
-        shy = min(belt, t_ - 0.06)
+        shoulder = belt
+        if s["arch"] in ("hatch_soft", "suv_soft", "mpv", "wagon", "notch_soft"):
+            waist_rise = 0.034 + s["rnd"] * 0.08
+            shoulder += waist_rise*np.clip((f-fc)/(fd-fc), 0, 1)
+        if vintage_fenders:
+            shoulder += 0.075 * math.exp(-((x-s["ax_f"])/0.41)**2)
+        shy = min(shoulder, t_ - 0.06)
         gh = t_ - shy
         tg = float(np.clip((gh - 0.06) / 0.5, 0, 1))
         wt = w * (1 - (1 - s["tw"]) * tg) - (1 - tg) * 0.07
-        sy, sz = shy + 0.88 * gh, w - (w - wt) * 0.88
+        shoulder_w = w
+        rocker_w = w - (0.038 if s["rnd"] < 0.30 else 0.052)
+        if s["rnd"] >= 0.30 and not detailed:
+            shoulder_w -= 0.022 + 0.014 * tg
+        rail = 0.064 if detailed else 0.067 + 0.03*tg
+        if vintage_fenders:
+            wt = min(wt, W*(0.29 if f < fc else 0.35))
+            rail *= 0.65
+        if name in ("Fico", "Cayenne od Germanija", "Smart Sitnichka"):
+            wt -= 0.025*tg
+        sy, sz = shy + 0.84 * gh, w - (w - wt) * 0.79
         edge = min(arch_floor(x), shy - 0.075)
         lip = min(edge + 0.035, shy - 0.04)
-        L_ = [(edge, w - (0.038 if edge <= yb + 0.001 else 0.008)), (lip, w),
-              (shy, w), (sy, sz), (t_, wt), (t_ + 0.01, wt - (0.064 if detailed else 0.07 + 0.035 * tg))]
+        L_ = [(edge, rocker_w if edge <= yb + 0.001 else w-0.008), (lip, w),
+              (shy, shoulder_w), (sy, min(sz, shoulder_w-0.002)), (t_, wt), (t_ + 0.01, wt - rail)]
         rf = max(0.0, 1 - f * L / 0.55) * s["nrF"]                      # the nose / tail face leans back towards the top
         rr = max(0.0, 1 - (1 - f) * L / 0.55) * s["nrR"]
         for k, (y, z) in enumerate(L_):
@@ -292,12 +347,19 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             if j in (0, 10):
                 c = body * 0.55
             elif j in (2, 8):
-                if in_win and gh > 0.09:
+                if in_win and max(ty[i], ty[i+1]) > belt + 0.075:
                     c, isglass[i, j] = gl, True
                 elif name == "Kombi" and gh > 0.12:
                     c = roofc
+                elif name == "Smart Sitnichka" and 0.54 < m < 0.91:
+                    c = np.array((173, 177, 181))
+                elif tall_tail and m > fr0 and gh > 0.12:
+                    c = np.array((143, 24, 31))
             elif j in (4, 6):
-                c = roofc if (in_roof or name == "Kombi") else body
+                if name == "Smart Sitnichka" and fr1 < m < fd:
+                    c = np.array((171, 177, 180))
+                else:
+                    c = roofc if (in_roof or name == "Kombi") else body
             elif j in (3, 7) and name == "Kombi":
                 c = roofc
             elif j == 5:
@@ -305,6 +367,8 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
                     c, isglass[i, j] = gl, True
                 elif s["win"] == "all" and fr0 - 1e-6 <= m <= fd + 1e-6:
                     c, isglass[i, j] = gl, True
+                elif in_roof and name == "Tesla Elon":
+                    c, isglass[i, j] = gl*0.87, True
                 elif in_roof:
                     c = roofc
             cols[i, j] = c
@@ -333,112 +397,21 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             parts.append((v, np.tile(A(col) * shade(A(n)), (len(v), 1)), True))
 
     xf, xb = L / 2, -L / 2
-    capw = P[0, 11, 2]
-    capwr = P[S - 1, 11, 2]
+    capw = P[0, 10, 2]
+    capwr = P[S - 1, 10, 2]
     _wheelhouses(s, yb, arch_e, P, half_width, parts, shade, detailed)
     if detailed:
         _production_trim(name, s, L, yb, belt, hn, ht, P, X, half_width, arch_floor, parts, shade, body, quad)
         return parts
-    # ---- bumpers
-    bpc = {"chrome": (150, 152, 158), "black": (38, 38, 42), "body": tuple(body * 0.95)}[s["bp"]]
-    bh = 0.20
-    box(xf - 0.02, yb + 0.06, 0, 0.12, bh, 2 * capw + 0.02, bpc)
-    box(xb + 0.02, yb + 0.06, 0, 0.12, bh, 2 * capwr + 0.02, bpc)
-    # ---- front face: lamps and grille
-    ltop = hn - 0.05
-    tfr = lambda y: float(np.clip((y - yb - 0.2) / max(0.1, hn - yb - 0.2), 0, 1))     # how far back the nose face has leaned at height y
-    fxf = lambda y: xf - s["nrF"] * tfr(y)                                                # the nose face's x at height y
-    tfb = lambda y: float(np.clip((y - yb - 0.2) / max(0.1, ht - yb - 0.2), 0, 1))
-    fxr = lambda y: xb + s["nrR"] * tfb(y)                                                # the tail face's x at height y
+    def side_quad(x0, y0, x1, y1, side, col, depth=0.011):
+        o = _side_point(P, x0, y0, side, depth)
+        a = _side_point(P, x1, y0, side, depth)
+        b = _side_point(P, x0, y1, side, depth)
+        quad(o, a-o, b-o, (0, 0, side), col)
 
-    def fq(y0_, h_, z0_, dz_, col, off=0.006):                                            # a quad lying on the (leaning) nose face
-        quad((fxf(y0_) + off, y0_, z0_), (0, 0, dz_), (fxf(y0_ + h_) - fxf(y0_), h_, 0), (1, 0, 0), col)
-
-    def rq(y0_, h_, z0_, dz_, col, off=0.006):
-        quad((fxr(y0_) - off, y0_, z0_), (0, 0, dz_), (fxr(y0_ + h_) - fxr(y0_), h_, 0), (-1, 0, 0), col)
-    hl = s["hl"]
-    lw, lh = {"round": (0.22, 0.22), "dual": (0.42, 0.18), "rect": (0.34, 0.15),
-              "wrap": (0.46, 0.15), "slit": (0.52, 0.09)}[hl]
-    lh = min(lh, max(0.05, ltop - (yb + 0.32)))
-
-    def lamp(z, y, rz, ry, color, depth):
-        ring = [(fxf(y + ry * math.sin(a)) + depth, y + ry * math.sin(a), z + rz * math.cos(a))
-                for a in np.linspace(0, math.tau, 9)[:-1]]
-        vertices = np.array([(ring[0], a, b) for a, b in zip(ring[1:], ring[2:])], np.float32).reshape(-1, 3)
-        parts.append((vertices, np.tile(A(color) * shade(A((1, 0, 0))), (len(vertices), 1)), True))
-    zo = capw - 0.05
-    for sd in (-1, 1):
-        zi = zo - lw
-        lo, hi = sorted((sd * zo, sd * zi))
-        if hl == "round":
-            lamp((lo+hi)/2, ltop-lh/2, lw/2, lh/2+0.014, (156, 161, 165), 0.012)
-            lamp((lo+hi)/2, ltop-lh/2, lw/2-0.018, lh/2, (235, 231, 209), 0.017)
-        elif name == "Fiat Multipla":
-            lamp((lo+hi)/2, ltop-lh/2, 0.088, lh*0.48, (225, 229, 216), 0.018)
-            for fraction, y, radius in ((0.37, yb+0.13, 0.052), (0.31, hn+0.135, 0.070)):
-                x = xf + 0.032 if y < hn else X(fc) + 0.062
-                z = sd*W*fraction
-                box(x-0.058, y-radius, z, 0.10, 2*radius, 2.05*radius, body*0.90)
-                quad((x, y-radius*0.69, z-radius*0.69), (0, 0, radius*1.38),
-                     (0, radius*1.38, 0), (1, 0, 0), (222, 227, 213))
-        elif hl == "dual":
-            lamp(lo+lw*0.28, ltop-lh/2, lw*0.25, lh*0.49, (220, 225, 220), 0.017)
-            lamp(lo+lw*0.74, ltop-lh*0.57, lw*0.18, lh*0.39, (190, 200, 199), 0.017)
-        else:
-            fq(ltop - lh - 0.015, lh + 0.03, lo - 0.009, hi - lo + 0.018, (39, 41, 44), 0.009)
-            fq(ltop - lh, lh, lo + 0.008, hi - lo - 0.016, (230, 232, 217), 0.014)
-            if hl in ("rect", "wrap"):
-                fq(ltop-lh+0.012, lh-0.024, lo+0.012 if sd == -1 else hi-0.070, 0.057, (215, 124, 38), 0.018)
-        if hl == "wrap":
-            quad((fxf(ltop - lh) - 0.001, ltop - lh, sd * (capw + 0.002)), (-0.12, 0, 0), (0, lh, 0), (0, 0, sd), (255, 244, 186))
-    gz = zo - lw - 0.03
-    g = s["gr"]
-    gy0, gy1 = yb + 0.28, ltop - 0.01
-    if g in ("blk", "slim", "chrome", "slats", "vee") and gz > 0.1:
-        gz = gz if g != "slim" else min(gz, 0.5)
-        gc_ = (28, 28, 32)
-        if g == "chrome":
-            fq(gy0 - 0.03, gy1 - gy0 + 0.06, -gz - 0.03, 2 * gz + 0.06, (200, 202, 208), 0.0)
-        if g in ("slim", "blk"):
-            gy0 = max(gy0, ltop - (0.14 if g == "slim" else 0.2))
-        fq(gy0, gy1 - gy0, -gz, 2 * gz, gc_, 0.002)
-        if g == "slats":
-            for k in range(1, 6):
-                zk = -gz + k * 2 * gz / 6
-                fq(gy0, gy1 - gy0, zk - 0.012, 0.024, (150, 152, 158), 0.004)
-        if g == "vee":
-            fq(gy0 + 0.05, 0.4, -0.03, 0.06, (214, 214, 218), 0.004)
-    elif g == "shield":
-        gz = min(0.37, capw * 0.49)
-        fq(yb + 0.17, ltop - yb - 0.14, -gz, 2 * gz, (150, 155, 160), 0.01)
-        fq(yb + 0.19, ltop - yb - 0.18, -gz + 0.025, 2 * gz - 0.05, (25, 26, 29), 0.015)
-        for y in np.linspace(yb + 0.23, ltop - 0.025, 4):
-            fq(y, 0.012, -gz + 0.032, 2 * gz - 0.064, (79, 82, 87), 0.02)
-    elif g == "kidney":
-        for sd in (-1, 1):
-            fq(gy0 + 0.02, gy1 - gy0 - 0.02, sd * 0.2 - 0.17 * (sd < 0), 0.17, (196, 198, 204), 0.002)
-            fq(gy0 + 0.04, gy1 - gy0 - 0.06, sd * 0.2 - 0.14 * (sd < 0), 0.13, (26, 26, 30), 0.004)
-    fq(yb + 0.06, 0.10, -0.24, 0.48, (230, 232, 224), 0.046)
-    fq(yb + 0.06, 0.10, -0.24, 0.024, (34, 70, 126), 0.049)
-    # ---- tail: lamps and plate
-    ttop = ht - 0.04
-    tl = s["tl"]
-    zt = capwr - 0.05
-    for sd in (-1, 1):
-        if tl == "tall":
-            hh = min(0.42, ttop - yb - 0.3)
-            lo, hi = sorted((sd * zt, sd * (zt - 0.14)))
-            rq(ttop - hh, hh, lo, hi - lo, (214, 30, 30))
-        elif tl == "slim":
-            lo, hi = sorted((sd * zt, sd * (zt - 0.5)))
-            rq(ttop - 0.08, 0.08, lo, hi - lo, (214, 30, 30))
-        else:
-            lo, hi = sorted((sd * zt, sd * (zt - 0.36)))
-            rq(ttop - 0.16, 0.16, lo, hi - lo, (176, 30, 38), 0.009)
-            rq(ttop - 0.05, 0.045, lo + 0.008, hi - lo - 0.016, (209, 117, 37), 0.014)
-            rq(ttop - 0.093, 0.034, lo + (0.018 if sd == 1 else 0.215), 0.125, (218, 222, 211), 0.014)
-    rq(yb + 0.20, 0.107, -0.24, 0.48, (232, 232, 225), 0.012)
-    rq(yb + 0.20, 0.107, -0.24, 0.024, (34, 70, 126), 0.015)
+    trim = _road_trim(name, s, L, W, belt, yb, hn, ht, capw, capwr, body, side_quad, box, parts, shade)
+    if vintage_fenders:
+        _fenders_2cv(parts, shade, body, s, W, tyre_r, yb)
     if s["arch"] == "pickup":                                        # the open load bed behind the cab: floor is the deck, walls round it
         bx0 = X(fd) - 0.02
         bc2 = tuple(body * 0.95)
@@ -447,21 +420,13 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
             box((xb + bx0) / 2, hd, sd * (W / 2 - 0.05), bx0 - xb, 0.30, 0.08, bc2)
         box(xb + 0.05, hd, 0, 0.08, 0.30, W - 0.1, bc2)
         box(bx0 - 0.05, hd, 0, 0.08, 0.34, W - 0.1, tuple(body * 0.9))
-    # ---- make badges, spare wheel, bull bar
-    def disc(x_, y_, z_, r_, col, sgn):
-        pts = [(x_, y_ + r_ * np.sin(a), z_ + r_ * np.cos(a)) for a in np.linspace(0, 2 * np.pi, 7)]
-        v = np.array([q for k in range(6) for q in ((x_, y_, z_), pts[k], pts[k + 1])], np.float32)
-        parts.append((v, np.tile(A(col) * shade(A((sgn, 0, 0))), (len(v), 1)), True))
-
-    bcol = badge(name)
-    if bcol is not None and g != "none":
-        by = (gy0 + gy1) / 2 if g in ("blk", "slim", "chrome", "slats", "vee") else ltop - 0.1
-        disc(fxf(by) + 0.012, by, 0.0, 0.05 if W < 1.9 else 0.06, bcol, 1)
-        disc(fxr(ttop - 0.1) - 0.01, ttop - 0.1, 0.0, 0.035, bcol, -1)
     if name in _SPARE:
-        rcy = yb + (ht - yb) * 0.48
-        box(xb - 0.13, rcy - 0.33, 0, 0.26, 0.66, 0.66, (26, 26, 28))
-        quad((xb - 0.262, rcy - 0.17, -0.17), (0, 0, 0.34), (0, 0.34, 0), (-1, 0, 0), (150, 152, 158))
+        rcy = yb + (ht - yb) * 0.45
+        # Circular tyre and cover on the tailgate.
+        trim(-1, [(-0.31*math.cos(a), rcy + 0.31*math.sin(a))
+                  for a in np.linspace(0, math.tau, 13)[:-1]], (31, 32, 35), 0.132)
+        trim(-1, [(-0.225*math.cos(a), rcy + 0.225*math.sin(a))
+                  for a in np.linspace(0, math.tau, 13)[:-1]], (75, 79, 82), 0.146)
     if name in _BULLBAR:
         box(xf + 0.12, yb + 0.28, 0, 0.07, 0.07, 2 * capw - 0.3, (190, 192, 198))
         for sd in (-1, 1):
@@ -469,20 +434,27 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     # ---- doors, handles, mirrors, wheel arches
     for sd in (-1, 1):
         zs = sd * (W / 2 + 0.008)
-        sm = [seams[0], seams[1]] + ([seams[2]] if len(wins) > 1 else [])
+        sm = seams[:3]
         for fx in sm:                                                    # door shut lines from the sill to the shoulder
             x = X(fx)
             seam_bottom = min(belt - 0.14, max(yb + 0.10, arch_floor(x) + 0.031))
-            quad((x, seam_bottom, sd * (half_width(x) + 0.009)), (0.013, 0, 0),
-                 (0, belt - seam_bottom - 0.055, 0), (0, 0, sd), tuple(body * 0.5))
+            side_quad(x, seam_bottom, x+0.012, belt-0.053, sd, body*0.48)
         for fx in sm[1:]:                                                # handles sit at the rear edge of each door
-            quad((X(fx) + 0.10, belt - 0.14, zs + sd * 0.004), (0.15, 0, 0), (0, 0.03, 0), (0, 0, sd), (200, 200, 205))
+            x = X(fx)
+            side_quad(x+0.072, belt-0.142, x+0.183, belt-0.119, sd,
+                      (157, 160, 163) if s["rnd"] < 0.25 else body*0.57, 0.018)
 
         mxm = X(s["fw0"]) + 0.12                                         # mirror on the door's front corner, on a short stalk
         mw = half_width(mxm)
         box(mxm, belt + 0.045, sd * (mw + 0.052), 0.13, 0.085, 0.115, (40, 40, 44))
         box(mxm, belt + 0.044, sd * (mw - 0.005), 0.055, 0.034, 0.085, (60, 60, 64))
-        quad((X(fc) - 0.2, belt - 0.04, zs + sd * 0.003), (0.5, 0, 0), (0, 0.02, 0), (0, 0, sd), tuple(body * 0.7))
+        if name in ("Zastava Yugo", "Zastava 101 Skala", "Zastava Koral", "Fiat Uno", "Audi 80 Bachok",
+                    "Mercedes 124 Taksist", "Lada Samara", "Passat Dijaspora", "Golf Trojka Gastarbajter",
+                    "Opel Astra G", "Opel Astra Karavan", "Nissan Qashqai", "Citroen Berlingo",
+                    "Transporter Kombe", "Ford Transit Shverc", "Lada Niva"):
+            z0, z1 = xb+L*0.09, xf-L*0.075
+            for a, b in zip(np.linspace(z0,z1,7)[:-1], np.linspace(z0,z1,7)[1:]):
+                side_quad(a, belt-0.206, b, belt-0.166, sd, (39,41,43))
         x0, x1 = s["ax_r"] + arch_e, s["ax_f"] - arch_e
         quad((x0, yb + 0.004, zs), (x1 - x0, 0, 0), (0, 0.035, 0), (0, 0, sd), (40, 40, 42))
     return parts
@@ -514,6 +486,213 @@ def _sun():
     return gl3d.SUN
 
 
+def _side_point(stations, x, y, side, depth):
+    """Sample the loft at a panel height so trim follows the actual fender."""
+    indices = slice(0, 6) if side < 0 else slice(11, 5, -1)
+    sections = stations[::-1, indices]
+    xs = sections[:, 0, 0]
+    j = int(np.clip(np.searchsorted(xs, x), 1, len(xs)-1))
+    a, b = sections[j-1], sections[j]
+    f = np.clip((x-xs[j-1])/max(0.0001, xs[j]-xs[j-1]), 0, 1)
+    ring = a + (b-a)*f
+    z = np.interp(y, ring[:, 1], ring[:, 2])
+    return np.array((x, y, z+side*depth), np.float32)
+
+
+def _fenders_2cv(parts, shade, paint, spec, width, radius, sill):
+    # Rounded pressed wings extend outside the narrow hood and fastback body.
+    for axle in (spec["ax_f"], spec["ax_r"]):
+        for side in (-1, 1):
+            angles = np.linspace(0.34, math.pi-0.34, 8)
+            radius_outer = radius + 0.073
+            arch = [(axle+radius_outer*math.cos(a), radius+radius_outer*math.sin(a),
+                     side*width*(0.462+0.029*math.sin(a))) for a in angles]
+            inner = [(x, y+0.10*math.sin(a), side*width*0.269) for (x,y,z),a in zip(arch,angles)]
+            v = [(a,b,c,a,c,d) for a,b,c,d in zip(arch,arch[1:],inner[1:],inner)]
+            v = np.asarray(v, np.float32).reshape(-1,3)
+            c = np.tile(np.minimum(paint*1.04,255), (len(v),1))
+            vv, cc = _shaded(v, c, np.zeros(len(v),bool), sill, radius*2.4, shade)
+            parts.append((vv, cc, True))
+
+
+def _road_trim(name, spec, length, width, belt, sill, nose, tail, front_w, rear_w,
+               paint, side_quad, box, parts, shade):
+    reference, _, head, rear, _ = ROAD[name]
+    lamp, lw, lh, grille = head
+    rear_style, rw, rh = rear
+    scale = length/reference[0]
+    dark, rubber = (27, 29, 33), (42, 44, 47)
+    chrome, clear, amber, red = (170, 176, 186), (228, 230, 215), (218, 131, 55), (182, 34, 46)
+
+    def polygon(points, normal, color):
+        vertices = np.asarray([(points[0], a, b) for a, b in zip(points[1:], points[2:])],
+                              np.float32).reshape(-1, 3)
+        rgb = np.tile(np.asarray(color)*shade(np.asarray(normal)), (len(vertices), 1))
+        parts.append((vertices, rgb, True))
+
+    def body_x(end, height):
+        top, rake = (nose, spec["nrF"]) if end > 0 else (tail, spec["nrR"])
+        return end * (length/2 - rake*np.clip((height-sill-0.2)/max(0.10, top-sill-0.2), 0, 1))
+
+    def face(end, outline, color, depth=0.014):
+        polygon([(body_x(end, y)+end*depth, y, z) for z, y in outline], (end, 0, 0), color)
+
+    def rect(end, z0, z1, low, high, color, depth=0.014):
+        face(end, [(z0,low), (z1,low), (z1,high), (z0,high)], color, depth)
+
+    def ellipse(end, z, y, a, b, color, depth=0.015, sides=8):
+        face(end, [(z+a*math.cos(t), y+b*math.sin(t))
+                   for t in np.linspace(0, math.tau, sides, endpoint=False)], color, depth)
+
+    def bumper(end, cap_w, top):
+        bumper_w = cap_w-0.019
+        bumper_h = min(0.19, (top-sill)*0.34)
+        low = sill + 0.024
+        high = low + bumper_h
+        color = {"chrome": chrome, "black": rubber, "body": paint*0.88}[spec["bp"]]
+        path = [(-bumper_w, 0.085), (-bumper_w, -0.01), (-bumper_w+0.095, -0.057),
+                (bumper_w-0.095, -0.057), (bumper_w, -0.01), (bumper_w, 0.085)]
+        top_points = [(end*(length/2-d), high, z) for z, d in path]
+        polygon(top_points, (0, 1, 0), np.minimum(np.asarray(color)*1.18, 255))
+        for i, (a, b) in enumerate(zip(top_points, top_points[1:])):
+            n = (end, 0, (-1, -0.5, 0, 0.5, 1)[i])
+            polygon([a,b,(b[0],low,b[2]),(a[0],low,a[2])], n, color)
+        return high
+
+    bumper_top = bumper(1, front_w, nose)
+    bumper(-1, rear_w, tail)
+    outer = front_w - (0.087 if lamp in ("round", "quad") else 0.048)
+    lw = min(lw*scale, outer-0.092)
+    lh = min(lh*scale, max(0.105, nose-bumper_top-0.047))
+    top = nose-0.041
+    bottom = top-lh
+    inner = outer-lw
+
+    # Each housing outlines a photographed lamp family, with the wide-lens types wrapping onto the fender.
+    for side in (-1, 1):
+        if lamp in ("round", "quad"):
+            count = 2 if lamp == "quad" else 1
+            radius = min(lw/(count*2.08), lh/2)
+            for i in range(count):
+                centre = outer - radius*(1+2.11*i)
+                ellipse(1, side*centre, (top+bottom)/2, radius, radius*0.99, chrome, 0.021)
+                ellipse(1, side*centre, (top+bottom)/2, radius*0.84, radius*0.84, clear, 0.025)
+        elif lamp in ("oval", "dual"):
+            if lamp == "dual":
+                ellipse(1, side*(outer-lw*0.27), (top+bottom)/2, lw*0.285, lh*0.53, dark)
+                ellipse(1, side*(outer-lw*0.26), (top+bottom)/2, lw*0.246, lh*0.45, clear, 0.02)
+                ellipse(1, side*(outer-lw*0.74), top-lh*0.58, lw*0.21, lh*0.37, (200, 211, 213), 0.024)
+            else:
+                ellipse(1, side*(outer-lw/2), (top+bottom)/2, lw*0.50, lh*0.52, dark, 0.016)
+                ellipse(1, side*(outer-lw/2), (top+bottom)/2, lw*0.46, lh*0.44, clear, 0.022)
+        elif lamp == "stalk":
+            x = spec["ax_f"]+length*0.047
+            y, z = belt + 0.025, side*width*0.352
+            box(x-0.071, y-0.17, z, 0.045, 0.16, 0.047, rubber)
+            for r, x1, color in ((0.103, x-0.008, (74, 77, 83)), (0.086,x+0.003,clear)):
+                polygon([(x1, y+r*math.sin(a), z+r*math.cos(a))
+                         for a in np.linspace(0,math.tau,11,endpoint=False)], (1,0,0), color)
+        elif lamp == "pod":
+            ellipse(1, side*(outer-lw/2), (top+bottom)/2, lh*0.43, lh*0.46, clear, 0.019)
+            ellipse(1, side*(outer-0.096), min(bumper_top-0.064, sill+0.12), 0.054, 0.046, clear, 0.060)
+            x, z, radius = length/2 - spec["fc"]*length+0.055, side*width*0.30, 0.08
+            box(x-0.057, belt-radius*0.38, z, 0.13, radius*1.8, radius*2.1, paint)
+            polygon([(x+0.012, belt+0.036+radius*0.78*math.sin(a), z+radius*0.78*math.cos(a))
+                     for a in np.linspace(0,math.tau,9,endpoint=False)], (1,0,0), clear)
+        else:
+            lift = lh*(0.52 if lamp == "sweep" else 0.31 if lamp == "wedge" else 0.13)
+            shape = [(inner, bottom), (outer-0.036, bottom+lift*0.58), (outer, top+lift*0.32),
+                     (outer-0.085, top+lift*0.38), (inner+0.027, top-lift*0.57)]
+            face(1, [(side*z, y) for z, y in shape], dark, 0.018)
+            mid = (inner+outer)/2, (top+bottom)/2
+            face(1, [(side*(mid[0]+(z-mid[0])*0.93), mid[1]+(y-mid[1])*0.81)
+                     for z,y in shape], clear, 0.023)
+            if lamp in ("wide", "sweep", "wedge"):
+                x = length/2
+                side_quad(x-0.16, bottom+lift*0.48, x-0.012, top-0.006, side, clear)
+        if lamp in ("stalk", "round", "quad", "rect"):
+            z0, z1 = sorted((side*(front_w-0.16), side*(front_w-0.055)))
+            low = max(sill+0.055, min(bottom-0.079, bumper_top-0.064))
+            rect(1, z0, z1, low, low+0.051, amber, 0.061)
+        if name == "Lada Niva":
+            z0, z1 = sorted((side*(front_w-0.21), side*(front_w-0.065)))
+            rect(1, z0, z1, nose-0.086, nose-0.025, amber, 0.021)
+
+    def grille_shape(style, low, high, wide, narrow=None):
+        upper = wide
+        lower = wide*0.8 if narrow is None else narrow
+        outer_pts = [(-lower,low),(lower,low),(upper,high),(-upper,high)]
+        face(1, outer_pts, chrome if style in ("merc", "frame", "shield", "skoda", "crown") else rubber, 0.014)
+        face(1, [(-lower+0.017,low+0.014),(lower-0.017,low+0.014),
+                 (upper-0.017,high-0.014),(-upper+0.017,high-0.014)], dark, 0.019)
+        if style in ("mesh", "merc", "frame", "bar", "shield", "van", "bars", "wing", "crown", "skoda", "vshape"):
+            for f in (0.22, 0.43, 0.64, 0.83):
+                y = low + (high-low)*f
+                w = lower+(upper-lower)*f-0.02
+                rect(1, -w, w, y-0.004, y+0.004, (77, 81, 87), 0.024)
+        return (low+high)/2
+
+    gap = max(0.12, inner-0.023)
+    gy = (top+bottom)/2
+    lower_w = width*(0.26 if grille in ("plain", "intake", "shield") else 0.23)
+    if grille in ("plain", "intake", "honeycomb", "split", "vshape", "slit", "oval"):
+        y = sill + (bumper_top-sill)*0.40
+        rect(1, -lower_w, lower_w, y-0.026, y+0.025, dark, 0.061)
+    if grille == "kidney":
+        for side in (-1, 1):
+            g = min(0.19, gap-0.004)
+            z = side*(0.025+g*0.50)
+            ellipse(1, z, gy, g/2, lh*0.39, chrome, 0.023)
+            ellipse(1, z, gy, g*0.39, lh*0.30, dark, 0.027)
+    elif grille == "bars":
+        for i in range(-3,4):
+            x = i*0.061
+            rect(1, x-0.019, x+0.019, bottom-0.041, top+0.009, chrome, 0.019)
+            rect(1, x-0.012, x+0.012, bottom-0.030, top+0.001, dark, 0.024)
+    elif grille == "shield":
+        gy = grille_shape(grille, max(sill+0.19,bottom-0.09), top+0.012, width*0.181, width*0.145)
+    elif grille in ("skoda", "merc", "frame", "van", "crown", "mesh"):
+        gy = grille_shape(grille, bottom-0.018, top+0.003, gap)
+    elif grille in ("wing", "split", "slot", "slit", "vshape", "bar", "honeycomb"):
+        gy = grille_shape(grille, top-min(lh*0.81,0.133), top-0.008, gap, gap*0.92)
+    elif grille == "oval":
+        ellipse(1, 0, gy, gap*0.78, lh*0.44, dark, 0.017)
+    emblem = badge(name)
+    if emblem and grille != "kidney":
+        ellipse(1, 0, gy if grille != "plain" else nose-0.059, 0.028, 0.026, chrome, 0.029, 6)
+
+    rear_top = tail-0.042
+    rw = min(rw*scale, rear_w-0.16)
+    rh = min(rh*scale, max(0.09, rear_top-sill-0.174))
+    for side in (-1,1):
+        z0 = rear_w-0.045
+        z1 = z0-rw
+        bottom = rear_top-rh
+        if rear_style in ("wing", "band"):
+            outline = [(z1,bottom+rh*0.24),(z0-0.032,bottom),(z0,rear_top),(z1+0.008,rear_top-rh*0.21)]
+        elif rear_style in ("upright", "pillar"):
+            outline = [(z1+rw*0.17,bottom),(z0-0.009,bottom),(z0,rear_top),(z1,rear_top-0.015)]
+        else:
+            outline = [(z1,bottom),(z0,bottom),(z0,rear_top),(z1,rear_top)]
+        face(-1, [(side*z,y) for z,y in outline], red, 0.017)
+        a,b = sorted((side*(z1+rw*0.13), side*(z0-rw*0.10)))
+        if rear_style == "roundpair":
+            for frac in (0.26,0.72):
+                ellipse(-1, side*(z1+rw*frac), bottom+rh*0.54, rw*0.17, rh*0.35, (216, 55, 61), 0.023)
+        else:
+            rect(-1, a,b, bottom+rh*0.51, bottom+rh*0.71, clear if rear_style == "wing" else amber, 0.022)
+        if rear_style in ("wing", "pillar", "upright"):
+            x = -length/2
+            reach = 0.14 if rear_style == "wing" else 0.08
+            side_quad(x+0.014, bottom+rh*0.15, x+reach, rear_top-0.012, side, red)
+    if rear_style == "band":
+        rect(-1, -rear_w+rw+0.035, rear_w-rw-0.035, rear_top-rh*0.70, rear_top-rh*0.31, (85,29,36), 0.017)
+    for end, h, depth in ((1, sill+0.052, 0.066), (-1, min(tail-0.145,sill+0.235), 0.026)):
+        rect(end, -0.235, 0.235, h, h+0.093, (223,226,222), depth)
+        rect(end, -0.235, -0.213, h, h+0.093, (39,79,146), depth+0.004)
+    return face
+
+
 def _wheelhouses(s, sill, extent, stations, half_width, parts, shade, detailed):
     """Back the fender openings so the body interior does not show through around the tyres."""
     for axle in (s["ax_f"], s["ax_r"]):
@@ -537,7 +716,7 @@ def _wheelhouses(s, sill, extent, stations, half_width, parts, shade, detailed):
 
 def _production_trim(name, s, L, yb, belt, hn, ht, P, X, half_width, arch_floor, parts, shade, body, quad):
     golf = name == "Golf Dvojka"
-    merc = name == "Mercedes 190"
+    merc = name in ("Mercedes 190", "Taxi Zlatna Zolta")
     rubber, dark, chrome = (31, 32, 35), (18, 20, 23), (188, 193, 199)
     amber, lens, red = (222, 127, 41), (224, 227, 219), (169, 30, 36)
     xf, xr = L / 2, -L / 2
