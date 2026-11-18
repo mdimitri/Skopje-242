@@ -10,21 +10,19 @@ import pyray as rl
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(ROOT, "assets", "posters")
 TITLE = "title.png"
-SPLASH = ("Skopje 242_ Rooftop Noir.png", "splash.png")     # loading screen / title menu background, in assets/
-SPLASH_DIR = os.path.join(ROOT, "assets", "splash")       # more splash art: every image here joins the slideshow
-HERO = "ChatGPT Image Nov 5, 2026, 11_27_52 PM-1.png"       # always the first splash image (and the README main image)
-SPLASH_EXT = (".png", ".bmp")
+SPLASH_DIR = os.path.join(ROOT, "assets", "splash")          # each JPEG here joins the slideshow
+HERO = "01_bazaar_baba_boza.jpg"                            # always the first splash image
+SPLASH_EXT = (".jpg", ".jpeg")
 SPLASH_HOLD = 20.0                                          # seconds per image
 TEAR = 1.6                                                  # seconds of the torn-poster change
 _S = {"files": None, "tex": {}, "i": 0, "t0": 0.0, "old": None, "tear": None}
 
 
 def _splash_files():
-    fs = [os.path.join(ROOT, "assets", fn) for fn in SPLASH if os.path.exists(os.path.join(ROOT, "assets", fn))][:1]
     try:
-        fs += sorted(os.path.join(SPLASH_DIR, f) for f in os.listdir(SPLASH_DIR) if f.lower().endswith(SPLASH_EXT))
+        fs = sorted(os.path.join(SPLASH_DIR, f) for f in os.listdir(SPLASH_DIR) if f.lower().endswith(SPLASH_EXT))
     except OSError:
-        pass
+        return []
     hero = os.path.join(SPLASH_DIR, HERO)
     if hero in fs:
         fs.remove(hero)
