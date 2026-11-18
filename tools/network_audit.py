@@ -10,9 +10,8 @@ import pickle
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import lanefix
-
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+import lanefix
 
 
 def load(d, name):
@@ -83,7 +82,8 @@ def lanes_blockers(edges, props, th):
         return any(seg_dist(x, y, *s[:4]) < s[4] - r for s in grid.get((int(x // cg), int(y // cg)), ()))
 
     return {"lamps": sum(inside(x, y, 0.22) for x, y in props["lamps"]), "trees": sum(inside(t[0], t[1], 0.5) for t in props["trees"]),
-            "posts at ground level": sum(inside(p[0], p[1], 0.0) for p in props["posts"] if len(p) < 5 or p[3] <= th(p[0], p[1]) + 2.2)}
+            "posts at ground level": sum(inside(p[0], p[1], 0.0) for p in props["posts"]
+                                         if len(p) < 5 or p[3] - 2.2 <= th(p[0], p[1]) < p[4])}
 
 
 def faults(edges, props):
@@ -102,7 +102,8 @@ def faults(edges, props):
         if abs(wa - wb) > 3.6 and la == lb:
             out["width step > 3.6 m with equal lanes"].append(f"{wa:.1f}->{wb:.1f} m at ({edges[a]['pts'][0][0]:.0f},{edges[a]['pts'][0][1]:.0f})")
     for e in drive:
-        if lanefix.per_way(e) * 2.6 > e["w"] + 0.01 * (1 if e["ow"] else 2):
+        total = lanefix.per_way(e) + (0 if e["ow"] else lanefix.per_way(e, -1))
+        if total > 2 and total * 2.6 > e["w"] + 0.01:
             out["lanes narrower than 2.6 m"].append(f"{e['cls']} w={e['w']:.1f} lanes/way={lanefix.per_way(e)}")
     ind, outd = collections.Counter(), collections.Counter()
     for e in drive:

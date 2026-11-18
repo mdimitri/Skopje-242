@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 73
+VERSION = 75
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -148,12 +148,12 @@ def connect_roads(roads, radius=7.0, drive_radius=15.0):
                 for cy in range(int((min(ay, by) - rg) // cs), int((max(ay, by) + rg) // cs) + 1):
                     grid.setdefault((cx, cy), []).append((ri, k))
     inserts = {}                                    # road -> [(segment k, t, new node id, point)]
-    fresh = -1
+    fresh = min(-1, min(use, default=0))
     snapped = merged = 0
     for ri, rd in enumerate(roads):
         if ri % 256 == 0:
             frac(0.06 + 0.04 * ri / max(1, len(roads)), "roads joined")
-        if not (rd["drive"] or rd["walk"]) or rd["bridge"] or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
+        if not (rd["drive"] or rd["walk"]) or rd["bridge"] or rd["cls"] == "motorway" or len(rd["nodes"]) != len(rd["pts"]) or len(rd["pts"]) < 2:
             continue
         for end in (0, -1):
             node, p = rd["nodes"][end], rd["pts"][end]
@@ -165,7 +165,7 @@ def connect_roads(roads, radius=7.0, drive_radius=15.0):
             best = None
             for ri2, k in grid.get((int(p[0] // cs), int(p[1] // cs)), ()):
                 r2 = roads[ri2]
-                if ri2 == ri or r2["layer"] != rd["layer"] or r2["bridge"]:
+                if ri2 == ri or r2["layer"] != rd["layer"] or r2["bridge"] or bool(r2.get("tunnel")) != bool(rd.get("tunnel")):
                     continue
                 if rd["drive"] and not r2["drive"]:
                     continue
@@ -175,8 +175,10 @@ def connect_roads(roads, radius=7.0, drive_radius=15.0):
                 t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * ex + (p[1] - ay) * ey) / l2))
                 qx, qy = ax + ex * t, ay + ey * t
                 d = math.hypot(p[0] - qx, p[1] - qy)
-                if d > (drive_radius if rd["drive"] else radius) or d < 0.05:
+                if not l2 or d > (drive_radius if rd["drive"] else radius):
                     continue
+                if d < 0.05 and 0.0 < t < 1.0 and abs(dx * ex + dy * ey) > 0.95 * math.sqrt(l2):
+                    continue                                       # overlapping ways do not form a new T-junction
                 if (qx - p[0]) * dx + (qy - p[1]) * dy < (0.2 if d <= 12.0 else 0.7) * d:   # not pointing at it: a parallel neighbour
                     continue                                       # (a long reach must point straight at it)
                 if best is None or d < best[0]:
@@ -185,18 +187,25 @@ def connect_roads(roads, radius=7.0, drive_radius=15.0):
                 continue
             d, ri2, k, t, qx, qy = best
             r2 = roads[ri2]
-            if t < 0.15 or t > 0.85:                                       # right at a vertex: share that node
-                kk = k if t < 0.5 else k + 1
+            kk = k if t < 0.5 else k + 1
+            vx, vy = r2["pts"][kk]
+            if math.hypot(vx - qx, vy - qy) < 0.75:                        # use a metric tolerance even on long OSM segments
                 rd["nodes"][end] = r2["nodes"][kk]
                 rd["pts"][end] = r2["pts"][kk]
                 use[r2["nodes"][kk]] = use.get(r2["nodes"][kk], 0) + 1
                 merged += 1
             else:
-                fresh -= 1
-                inserts.setdefault(ri2, []).append((k, t, fresh, (qx, qy)))
-                rd["nodes"][end] = fresh
-                rd["pts"][end] = (qx, qy)
-                use[fresh] = 2
+                pending = inserts.setdefault(ri2, [])
+                match = next(((n, p2) for k2, _, n, p2 in pending
+                              if k2 == k and math.hypot(p2[0] - qx, p2[1] - qy) < 0.75), None)
+                if match is None:
+                    fresh -= 1
+                    match = (fresh, (qx, qy))
+                    pending.append((k, t, *match))
+                    use[fresh] = 2
+                    for n in r2["nodes"][k:k + 2]:
+                        use[n] += 1                                 # keep the segment hosting the new node fixed
+                rd["nodes"][end], rd["pts"][end] = match
                 snapped += 1
     for ri2, lst in inserts.items():
         r2 = roads[ri2]
@@ -205,6 +214,44 @@ def connect_roads(roads, radius=7.0, drive_radius=15.0):
             r2["nodes"].insert(k + 1, nid_)
     print(f"[build] connected {merged + snapped} dead ends to nearby roads ({snapped} new junctions)")
     return merged + snapped
+
+
+def collapse_short_road_links(roads):
+    """Weld sub-metre two-way surface links without changing directed or elevated connections."""
+    use, layers = {}, {}
+    eligible = [rd for rd in roads if len(rd["nodes"]) == len(rd["pts"])]
+    for rd in eligible:
+        for node in rd["nodes"]:
+            use[node] = use.get(node, 0) + 1
+            layers.setdefault(node, set()).add((rd["layer"], bool(rd["bridge"]), bool(rd.get("tunnel"))))
+    joined, anchors = {}, set()
+    for rd in eligible:
+        if not rd["drive"] or rd["ow"] or rd["bridge"] or rd.get("tunnel"):
+            continue
+        level = {(rd["layer"], False, False)}
+        for (a, p), (b, q) in zip(zip(rd["nodes"], rd["pts"]), zip(rd["nodes"][1:], rd["pts"][1:])):
+            # An unshared shape point inside a way cannot make a short junction-to-junction edge.
+            if a == b or a in joined or a in anchors or b in joined or b in anchors:
+                continue
+            if (use[a] < 2 and a != rd["nodes"][0]) or (use[b] < 2 and b != rd["nodes"][-1]):
+                continue
+            if layers[a] == layers[b] == level and math.hypot(p[0] - q[0], p[1] - q[1]) < 1.0:
+                joined[b] = (a, p)
+                anchors.add(a)
+    if not joined:
+        return 0
+    for rd in eligible:
+        if not any(node in joined for node in rd["nodes"]):
+            continue
+        nodes, pts = [], []
+        for node, point in zip(rd["nodes"], rd["pts"]):
+            node, point = joined.get(node, (node, point))
+            if not nodes or nodes[-1] != node:
+                nodes.append(node)
+                pts.append(point)
+        rd["nodes"], rd["pts"] = nodes, pts
+    roads[:] = [rd for rd in roads if len(rd["pts"]) >= 2]
+    return len(joined)
 
 
 def open_oneway_traps(roads, hx, hy, edge=60.0):
@@ -539,7 +586,7 @@ def military_style(t, ar, h, r):
 # ----------------------------------------------------------------- mesh generation (numpy)
 MAT_FACADE_A, MAT_FACADE_B, MAT_ROOF, MAT_SOLID = 0, 1, 2, 3
 MAT_GRAF = 6                         # wall graffiti decals (atlas from src/graffiti.py)
-GRAF_COLS, GRAF_ROWS, GRAF_N = 4, 52, 205
+GRAF_COLS, GRAF_ROWS, GRAF_N = 5, 51, 255
 MAT_BRICK, MAT_CONC, MAT_CONCG, MAT_CREAM, MAT_MIX = 7, 8, 9, 10, 11     # photo-based Skopje facades
 MAT_PANEL, MAT_HOUSE = 4, 5          # Skopje socialist prefab high-rise, family house (round 9)
 # photo-fitted facades (src/photogram.py, ДЕТАЛИ): procedural surfaces, textures from gl3d.surface_textures (same order as gl3d.SURF_NAMES)
@@ -871,12 +918,21 @@ def facade_extras(ring, h, rg, wallc):
     return out
 
 
-def graffiti_geo(ring, h, rng, n_max=2, big=False):
+# Vertical window bands, in pixels of the 128px facade tiles in gl3d.build_textures.
+GRAF_WINDOWS = {
+    MAT_FACADE_A: (28, 90), MAT_FACADE_B: (22, 106), MAT_PANEL: (18, 102),
+    MAT_HOUSE: (26, 91), MAT_BRICK: (28, 87), MAT_CONC: (32, 79),
+    MAT_CONCG: (32, 79), MAT_CREAM: (18, 98), MAT_MIX: (28, 75),
+}
+
+
+def graffiti_geo(ring, wall_feet, h, rng, mat, floor_height, n_max=2, big=False):
     """Alpha-keyed graffiti quads flat on the street-facing walls of one building -> (pos, uv, col) or None (y relative to the wall foot)."""
     r = np.asarray(ring, dtype=np.float32)
     d = np.roll(r, -1, axis=0) - r
     ln = np.hypot(d[:, 0], d[:, 1])
-    order = [i for i in np.argsort(-(ln - 12.0 * (d[:, 0] / np.maximum(ln, 1e-3))))[:5] if ln[i] >= 4.5]      # long walls, south-facing ones first (the camera sees those)
+    order = [i for i in np.argsort(-(ln - 12.0 * (d[:, 0] / np.maximum(ln, 1e-3))))
+             if ln[i] >= 4.5 and wall_feet[i] <= 0][:5]      # long, exposed walls, south-facing ones first
     if not order or h < 3.0:
         return None
     P, U, C = [], [], []
@@ -886,8 +942,25 @@ def graffiti_geo(ring, h, rng, n_max=2, big=False):
             w = ln[i] - 1.0
         if w < 1.4:
             continue
+        yc = rng.uniform(4.0, max(4.0, min(h - w / 2 - 0.5, 9.0))) if big and h > 12 else rng.uniform(0.2, 0.9) + w / 4 + 0.8
+        if mat in GRAF_WINDOWS:
+            # Match walls(): v starts at the roof and repeats once per floor.
+            foot = float(wall_feet[i])
+            floors = max(1, round((h - foot) / floor_height))
+            tile_h = (h - foot) / floors
+            win_top, win_bottom = (px / 128 for px in GRAF_WINDOWS[mat])
+            bands = []
+            for j in range(floors + 1):
+                lo = max(0.18, h - (j + win_top) * tile_h + 0.08)
+                hi = min(h - 0.3, h - (j - 1 + win_bottom) * tile_h - 0.08)
+                if hi - lo >= 0.45:
+                    bands.append((lo, hi))
+            if not bands:
+                continue
+            lo, hi = min(bands, key=lambda band: abs(sum(band) / 2 - yc))
+            w = min(w, 2 * (hi - lo))
+            yc = min(hi - w / 4, max(lo + w / 4, yc))
         hh = w * 0.5
-        yc = rng.uniform(4.0, min(h - hh - 0.5, 9.0)) if big and h > 12 else rng.uniform(0.2, 0.9) + hh / 2 + 0.8
         if yc + hh / 2 > h - 0.3:
             continue
         ux, uz = d[i, 0] / ln[i], d[i, 1] / ln[i]
@@ -2003,7 +2076,8 @@ def _bld_job(job):
     extras = facade_extras(outer, h, rg, wallc) if (not small and ar > 60 and not photo) else []      # the photos have their own
     n_el = min(1.0, len(extras) / 40.0)                                       # the more added elements, the more graffiti
     if not photo and rg.random() < min(0.98, {MAT_HOUSE: 0.75, MAT_PANEL: 0.85}.get(mat, 0.65) + 0.3 * n_el):          # graffiti on the street wall(s)
-        gg = graffiti_geo(outer, h, rg, 3 + int(3 * n_el), big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
+        gg = graffiti_geo(sr_, sy_, h, rg, mat, fh, 3 + int(3 * n_el),
+                          big=(mat == MAT_PANEL and rg.random() < 0.25 + 0.3 * n_el))
         if gg:
             badd(MAT_GRAF, *gg)
     if roof_fit and not small and _roof_too_steep(outer, roof_fit):           # blocks keep calm roofs: a learned pitch over 20 degrees (or a mansard / gambrel) becomes a flat roof with parapet
@@ -2323,19 +2397,37 @@ def main():
             ow = 0
             o = t.get("oneway")
             nodes = el.get("nodes", [])
-            if o in ("yes", "true", "1") or t.get("junction") in ("roundabout",) or hw in ("motorway",):
-                ow = 1
-            elif o == "-1":
+            reversed_way = o == "-1"
+            if reversed_way:
                 ow = 1
                 pts = pts[::-1]
                 nodes = nodes[::-1]
+            elif o in ("yes", "true", "1") or (o not in ("no", "false", "0") and (t.get("junction") == "roundabout" or hw == "motorway")):
+                ow = 1
+            turn = (t.get("turn:lanes:forward", ""), t.get("turn:lanes:backward", ""))
+            if reversed_way:
+                turn = turn[::-1]
+            if ow:
+                turn = (turn[0] or t.get("turn:lanes", ""), "")
+            directional = None
+            if not ow:
+                fwd, bwd = (t.get("lanes:" + side, "") for side in ("forward", "backward"))
+                if fwd.isdecimal() and bwd.isdecimal() and int(fwd) > 0 and int(bwd) > 0:
+                    directional = (int(fwd), int(bwd))
+                    w = max(w, sum(directional) * 3.5)
+            sidewalk = t.get("sidewalk", "")
+            sides = {"both": (True, True), "yes": (True, True), "left": (True, False), "right": (False, True),
+                     "no": (False, False), "none": (False, False), "separate": (False, False)}.get(sidewalk)
+            if sides is not None and reversed_way:
+                sides = sides[::-1]
             bridge = t.get("bridge") not in (None, "no")
             try:
                 layer = int(t.get("layer", "1" if bridge else "0"))
             except ValueError:
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
-                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes, "turn": (t.get("turn:lanes:forward") or (t.get("turn:lanes", "") if ow else ""), t.get("turn:lanes:backward", "")),
+                          "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes, "turn": turn,
+                          "directional_lanes": directional, "sidewalk_sides": sides,
                           "tunnel": tunnel, "junction": t.get("junction", "")})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
@@ -2460,6 +2552,7 @@ def main():
         traceback.print_exc()
     frac(0.2, "roads joined")
     # ---- routing graph ----------------------------------------------------------------------------
+    print(f"[build] sub-metre surface links welded: {collapse_short_road_links(roads)}")
     use = {}
     for rd in span(roads, 0.2, 0.3, "junctions"):
         if rd["drive"] or rd["walk"]:
@@ -2484,10 +2577,12 @@ def main():
                 for k in range(1, len(seg)):
                     cum.append(cum[-1] + math.hypot(seg[k][0] - seg[k - 1][0], seg[k][1] - seg[k - 1][1]))
                 if cum[-1] > 0.5:
+                    fwd, bwd = rd.get("turn", ("", ""))
                     edges.append({"a": nid(ns[start]), "b": nid(ns[i]), "pts": seg, "cum": cum, "len": cum[-1],
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
                                   "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0),
-                                  "worn": rd.get("worn", ""), "turn": rd.get("turn", ("", ""))})
+                                  "worn": rd.get("worn", ""), "turn": (fwd if i == len(ps) - 1 else "", bwd if start == 0 else ""),
+                                  "directional_lanes": rd.get("directional_lanes"), "sidewalk_sides": rd.get("sidewalk_sides")})
                 start = i
     import lanefix
     print(f"[build] lane dips repaired: {lanefix.repair(edges)} edges")
@@ -3011,7 +3106,7 @@ def main():
     phase("carriageway cleanup")
     cgrid_ = {}
     for e_ in span(edges, 0.0, 0.3, "lane grid"):
-        if e_["drive"] and not e_["bridge"]:
+        if e_["drive"]:
             for (ax_, ay_), (bx_, by_) in zip(e_["pts"], e_["pts"][1:]):
                 for gx_ in range(int(min(ax_, bx_) // 20) - 1, int(max(ax_, bx_) // 20) + 2):
                     for gy_ in range(int(min(ay_, by_) // 20) - 1, int(max(ay_, by_) // 20) + 2):
@@ -3021,14 +3116,14 @@ def main():
         for ax_, ay_, bx_, by_, hw_ in cgrid_.get((int(x // 20), int(y // 20)), ()):
             dx_, dy_ = bx_ - ax_, by_ - ay_
             t_ = max(0.0, min(1.0, ((x - ax_) * dx_ + (y - ay_) * dy_) / (dx_ * dx_ + dy_ * dy_ or 1e-9)))
-            if math.hypot(x - ax_ - dx_ * t_, y - ay_ - dy_ * t_) < hw_ - r:
+            if math.hypot(x - ax_ - dx_ * t_, y - ay_ - dy_ * t_) < hw_ + r:
                 return True
         return False
 
     n_l, n_t, n_p = len(lamps), len(trees), len(posts)
     lamps = [q for q in span(lamps, 0.3, 0.4, "lamps") if not in_lane(q[0], q[1], 0.22)]
-    trees = [q for q in span(trees, 0.4, 0.7, "trees") if not in_lane(q[0], q[1], 0.5)]
-    posts = [q for q in span(posts, 0.7, 1.0, "posts") if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 2.2) or not in_lane(q[0], q[1])]
+    trees = [q for q in span(trees, 0.4, 0.7, "trees") if not in_lane(q[0], q[1], q[2])]
+    posts = [q for q in span(posts, 0.7, 1.0, "posts") if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 4.6) or not in_lane(q[0], q[1], q[2])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
     stage("rail", data=("rail.json",))

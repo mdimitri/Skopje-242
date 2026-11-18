@@ -1,10 +1,11 @@
-"""Traffic lights that actually work: every signalised junction runs one 32 s cycle (two groups of approaches,
+"""Traffic lights: every signalised junction runs one 50 s cycle (two groups of approaches,
 green / yellow / all-red; the group on the bigger road gets the longer green), and neighbouring junctions are offset
 into a green wave along the city's main east-west axis, so a car driving at ~45 km/h meets green after green.  AI
 traffic stops on red and yellow.  An emergency vehicle with its siren on turns the lights ahead of it green for itself."""
 import math
 
 import pyray as rl
+from driving import SIGNAL_STOP_BUFFER
 
 CYCLE = 50.0
 GREEN, YELLOW, CLEAR = 24.0, 3.0, 1.5          # green of the major group; the minor one gets the rest of the cycle
@@ -42,7 +43,9 @@ class Signals:
         self.stopd = {}                                  # (edge, end) -> metres before the junction where its cars stop: right at the pole
         for i, it in enumerate(self.items):
             lx, lz, jx, jz = it[4], it[5], it[6], it[7]
-            if lx == lx:
+            if len(it) > 9:
+                d = it[9]
+            elif lx == lx:
                 ax, ay = self._axis(i)
                 d = min(40.0, max(4.0, (jx - lx) * ax + (jz - lz) * ay - 0.6))
             else:
@@ -58,7 +61,7 @@ class Signals:
         self.major = {n: (1 if crank.get((self.cl[n], 1), 0) > crank.get((self.cl[n], 0), 0) else 0) for n in self.nodes}
         self._order = sorted((i for i in range(len(self.items)) if self.items[i][4] == self.items[i][4]), key=lambda i: self.items[i][4])      # head-only signals (no pole: x is NaN) are never drawn, and NaN would break the sort      # by x: draw() only walks the strip in view
         self._xs = [self.items[i][4] for i in self._order]
-        self.pre = {}                                    # junction -> (group held green, until)
+        self.pre = {}                                    # junction -> (requested group, clearing group, yellow end, green start, hold end)
         self.t = 0.0
 
     def update(self, dt):
@@ -68,8 +71,11 @@ class Signals:
         """0 green, 1 yellow, 2 red for signal i."""
         node, _e, _end, grp, _lx, _lz, jx, _jz, *_h = self.items[i]
         p = self.pre.get(node)
-        if p is not None and p[1] > self.t:
-            return 0 if grp == p[0] else 2
+        if p is not None and self.t < p[4] + CLEAR:
+            active, clearing, yellow_end, green_start, hold_end = p
+            if self.t < yellow_end:
+                return 1 if grp == clearing else 2
+            return 0 if grp == active and green_start <= self.t < hold_end else 2
         ph = (self.t - self.anchor.get(node, jx) / WAVE) % CYCLE
         g1 = GREEN + YELLOW + CLEAR                      # the major group runs first, the minor one after it
         if grp == self.major.get(node, 0):
@@ -95,24 +101,45 @@ class Signals:
                 if d > best:
                     best, grp = d, g
             if grp is not None and best > 0.5:
-                self.pre[node] = (grp, self.t + 2.0)
+                p = self.pre.get(node)
+                if p is not None and self.t < p[4]:
+                    if p[0] == grp:
+                        self.pre[node] = (*p[:4], max(p[4], self.t + 2.0))
+                    continue
+                states = {self.items[i][3]: self.state(i) for i in idx}
+                if states[grp] == 0:
+                    self.pre[node] = (grp, None, self.t, self.t, self.t + 2.0)
+                    continue
+                clearing = next((g for g, state in states.items() if g != grp and state != 2), None)
+                yellow_end = self.t + YELLOW if clearing is not None else self.t
+                green_start = yellow_end + CLEAR
+                self.pre[node] = (grp, clearing, yellow_end, green_start, green_start + 2.0)
 
-    def red_ahead(self, x, y, h, reach=60.0):
+    def red_ahead(self, x, y, h, reach=60.0, *, front=0.0, speed=0.0):
         """Distance from (x, y) to the stop line of the nearest signal that is not green on the approach a vehicle at (x, y)
         heading h is driving up to (None when there is none): for vehicles that follow a line of their own, not the road graph."""
         hx, hy = math.cos(h), math.sin(h)
         best = None
         for node, ((jx, jz), idx) in self.nodes.items():
             dx, dy = jx - x, jz - y
-            if abs(dx) > reach + 12 or abs(dy) > reach + 12:
+            if abs(dx) > reach + 40 or abs(dy) > reach + 40:
                 continue
             fwd = dx * hx + dy * hy
-            if not -2.0 < fwd < reach + 9.0 or abs(dy * hx - dx * hy) > 14.0:
+            if not -2.0 < fwd < reach + 40.0 or abs(dy * hx - dx * hy) > 14.0:
                 continue
             for i in idx:
                 ax, ay = self._axis(i)
-                if ax * hx + ay * hy > 0.8 and self.state(i) != 0 and (best is None or fwd - 9.0 < best):
-                    best = fwd - 9.0                      # the stop line, like the cars' 9 m before the junction
+                k = (self.items[i][1], self.items[i][2])
+                rem = fwd - self.stopd[k] - front - SIGNAL_STOP_BUFFER
+                if not -1.5 < rem < reach or ax * hx + ay * hy <= 0.8:
+                    continue
+                if abs(-dx * ay + dy * ax) > self.edges[k[0]]["w"] / 2 + 1.0:
+                    continue
+                state = self.state(i)
+                if state == 1 and speed > 2.0 and rem < speed * speed / 7.0 + 0.5:
+                    continue       # already committed when the light changes to yellow
+                if state and (best is None or rem < best):
+                    best = rem
         return best
 
     def _axis(self, i):

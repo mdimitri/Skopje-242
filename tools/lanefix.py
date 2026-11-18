@@ -3,14 +3,7 @@ A boulevard that has 3 lanes a side, 2 between two junctions and 3 again looks w
 `lanes` tags that are often missing on the short pieces inside junctions.  `through_pairs` finds which edges continue each
 other at a node; `repair` raises the dips."""
 import math
-
-
-def per_way(e):
-    """Lanes in each travel direction (same rule as roads3d.lanes_per_way)."""
-    n, w = e.get("lanes", 0), e["w"]
-    if e["ow"]:
-        return n if n else max(1, int(round(w / 3.5)))
-    return max(1, n // 2) if n else (2 if w >= 13.0 else 1)
+from roadwidth import lane_count as per_way
 
 
 def _out_dir(e, node):
@@ -21,8 +14,7 @@ def _out_dir(e, node):
 
 
 def through_pairs(edges, min_cos=-0.82):
-    """{(edge index, node): partner edge index}: at each node, the other drivable edge of the same kind (class group and
-    one-way-ness) that continues straight on, mutually best."""
+    """Find mutually best straight continuations with compatible directions at the shared node."""
     inc = {}
     for i, e in enumerate(edges):
         if e["drive"] and not e["bridge"]:
@@ -38,6 +30,8 @@ def through_pairs(edges, min_cos=-0.82):
             for j in ids:
                 if j == i or edges[j]["ow"] != edges[i]["ow"] or edges[j]["a"] == edges[j]["b"]:
                     continue
+                if edges[i]["ow"] and (edges[i]["a"] == n) == (edges[j]["a"] == n):
+                    continue                                     # two arrivals or two departures cannot form a through road
                 dj = _out_dir(edges[j], n)
                 c = di[0] * dj[0] + di[1] * dj[1]
                 if c < min_cos and (cand is None or c < cand[0]):
@@ -80,7 +74,8 @@ def dips(edges, chain_list, max_len=250.0):
             j = k
             while j + 1 < len(ch) and c[j + 1] == c[k]:
                 j += 1
-            if k > 0 and j < len(ch) - 1 and c[k - 1] > c[k] and c[j + 1] > c[k] and sum(edges[i]["len"] for i in ch[k:j + 1]) <= max_len:
+            if k > 0 and j < len(ch) - 1 and c[k - 1] > c[k] and c[j + 1] > c[k] and sum(edges[i]["len"] for i in ch[k:j + 1]) <= max_len \
+                    and not any(edges[i].get("directional_lanes") for i in ch[k - 1:j + 2]):
                 found.append((ch[k:j + 1], min(c[k - 1], c[j + 1])))
             k = j + 1
     return found
