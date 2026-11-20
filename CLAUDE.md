@@ -63,3 +63,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Repo sync workflow (Claude and Codex)
+
+- Every code or asset change ends on remote `main`: `git pull --rebase`, then `git push origin main` (no PRs).
+- Never leave work uncommitted at the end of a task.
+- Run `git status` before bumping the build number; "Build N" commits must not leave untracked source or assets behind.
+- Start each task with `git fetch` and rebase onto `origin/main`.
+- If `git status` shows a source or asset file that is neither committed nor ignored, stop and ask.
+- Never commit `settings.json`, `saves/`, `output/`, `tmp/` or built world data.

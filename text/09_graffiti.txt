@@ -625,3 +625,153 @@ graffiti.0204 = НИКОЈ НЕ\nГЛЕДА НАГОРЕ
 
 # [graffiti 205]
 graffiti.0205 = ТУКА БЕШЕ\nПЕЕР, ТУКА Е
+
+# [graffiti 206 · civic satire]
+graffiti.0206 = ВЕТИЈА ПАТ\nНИ ОСТАВИЈА ДУПКА
+
+# [graffiti 207 · civic satire]
+graffiti.0207 = КАДЕ ОДАТ\nНАШИТЕ ПАРИ?
+
+# [graffiti 208 · civic satire]
+graffiti.0208 = ПЕЧАТ ИМА\nОДГОВОР НЕМА
+
+# [graffiti 209 · civic satire]
+graffiti.0209 = ТЕНДЕР ЗА\nДРУГАРОТ
+
+# [graffiti 210 · civic satire]
+graffiti.0210 = ЗА СВОИТЕ\nНЕМА РЕД
+
+# [graffiti 211 · civic satire]
+graffiti.0211 = ВРСКА НЕ Е\nКВАЛИФИКАЦИЈА
+
+# [graffiti 212 · civic satire]
+graffiti.0212 = ПЛАТА МАЛА\nГОВОР ГОЛЕМ
+
+# [graffiti 213 · civic satire]
+graffiti.0213 = БУЏЕТ ЗА ЛУЃЕ\nНЕ ЗА ФОТЕЛЈИ
+
+# [graffiti 214 · civic satire]
+graffiti.0214 = НАРОДОТ ПЛАЌА\nГАЗДАТА СЕ СЛИКА
+
+# [graffiti 215 · civic satire]
+graffiti.0215 = СИТЕ ВЕТУВААТ\nКОЈ ЌЕ СРАБОТИ?
+
+# [graffiti 216 · civic satire]
+graffiti.0216 = ПРЕД ИЗБОРИ\nИМА И АСФАЛТ
+
+# [graffiti 217 · civic satire]
+graffiti.0217 = ИЗБОРИТЕ МИНАА\nДУПКИТЕ ОСТАНАА
+
+# [graffiti 218 · civic satire]
+graffiti.0218 = ИЗБОРЕН ЛЕТОК\nЗА ПОД МАСА
+
+# [graffiti 219 · civic satire]
+graffiti.0219 = ЕДЕН ГЛАС\nНЕ Е СЕНДВИЧ
+
+# [graffiti 220 · civic satire]
+graffiti.0220 = ЛЕБ ИМА?\nГОВОР ИМА.
+
+# [graffiti 221 · civic satire]
+graffiti.0221 = АВТОБУС ЧЕКАМ\nНЕ ГОВОР
+
+# [graffiti 222 · civic satire]
+graffiti.0222 = ЗА СЕКОЈА ДУПКА\nЕДНА ПРЕС-КОНФЕРЕНЦИЈА
+
+# [graffiti 223 · civic satire]
+graffiti.0223 = ПРОЕКТ НА ХАРТИЈА\nКАЛ ДО КОЛЕНА
+
+# [graffiti 224 · civic satire]
+graffiti.0224 = ВЕТЕНО ЛАНИ\nОДЛОЖЕНО ПАК
+
+# [graffiti 225 · civic satire]
+graffiti.0225 = ИСТА ДУПКА\nНОВА ЛЕНТА
+
+# [graffiti 226 · civic satire]
+graffiti.0226 = СЕЧАТ ЛЕНТА\nНЕ ОТВОРААТ НИШТО
+
+# [graffiti 227 · civic satire]
+graffiti.0227 = КАЈ Е ПАРКОТ?\nИМАШЕ ТУКА.
+
+# [graffiti 228 · civic satire]
+graffiti.0228 = ПАРКОТ Е НАШ\nНЕ Е ПЛАЦ
+
+# [graffiti 229 · civic satire]
+graffiti.0229 = ДРВО НЕ Е\nПРАЗНО МЕСТО
+
+# [graffiti 230 · civic satire]
+graffiti.0230 = КЛУПА САКАМ\nНЕ СПОМЕНИК
+
+# [graffiti 231 · civic satire]
+graffiti.0231 = ДАЈ НИ ВОЗДУХ\nНЕ ПЛАКАТИ
+
+# [graffiti 232 · civic satire]
+graffiti.0232 = СМОГОТ НЕ ЧЕКА\nСЕДНИЦА
+
+# [graffiti 233 · civic satire]
+graffiti.0233 = ЈАВНО ЗНАЧИ\nЗА СИТЕ
+
+# [graffiti 234 · civic satire]
+graffiti.0234 = НАШ ТРОТОАР\nНИВНИ ЏИПОВИ
+
+# [graffiti 235 · civic satire]
+graffiti.0235 = ФОТЕЛЈА ИМА\nКЛУПА НЕМА
+
+# [graffiti 236 · civic satire]
+graffiti.0236 = ПРИЈАВИВ ЛАНИ\nУШТЕ СУМ БРОЈ
+
+# [graffiti 237 · civic satire]
+graffiti.0237 = ШАЛТЕР: УТРЕ\nСМЕТКА: ДЕНЕС
+
+# [graffiti 238 · civic satire]
+graffiti.0238 = УСЛУГА НА\nСЛУЖБЕН ПАТ
+
+# [graffiti 239 · civic satire]
+graffiti.0239 = СИМНИ СЕ\nОД ФОТЕЛЈА
+
+# [graffiti 240 · civic satire]
+graffiti.0240 = ИЗВЕШТАЈОТ СЈАЕ\nУЛИЦАТА ТЕМНА
+
+# [graffiti 241 · civic satire]
+graffiti.0241 = КОЛКУ ЧИНИ\nОВА МОЛЧЕЊЕ?
+
+# [graffiti 242 · civic satire]
+graffiti.0242 = КАЈ Е СМЕТКАТА\nЗА ВЕТУВАЊАТА?
+
+# [graffiti 243 · civic satire]
+graffiti.0243 = ФАКТУРА ИМА\nМАЈСТОР НЕМА
+
+# [graffiti 244 · civic satire]
+graffiti.0244 = СÈ Е СПОРЕД ПЛАН\nПЛАНОТ ГО НЕМА
+
+# [graffiti 245 · civic satire]
+graffiti.0245 = ЗАПИСНИК ИМА\nНИКОЈ НЕ БИЛ
+
+# [graffiti 246 · civic satire]
+graffiti.0246 = КОЈ ПОТПИША?\nКОЈ СЕ ОФАЈДИ?
+
+# [graffiti 247 · civic satire]
+graffiti.0247 = ТЕНДЕРОТ ЈАВЕН\nЦЕНАТА ТАЈНА
+
+# [graffiti 248 · civic satire]
+graffiti.0248 = ГРАДОТ НЕ Е\nФАМИЛИЈАРЕН БИЗНИС
+
+# [graffiti 249 · civic satire]
+graffiti.0249 = ГРАДОТ ИМА ГЛАС\nИ ПО ИЗБОРИ
+
+# [graffiti 250 · civic satire]
+graffiti.0250 = ДОЈДИ ПЕШКИ\nПА ВЕТИ ТРОТОАР
+
+# [graffiti 251 · civic satire]
+graffiti.0251 = ПРОБАЈ ЈА\nВОДАТА, ШЕФЕ
+
+# [graffiti 252 · civic satire]
+graffiti.0252 = НИЕ ЧЕКАМЕ\nТИ СЕ СЛИКАШ
+
+# [graffiti 253 · civic satire]
+graffiti.0253 = ШТО ЌЕ ОТВОРИШ\nБЕЗ НОЖИЦИ?
+
+# [graffiti 254 · civic satire]
+graffiti.0254 = СВЕТЛО ЗА МААЛО\nНЕ ЗА БИЛБОРД
+
+# [graffiti 255 · civic satire]
+graffiti.0255 = ВРАТИ ЈА КЛУПАТА\nЗЕМИ СИ ГО ПЛАКАТОТ
