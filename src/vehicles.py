@@ -7,6 +7,7 @@ _STYLE = {"hatch": (0.40, 0.95, 1.44), "sedan": (0.40, 0.98, 1.45), "taxi": (0.4
           "bike": (0.0, 0.55, 1.05), "heli": (0.55, 1.3, 3.4), "apc": (0.62, 1.55, 2.35), "wagon": (0.40, 0.97, 1.48), "limo": (0.40, 0.98, 1.40), "truck": (0.55, 1.15, 3.0), "tractor": (0.55, 1.00, 2.5)}
 BLACK, WHITE_, SILVER = (30, 30, 34), (236, 236, 240), (190, 192, 198)
 ARMY = (78, 92, 52)                                           # olive drab of the army's vehicles
+DOUBLE_DECKER_LENGTH = 10.8
 
 # name, style, L, W, roof (None = style default), traffic weight, fixed colour (None = random paint), extra
 _V = [
@@ -99,8 +100,8 @@ _V = [
     ("Ford Transit Shverc", "van", 5.20, 2.00, 2.30, 2, WHITE_, "roofload"),
     ("Volvo V70 Dedov", "wagon", 4.71, 1.95, None, 2, SILVER, ""),
     ("Golf Chetvorka Bez Registracija", "hatch", 4.15, 1.88, None, 5, None, ""),
-    ("JSP Dvokatnik", "bus", 10.8, 2.40, 4.30, 0, (200, 32, 36), "jsp"),
-    ("JSP Zglobni", "bus", 12.0, 2.40, 3.10, 0, (200, 32, 36), "jsp"),
+    ("JSP Dvokatnik", "bus", DOUBLE_DECKER_LENGTH, 2.40, 4.30, 0, (200, 32, 36), "jsp"),
+    ("JSP Zglobni", "bus", DOUBLE_DECKER_LENGTH * 1.5, 2.40, 3.10, 0, (200, 32, 36), "jsp"),
     # ---- two-wheelers: only ever got by knocking an NPC rider off (traffic weight 0)
     ("Velosiped", "bike", 1.75, 0.55, 1.05, 0, (200, 40, 40), "bike"),
     ("Moped Tomos", "bike", 1.80, 0.65, 1.10, 0, (210, 90, 30), "moped"),
@@ -127,6 +128,14 @@ DIMS = [(v[2], v[3] * 0.93, _STYLE[v[1]][0], _BELT_HEIGHT.get(v[0], _STYLE[v[1]]
 FIXED = [v[6] for v in _V]
 EXTRA = [v[7] for v in _V]
 BUS = 6
+ARTIC_BUS = IDS.index("JSP Zglobni")
+ARTIC_LENGTH = DIMS[ARTIC_BUS][0]
+ARTIC_HINGE = ARTIC_LENGTH * (0.5 - 1.0 / 1.7)              # rear section is 70% of the front, measured at the hinge
+ARTIC_FRONT_AXLE = ARTIC_LENGTH / 2 - 2.45
+ARTIC_MIDDLE_AXLE = ARTIC_HINGE + 1.8
+ARTIC_REAR_AXLE = ARTIC_HINGE - 4.15
+ARTIC_WB = ARTIC_FRONT_AXLE - ARTIC_MIDDLE_AXLE
+ARTIC_JACK = 0.82
 MARITSA = IDS.index("Maritsa")
 HEAVY = [IDS.index(n) for n in ("Kamion Tovarnik", "Tir Rinfuz", "Cisterna Gorivo")]      # lorries: big roads only, no tight turns
 SEMI = IDS.index("Tir Rinfuz")
@@ -176,6 +185,8 @@ def rear_axle_x(kind):
     import carbody
     if EXTRA[kind] == "semi":
         return SEMI_REAR
+    if kind == ARTIC_BUS:
+        return ARTIC_MIDDLE_AXLE
     if STYLE[kind] in carbody.LOFT_STYLES and carbody.has(IDS[kind]):
         return carbody.layout(IDS[kind], DIMS[kind][0])["ax_r"]
     return -DIMS[kind][0] * (0.30 if STYLE[kind] == "bus" else 0.31)

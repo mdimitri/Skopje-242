@@ -1,13 +1,28 @@
 """Where the game's work runs on a hybrid CPU (Intel P-cores + E-cores) under Windows.
 
-The frame loop keeps Windows' defaults (raising its priority measured no gain, 2026-11-13).  Background worker processes (model building,
-photo fitting) ask for the opposite: below-normal priority and EcoQoS on, so Windows parks them on the efficiency cores and they
-never compete with the frame.  Elsewhere (Linux, macOS, an old Windows) every call is a silent no-op."""
+The window thread has higher priority than loading work. Background worker processes use below-normal priority and EcoQoS.
+Elsewhere (Linux, macOS, an old Windows) every call is a silent no-op."""
 import sys
 
 _PROCESS_POWER_THROTTLING = 4                  # ProcessPowerThrottling (PROCESS_INFORMATION_CLASS)
 _EXECUTION_SPEED = 0x1                         # PROCESS_POWER_THROTTLING_EXECUTION_SPEED
 ABOVE_NORMAL, BELOW_NORMAL = 0x8000, 0x4000    # priority classes
+
+
+def thread_priority(priority):
+    """Adjust only the calling thread. Windows priorities 2 and -1 are highest and below normal."""
+    import os
+    if sys.platform != "win32" or os.environ.get("SK242_NOSCHED"):
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetCurrentThread.restype = wintypes.HANDLE
+        kernel.SetThreadPriority.argtypes = (wintypes.HANDLE, ctypes.c_int)
+        return bool(kernel.SetThreadPriority(kernel.GetCurrentThread(), priority))
+    except (AttributeError, OSError):
+        return False
 
 
 def _apply(prio, eco):

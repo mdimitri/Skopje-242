@@ -17,9 +17,9 @@ def _job(spec):
     import gl3d                                            # the worker imports it once
     kind = spec[0]
     if kind == "ped":
-        return gl3d.ped_arrays(*spec[1:])
+        return gl3d.ped_visual(*spec[1:])
     if kind == "car":
-        return gl3d.car_arrays(spec[1], spec[2], (), 0.0, False, True)
+        return gl3d.car_scene_arrays(spec[1], spec[2])
     if kind == "carlod":                                   # front wheels in the body (straight): one draw call for a distant car
         return gl3d.car_arrays(spec[1], spec[2], (), 0.0, False, False)
     raise ValueError(spec)

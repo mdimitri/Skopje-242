@@ -31,6 +31,13 @@ KEYS_HINT = "[Q/E] станица   [, / .] песна"
 NO_TRACK = "…"
 
 
+def _report(message):
+    try:
+        print(message, flush=True)
+    except UnicodeEncodeError:
+        print(message.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
+
+
 def _static(sr=audio_mod.SR, dur=0.3):
     """Short, quiet tuning blip: soft hiss fading in and out."""
     rng = np.random.default_rng(7)
@@ -98,6 +105,25 @@ def logo_for(name, base=MUSIC):
         return None
     pick = [f for f in imgs if "logo" in f.lower()] or (imgs if len(imgs) == 1 else [])
     return os.path.join(d, pick[0]) if pick else None
+
+
+def load_logo(name):
+    """Downsample the station artwork to the radio button's size before uploading it."""
+    from PIL import Image
+
+    path = logo_for(name)
+    if path is None:
+        return None
+    rl = audio_mod.rl
+    with Image.open(path) as src:              # Pillow handles Cyrillic paths on Windows
+        logo = src.convert("RGBA")
+        logo.thumbnail((72, 72), Image.Resampling.BILINEAR, reducing_gap=None)
+        pixels = logo.tobytes()
+    data = rl.ffi.from_buffer(pixels)
+    img = rl.Image(data, logo.width, logo.height, 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+    tex = rl.load_texture_from_image(img)
+    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_BILINEAR)
+    return tex
 
 
 def scan(base=MUSIC):
@@ -221,20 +247,10 @@ class Radio:
         nm = self.stations[self.sel][0]
         cache = self.__dict__.setdefault("_logos", {})
         if nm not in cache:
-            tex = None
             try:
-                p = logo_for(nm)
-                if p:
-                    rl = self._rl()
-                    with open(p, "rb") as f:
-                        raw = f.read()
-                    img = rl.load_image_from_memory(os.path.splitext(p)[1].lower(), raw, len(raw))
-                    tex = rl.load_texture_from_image(img)
-                    rl.unload_image(img)
-                    rl.set_texture_filter(tex, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+                cache[nm] = load_logo(nm)
             except Exception:  # noqa: BLE001
-                tex = None
-            cache[nm] = tex
+                cache[nm] = None
         return cache[nm]
 
     def keys_line(self):
@@ -284,17 +300,20 @@ class Radio:
         job = {"station": self.sel, "gen": self.gen, "pos": self.next_pos, "out": os.path.join(self._dir, f"frag{self._seq % 3}.wav"), "ok": False, "done": False, "path": None}
 
         def work():
-            for pos, p in pool:
-                try:
-                    if cut_fragment(p, job["out"], random.uniform(*FRAG)):
+            try:
+                for pos, p in pool:
+                    try:
+                        ok = cut_fragment(p, job["out"], random.uniform(*FRAG))
+                    except Exception as e:  # noqa: BLE001
+                        _report(f"[radio] FAILED {p}: {e}")
+                        continue
+                    if ok:
                         job["ok"], job["path"], job["pos"] = True, p, pos
-                        print(f"[radio] playing a part of {p}", flush=True)
+                        _report(f"[radio] playing a part of {p}")
                         break
-                except Exception as e:  # noqa: BLE001
-                    print(f"[radio] FAILED {p}: {e}", flush=True)
-                    continue
-                print(f"[radio] cannot decode {p}", flush=True)
-            job["done"] = True
+                    _report(f"[radio] cannot decode {p}")
+            finally:
+                job["done"] = True
 
         job["thread"] = threading.Thread(target=work, daemon=True)
         self._job = job
@@ -302,11 +321,9 @@ class Radio:
 
     def _collect(self):
         j = self._job
-        if j is not None and j["gen"] != self.gen:        # station changed / track skipped meanwhile: forget it
+        if j is not None and j["done"]:
             self._job = None
-        elif j is not None and j["done"]:
-            self._job = None
-            if j["station"] == self.sel and not self.off:
+            if j["gen"] == self.gen and j["station"] == self.sel and not self.off:
                 if j["ok"]:
                     self._ready = j
                 else:
@@ -323,14 +340,7 @@ class Radio:
             self.snd, self.cur, self.t = snd, j["path"], 0.0
             self.cur_pos = j["pos"]
             order = self.orders[self.sel]
-            self.next_pos = j["pos"] + 1
-            if self.next_pos >= len(order):               # end of the playlist: a fresh shuffle, never the same song twice in a row
-                last = order[j["pos"]]
-                random.shuffle(order)
-                if len(order) > 1 and order[0] == last:
-                    k = random.randrange(1, len(order))
-                    order[0], order[k] = order[k], order[0]
-                self.next_pos = 0
+            self.next_pos = (j["pos"] + 1) % len(order)
             self.now = os.path.splitext(os.path.basename(j["path"]))[0].replace("_", " ")
             rl.set_sound_volume(snd, self.volume * self.aud.master)
             rl.play_sound(snd)

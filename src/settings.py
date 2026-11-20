@@ -25,6 +25,8 @@ def res_label(w, h):
 SCALE = ["Блиски соседи (остри пиксели)", "Мазно (билинеарно)"]
 AA = ["Исклучено", "MSAA 4x", "FXAA", "MSAA 4x + FXAA"]
 DETAIL = [TXT("settings.0001"), TXT("settings.0002"), TXT("settings.0003")]
+CHARACTER_DETAIL = [TXT("settings.0016"), TXT("settings.0017"), TXT("settings.0018")]
+MATERIAL_PACKS = [TXT("settings.0019"), TXT("settings.0020"), TXT("settings.0021")]
 TIME_SPEEDS = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0]
 DENSITY = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
 MAP_SOURCES = [TXT("settings.0004"), TXT("settings.0005"), TXT("settings.0006")]
@@ -40,7 +42,8 @@ SESSION_ONLY = ("debug_chase", "debug", "debug_tools", "debug_nolaw")   # never 
 MOUSE_MODE = ["Следење", "Управување", "Слободно гледање"]
 
 DEFAULTS = {
-    "resolution": RESOLUTIONS.index((1600, 900)), "aa": 1, "scale": 1, "fullscreen": False, "detail": 2,
+    "resolution": RESOLUTIONS.index((1600, 900)), "aa": 1, "scale": 1, "fullscreen": False, "detail": 2, "character_detail": 2,
+    "material_pack": 0,
     "vol_master": 0.8, "vol_sfx": 1.0, "vol_engine": 0.8, "vol_traffic": 0.5, "vol_ambient": 0.8, "vol_speech": 1.0, "vol_radio": 0.7,
     "lik": 0, "hour": 17.0, "time_speed": 3, "traffic": 3, "peds": 3,
     "ambulance": True, "fire": True, "voice": 1, "speech_speed": 2, "speech_freq": 3, "voice_colour": True, "aggro": 1, "lang": 1, "osm_source": 0, "smog": True, "smog_level": 1.0, "pollution": 1.0, "car_gloss": True, "car_gloss_k": 1.0, "dof": False, "dof_k": 1.0, "dof_g": 0.4,
@@ -53,11 +56,16 @@ class Settings(dict):
         super().__init__(DEFAULTS)
         try:
             with open(PATH, "r", encoding="utf-8") as f:
-                for k, v in json.load(f).items():
+                saved = json.load(f)
+                for k, v in saved.items():
                     if k in DEFAULTS and k not in SESSION_ONLY and type(v) is type(DEFAULTS[k]):
                         self[k] = v
+                if "material_pack" not in saved and saved.get("generated_textures") is True:
+                    self["material_pack"] = 1
         except Exception:  # noqa: BLE001 - first run or unreadable file: defaults
             pass
+        self["character_detail"] = max(0, min(len(CHARACTER_DETAIL) - 1, self["character_detail"]))
+        self["material_pack"] = max(0, min(len(MATERIAL_PACKS) - 1, self["material_pack"]))
 
     def save(self):
         try:

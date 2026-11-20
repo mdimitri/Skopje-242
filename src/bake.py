@@ -13,6 +13,7 @@ import pyray as rl
 
 from gfx import disc, fill_tris, quad, rect_rot, seg
 import gl3d
+import surfacepack
 
 PPM = 4.0                       # chunk texture resolution, pixels per metre
 SKEW = 0.22                     # apparent roof lift per metre of building height
@@ -89,7 +90,12 @@ def _crosswalk(xw):
     while k < w / 2 - 0.3:                            # zebra bars run along the road
         seg(x + rx * k - ax * 1.5, y + ry * k - ay * 1.5, x + rx * k + ax * 1.5, y + ry * k + ay * 1.5, 0.26, white)
         k += 1.0
-    seg(x + ax * 2.6, y + ay * 2.6, x + ax * 2.6 + rx * (w / 2 - 0.3), y + ay * 2.6 + ry * (w / 2 - 0.3), 0.14, white)   # stop line (right-hand lane)
+    stop = xw[6] if len(xw) > 6 else 1
+    if stop:
+        x, y = x + ax * 2.6, y + ay * 2.6
+        divider = xw[7] if len(xw) > 7 else 0.0
+        lo, hi = (-w / 2 + 0.3 if stop == 2 else divider), w / 2 - 0.3
+        seg(x + rx * lo, y + ry * lo, x + rx * hi, y + ry * hi, 0.14, white)
 
 
 def _quay_cells(w, x0, z0, side, n, sub=4, tol=0.025):
@@ -168,7 +174,7 @@ def _paint_quays(world, ox, oy, span, res=0.5):
     cut = w.quay_cut_v(X, Y)
     if not (cut < -0.05).any():
         return
-    H = w.th_v(X, Y).astype(np.float64)
+    H = w.th_v(X, Y, quay=cut).astype(np.float64)
     gy, gx = np.gradient(H, res)
     slope = np.hypot(gx, gy)
     fx, fy = (X + w.hx) / st, (Y + w.hy) / st
@@ -323,6 +329,16 @@ class Streamer:
         self._purge_t = 0
         self._part = {}       # key -> unfinished mesh upload (see _load_meshes)
 
+    def set_texture_pack(self, mode):
+        if surfacepack.select(mode):
+            for _, _, model in self.ground.values():
+                surfacepack.bind(model)
+            for cache in (self.meshes, self._part):
+                for entry in cache.values():
+                    for model in entry[0].values():
+                        surfacepack.bind(model)
+        return surfacepack.current_mode()
+
     # ---- ground mesh: the terrain under one chunk, textured with its baked ground texture
     def _ground_model(self, key, rt):
         w = self.world
@@ -355,6 +371,7 @@ class Streamer:
         if m is not None:
             gl3d.set_texture(m, rt.texture)
             gl3d.apply_ground_detail(m)
+            surfacepack.bind(m)
         return m
 
     # ---- ground textures
@@ -382,20 +399,22 @@ class Streamer:
             part = self._part[key] = [{}, list(ch["m"].items()) if ch else [], 1e9, -1e9, lite]
         out, todo = part[0], part[1]
         (self.lite_keys.add if lite else self.lite_keys.discard)(key)
+        processed = False
         while todo:
-            if deadline is not None and out and time.perf_counter() > deadline:
+            if deadline is not None and (out or processed) and time.perf_counter() > deadline:
                 return False
             mat, (off, n) = todo.pop(0)
+            processed = True
             pos, uv, col = self.world.mesh_arrays(off, n)
             if n:
                 ys = pos[:, 1]
                 part[2], part[3] = min(part[2], float(ys.min())), max(part[3], float(ys.max()))
-            if self.world.broken or getattr(self.world, "broken_extra", None):     # (helipad clearings use broken_extra only)
-                pos = self.world.hide_broken(pos, ch.get("bb"))
             if mat == 6 and ("graf" not in self.tex or lite):
                 continue                                     # atlas failed: no decals rather than facade-textured ones
             if (mat == 18 and (lite or self.detail < 1)) or (mat == 19 and (lite or self.detail < 2)):
                 continue                                     # facade relief / clutter (src/archkit.py TIER): detail setting, far ring
+            if self.world.broken or getattr(self.world, "broken_extra", None):
+                pos = self.world.hide_broken(pos, ch.get("bb"))
             m = gl3d.make_model(pos, uv, col)
             if m is not None:
                 names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")
@@ -404,8 +423,11 @@ class Streamer:
                     pass
                 elif mat == 3 and getattr(self.world, "roads3d", False):
                     gl3d.apply_road_detail(m)                        # manholes, cracks, patches, oil on the asphalt
+                elif mat == 3:
+                    gl3d.object_detail(m, "concrete", key[0] * 7 + key[1] * 11)
                 elif mat in (0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
-                    gl3d.apply_building_detail(m)                    # facade / roof relief towards the sun, grit, streaks
+                    gl3d.apply_building_detail(m, mat)               # facade / roof relief towards the sun, grit, streaks
+                surfacepack.bind(m)
                 out[mat] = m
         del self._part[key]
         self.stale.discard(key)
@@ -586,7 +608,7 @@ class Streamer:
 
 
 # ------------------------------------------------------------------ overview / minimap
-def bake_overview(world, size, path, progress=None):
+def bake_overview(world, size, path, progress=None, loading=None):
     """Whole city in one texture (far LOD, minimap, map). Cached as PNG. Returns (texture, width)."""
     P = progress or (lambda f, note="": None)
     stamp = f"{int(world.stamp)}"
@@ -651,19 +673,25 @@ def bake_overview(world, size, path, progress=None):
 
         pass_(f_areas, world.areas, 60, "land use & parks", 0.0, 0.2)
         pass_(f_water, world.wlines, 200, "rivers", 0.2, 0.25)
-        pass_(f_roads, [r for r in world.roads if not r["bridge"] and not r.get("worn")], 600, "roads", 0.25, 0.55)
-        pass_(f_roads, [r for r in world.roads if r["bridge"]], 600, "bridges", 0.55, 0.6)
-        pass_(f_bld, world.buildings, 400, "buildings", 0.6, 0.85)
-        pass_(f_trees, world.trees[::3], 1000, "trees", 0.85, 0.92)
+        pass_(f_roads, [r for r in world.roads if not r["bridge"] and not r.get("worn")], 160, "roads", 0.25, 0.55)
+        pass_(f_roads, [r for r in world.roads if r["bridge"]], 160, "bridges", 0.55, 0.6)
+        pass_(f_bld, world.buildings, 128, "buildings", 0.6, 0.85)
+        pass_(f_trees, world.trees[::3], 500, "trees", 0.85, 0.92)
         P(0.93, "saving the map")
         img = rl.load_image_from_texture(rt.texture)
         rl.image_flip_vertical(img)
-        try:
-            rl.export_image(img, png)
-            with open(png + ".ok", "w") as f:
-                f.write(str(os.path.getsize(png)))
-        except Exception:  # noqa: BLE001 - cache is optional
-            pass
+        def save_png():
+            try:
+                rl.export_image(img, png)
+                with open(png + ".ok", "w") as f:
+                    f.write(str(os.path.getsize(png)))
+            except Exception:  # noqa: BLE001 - cache is optional
+                pass
+
+        if loading is None:
+            save_png()
+        else:
+            loading(save_png)
         tex = rl.load_texture_from_image(img)
         rl.unload_image(img)
         rl.unload_render_texture(rt)

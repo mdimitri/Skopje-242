@@ -7,10 +7,11 @@ the line. Without transit.json (Overpass download, demo city) there are simply n
 from texts import TXT
 import json
 import math
-from driving import brake_speed, follow_speed, road_control_speed
+from driving import TRAFFIC_SPEED_FACTOR, brake_speed, fastest_route, follow_speed, road_control_speed, turn_indicator
 from roadwidth import half_width, lane_bounds
 import os
 import random
+from types import SimpleNamespace
 
 import actors
 import vehicles
@@ -285,20 +286,23 @@ def match_route(runs, w):
                     heapq.heappush(h, (nd, m))
         if b not in prev:
             return None
-        pts, n = [], b
+        moves, n = [], b
         while n != a:
             n, ei, dr = prev[n]
-            seg = w.edges[ei]["pts"]
-            pts = (list(seg) if dr == 1 else list(seg[::-1])) + pts
-        return pts
+            moves.append((ei, dr))
+        return moves[::-1]
     go, back = path(S, T), path(T, S)
     if go is None or back is None:
         return None
-    lap = go + back
-    out = [lap[0]]
-    for q in lap[1:]:
-        if math.dist(q, out[-1]) >= 4.0:
-            out.append(q)
+    # Join the outbound and return paths via a legal turn or a loop around the block.
+    out = []
+    for moves, end, onward in ((go, T, back[0]), (back, S, go[0])):
+        loop = fastest_route(w, end, end, pos[end], incoming=moves[-1], outgoing=onward, budget=500)
+        for ei, dr in (*moves, *(loop or ())):
+            seg = w.edges[ei]["pts"]
+            for q in seg if dr == 1 else reversed(seg):
+                if not out or math.dist(q, out[-1]) >= 4.0:
+                    out.append(q)
     return out
 
 
@@ -487,6 +491,15 @@ class Transit:
             if b not in sim.bodies or b.player_car:               # destroyed / removed, or the player took it
                 self.buses.remove(bus)
                 continue
+            if bus.i >= len(bus.line.pts) - 2 and getattr(bus.line, "cyc", None):
+                pts = bus.line.pts
+                segment = pts[bus.i:bus.i + 2]
+                earlier = next((k for k in range(bus.i - 2, -1, -1) if pts[k:k + 2] == segment), None)
+                if earlier is not None:
+                    bus.s -= bus.line.cum[bus.i] - bus.line.cum[earlier]
+                    bus.i = earlier
+                    bus.next_stop, bus.stop_k = next(((s, k) for s, k in bus.line.stops if s > bus.s + 3.0),
+                                                     (math.inf, None))
             if far or bus.i >= len(bus.line.pts) - 2 or getattr(bus, "off", 0) > 45:              # out of sight (or end of the line): leave quietly
                 if math.hypot(b.x - fx, b.y - fy) > 120:
                     sim.bodies.remove(b)
@@ -517,48 +530,44 @@ class Transit:
         h = math.atan2(ln.pts[k + 1][1] - y, ln.pts[k + 1][0] - x)
         right = self._lane(ln, k)[0]                                         # in its lane, not on the road's centre line
         x, y = x - math.sin(h) * right, y + math.cos(h) * right
-        if any(math.hypot(o.x - x, o.y - y) < 14 for o in sim.bodies):       # never on top of another vehicle
+        kind = self.rng.choice(self.kinds)
+        hl, hw = vehicles.HALF_L[kind], vehicles.HALF_W[kind]
+        if any(math.hypot(o.x - x, o.y - y) < max(14.0, hl + vehicles.HALF_L[o.kind] + 1.0) for o in sim.bodies):
             return
         w = sim.w
-        if getattr(w, "dgrid", None) and any(w.deck_h(x + math.cos(h) * d, y + math.sin(h) * d) is not None for d in (-7.0, 0.0, 7.0)):
+        if getattr(w, "dgrid", None) and any(w.deck_h(x + math.cos(h) * d, y + math.sin(h) * d) is not None for d in (-hl, 0.0, hl)):
             return                                                           # nor on / beside a bridge (it would start under the deck, in its parapets)
-        if any(math.hypot(px - x, py - y) < 7.0 + r_ for px, py, r_, *_ in w.points_near(x, y, 8.0)
-               if abs(-(px - x) * math.sin(h) + (py - y) * math.cos(h)) < vehicles.DIMS[self.kinds[0]][1] / 2 + r_ + 0.3):
+        if any(math.hypot(px - x, py - y) < max(7.0, hl) + r_ for px, py, r_, *_ in w.points_near(x, y, max(8.0, hl + 1.0))
+               if abs(-(px - x) * math.sin(h) + (py - y) * math.cos(h)) < hw + r_ + 0.3):
             return                                                           # nor on a post, a tree or a shelter
-        b = actors.Body(x, y, h, self.rng.choice(self.kinds), 0)
+        b = actors.Body(x, y, h, kind, 0)
         b.empty = False
         b.ctl = (0.0, 0.0, True)
         b.name = (TXT("transit.0006") + f'{ln.ref} → {ln.dest}')[:60]
         b.bus_line = ln.ref
         sim.bodies.append(b)
-        self.buses.append(Bus(ln, b, k + 1))
+        self.buses.append(Bus(ln, b, k))
 
     def _drive(self, bus, dt):
         """Pure pursuit along the line, slowing for curves and stops; physics does the rest."""
         b, ln = bus.body, bus.line
+        articulated = b.kind == vehicles.ARTIC_BUS
         fx, fy = math.cos(b.h), math.sin(b.h)
         vf = b.vx * fx + b.vy * fy
-        best, bi = 1e9, bus.i
-        for k in range(max(0, bus.i - 3), min(len(ln.pts) - 1, bus.i + 25)):   # progress = closest vertex nearby
-            if ln.cum[k] - getattr(bus, "s", ln.cum[bus.i]) > 60.0:   # lines double back on themselves: never skip ahead
-                break
-            d = math.hypot(ln.pts[k][0] - b.x, ln.pts[k][1] - b.y)
-            if d < best:
-                best, bi = d, k
-        bus.i = max(bus.i, bi)
-        bus.off = best
-        s_bus, bus.off = ln.cum[bus.i], best                     # exact distance along the line (vertices can be far apart)
+        # Project onto the current segment. Only consider its successor near their shared end.
+        # An inbound carriageway or slip lane can be closer while still far ahead along the route.
         seg = min(bus.i, len(ln.pts) - 2)
-        for i0 in (bus.i - 1, bus.i):
-            if 0 <= i0 < len(ln.pts) - 1:
-                ax, ay = ln.pts[i0]
-                bx_, by_ = ln.pts[i0 + 1]
-                sl = ln.cum[i0 + 1] - ln.cum[i0]
-                tt = 0.0 if sl <= 0 else max(0.0, min(1.0, ((b.x - ax) * (bx_ - ax) + (b.y - ay) * (by_ - ay)) / (sl * sl)))
-                dd = math.hypot(b.x - ax - (bx_ - ax) * tt, b.y - ay - (by_ - ay) * tt)
-                if dd < bus.off + 1e-6:
-                    s_bus, bus.off, seg = ln.cum[i0] + tt * sl, dd, i0
-        bus.s = s_bus
+        for i0 in range(seg, min(seg + 2, len(ln.pts) - 1)):
+            ax, ay = ln.pts[i0]
+            bx_, by_ = ln.pts[i0 + 1]
+            sl = ln.cum[i0 + 1] - ln.cum[i0]
+            tt = 0.0 if sl <= 0 else max(0.0, min(1.0, ((b.x - ax) * (bx_ - ax) + (b.y - ay) * (by_ - ay)) / (sl * sl)))
+            dd = math.hypot(b.x - ax - (bx_ - ax) * tt, b.y - ay - (by_ - ay) * tt)
+            if i0 == seg or (tt > 0 and dd <= bus.off + 1e-6):
+                s_bus, bus.off, seg = ln.cum[i0] + tt * sl, dd, i0
+            if sl * (1.0 - tt) > max(8.0, abs(vf) * dt + 3.0):
+                break
+        bus.s, bus.i = s_bus, seg
         j = bus.i
         while j < len(ln.pts) - 1 and ln.cum[j] - s_bus < 10.0 + abs(vf) * 0.8:   # look-ahead point (from the true position)
             j += 1
@@ -587,7 +596,8 @@ class Transit:
         sl = math.hypot(bx_ - ax, by_ - ay) or 1.0
         lat = (-(b.x - ax) * (by_ - ay) + (b.y - ay) * (bx_ - ax)) / sl     # where the bus is, across the line
         k2 = bus.i
-        while k2 < len(ln.pts) - 1 and ln.cum[k2] - s_bus < 4.0 + abs(vf) * 0.4:
+        heading_look = (4.3 if articulated else 4.0) + abs(vf) * 0.4
+        while k2 < len(ln.pts) - 1 and ln.cum[k2] - s_bus < heading_look:
             k2 += 1
         h_road = math.atan2(ln.pts[k2][1] - ln.pts[max(k2 - 1, 0)][1], ln.pts[k2][0] - ln.pts[max(k2 - 1, 0)][0])
         bus.lat = lat
@@ -600,8 +610,14 @@ class Transit:
         want = max(left + vehicles.HALF_W[b.kind] + 0.15 - off, min(hw - vehicles.HALF_W[b.kind] - off, want))
         bus.dodge += max(-1.5 * dt, min(1.5 * dt, want - bus.dodge))
         off += bus.dodge
+        if articulated:
+            turn = _wrap(h_road - math.atan2(by_ - ay, bx_ - ax))
+            # Approach sharp turns nearer the divider to leave room for both sections to swing.
+            off -= min(0.65, abs(turn) * 0.5)
+            off = max(left + vehicles.HALF_W[b.kind] + 0.15, min(hw - vehicles.HALF_W[b.kind], off))
         err = _wrap(h_road - b.h) + math.atan2(1.2 * (off - lat), abs(vf) + 3.0)
         if bus.wait > 0:                                            # at a stop: doors open
+            b.signal_turn(0, dt)
             bus.wait -= dt
             b.ctl = (0.0, 0.0, True)
             return
@@ -618,31 +634,162 @@ class Transit:
             self._at_stop(bus, k)
             return
         to_stop = bus.next_stop - s_bus
+        signal = 0
+        base_heading = math.atan2(by_ - ay, bx_ - ax)
+        for k in range(seg + 1, len(ln.pts) - 1):
+            distance = ln.cum[k] - s_bus
+            if distance > 40.0 or distance > to_stop:
+                break
+            (ax_, ay_), (bx_, by_) = ln.pts[k], ln.pts[k + 1]
+            signal = turn_indicator(_wrap(math.atan2(by_ - ay_, bx_ - ax_) - base_heading), distance, vf)
+            if signal:
+                break
+        b.signal_turn(signal, dt)
         v = 13.5 * (1.0 - min(0.8, abs(err) / 1.0))                # 45-50 km/h on the open road
-        v = min(v, limit, brake_speed(ln.cum[j] - s_bus - 2.0, 2.2, ahead_limit))
+        v = min(v, limit * TRAFFIC_SPEED_FACTOR,
+                brake_speed(ln.cum[j] - s_bus - 2.0, 2.2, ahead_limit * TRAFFIC_SPEED_FACTOR))
         v = min(v, brake_speed(to_stop - 1.5, 1.9))
         v = min(v, self._corner_v(ln, seg, s_bus))
+        if articulated and b.trh is not None:
+            v = min(v, 12.5 - 8.0 * abs(_wrap(b.trh - b.h)) / vehicles.ARTIC_JACK)
         g = self._gap(bus)
         if g is not None:
             v = min(v, follow_speed(*g))
+        clearance = self._swept_traffic_gap(b, vf)
+        if clearance is not None:
+            v = min(v, brake_speed(clearance - 0.55, 4.0))
         if self._pedestrian_in_path(bus):
             v = 0.0
         v = min(v, road_control_speed(self.sim, b.x, b.y, b.h, vehicles.HALF_L[b.kind], vf))
         if crawl:
             v = min(v, 1.5)                                         # a post on each side: inch through
-        thr = max(-1.0, min(1.0, (v - vf) * 0.5))
-        b.ctl = (thr, max(-1.0, min(1.0, err * 1.6)), v < 0.5 and abs(vf) < 1.0)
+        stopped = v < 0.5 and abs(vf) < 0.8
+        thr = 0.0 if stopped else max(-1.0, min(1.0, (v - vf) * 0.5))
+        b.ctl = (thr, max(-1.0, min(1.0, err * 1.6)), stopped)
+
+    def _swept_traffic_gap(self, b, speed):
+        """Check the actual turning footprint, including the rear section as the bus swings past another car."""
+        if speed < 0.8:
+            return None
+        sim = self.sim
+        traffic = getattr(getattr(sim, "traffic", None), "cars", ())
+        bodies = getattr(sim, "bodies", ())
+        hx, hy = math.cos(b.h), math.sin(b.h)
+        radius = 15.0 + speed * 1.45
+        obstacles = []
+        for o in (*traffic, *bodies):
+            dx, dy = o.x - b.x, o.y - b.y
+            if o is b or dx * dx + dy * dy > radius * radius:
+                continue
+            if isinstance(o, actors.Car):
+                ov = -2.2 if o.rev > 0 else o.v
+                vx, vy, z = ov * math.cos(o.h), ov * math.sin(o.h), o.gz
+            else:
+                vx, vy, z = o.vx, o.vy, o.az
+            if b.az is not None and z is not None and abs(b.az - z) > 2.2:
+                continue
+            if (dx * hx + dy * hy < -vehicles.HALF_L[b.kind] and vx * hx + vy * hy > speed
+                    and math.cos(o.h - b.h) > 0.8 and abs(-dx * hy + dy * hx) < 1.0):
+                continue
+            obstacles.extend((box, vx, vy) for box in actors.parts(o))
+        if not obstacles:
+            return None
+        probe = SimpleNamespace(x=b.x, y=b.y, h=b.h, kind=b.kind, trh=b.trh, tra=b.tra)
+        articulated = b.kind == vehicles.ARTIC_BUS
+        wb = (vehicles.ARTIC_WB if articulated else 3.7 + (vehicles.DIMS[b.kind][0] - 6.0) * 0.35)
+        wb *= actors.turn_radius_factor(speed, b.kind)
+        yaw = speed * math.tan(b.wheel) / wb
+        initial = [(h, actors._corners(x, y, h, l + 0.09, w + 0.09)) for x, y, h, l, w in actors.parts(b)]
+        for i in range(1, 7):
+            eta = i * 0.2
+            mid = probe.h + yaw * 0.1
+            probe.x += math.cos(mid) * speed * 0.2
+            probe.y += math.sin(mid) * speed * 0.2
+            probe.h += yaw * 0.2
+            if articulated:
+                actors.tow(probe)
+            for j, (x, y, h, l, w) in enumerate(actors.parts(probe)):
+                a = actors._corners(x, y, h, l + 0.09, w + 0.09)
+                for (ox, oy, oh, ol, ow), vx, vy in obstacles:
+                    px, py = ox + vx * eta, oy + vy * eta
+                    if (x - px) ** 2 + (y - py) ** 2 > (l + w + ol + ow + 0.2) ** 2:
+                        continue
+                    hit = actors._sat(a, h, actors._corners(px, py, oh, ol, ow), oh)
+                    if hit is not None:
+                        old_h, old_a = initial[j]
+                        old = actors._sat(old_a, old_h, actors._corners(ox, oy, oh, ol, ow), oh)
+                        if old is None or hit[0] > old[0] + 0.03:
+                            return speed * eta
+        return None
+
+    def drive_body(self, b, controls, dt):
+        """Integrate a bus step and keep the last clear position if turning would strike another vehicle."""
+        backing = getattr(b, "bus_reverse", 0.0) > 0 and controls[0] > 0 and not controls[2]
+        if backing:
+            b.bus_reverse = max(0.0, b.bus_reverse - dt)
+            controls = (-0.35 if b.speed < 1.4 else 0.0, 0.0, False)
+        else:
+            b.bus_reverse = 0.0
+        previous = b.x, b.y, b.h, b.trh, b.tra
+        before = actors.parts(b)
+        actors.drive(b, *controls, dt, self.sim.w)
+        if backing:
+            x, y, h, hl, hw = actors.parts(b)[-1]
+            hx, hy = math.cos(h), math.sin(h)
+            rx, ry = x - hx * hl, y - hy * hl
+            sim = self.sim
+            people = list(sim.peds.list)
+            if sim.mode == "foot":
+                people.append(sim.walker)
+            if (sim.w.surface(rx, ry) not in (2, 3) or sim.w.kerb(rx, ry)
+                    or any(abs((p.x - rx) * hx + (p.y - ry) * hy) < 2.0
+                           and abs((p.y - ry) * hx - (p.x - rx) * hy) < hw + 0.65
+                           and abs((getattr(p, "gz", getattr(p, "az", 0.0)) or 0.0) - (b.az or 0.0)) < 2.2 for p in people)):
+                b.x, b.y, b.h, b.trh, b.tra = previous
+                b.vx, b.vy, b.braking, b.bus_reverse = 0.0, 0.0, True, 0.0
+                return
+        for o in (*self.sim.traffic.cars, *self.sim.bodies):
+            radius = actors._RAD[b.kind] + actors._RAD[o.kind] + 0.25
+            if o is b or (b.x - o.x) ** 2 + (b.y - o.y) ** 2 > radius * radius:
+                continue
+            z = o.gz if isinstance(o, actors.Car) else o.az
+            if b.az is not None and z is not None and abs(b.az - z) > 2.2:
+                continue
+            for box in actors.parts(o):
+                other = actors._corners(*box)
+                for old, new in zip(before, actors.parts(b)):
+                    hit = actors._sat(actors._corners(*new), new[2], other, box[2])
+                    if hit is None or hit[0] < 0.003:
+                        continue
+                    was = actors._sat(actors._corners(*old), old[2], other, box[2])
+                    if was is None or hit[0] > was[0] + 1e-6:
+                        b.x, b.y, b.h, b.trh, b.tra = previous
+                        b.vx, b.vy, b.braking = 0.0, 0.0, True
+                        if backing:
+                            b.bus_reverse = 0.0
+                        elif controls[0] > 0:
+                            b.bus_blocked = getattr(b, "bus_blocked", 0.0) + dt
+                            if b.bus_blocked >= 1.2:
+                                b.bus_reverse, b.bus_blocked = 1.5, 0.0
+                        return
+        if b.speed > 0.8 or controls[2]:
+            b.bus_blocked = 0.0
 
     def _pedestrian_in_path(self, bus):
-        """Yield for pedestrians currently in the lane or projected to cross it before the bus can stop."""
+        """Yield ahead at zebras and brake for an imminent collision elsewhere."""
         b = bus.body
         hx, hy = math.cos(b.h), math.sin(b.h)
         speed = math.hypot(b.vx, b.vy)
         horizon = min(2.4, max(0.8, speed / 3.0 + 0.8))
         reach = 5.0 + (speed + 5.0) * horizon
+        zebra = getattr(getattr(self.sim, "w", None), "on_zebra", None)
+        z = getattr(b, "az", None)
         hl, hw = vehicles.HALF_L[b.kind], vehicles.HALF_W[b.kind]
         for p in self.sim.peds.list:
             if p.mode not in ("walk", "flee", "rage", "brawl"):
+                continue
+            pz = getattr(p, "gz", None)
+            if pz is not None and z is not None and abs(pz - z) > 2.2:
                 continue
             dx, dy = p.x - b.x, p.y - b.y
             if abs(dx) > reach or abs(dy) > reach:
@@ -656,6 +803,9 @@ class Transit:
                 continue
             t = -(dx * rvx + dy * rvy) / vv
             if not 0.0 < t <= horizon:
+                continue
+            if (zebra is not None and t > 0.65 and not zebra(p.x, p.y)
+                    and not zebra(p.x + p.vx * t, p.y + p.vy * t)):
                 continue
             px, py = dx + rvx * t, dy + rvy * t
             if abs(px * hx + py * hy) < hl + 1.0 and abs(-px * hy + py * hx) < hw + 0.5:
@@ -755,10 +905,15 @@ class Transit:
                         if d > 60:                              # out of sight: already waiting when you arrive
                             p = self._new_ped(x, y, face, "queue")
                         else:                                   # in sight: they walk up to the stop
-                            a = rng.uniform(0, 6.28)
-                            p = self._new_ped(x - (st[4] - st[0]) * 4 + math.cos(a) * 9, y - (st[5] - st[1]) * 4 + math.sin(a) * 9, a, "board")
-                            p.goal, p.face, p.bus = (x, y), face, None
-                            self.movers.append(p)
+                            along = rng.choice((-1, 1)) * rng.uniform(4.0, 8.0)
+                            ax, ay = x + st[2] * along, y + st[3] * along
+                            clear = all(sim.w.kerb(x + (ax - x) * f, y + (ay - y) * f) for f in (0.3, 0.6, 1.0))
+                            if clear:
+                                p = self._new_ped(ax, ay, face, "board")
+                                p.goal, p.face, p.bus = (x, y), face, None
+                                self.movers.append(p)
+                            else:
+                                p = self._new_ped(x, y, face, "queue")
                         q.append(p)
                 self.refill[k] = rng.uniform(30.0, 80.0)
             self.refill[k] = self.refill.get(k, 0) - dt
@@ -771,16 +926,21 @@ class Transit:
         for p in self.movers:
             if id(p) not in alive or p.mode not in ("board", "alight"):
                 continue
+            if p.mode == "alight" and (p.traffic_target is not None or p.vault_path is not None):
+                keep.append(p)
+                continue
             p.gz = sim.w.level(p.x, p.y, p.gz if p.gz is not None else -1e9)
             if p.mode == "board" and getattr(p, "goal", None):      # walking up to the stop to queue
                 dx, dy = p.goal[0] - p.x, p.goal[1] - p.y
                 dd = math.hypot(dx, dy)
                 if dd < 0.4:
                     p.mode, p.h, p.goal = "queue", p.face, None
+                    p.vx = p.vy = 0.0
                     continue
                 p.h = math.atan2(dy, dx)
-                p.x += dx / dd * p.v * dt
-                p.y += dy / dd * p.v * dt
+                p.vx, p.vy = dx / dd * p.v, dy / dd * p.v
+                p.x += p.vx * dt
+                p.y += p.vy * dt
                 p.anim += p.v * dt                                # stride follows the ground covered (render._gait)
                 keep.append(p)
                 continue
@@ -801,8 +961,9 @@ class Transit:
                     self.served[0] += 1
                     continue
                 p.h = math.atan2(dy, dx)
-                p.x += dx / dd * p.v * 1.2 * dt
-                p.y += dy / dd * p.v * 1.2 * dt
+                p.vx, p.vy = dx / dd * p.v * 1.2, dy / dd * p.v * 1.2
+                p.x += p.vx * dt
+                p.y += p.vy * dt
                 p.anim += p.v * 1.2 * dt
                 keep.append(p)
             else:
@@ -858,11 +1019,13 @@ class Transit:
         sim, b, ln = self.sim, bus.body, bus.line
         L = vehicles.DIMS[b.kind][0] / 2
         skip = {id(o.body) for o in self.buses} if not buses else ()
-        objs = [(o.x, o.y, o.h, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind], o.az, o.vx, o.vy) for o in sim.bodies
-                if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3) and id(o) not in skip]
+        objs = [(x, y, h, hw, hl, o.az, o.vx, o.vy) for o in sim.bodies
+                if o is not b and not (moving and o.speed < 0.3) and not (standing and o.speed >= 0.3) and id(o) not in skip
+                for x, y, h, hl, hw in actors.parts(o)]
         if not standing:
             objs += [(c.x, c.y, c.h, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c.gz,
-                      c.v * math.cos(c.h), c.v * math.sin(c.h)) for c in sim.traffic.cars]
+                      (-2.2 if c.rev > 0 else c.v) * math.cos(c.h),
+                      (-2.2 if c.rev > 0 else c.v) * math.sin(c.h)) for c in sim.traffic.cars]
             objs += [(p.x, p.y, 0.0, 0.5, 0.4, p.gz, 0.0, 0.0) for p in sim.peds.list
                      if p.mode in ("walk", "flee", "rage", "brawl")]
             if sim.mode == "foot" and sim.walker is not None:

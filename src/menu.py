@@ -222,6 +222,8 @@ def _rows(in_game, slots=(), settings_only=False):
         (3, Row("choice", "Скалирање на сликата", "scale", S.SCALE, note="кога прозорецот е поголем од избраната резолуција")),
         (3, H("Квалитет")),
         (3, Row("choice", TXT("menu.0010"), "detail", S.DETAIL, note=TXT("menu.0011"))),
+        (3, Row("choice", TXT("menu.0063"), "character_detail", S.CHARACTER_DETAIL, note=TXT("menu.0064"))),
+        (3, Row("choice", TXT("menu.0065"), "material_pack", S.MATERIAL_PACKS, note=TXT("menu.0066"))),
         (3, Row("choice", "Измазнување на рабови", "aa", S.AA, note="се применува по рестарт на играта")),
         (3, Row("toggle", "Сјајни возила", "car_gloss", note="рефлексии на стаклата и металик боја; исклучено = како досега")),
         (3, Row("slider", "Јачина на сјајот", "car_gloss_k", lo=0.0, hi=2.0, fmt=pct, note="100% е нормално")),
@@ -296,14 +298,28 @@ def _title_card(seconds=6.0):
 
 
 _TEX = {}
+_OUTCOME_TEX = {}
 _P0 = poster.Posters()
+_PORTRAIT_VARIANTS = ("", "win", "busted")
+_PORTRAIT_SECONDS = 1.25
 
 
-def _portrait(i):
-    if i not in _TEX:
-        p = C.image_path(i)
-        _TEX[i] = rl.load_texture(p) if p else None
-    return _TEX[i]
+def _portrait(i, variant=""):
+    cache = _OUTCOME_TEX if variant else _TEX
+    if variant and cache and next(iter(cache))[0] != i:
+        for texture in cache.values():
+            if texture:
+                rl.unload_texture(texture)
+        cache.clear()
+    key = (i, variant)
+    if key not in cache:
+        p = C.image_path(i, variant)
+        texture = rl.load_texture(p) if p else None
+        if texture:
+            rl.gen_texture_mipmaps(texture)
+            rl.set_texture_filter(texture, rl.TEXTURE_FILTER_BILINEAR)
+        cache[key] = texture
+    return cache[key] or (_portrait(i) if variant else None)
 
 
 def _layout(n, W, H, aspect):
@@ -357,7 +373,7 @@ def _hero_panel(sel, W, H, wheel=0):
     gray, white = _th["mu"], _th["fg"]
     _panel(px, py, pw, ph)
     tw = int(pw * 0.30)
-    t = _portrait(sel)
+    t = _TEX.get((sel, ""))
     pic_h = int(ph * 0.36)
     if t:
         poster.draw_fit(t, px + 10, py + 14, tw - 10, pic_h)
@@ -434,19 +450,14 @@ def pick_character(cfg, aud=None, music=None):
         cfg.save()
         snd("pick", 0.9 + 0.03 * (i % 7), 0.9)
         snd("cash", 1.0, 0.5)
-        t = time.time()
-        while time.time() - t < 0.45 and not rl.window_should_close():     # let the confirm sound ring
-            rl.begin_drawing()
-            rl.end_drawing()
         return False
 
     last = sel
-    pick_character._armed = False
+    hovered = None
+    hover_start = 0.0
+    armed = False
     pick_character.back = False
-    t_open = time.time()
     while True:
-        armed = time.time() - t_open > 0.35 and not rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT) or getattr(pick_character, "_armed", False)
-        pick_character._armed = armed                       # the click / key that closed the title card must not pick
         if rl.window_should_close():
             return True
         W, H = rl.get_screen_width(), rl.get_screen_height()
@@ -460,13 +471,21 @@ def pick_character(cfg, aud=None, music=None):
             return xr + c * (cw + gx), top + r * (ch + gy)
 
         m = rl.get_mouse_position()
+        hover = None
         for i in range(n):
             cx, cy = pos(i)
             if cx <= m.x < cx + cw and cy <= m.y < cy + ch:
+                hover = i
                 if rl.get_mouse_delta().x or rl.get_mouse_delta().y:
                     sel = i
                 if armed and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
                     return done(i)
+                break
+        now = time.monotonic()
+        if hover != hovered:
+            hovered, hover_start = hover, now
+        frame = int((now - hover_start) / _PORTRAIT_SECONDS) % len(_PORTRAIT_VARIANTS)
+        hover_variant = _PORTRAIT_VARIANTS[frame]
         if rl.is_key_pressed(rl.KEY_RIGHT):
             sel = (sel + 1) % n
         if rl.is_key_pressed(rl.KEY_LEFT):
@@ -508,12 +527,22 @@ def pick_character(cfg, aud=None, music=None):
             rl.draw_rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g, _th["hl"] if on else _th["paper"])
             rl.draw_rectangle_lines_ex(rl.Rectangle(cx - g, cy - g, cw + 2 * g, ch + 2 * g), 3 if on else 1,
                                        _th["a1"] if on else _th["ink"])
-            t = _portrait(i)
+            t = _TEX.get((i, ""))
             ih = ch - 74
             if t:
-                poster.draw_fit(t, cx + 6 - g, cy + 6 - g, cw - 12 + 2 * g, ih + 2 * g)
+                x, y = cx + 6 - g, cy + 6 - g
+                w, h = cw - 12 + 2 * g, ih + 2 * g
+                if i == hovered and hover_variant:
+                    # Fill the original portrait's frame even when the outcome PNG has a different aspect.
+                    scale = min(w / t.width, h / t.height)
+                    tw, th = round(t.width * scale), round(t.height * scale)
+                    poster.draw_fit(_OUTCOME_TEX.get((i, hover_variant)) or t, x + (w - tw) // 2, y + (h - th) // 2,
+                                    tw, th, cover=True)
+                else:
+                    poster.draw_fit(t, x, y, w, h)
             else:
-                rl.draw_circle(cx + cw // 2, cy + ih // 2, min(cw, ih) // 4, rl.Color(90 + i * 12, 120, 160 - i * 9, 255))
+                placeholder = rl.Color(min(255, 90 + i * 12), 120, max(0, 160 - i * 9), 255)
+                rl.draw_circle(cx + cw // 2, cy + ih // 2, min(cw, ih) // 4, placeholder)
                 ini = name[0]
                 font.draw_text(ini, cx + cw // 2 - font.measure_text(ini, 44, True) // 2, cy + ih // 2 - 26, 44, rl.WHITE, bold=True)
             fs = max(13, min(28, cw // 4))
@@ -534,6 +563,12 @@ def pick_character(cfg, aud=None, music=None):
         font.exit_button()
         font.draw_version(W, H)
         rl.end_drawing()
+        armed = True                                        # discard input carried over from the screen that opened the picker
+        pending = sel if (sel, "") not in _TEX else next((i for i in range(n) if (i, "") not in _TEX), None)
+        if pending is not None:
+            _portrait(pending)
+        elif hovered is not None and hover_variant and (hovered, hover_variant) not in _OUTCOME_TEX:
+            _portrait(hovered, hover_variant)
 
 
 def _first(rows):
@@ -808,7 +843,6 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 return "quit"
             if pick_character.back:
                 continue                        # Назад: the title menu again
-            cfg.save()
             if not pick_character.load:
                 return "play"
             break                               # L on the character screen: the load slots below

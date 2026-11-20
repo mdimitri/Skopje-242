@@ -5,6 +5,29 @@ import math
 from roadwidth import lane_count, lane_turns
 
 SIGNAL_STOP_BUFFER = 3.0
+TRAFFIC_SPEED_FACTOR = 1.10
+
+
+def corridor_entry(x, y, vx, vy, half_length, half_width, horizon):
+    """First intersection of relative linear motion with an axis-aligned box."""
+    lo, hi = 0.0, horizon
+    for pos, speed, half in ((x, vx, half_length), (y, vy, half_width)):
+        if abs(speed) < 1e-6:
+            if abs(pos) > half:
+                return None
+            continue
+        a, b = (-half - pos) / speed, (half - pos) / speed
+        lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
+        if lo > hi:
+            return None
+    return lo
+
+
+def turn_indicator(angle, distance, speed):
+    """Signal a meaningful upcoming turn within a few seconds of reaching it."""
+    if abs(angle) >= 0.45 and 0.0 <= distance <= max(13.0, min(40.0, speed * 3.0)):
+        return 1 if angle > 0.0 else -1
+    return 0
 
 
 def brake_speed(distance, decel, end_speed=0.0):
@@ -44,13 +67,15 @@ def road_control_speed(sim, x, y, heading, front, speed):
     return limit
 
 
+def _heading(edges, move, arriving):
+    ei, direction = move
+    pts = edges[ei]["pts"]
+    a, b = (pts[-2], pts[-1]) if arriving == (direction == 1) else (pts[0], pts[1])
+    return math.atan2((b[1] - a[1]) * direction, (b[0] - a[0]) * direction)
+
+
 def turn_angle(edges, incoming, outgoing):
-    headings = []
-    for (ei, direction), arriving in ((incoming, True), (outgoing, False)):
-        pts = edges[ei]["pts"]
-        a, b = pts[-2:] if arriving == (direction == 1) else pts[:2]
-        headings.append(math.atan2((b[1] - a[1]) * direction, (b[0] - a[0]) * direction))
-    return (headings[1] - headings[0] + math.pi) % (2.0 * math.pi) - math.pi
+    return (_heading(edges, outgoing, False) - _heading(edges, incoming, True) + math.pi) % (2.0 * math.pi) - math.pi
 
 
 def turn_lanes(edge, direction, angle):
@@ -63,15 +88,111 @@ def turn_lanes(edge, direction, angle):
             or "sharp_" + move in kinds or (move == "through" and bool(kinds & {"merge_to_left", "merge_to_right"}))]
 
 
+def _slip_bypasses(world):
+    """Find right turns duplicated by a short one-way link around the junction."""
+    edges, out = world.edges, world.out
+    slips = {i for i, e in enumerate(edges) if e["drive"] and e["ow"] and e["cls"].endswith("_link")}
+    forks = {}
+    for i in slips:
+        e = edges[i]
+        start, end, length = e["a"], e["b"], e["len"]
+        if not any(j not in slips for j, _ in out.get(start, ())):
+            continue
+        last = i
+        visited = {start}
+        while end not in visited and length <= 105.0:
+            visited.add(end)
+            exits = out.get(end, ())
+            if any(j not in slips for j, _ in exits):
+                forks.setdefault(start, []).append((i, last, end))
+                break
+            if len(exits) != 1:
+                break
+            last, _ = exits[0]
+            length += edges[last]["len"]
+            end = edges[last]["b"]
+
+    banned = set()
+    for i, edge in enumerate(edges):
+        if not edge["drive"] or i in slips:
+            continue
+        for d, node in ((1, edge["b"]), (-1, edge["a"])):
+            if d == -1 and edge["ow"]:
+                continue
+            incoming = (i, d)
+            heading = _heading(edges, incoming, True)
+            for slip, last, merge in forks.get(node, ()):
+                bearing = turn_angle(edges, incoming, (slip, 1))
+                bend = math.remainder(_heading(edges, (last, 1), True) - heading, math.tau)
+                if not (0.20 < bearing < 1.7 and 0.55 < bend < 2.2):
+                    continue
+                todo = [(0.0, node, incoming, ())]
+                seen = set()
+                while todo:
+                    cost, at, prev, path = heapq.heappop(todo)
+                    if at == merge:
+                        banned.update((a, b) for a, b in zip((incoming,) + path, path)
+                                      if turn_angle(edges, a, b) >= 0.5)
+                        break
+                    if prev in seen or len(path) >= 8:
+                        continue
+                    seen.add(prev)
+                    for move in out.get(at, ()):
+                        j, direction = move
+                        road = edges[j]
+                        length = cost + road["len"]
+                        if j == prev[0] or j in slips or length > 115.0 or road["cls"] == "service":
+                            continue
+                        if -0.5 < turn_angle(edges, prev, move) < 2.2:
+                            heapq.heappush(todo, (length, road["b" if direction == 1 else "a"], move, path + (move,)))
+    return banned
+
+
+def movement_lanes(world, incoming, outgoing, angle):
+    """Legal lane indices for a graph movement, including the slip-road bypass rule."""
+    edge, direction = world.edges[incoming[0]], incoming[1]
+    next_edge = world.edges[outgoing[0]]
+    slip = angle > 0.20 and next_edge["ow"] and next_edge["cls"].endswith("_link")
+    if abs(angle) > 2.2:
+        return [0]
+    if angle >= 0.5 or slip:
+        bypasses = getattr(world, "_slip_bypasses", None)
+        if bypasses is None:
+            bypasses = world._slip_bypasses = _slip_bypasses(world)
+        if (incoming, outgoing) in bypasses:
+            return []
+        lanes = turn_lanes(edge, direction, max(0.5, angle))
+        curb = lane_count(edge, direction) - 1
+        if lanes is None:
+            return [curb]
+        return [curb] if curb in lanes or slip else []
+    lanes = turn_lanes(edge, direction, angle)
+    if angle <= -0.5:
+        return [0] if lanes is None or 0 in lanes else []
+    if lanes is None or abs(angle) >= 0.35 or next_edge["cls"] != edge["cls"]:
+        return lanes
+    # Paint can describe the next junction even when an intermediate graph node splits the approach.
+    node = edge["b" if direction == 1 else "a"]
+    options = [turn_angle(world.edges, incoming, move) for move in world.out.get(node, ()) if move[0] != incoming[0]]
+    for i, kinds in enumerate(lane_turns(edge, direction)):
+        if i in lanes or not kinds:
+            continue
+        if (kinds <= {"left", "slight_left", "sharp_left"} and not any(-2.2 <= a <= -0.5 for a in options)
+                or kinds <= {"right", "slight_right", "sharp_right"} and not any(0.5 <= a <= 2.2 for a in options)):
+            lanes.append(i)
+    return sorted(lanes)
+
+
 def edge_seconds(edge, direction, speed_cap, queue):
     speed = max(1.0, min(edge["speed"], speed_cap))
-    return edge["len"] / speed + 4.0 * queue / lane_count(edge, direction)
+    base = edge["len"] / speed
+    return base + 4.0 * queue / lane_count(edge, direction) if queue else base
 
 
 def fastest_route(world, start, goal, goal_xy, *, incoming=None, delay=None, speed_cap=27.0, budget=None,
-                  first=None, main_only=False):
+                  first=None, main_only=False, outgoing=None):
     """A* in travel seconds over directed edges, retaining the approach for turn costs."""
-    if start == goal:
+    if start == goal and outgoing is None:
         return ()
     initial = (start, incoming)
     best, prev = {initial: 0.0}, {}
@@ -81,7 +202,11 @@ def fastest_route(world, start, goal, goal_xy, *, incoming=None, delay=None, spe
         state = (node, approach if approach[0] >= 0 else None)
         if cost != best.get(state):
             continue
-        if node == goal:
+        arrived = node == goal
+        if arrived and outgoing is not None and approach[0] >= 0:
+            angle = turn_angle(world.edges, approach, outgoing)
+            arrived = approach[0] != outgoing[0] and abs(angle) <= 2.2 and movement_lanes(world, approach, outgoing, angle) != []
+        if arrived:
             path = []
             while state != initial:
                 path.append(state[1])
@@ -91,6 +216,7 @@ def fastest_route(world, start, goal, goal_xy, *, incoming=None, delay=None, spe
             if not budget:
                 break
             budget -= 1
+        arrival = _heading(world.edges, approach, True) if approach[0] >= 0 else None
         for move in world.out.get(node, ()):
             ei, direction = move
             if ei == approach[0] or (state == initial and first is not None and move not in first):
@@ -99,8 +225,8 @@ def fastest_route(world, start, goal, goal_xy, *, incoming=None, delay=None, spe
             end = e["b"] if direction == 1 else e["a"]
             if main_only and end not in world.main:
                 continue
-            angle = turn_angle(world.edges, approach, move) if approach[0] >= 0 else 0.0
-            if abs(angle) > 2.2 or (approach[0] >= 0 and turn_lanes(world.edges[approach[0]], approach[1], angle) == []):
+            angle = (_heading(world.edges, move, False) - arrival + math.pi) % (2.0 * math.pi) - math.pi if arrival is not None else 0.0
+            if abs(angle) > 2.2 or (approach[0] >= 0 and movement_lanes(world, approach, move, angle) == []):
                 continue
             wait = delay(move) if delay else 0.0
             nd = cost + edge_seconds(e, direction, speed_cap, 0) + wait + abs(angle) * 1.4 + (1.0 if angle < -0.5 else 0.0)

@@ -16,6 +16,9 @@ import radio
 FRAG = (50.0, 110.0)          # seconds of one song before the "dial" moves to another
 LEVEL = 0.38                  # relative to the radio volume setting
 PINK = rl.Color(226, 32, 104, 255)
+INTRO = os.path.join(radio.ROOT, "assets", "splash", "intro.wav")
+INTRO_TRACK_ID = "4d5bd819-c44d-4a45-aff3-f4e801003f7c"
+INTRO_TITLE = "Јазик на сенки"
 
 
 def _crackle(n, sr, rng):
@@ -59,64 +62,64 @@ class LoadMusic:
         self.snd = None
         self.static = None
         self.job = None
+        self.setup = None
+        self.early_skips = []
         self.files = []
         self.stations = []            # [(name, [paths])]: one per genre folder, like the car radio
         self.sel = 0                  # station playing now
         self.menu_open = False        # station drop-down is open
-        self.bag = []                 # songs of this station not yet played in the current shuffle
         self.logos = {}               # station name -> texture (or None)
-        self.hist = []                # songs played, newest last (◀ goes back through them, ▶ forward again)
-        self.pos = -1                 # index in hist of the song playing now
+        self.pos = None               # index of the track playing in this station
         self.paused = False
         self.stopped = False          # ■ pressed: silence until ▶ / the play button
-        self.swap = False             # a ◀ / ▶ press is waiting for its song; the old one keeps playing until it is ready
-        self.want = None              # index in hist being decoded after a ◀ / ▶ press (so quick double presses keep going)
+        self.want = None              # target of the latest manual selection
+        self.direction = 1
         self.title = ""
         self.cur = None
         if mute or volume < 0.01:
             return
         try:
-            stations, _ = radio.scan()
-            self.stations = stations
-            self.files = list(stations[0][1]) if stations else []
-            if not self.files:
-                return
             if not rl.is_audio_device_ready():
                 rl.init_audio_device()
             if not rl.is_audio_device_ready():
                 return
-            self.dir = tempfile.mkdtemp(prefix="skopje_load_")
-            sp = os.path.join(self.dir, "static.wav")
-            radio.audio_mod._save(sp, radio._static(dur=0.6))
-            self.static = rl.load_sound(sp)
-            self.seq = 0
+            if os.path.isfile(INTRO):
+                intro = rl.load_sound(INTRO)
+                if rl.is_sound_valid(intro):
+                    self.snd = intro
+                    self.title = INTRO_TITLE
+                    rl.set_sound_volume(intro, LEVEL * volume)
+                    rl.play_sound(intro)
             self.ok = True
-            self._next()
+            self.setup = {}
+            threading.Thread(target=self._scan, args=(self.setup,), daemon=True).start()
         except Exception as e:  # noqa: BLE001 - music is decoration
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
-    def _next(self, path=None):
-        self.seq += 1
-        job = {"out": os.path.join(self.dir, f"m{self.seq}.wav"), "ok": False, "done": False, "path": None}
-        if path:
-            pool = [path]
-        else:                                                    # a shuffled "bag": every song once, then a new shuffle (no immediate repeat)
-            if not self.bag:
-                self.bag = random.sample(self.files, len(self.files))
-                if len(self.bag) > 1 and self.bag[-1] == self.cur:
-                    self.bag[0], self.bag[-1] = self.bag[-1], self.bag[0]
-            pool = self.bag[::-1][:3]                            # next up first; the others only if it will not decode
+    @staticmethod
+    def _scan(setup):
+        """Find stations and prepare the tuning sound while the opening cue plays."""
+        try:
+            stations, _ = radio.scan()
+            if stations:
+                directory = tempfile.mkdtemp(prefix="skopje_load_")
+                radio.audio_mod._save(os.path.join(directory, "static.wav"), radio._static(dur=0.6))
+                setup["result"] = stations, directory
+        except Exception as e:  # noqa: BLE001
+            print(f"[loadmusic] cannot prepare stations: {e}", flush=True)
+        finally:
+            setup["done"] = True
 
+    def _prepare(self, path):
+        job = {"out": os.path.join(self.dir, "fragment.wav"), "ok": False, "done": False, "path": path}
         def work():
-            for p in pool:
-                try:
-                    if radio.cut_fragment(p, job["out"], random.uniform(*FRAG), fx=radio_fx):
-                        job["ok"], job["path"] = True, p
-                        break
-                except Exception as e:  # noqa: BLE001
-                    print(f"[loadmusic] cannot play {p}: {e}", flush=True)
-            job["done"] = True
+            try:
+                job["ok"] = radio.cut_fragment(path, job["out"], random.uniform(*FRAG), fx=radio_fx)
+            except Exception as e:  # noqa: BLE001
+                print(f"[loadmusic] cannot play {path}: {e}", flush=True)
+            finally:
+                job["done"] = True
         self.job = job
         threading.Thread(target=work, daemon=True).start()
 
@@ -125,82 +128,93 @@ class LoadMusic:
         if not self.ok:
             return
         try:
-            if self.stopped or (self.paused and not self.swap):
+            if self.setup is not None:
+                if not self.setup.get("done"):
+                    return
+                setup, self.setup = self.setup, None
+                if "result" in setup:
+                    self.stations, self.dir = setup["result"]
+                    if self.title == INTRO_TITLE:
+                        opening = next(((i, path) for i, (_, files) in enumerate(self.stations)
+                                        for path in files if INTRO_TRACK_ID in path), None)
+                        if opening is not None:
+                            self.sel, self.cur = opening
+                    self.files = list(self.stations[self.sel][1])
+                    random.shuffle(self.files)
+                    if self.cur is not None:
+                        self.pos = self.files.index(self.cur)
+                    self.static = rl.load_sound(os.path.join(self.dir, "static.wav"))
+                    for back in self.early_skips:
+                        self.skip(back)
+                self.early_skips.clear()
+            if not self.files:
+                if not self.stations and (self.snd is None or (not self.paused and not rl.is_sound_playing(self.snd))):
+                    self.close()
                 return
-            if self.snd is not None and rl.is_sound_playing(self.snd) and not self.swap:
+            idx = self.want if self.want is not None else (0 if self.pos is None else (self.pos + 1) % len(self.files))
+            path = self.files[idx]
+            job = self.job
+            if job is not None and not job["done"]:
                 return
-            if self.job is None:
-                self._next()
+            if job is None or job["path"] != path:
+                self._prepare(path)
                 return
-            if not self.job["done"]:
+            if self.stopped or (self.want is None and
+                                (self.paused or (self.snd is not None and rl.is_sound_playing(self.snd)))):
                 return
-            job, self.job = self.job, None
-            if not job["ok"]:                                    # undecodable file: keep what plays now, try another one
-                self.swap = False
-                self.want = None
-                if job.get("idx") is not None and job["idx"] < len(self.hist):
-                    del self.hist[job["idx"]]                    # a song that will not decode leaves the history
-                    if job["idx"] <= self.pos:
-                        self.pos -= 1
-                self._next()
-                return
-            self.swap = False
-            self.paused = False
-            self._drop()
+            self.job = None
+            snd = None
             if job["ok"]:
-                rl.set_sound_volume(self.static, 0.2 * self.volume)
-                rl.play_sound(self.static)                       # turning the dial
-                self.snd = rl.load_sound(job["out"])
+                snd = rl.load_sound(job["out"])
                 try:
                     os.remove(job["out"])
                 except OSError:
                     pass
-                rl.set_sound_volume(self.snd, LEVEL * self.volume)
-                rl.play_sound(self.snd)
-                self.cur = job["path"]
-                if self.cur in self.bag:
-                    self.bag.remove(self.cur)
-                self.title = os.path.splitext(os.path.basename(self.cur))[0].replace("_", " ")
-                if job.get("idx") is not None:
-                    self.pos = job["idx"]
-                else:
-                    self.hist.append(self.cur)
-                    if len(self.hist) > 30:
-                        del self.hist[0]
-                    self.pos = len(self.hist) - 1
-                self.want = None
-                self._next()                                     # decode the next song while this one plays
+            if snd is None or not rl.is_sound_valid(snd):
+                del self.files[idx]
+                if self.pos is not None and self.pos >= idx:
+                    self.pos = self.pos - 1 if self.pos != idx else None
+                if self.want is not None:
+                    self.want = (idx - (self.direction < 0)) % len(self.files) if self.files else None
+                return
+            if self.want is None and self.snd is not None:
+                self._tune()
+            self._drop()
+            self.snd = snd
+            rl.set_sound_volume(snd, LEVEL * self.volume)
+            rl.play_sound(snd)
+            self.cur, self.pos = path, idx
+            self.title = os.path.splitext(os.path.basename(path))[0].replace("_", " ")
+            self.want, self.paused = None, False
+            self._prepare(self.files[(idx + 1) % len(self.files)])
         except Exception as e:  # noqa: BLE001
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
 
     def skip(self, back=False):
-        """◀ / ▶: back to the previous song (and forward again through the ones already heard), else on to a new one.
-        The song playing now keeps going until the next one is decoded, so a press never leaves silence."""
+        """Step through the station's shuffle, counting repeated presses during decoding."""
         if not self.ok:
             return
-        try:
-            if self.stopped:
-                self.stopped = False                             # ◀ / ▶ after ■ starts music again
-            cur = self.want if self.want is not None else self.pos
-            idx = cur + (-1 if back else 1)
-            if back and idx < 0:
-                return
-            if idx < len(self.hist):                             # a song we already heard
-                self.job = None                                  # (a decode still running just finishes into its own file)
-                self._next(self.hist[idx])
-                self.job["idx"] = idx
-                self.want = idx
-            elif self.want is not None:
-                return                                           # still fetching the earlier one
-            elif self.job is None:
-                self._next()
-            self.swap = True
+        if not self.files:
+            if self.setup is not None:
+                self.early_skips.append(back)
+            return
+        self.direction = -1 if back else 1
+        cur = self.want if self.want is not None else self.pos
+        index = (-1 if back else 0) if cur is None else cur + self.direction
+        index %= len(self.files)
+        if self.want is not None and index == self.pos and self.snd is not None:
+            self.want = None
+            return
+        if self.want is None:
+            self._tune()
+        self.want = index
+        self.stopped = False
+
+    def _tune(self):
+        if self.static is not None:
             rl.set_sound_volume(self.static, 0.2 * self.volume)
-            rl.play_sound(self.static)                           # the dial turns while the song decodes
-        except Exception as e:  # noqa: BLE001
-            print(f"[loadmusic] off: {e}", flush=True)
-            self.ok = False
+            rl.play_sound(self.static)
 
     def station(self, d):
         """Q / E: previous / next station (genre folder).  The old song plays on until the new station's first one is ready."""
@@ -209,13 +223,10 @@ class LoadMusic:
         try:
             self.sel = (self.sel + d) % len(self.stations)
             self.files = list(self.stations[self.sel][1])
-            self.hist, self.pos, self.want, self.bag = [], -1, None, []
+            random.shuffle(self.files)
+            self.pos, self.want, self.direction = None, 0, 1
             self.stopped = False
-            self.job = None
-            self._next()
-            self.swap = True
-            rl.set_sound_volume(self.static, 0.2 * self.volume)
-            rl.play_sound(self.static)
+            self._tune()
         except Exception as e:  # noqa: BLE001
             print(f"[loadmusic] off: {e}", flush=True)
             self.ok = False
@@ -227,8 +238,6 @@ class LoadMusic:
         try:
             if self.stopped:
                 self.stopped = False
-                if self.job is None:
-                    self._next()
             elif self.paused:
                 self.paused = False
                 if self.snd is not None:
@@ -244,14 +253,24 @@ class LoadMusic:
         """■: kill the music until the player asks for it again."""
         if not self.ok:
             return
-        self.stopped, self.paused, self.swap, self.want = True, False, False, None
+        self.stopped, self.paused, self.want = True, False, None
+        self.early_skips.clear()
         self._drop()
+        if self.static is not None:
+            rl.stop_sound(self.static)
         self.title = ""
 
     def poke(self, sec=1.6):
         """Keep the bar open for a moment (a hotkey changed the station / song)."""
         import time
         self._idle = time.time() + sec
+
+    @property
+    def display_title(self):
+        if self.want is not None and self.files:
+            pending = os.path.splitext(os.path.basename(self.files[self.want]))[0].replace("_", " ")
+            return "… " + pending
+        return self.title
 
     def _symbol(self, x, y, S):
         """The radio symbol on the always-there button: a little set with an antenna, a dial and a speaker."""
@@ -309,21 +328,22 @@ class LoadMusic:
         live = e > 0.9
         if e > 0.01:                                             # ---- the stripes, revealed from the left
             sx = X + S + 8
-            rl.begin_scissor_mode(sx, Y, int(SW * e) + 1, H - Y)
+            visible = int(SW * e) + 1
+            rl.begin_scissor_mode(sx, Y, visible, H - Y)
             head = None
             y2 = Y
             if multi:
                 dh = 30
                 head = (sx, Y, SW, dh)
                 y2 = Y + dh + 4
-            name = font.fit(self.title or ("■" if self.stopped else "…"), sz, max(40, SW - 156), "cond")
+            name = font.fit(self.display_title or ("■" if self.stopped else "…"), sz, max(40, SW - 156), "cond")
             w = SW
             rl.draw_rectangle(sx, y2, w, b + 8, rl.Color(10, 8, 16, 170))
-            click = click_in and live and not self.menu_open     # an open list swallows the click
+            click = click_in and not self.menu_open
             tip = None
             for k, bx in ((0, sx + 4), (1, sx + 4 + b + 4), (2, sx + 4 + 2 * (b + 4)), (3, sx + w - b - 4)):
                 by = y2 + 4
-                over = live and bx <= m.x < bx + b and by <= m.y < by + b
+                over = bx <= m.x < min(bx + b, sx + visible) and by <= m.y < by + b
                 rl.draw_rectangle(bx, by, b, b, PINK if over else rl.Color(60, 40, 70, 230))
                 cx, cy, r = bx + b / 2, by + b / 2, b * 0.28
                 if k == 0:
@@ -351,15 +371,15 @@ class LoadMusic:
                 self._dropdown(head, station_keys and live, m, click_in and live)
             rl.end_scissor_mode()
         elif multi and station_keys:                             # folded: Q / E still change the station
-            if rl.is_key_pressed(rl.KEY_E):
+            if font.key_pressed(rl.KEY_E):
                 self.station(1)
-            elif rl.is_key_pressed(rl.KEY_Q):
+            elif font.key_pressed(rl.KEY_Q):
                 self.station(-1)
         if not keys:                                             # (screens where the arrows already move the selection)
             return
-        if rl.is_key_pressed(rl.KEY_LEFT):
+        if font.key_pressed(rl.KEY_LEFT):
             self.skip(back=True)
-        elif rl.is_key_pressed(rl.KEY_RIGHT):
+        elif font.key_pressed(rl.KEY_RIGHT):
             self.skip()
 
     def _logo(self):
@@ -368,14 +388,7 @@ class LoadMusic:
         if nm not in self.logos:
             tex = None
             try:
-                p = radio.logo_for(nm)
-                if p:
-                    with open(p, "rb") as f:                     # from memory: raylib's own fopen mangles Cyrillic paths on Windows
-                        raw = f.read()
-                    img = rl.load_image_from_memory(os.path.splitext(p)[1].lower(), raw, len(raw))
-                    tex = rl.load_texture_from_image(img)
-                    rl.unload_image(img)
-                    rl.set_texture_filter(tex, rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
+                tex = radio.load_logo(nm)
             except Exception as e:  # noqa: BLE001 - a bad image just means no logo
                 print(f"[loadmusic] logo of {nm}: {e}", flush=True)
                 tex = None
@@ -415,9 +428,9 @@ class LoadMusic:
                 if hit:
                     font.clear_latch()
         if station_keys:
-            if rl.is_key_pressed(rl.KEY_E):
+            if font.key_pressed(rl.KEY_E):
                 self.station(1)
-            elif rl.is_key_pressed(rl.KEY_Q):
+            elif font.key_pressed(rl.KEY_Q):
                 self.station(-1)
 
     def _drop(self):
@@ -427,13 +440,17 @@ class LoadMusic:
             self.snd = None
 
     def close(self):
-        if not self.ok:
-            return
         self.ok = False
         try:
             self._drop()
-            rl.stop_sound(self.static)
-            rl.unload_sound(self.static)
+            if self.static is not None:
+                rl.stop_sound(self.static)
+                rl.unload_sound(self.static)
+                self.static = None
+            for tex in self.logos.values():
+                if tex is not None:
+                    rl.unload_texture(tex)
+            self.logos.clear()
         except Exception:  # noqa: BLE001
             pass
 
@@ -461,6 +478,8 @@ class CarRadioView:
     @property
     def title(self):
         return "" if self.r.off else (self.r.now or "")
+
+    display_title = title
 
     paused = False
 

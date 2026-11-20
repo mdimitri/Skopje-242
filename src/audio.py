@@ -434,7 +434,7 @@ class Audio:
 
     CACHE_MB = 300                                      # decoded library sounds kept in memory (least recently used go first)
 
-    def __init__(self, mute=False, root=None, dry=False):
+    def __init__(self, mute=False, root=None, dry=False, loading=None, draw=None):
         self.ok = False
         self.snd = {}
         self.mus, self._mplay = {}, set()              # engine layers as seamless looping streams; the ones playing now
@@ -477,14 +477,24 @@ class Audio:
             if not rl.is_audio_device_ready():
                 return
             self._tmp = tempfile.mkdtemp(prefix="skopje_snd_")
-            for name, x in build_cached().items():
-                p = os.path.join(self._tmp, name + ".wav")
-                _save(p, x)
+            def prepare():
+                files = []
+                for name, samples in build_cached().items():
+                    path = os.path.join(self._tmp, name + ".wav")
+                    _save(path, samples)
+                    files.append((name, path))
+                return files
+
+            next_draw = 0.0
+            for name, p in (loading(prepare) if loading is not None else prepare()):
                 self.snd[name] = rl.load_sound(p)
                 if name in ENGINE_STREAMS:                                  # engine layers loop seamlessly as streams: a Sound restarted when it
                     m_ = rl.load_music_stream(p)                            # ends left a gap (a tick every loop); streams wrap without one
                     m_.looping = True
                     self.mus[name] = m_
+                if draw is not None and time.monotonic() >= next_draw:
+                    next_draw = time.monotonic() + 1 / 60
+                    draw()
             self.ok = True
         except Exception:  # noqa: BLE001
             self.ok = False

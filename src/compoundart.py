@@ -58,7 +58,7 @@ class _B:
             self.quad((p0[0] - sx, p0[1] - sy, p0[2] - sz), (p1[0] - sx, p1[1] - sy, p1[2] - sz),
                       (p1[0] + sx, p1[1] + sy, p1[2] + sz), (p0[0] + sx, p0[1] + sy, p0[2] + sz), col)
 
-    def model(self):
+    def arrays(self):
         if not self.p:
             return None
         pos = np.asarray(self.p, np.float32)
@@ -70,7 +70,11 @@ class _B:
         rgba = np.empty((len(pos), 4), np.uint8)
         rgba[:, :3] = np.clip(col, 0, 255)
         rgba[:, 3] = 255
-        return gl3d.make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+        return pos, np.zeros((len(pos), 2), np.float32), rgba
+
+    def model(self):
+        arrays = self.arrays()
+        return gl3d.object_detail(gl3d.make_model(*arrays), "concrete") if arrays is not None else None
 
 
 def _gy(w, x, y):
@@ -208,8 +212,8 @@ def _flag_sun(B, fx, fy, ux, uy, s0, s1, t0, t1):
             put(P(cs, ct), P(cs + math.cos(q0) * r, ct + math.sin(q0) * r), P(cs + math.cos(q1) * r, ct + math.sin(q1) * r))
 
 
-def build(c, w):
-    """[(x0, y0, x1, y1, model)] of a compound's static geometry, cut into CELL-sized pieces."""
+def _build_arrays(c, w):
+    """Prepare a compound's static geometry in CELL-sized pieces without touching the GPU."""
     army = c.kind == "army"
     cells = {}
 
@@ -229,10 +233,25 @@ def build(c, w):
         b.box(x - math.cos(h) * 0.02, z - 0.08, y - math.sin(h) * 0.02, h + math.pi / 2, wd + 0.16, 0.1, ht + 0.16, (40, 44, 40) if army else (24, 40, 110))
     out = []
     for (kx, ky), b in cells.items():
-        m = b.model()
-        if m is not None:
-            out.append((kx * CELL - 10, ky * CELL - 10, (kx + 1) * CELL + 10, (ky + 1) * CELL + 10, m))
+        arrays = b.arrays()
+        if arrays is not None:
+            out.append((kx * CELL - 10, ky * CELL - 10, (kx + 1) * CELL + 10, (ky + 1) * CELL + 10, arrays))
     return out
+
+
+def _upload(pieces, service_ui=None):
+    out = []
+    for *bounds, arrays in pieces:
+        model = gl3d.object_detail(gl3d.make_model(*arrays), "concrete")
+        if model is not None:
+            out.append((*bounds, model))
+        if service_ui is not None:
+            service_ui()
+    return out
+
+
+def build(c, w):
+    return _upload(_build_arrays(c, w))
 
 
 def bunker_models():
@@ -432,12 +451,15 @@ class Art:
             self.tex[("emb", army)] = t
         return t
 
+    def prepare(self, cmp, w, progress, loading):
+        """Build arrays in the background and yield to the loader between GPU uploads."""
+        for i, c in enumerate(cmp.list, 1):
+            pieces = loading(lambda: _build_arrays(c, w))
+            self.cells[id(c)] = (c.ver, _upload(pieces, lambda: progress((i - 1) / len(cmp.list))))
+            progress(i / len(cmp.list))
+
     def draw(self, cmp, sim, w, inr, fx, fy):
         """inr(x, y, pad) -> on screen."""
-        if not getattr(self, "_warm", False):                          # every compound's geometry at once, on the first frame, not on arrival
-            self._warm = True
-            for c in cmp.list:
-                self.cells[id(c)] = (c.ver, build(c, w))
         for c in cmp.list:
             x0, y0, x1, y1 = c.bb
             if not inr((x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0) / 2 + 20):
@@ -446,7 +468,7 @@ class Art:
             if got is None or got[0] != c.ver:                         # a rammed fence: rebuild that compound's geometry
                 if got is not None:
                     for *_bb, m in got[1]:
-                        rl.unload_model(m)
+                        gl3d.free_model(m)
                 got = self.cells[id(c)] = (c.ver, build(c, w))
             pieces = got[1]
             for a, b, c2, d, m in pieces:

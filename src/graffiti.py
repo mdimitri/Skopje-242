@@ -1,4 +1,4 @@
-"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (4 x 52 cells of 256 x 128).
+"""Wall graffiti in Macedonian Cyrillic, painted once into one atlas texture (5 x 51 cells of 256 x 128).
 
 tools/build_world.py puts alpha-keyed decal quads on walls, roofs and roof slopes (material 6, "graf") that pick cells from
 this atlas: one extra texture and a few thousand quads, no per-frame cost.  The phrases are text/09_graffiti.txt
@@ -13,8 +13,8 @@ import pyray as rl
 import font
 from texts import TXT
 
-COLS, ROWS, CELL_W, CELL_H = 4, 52, 256, 128
-N_PIECES = 205                       # graffiti.0001 .. graffiti.0205
+COLS, ROWS, CELL_W, CELL_H = 5, 51, 256, 128
+N_PIECES = 255                       # graffiti.0001 .. graffiti.0255
 
 PALETTE = [(255, 214, 40), (80, 220, 255), (230, 40, 50), (255, 140, 30), (255, 90, 190), (120, 255, 120), (170, 120, 255),
            (255, 255, 255), (255, 235, 120), (60, 230, 150), (255, 70, 70), (90, 200, 255), (25, 25, 28), (255, 160, 60)]

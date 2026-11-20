@@ -34,7 +34,7 @@ for q in slang.LOADING_QUIPS:
 # every label / sub the build tools report must have a real translation (mk() is only a safety net, never a translator)
 import ast, glob   # noqa: E402
 for f in glob.glob(os.path.join(ROOT, "tools", "*.py")):
-    for n in ast.walk(ast.parse(open(f, encoding="utf-8").read())):
+    for n in ast.walk(ast.parse(open(f, encoding="utf-8-sig").read())):
         if not isinstance(n, ast.Call):
             continue
         nm = getattr(n.func, "id", getattr(n.func, "attr", ""))

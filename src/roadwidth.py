@@ -1,5 +1,7 @@
 """The carriageway width profile shared by the road mesh and runtime."""
 
+from functools import lru_cache
+
 SIDEWALK = {"trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street"}
 
 
@@ -32,8 +34,13 @@ def lane_bounds(edge, direction=1):
 
 def lane_turns(edge, direction=1):
     tag = edge.get("turn", ("", ""))[0 if direction == 1 else 1]
-    marked = tag.split("|") if tag else []
-    if len(marked) == lane_count(edge, direction):
+    return _parse_turns(tag, lane_count(edge, direction)) if tag else ()
+
+
+@lru_cache(maxsize=256)
+def _parse_turns(tag, count):
+    marked = tag.split("|")
+    if len(marked) == count:
         return tuple(frozenset(lane.split(";")) - {"", "none"} for lane in marked)
     return ()
 

@@ -61,6 +61,8 @@ class Signals:
         self.major = {n: (1 if crank.get((self.cl[n], 1), 0) > crank.get((self.cl[n], 0), 0) else 0) for n in self.nodes}
         self._order = sorted((i for i in range(len(self.items)) if self.items[i][4] == self.items[i][4]), key=lambda i: self.items[i][4])      # head-only signals (no pole: x is NaN) are never drawn, and NaN would break the sort      # by x: draw() only walks the strip in view
         self._xs = [self.items[i][4] for i in self._order]
+        self._broken_count = 0
+        self._dark_heads = {}
         self.pre = {}                                    # junction -> (requested group, clearing group, yellow end, green start, hold end)
         self.t = 0.0
 
@@ -164,11 +166,18 @@ class Signals:
         i = self.by_edge.get((ei, end))
         return i is not None and self.state(i) != 0
 
-    def _smashed(self, lx, lz, hb):
+    def _smashed(self, i, lx, lz, hb):
         """True when the pole carrying this head was knocked over (its arm is hidden, so the lamp must go dark)."""
         be = getattr(self.w, "broken_extra", None)
         if not be:
             return False
+        # World damage only appends to this list. Both render passes share the answer.
+        if len(be) != self._broken_count:
+            self._broken_count = len(be)
+            self._dark_heads.clear()
+        hit = self._dark_heads.get(i)
+        if hit is not None:
+            return hit
         g = self.w.ground_y(lx, lz)
         for bx, by, r, lo, hi, *arm in be:
             if not lo - 0.5 < g + hb < hi:
@@ -177,7 +186,9 @@ class Signals:
             sx, sy = ex - bx, ey - by
             u = max(0.0, min(1.0, ((lx - bx) * sx + (lz - by) * sy) / (sx * sx + sy * sy or 1.0)))
             if (lx - bx - sx * u) ** 2 + (lz - by - sy * u) ** 2 < (r + 0.3) ** 2:
+                self._dark_heads[i] = True
                 return True
+        self._dark_heads[i] = False
         return False
 
     def lit(self, rect):
@@ -187,7 +198,7 @@ class Signals:
         out = []
         for i in self._order[bisect.bisect_right(self._xs, x0 - 5):bisect.bisect_left(self._xs, x1 + 5)]:
             it = self.items[i]
-            if y0 - 5 < it[5] < y1 + 5 and not self._smashed(it[4], it[5], it[8] if len(it) > 8 else 2.95):
+            if y0 - 5 < it[5] < y1 + 5 and not self._smashed(i, it[4], it[5], it[8] if len(it) > 8 else 2.95):
                 st = self.state(i)
                 out.append((it[4], it[5], (it[8] if len(it) > 8 else 2.95) + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), st))
         return out
@@ -201,7 +212,7 @@ class Signals:
             it = self.items[i]
             lx, lz = it[4], it[5]
             hb = it[8] if len(it) > 8 else 2.95
-            if y0 - 5 < lz < y1 + 5 and not self._smashed(lx, lz, hb):
+            if y0 - 5 < lz < y1 + 5 and not self._smashed(i, lx, lz, hb):
                 y = ground_y(lx, lz)
                 if seen is not None and not seen(lx, y + hb + 0.6, lz, 0.6):
                     continue

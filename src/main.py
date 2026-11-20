@@ -44,53 +44,123 @@ import font   # noqa: E402
 _EARLY_MUSIC = None
 
 
+def keep_window_alive(on):
+    """Poll window events during loading even between frames and GPU batches."""
+    if not on:
+        sys.setprofile(None)
+        return
+    last = [time.perf_counter()]
+
+    def hook(frame, event, arg):
+        now = time.perf_counter()
+        if now - last[0] > 0.05:
+            last[0] = now
+            font.poll_latch()
+
+    sys.setprofile(hook)
+
+
+def loading_task(work, draw):
+    """Keep drawing and polling input while a CPU or I/O task runs off the window thread."""
+    from concurrent.futures import Future
+
+    result = Future()
+    done = threading.Event()
+
+    def run():
+        try:
+            import cpusched
+            cpusched.thread_priority(-1)
+            result.set_result(work())
+        except BaseException as e:
+            result.set_exception(e)
+        finally:
+            done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    while not result.done():
+        deadline = time.monotonic() + 1 / 60
+        draw()
+        done.wait(max(0.0, deadline - time.monotonic()))
+    draw()
+    return result.result()
+
+
+def _draw_early_splash():
+    import poster
+
+    font.poll_latch()
+    if rl.window_should_close():
+        raise SystemExit(0)
+    W, H = rl.get_screen_width(), rl.get_screen_height()
+    rl.begin_drawing()
+    poster.draw_splash(W, H)
+    if poster.splash() is None:
+        font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
+    font.draw_text("Се вчитува ...", W // 2 - 80, H - 60, 24, rl.Color(230, 226, 232, 255), bold="cond")
+    if _EARLY_MUSIC is not None:
+        _EARLY_MUSIC.widget()
+    font.exit_button()
+    font.draw_version(W, H)
+    font.clear_latch()
+    rl.end_drawing()
+    if _EARLY_MUSIC is not None:
+        _EARLY_MUSIC.update()
+
+
 def _early_splash():
-    """Open the window and paint one frame before the ~heavy module imports below, so the player sees the game at once."""
-    if any(x.split("=")[0] in ("--test", "--sound-dry", "--size") for x in sys.argv[1:]):
-        return                                                  # scripted / debug runs keep the normal path
+    """Start the opening cue and paint the splash before importing the rest of the game."""
+    global _EARLY_MUSIC
+    args = sys.argv[1:]
+    if any(x.split("=")[0] in ("--test", "--sound-dry", "--help", "-h") for x in args):
+        return
     try:
+        import cpusched
+        cpusched.thread_priority(2)
         import settings as st
         cfg = st.Settings()
         W, H = st.RESOLUTIONS[cfg["resolution"]]
+        for i, arg in enumerate(args):
+            flag, eq, value = arg.partition("=")
+            if flag == "--size":
+                W, H = (int(v) for v in (value if eq else args[i + 1]).lower().split("x"))
         rl.set_trace_log_level(rl.LOG_WARNING)
         rl.set_config_flags(rl.FLAG_VSYNC_HINT | rl.FLAG_WINDOW_RESIZABLE | (rl.FLAG_MSAA_4X_HINT if cfg["aa"] in (1, 3) else 0))
         rl.init_window(W, H, TXT("main.0002"))
         if not rl.is_window_ready():
             return
         rl.set_exit_key(rl.KEY_NULL)          # Esc must not close the window (the update question uses it for "no")
+        keep_window_alive(True)
         font.load()
-        import menu as _menu
-        _menu.set_theme(cfg["theme"])         # the update screens wear the chosen menu theme
-        rl.begin_drawing()
-        import poster
-        W, H = rl.get_screen_width(), rl.get_screen_height()
-        poster.draw_splash(W, H)
-        if poster.splash() is None:
-            font.draw_text("Скопје 242", W // 2 - 150, H // 2 - 40, 56, rl.WHITE)
-        font.draw_text("Се вчитува ...", W // 2 - 80, H - 60, 24, rl.Color(230, 226, 232, 255), bold="cond")
-        font.draw_version(W, H)
-        rl.end_drawing()
-        rl.poll_input_events()
-        if "--mute" not in sys.argv and cfg["vol_master"] >= 0.01:      # music from the very first frame
+        _draw_early_splash()
+        volume = cfg["vol_master"] * cfg["vol_radio"]
+        if "--mute" not in sys.argv and volume >= 0.01:
             import loadmusic
-            global _EARLY_MUSIC
-            _EARLY_MUSIC = loadmusic.LoadMusic(volume=cfg["vol_master"] * cfg["vol_radio"])
+            _EARLY_MUSIC = loadmusic.LoadMusic(volume=volume)
+        _draw_early_splash()
+        return cfg
     except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed
-        pass
+        keep_window_alive(False)
 
 
-_early_splash()
+_EARLY_CFG = _early_splash()
 
-if rl.is_window_ready() and not any(x.split("=")[0] in ("--test", "--sound-dry", "--size", "--nomenu") for x in sys.argv[1:]):
+if _EARLY_CFG is not None and not any(x.split("=")[0] in ("--nomenu", "--size") for x in sys.argv[1:]):
+    keep_window_alive(False)                        # the update screens poll and consume their own input
     try:
+        import menu as _menu
         import updater
-        if updater.check():          # new version installed -> start it and quit this process
+        _menu.set_theme(_EARLY_CFG["theme"])
+        if updater.check(lambda work: loading_task(work, _draw_early_splash), _EARLY_MUSIC):
             updater.restart()
             sys.exit(0)
     except SystemExit:
         raise
     except Exception:  # noqa: BLE001 - the update check must never stop the game from starting
         pass
+    finally:
+        if rl.is_window_ready():
+            keep_window_alive(True)
 
 import strings as T   # noqa: E402
 import audio as audio_mod   # noqa: E402
@@ -101,10 +171,12 @@ import savegame   # noqa: E402
 import trains   # noqa: E402
 import hero_lines   # noqa: E402
 import characters   # noqa: E402
+import characterart   # noqa: E402
 import talk   # noqa: E402
 import settings as settings_mod   # noqa: E402
 import geo as geo_mod   # noqa: E402
 import gl3d          # noqa: E402
+import surfacepack   # noqa: E402
 import present as present_mod   # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
@@ -201,7 +273,7 @@ def run_tool(args, loader, stage, max_sec=3600):
         killed = False
         while True:
             try:
-                line = q.get(timeout=0.05)
+                line = q.get(timeout=0.01)
                 at = line.find("@@")                  # a text progress bar may precede the event on the same line
                 if at >= 0:
                     try:
@@ -239,6 +311,7 @@ def _stale(path, osm):
         stale = stages.stale_stages(path, osm)
         if stale:
             log(f"[build] world is stale; stages to rebuild: {', '.join(stale)}")
+            return True
         return stages.is_stale(path, osm)
     except Exception as e:  # noqa: BLE001 - cannot tell: rebuild
         log(f"[build] stage check failed ({e}); rebuilding")
@@ -248,7 +321,9 @@ def _stale(path, osm):
         if tools in sys.path:
             sys.path.remove(tools)
         for m in set(sys.modules) - before:
-            sys.modules.pop(m, None)
+            origin = getattr(sys.modules.get(m), "__file__", None)
+            if origin and os.path.dirname(origin) == tools:
+                sys.modules.pop(m, None)
 
 
 def terrain_ok(osm):
@@ -343,7 +418,27 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
 
     def attempt(path):
         loader.begin("world")
-        return World(path, lambda f, note="": loader.tick(f, note), loader.world_part)
+        parts = queue.SimpleQueue()
+        progress = None
+
+        def report(fraction, note=""):
+            nonlocal progress
+            progress = fraction, note
+            time.sleep(0)                         # let the window handle queued input between decode and index batches
+
+        def read():
+            return World(path, report, lambda name, data: parts.put((name, data)))
+
+        def draw():
+            latest = progress
+            if latest is not None:
+                loader.tick(*latest)
+            else:
+                loader.draw()
+            if not parts.empty():
+                loader.world_part(*parts.get())
+
+        return loading_task(read, draw)
 
     rebuild = bool(need.get("build"))
     if os.path.isdir(real) and (arg_world or not rebuild) and not demo_only:
@@ -402,10 +497,10 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
         if rnd > 1:
             for left in range(30 * min(rnd - 1, 4), 0, -1):          # growing pause, the splash says why it waits
                 loader.warn = T.RETRYING.format(n=rnd, total=DOWNLOAD_ROUNDS, s=left)
-                loader.draw(True)
-                time.sleep(1)
-                if rl.window_should_close():
-                    raise SystemExit(0)
+                until = time.monotonic() + 1
+                while (frame_start := time.monotonic()) < until:
+                    loader.draw()
+                    time.sleep(max(0.0, min(until, frame_start + 1 / 60) - time.monotonic()))
         loader.warn = T.RETRYING_NOW.format(n=rnd, total=DOWNLOAD_ROUNDS) if rnd > 1 else ""
         if todo_osm:
             loader.begin("osm")
@@ -437,27 +532,6 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
 
 
 # ----------------------------------------------------------------------- main
-def keep_window_alive(on):
-    """While loading, one long Python/numpy step (several seconds) used to stop the window from polling OS events, so it
-    froze and Alt+Tab / moving it hung.  A profile hook on the main thread polls events at least every 0.2 s, between any two
-    calls, without drawing (so it is safe even inside a render-texture pass)."""
-    if not on:
-        sys.setprofile(None)
-        return
-    last = [time.perf_counter()]
-
-    def hook(frame, event, arg):
-        now = time.perf_counter()
-        if now - last[0] > 0.2:
-            last[0] = now
-            sys.setprofile(None)
-            try:
-                rl.poll_input_events()
-            finally:
-                sys.setprofile(hook)
-    sys.setprofile(hook)
-
-
 def fit_window(w, h):
     """A windowed size that fits the monitor (the game scales its picture to the window, so it need not equal the resolution)."""
     mon = rl.get_current_monitor()
@@ -534,19 +608,24 @@ def main():
     if a.fullscreen or cfg["fullscreen"]:
         set_borderless(True)
     rl.set_target_fps(0 if a.test else 144)
+    gc.set_threshold(50000, 20, 100)                  # world reads create many long-lived objects; avoid full collections during loading
     import cpusched
+    window_priority = cpusched.thread_priority(2)
     _n = cpusched.game()
     if _n:
-        log(f"[cpu] {os.cpu_count()} logical CPUs, {platform.processor() or '?'}; {_n}")
+        log(f"[cpu] {os.cpu_count()} logical CPUs, {platform.processor() or '?'}; {_n}; window priority {'highest' if window_priority else 'default'}")
 
     import photobg
     photobg.ENABLED = bool(cfg["photogram_bg"])
-    need = plan_needs(a)
     music = None
     if not a.test:                                                     # quiet, "distant radio" music while loading and in the title menu
         import loadmusic
         music = _EARLY_MUSIC or loadmusic.LoadMusic(mute=a.mute or cfg["vol_master"] < 0.01, volume=cfg["vol_master"] * cfg["vol_radio"])
-    aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry)    # before the title menu: its tick / confirm sounds
+    need = loading_task(lambda: plan_needs(a), _draw_early_splash) if _EARLY_CFG is not None else plan_needs(a)
+    splash_frame = _draw_early_splash if _EARLY_CFG is not None else None
+    aud = audio_mod.Audio(mute=a.mute, root=ROOT, dry=a.sound_dry,
+                          loading=(lambda work: loading_task(work, splash_frame)) if splash_frame else None,
+                          draw=splash_frame)
     pre = ""                                                           # the title menu's answer, chosen before anything loads
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
     if need and not unbuilt:
@@ -555,9 +634,13 @@ def main():
         need["build"] = True
     elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)
         menu_mod.WORLD["built"] = not unbuilt
+        keep_window_alive(False)
+        font.clear_latch()
         pre = menu_mod.run(cfg, lambda c: None, False, aud=aud, music=music)
         menu_mod.WORLD["built"] = True
         if pre == "quit":
+            if music is not None:
+                music.close()
             rl.close_window()
             return
         if pre == "rebuild":
@@ -565,8 +648,13 @@ def main():
     present = present_mod.Present()
     keep_window_alive(True)
     loader = Loader(([("osm", 40)] if need.get("osm") else []) + ([("dem", 8)] if need.get("dem") else []) +
-                    ([("build", 30)] if need.get("build") else []) + [("world", 12), ("overview", 8), ("textures", 6), ("chunks", 14)])
+                    ([("build", 30)] if need.get("build") else []) +
+                    [("world", 12), ("overview", 8), ("textures", 6), ("site_meshes", 4), ("chunks", 14)])
     loader.music = music
+
+    def load_while_drawing(work):
+        return loading_task(work, loader.draw)
+
     if a.fetch_radio or os.environ.get("SK242_FETCH_RADIO"):          # the old downloader is off by default: the radio plays music/
         start_radio_fetch(loader)
     while True:
@@ -582,11 +670,13 @@ def main():
             loader.warn = ""
     log(f"[game] world: {len(world.buildings)} buildings, {len(world.roads)} roads, {len(world.edges)} edges, "
         f"{len(world.trees)} trees, {len(world.parked)} parked cars")
+    import modelpool
+    modelpool.start()                              # boot model workers while the window uploads shared textures
 
     loader.begin("overview")
     t0 = time.time()
     try:
-        overview, ov_size = bake_overview(world, 5120, os.path.join(world.path, "overview"), lambda f, n="": loader.tick(f, n))
+        overview, ov_size = bake_overview(world, 5120, os.path.join(world.path, "overview"), loader.tick, load_while_drawing)
     except Exception:  # noqa: BLE001 - fallback: tiny blank map
         log("[game] overview failed:\n" + traceback.format_exc())
         img = rl.gen_image_color(512, int(512 * world.hy / world.hx), rl.Color(201, 196, 182, 255))
@@ -605,25 +695,28 @@ def main():
         t = rl.load_texture_from_image(img)
         tex = {"A": t, "B": t, "roof": t, "white": t, "panel": t, "house": t, "graf": t, "brick": t, "conc": t, "concg": t, "cream": t, "mix": t}
     streamer = Streamer(world, tex)
+    cfg["material_pack"] = streamer.set_texture_pack(cfg["material_pack"])
     renderer = Renderer(world, streamer, overview)
+    renderer.ped_detail = cfg["character_detail"] + 1
     sunshadow = SunShadow(world, streamer)
     renderer.log = log
     loader.tick(0.15, "overview mesh")
     renderer.build_overview()
     loader.tick(0.25, "car & pedestrian models")
     renderer.BUILD_BUDGET = 10 ** 9
-    for kind in range(vehicles.N):
-        renderer.ai_model(kind, 0)
-        loader.tick(0.25 + 0.25 * (kind + 1) / vehicles.N, f"car models {kind + 1}/{vehicles.N}")
+    mesh_started = time.perf_counter()
+    specs = [("car", kind, 0) for kind in range(vehicles.N)]
     for a_ in range(vehicles.PED_COUNT):
-        fr_list = [0, 1] + ([12, 20, 21, 22, 23, 24, 25, 26, 27] if a_ in vehicles.WALKERS else [])      # the walk cycle and the standing pose, so the first crowd never builds models in-frame
-        for j_, fr_ in enumerate(fr_list):
-            renderer.ped_model(a_, 0, fr_, 0)
-            loader.tick(0.5 + 0.3 * (a_ + (j_ + 1) / len(fr_list)) / vehicles.PED_COUNT, f"pedestrian models {a_ + 1}/{vehicles.PED_COUNT}")
-    own_ = (0, 2, 3, 4, 5, 12, 13) + tuple(range(20, 28)) + tuple(range(30, 38))
-    for j_, fr_ in enumerate(own_):
-        renderer.ped_model(100 + cfg["lik"] % len(characters.LIKOVI), 0, fr_, 3)        # the player's own avatar: every pose it can show
-        loader.tick(0.8 + 0.1 * (j_ + 1) / len(own_), "your character")
+        fr_list = (0, 1, 12, *range(20, 28, 2), *range(30, 38, 2)) if a_ in vehicles.WALKERS else (0, 1)
+        specs.extend(("ped", a_, 0, characterart.lod_frame(frame, 1), 0, 1) for frame in fr_list)
+    own_ = (0, 2, 3, 4, 5, 12, 13, 16) + tuple(range(20, 28)) + tuple(range(30, 38)) + tuple(range(40, 48)) + tuple(range(60, 68))
+    arch_ = characterart.hero_arch(100 + cfg["lik"] % len(characters.LIKOVI))
+    for frame in own_:
+        specs.append(("ped", arch_, 0, characterart.lod_frame(frame, 1), 0, 1))
+        if renderer.ped_detail > 1:
+            specs.append(("ped", arch_, 0, frame, 0, renderer.ped_detail))
+    renderer.warm_models(list(dict.fromkeys(specs)), lambda n, total: loader.tick(0.25 + 0.65 * n / total, "car & pedestrian models"))
+    log(f"[game] startup models in {time.perf_counter() - mesh_started:.2f}s")
     renderer.BUILD_BUDGET = type(renderer).BUILD_BUDGET
     renderer.pick_model("burek")
     renderer.pick_model("ajvar")
@@ -635,7 +728,7 @@ def main():
     rng = random.Random(a.seed)
     loader.tick(0.92, "simulation")
     try:
-        sim = Sim(world, rng, a.cars, a.peds)
+        sim = load_while_drawing(lambda: Sim(world, rng, a.cars, a.peds))
     except Exception as e:  # noqa: BLE001 - an old built world the new code cannot use: rebuild it instead of crashing
         real_ = os.path.join(ROOT, "data", "cache", "world")
         if a.rebuild or a.world or a.demo or not _stale(real_, os.path.join(ROOT, "data", "osm")):
@@ -646,7 +739,9 @@ def main():
     photobg.set_ready()                                   # the world is in: the background photogrammetry may run now
     photobg.sync(cfg)
     loader.tick(0.95, "pavement grid")
-    world.kerb(0.0, 0.0)                                  # builds the pavement grid now instead of in the first frames of play
+    load_while_drawing(lambda: world.kerb(0.0, 0.0))
+    loader.tick(0.96, "emergency routing")
+    load_while_drawing(sim.services._graph)
     sim.car.color = -1                                   # the player's own car gets racing stripes
     sim.clock.hour = (a.hour if a.test or "--hour" in sys.argv else cfg["hour"]) % 24.0
     streamer.clock = sim.clock
@@ -654,17 +749,22 @@ def main():
     lights = signals.Signals(world)
     sim.traffic.signals = sim.lights = lights
     import trafficproc
-    sim.tproc = trafficproc.start(sim, world)             # AI traffic on its own core: the worker loads the world meanwhile
+    sim.tproc = trafficproc.start(sim, world, report=log)  # AI traffic on its own core: the worker loads the world meanwhile
     loader.tick(0.97, "traffic lights")
     print(f"[game] traffic lights: {len(lights.items)} signal heads")                     # test runs have nobody to press R
     loader.tick(0.99, "sound")
     print(f"[sound] library: {len(aud.lib)} sounds found, {aud.req[0]} new request files in sound_requests/ ({aud.req[2]} of {aud.req[1]} sounds done)")
+    try:
+        bio = load_while_drawing(lambda: soundlib.Biomes(world))
+    except Exception as e_:  # noqa: BLE001
+        print("[sound] no biome map:", e_)
+        bio = None
     car_radio = radio_mod.Radio(aud)
     import loadmusic as _lm
     radio_view = _lm.CarRadioView(car_radio)                    # the same radio button as in the menus, at the same top-left spot
     cabin_music = radio_mod.CabinMusic(aud, car_radio)
     spk = SpeechWorker()
-    night = Night(world)
+    night = load_while_drawing(lambda: Night(world))
     night.st = streamer
     places = Places(world)
     sim.places = places
@@ -673,12 +773,12 @@ def main():
     if not (transit.current(_osm) and os.path.exists(os.path.join(_osm, "map_pois.json"))):
         try:                                               # bus lines + map POIs from the cached country file (once)
             import subprocess
-            r_ = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "fetch_extras.py")], capture_output=True,
-                                text=True, timeout=300)
+            r_ = load_while_drawing(lambda: subprocess.run([sys.executable, os.path.join(ROOT, "tools", "fetch_extras.py")],
+                                                           capture_output=True, text=True, timeout=300))
             print((r_.stdout + r_.stderr).strip()[-600:])
         except Exception as e_:  # noqa: BLE001 - buses / markers are optional
             print(f"[game] extras skipped: {e_}")
-    sim.transit = transit.Transit(sim, os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm"))
+    sim.transit = load_while_drawing(lambda: transit.Transit(sim, _osm))
     log(f"[game] city buses: {len(sim.transit.lines)} JSP lines, {len(sim.transit.stops)} stops")
     import kids as kids_mod
     sim.kids = kids_mod.Kids(sim)
@@ -716,12 +816,14 @@ def main():
         if getattr(sim, "places", None) is not None:
             sim.places.lang = c["lang"]
         d = c["detail"]
+        renderer.ped_detail = c["character_detail"] + 1
         renderer.shadows = d >= 1
         sunshadow.enabled = d >= 1
         flags["labels"] = d >= 1 and c["labels"]
         particles.max = (250, 600, 900)[d]
         night.detail = d
         streamer.detail = d                       # facade relief / clutter of the photo-fitted buildings (bake.py)
+        c["material_pack"] = streamer.set_texture_pack(c["material_pack"])
         if not a.test:
             if is_borderless() != bool(c["fullscreen"]):
                 set_borderless(bool(c["fullscreen"]))
@@ -749,7 +851,7 @@ def main():
             wk_.lx, wk_.ly = x_, y_
             wk_.az = world.level(x_, y_, 1e9) if a.deck else world.ground_y(x_, y_)
             sim.safe, sim.safe_z = (x_, y_, 0.0), wk_.az
-    labels = build_labels(world)
+    labels = load_while_drawing(lambda: build_labels(world))
     particles, popups = Particles(random.Random(5)), Popups()
     gains = fx_mod.Gains()
     fx_mod.GROUND = world.ground_y
@@ -760,10 +862,10 @@ def main():
     except (OSError, ValueError):
         hud.pois = []
     print(f"[game] map points of interest: {len(hud.pois)}")
-    sim.dogs.add_pois(hud.pois)
+    load_while_drawing(lambda: sim.dogs.add_pois(hud.pois))
     try:                                                   # police stations and army barracks: fences, guards, vehicles
         import compounds as compounds_mod
-        sim.compounds = compounds_mod.Compounds(sim, hud.pois, os.environ.get("SK242_OSM_DIR") or os.path.join(ROOT, "data", "osm"))
+        sim.compounds = load_while_drawing(lambda: compounds_mod.Compounds(sim, hud.pois, _osm))
     except Exception as e_:  # noqa: BLE001 - the game runs without them
         log(f"[game] compounds failed: {e_!r}")
         sim.compounds = None
@@ -824,21 +926,40 @@ def main():
         farset = {k for k, v in zip(ks, (g >= mid).tolist()) if v}
         return ks, lite, farset
 
+    sites = sim.compounds is not None and bool(sim.compounds.list)
+    stairs = getattr(sim, "heli_stairs", None)
+    if sites or stairs:
+        import compoundart
+        loader.begin("site_meshes")
+        started = time.perf_counter()
+        try:
+            if sites:
+                renderer.cmp_art = compoundart.Art()
+                renderer.cmp_art.prepare(sim.compounds, world, lambda f: loader.tick(f * 0.9), load_while_drawing)
+            if stairs:
+                renderer._stairs_m = gl3d.stairs_model(stairs)
+            loader.tick(1.0)
+            log(f"[game] site meshes prepared during loading in {time.perf_counter() - started:.2f}s")
+        except Exception:  # noqa: BLE001 - the renderer can build an individual model lazily if preparation failed
+            log("[game] site mesh preparation failed:\n" + traceback.format_exc())
+    else:
+        loader.skip("site_meshes")
     loader.begin("chunks")
     first = want_list(sx, sy, 7.0, W, H, 30)[:40]
     for i, key in enumerate(first):
         loader.tick(i / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
-        streamer.update([key], True, 1e9)
+        while True:
+            streamer.update([key], True, 4.0)
+            if key in streamer.bad or (key in streamer.ground and (key not in world.chunks or key in streamer.meshes)):
+                break
+            loader.draw()
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
-    loader.finish()
     keep_window_alive(False)
-    gc.collect()
-    import modelpool
-    modelpool.start()                              # car / person models on spare cores (SK242_MODELPOOL=0: in the frame)
-    if sim.tproc is not None and not sim.tproc.wait_ready():
+    gc.collect(0)
+    if sim.tproc is not None and not sim.tproc.wait_ready(draw=loader.draw):
         sim.tproc = None                           # the worker failed: traffic runs in this process as before
+    loader.finish()
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
-    gc.set_threshold(50000, 20, 100)
     res_ = ""
     mpg = None                                             # multiplayer sync (mpgame.Game) when a lobby game was started
     log("[game] ready")
@@ -1361,11 +1482,6 @@ def main():
                     n += len(ch["b"])
         return max(0.0, min(1.0, n / 450.0))
 
-    try:
-        bio = soundlib.Biomes(world)                                 # v2.1: trees / parks / water around the listener
-    except Exception as e_:  # noqa: BLE001
-        print("[sound] no biome map:", e_)
-        bio = None
     sx = {"env": {}, "chk": 0.0, "next": 6.0, "pass": {}, "wnext": 3.0, "swim": 0.0, "hour": -1, "place": "", "h0": None, "cpr": 0.0}
     # (weight, key, where it comes from): `where` picks a spot of that biome near the listener
     def wildlife(fx_, fy_, dn, dk):
@@ -1474,6 +1590,9 @@ def main():
     ENG_PITCH = {"engine_moto": (1.0, 3.5), "engine_small": (0.85, 2.8), "engine_tdi": (0.75, 2.6), "engine_v8": (0.7, 2.0), "engine_bus": (0.7, 2.3),
                  "engine_diesel": (0.75, 2.6), "engine_truck": (0.65, 2.1), "engine_tractor": (0.6, 1.3)}       # idle pitch, pitch span per engine: bikes scream, lorries and tractors stay low
     RPM_IDLE, RPM_SHIFT = 800.0, 3500.0
+    clutch_rng = random.Random()
+    clutch_bite_at = actors.CLUTCH_FLARE + actors.CLUTCH_BITE
+    clutch_end = clutch_bite_at + actors.CLUTCH_SETTLE
     eng_launch = {}
     eng_prevv = {}
 
@@ -1496,9 +1615,10 @@ def main():
                 g += 1                                                                              # upshift at the shift rpm
             while g > 0 and v < sh[g - 1] * 0.86:
                 g -= 1                                                                              # downshift once the next gear down would still sit at ~86% of the shift rpm
-            now = time.time()
-            lt = now - eng_launch.get(id(b), -99.0)
-            if g > eng_gear.get(id(b), g) and lt >= 1.06:                                            # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
+            now = time.monotonic()
+            started, flare_from, bite = eng_launch.get(id(b), (-math.inf, RPM_IDLE, RPM_IDLE))
+            lt = now - started
+            if g > eng_gear.get(id(b), g) and lt >= clutch_end:                                     # upshift by hand: clutch in, lever across, revs fall freely, then the clutch bites
                 eng_shift[id(b)] = (now, 0.4 if heavy else 0.35, eng_state.get(id(b), 1.0))
             if g < len(sh):
                 rpm = top_rpm * v / sh[g]
@@ -1508,18 +1628,23 @@ def main():
             rpm = max(RPM_IDLE, rpm)
             rpm *= 1.0 + 0.06 * thr - (0.08 if thr < 0.05 and v > 10 else 0.0)                     # throttle lift drops the revs (engine braking)
             if v < 10.0 and thr > 0.2 and id(b) not in eng_launch:
-                eng_launch[id(b)] = now                                                             # pulling away / gas from a crawl under 10 km/h: clutch launch
+                low, rise, variation = (1400.0, 550.0, 100.0) if heavy else (1720.0, 900.0, 150.0)
+                bite = low + rise * (v / 10.0) + clutch_rng.uniform(-variation, variation)
+                eng_launch[id(b)] = (now, rpm, bite)                                                # sample the speed and clutch variation once, at throttle tip-in
+                eng_shift.pop(id(b), None)
+                lt, flare_from = 0.0, rpm
             elif thr < 0.1:
                 eng_launch.pop(id(b), None)
-            lt = now - eng_launch.get(id(b), -99.0)
-            if lt < 1.06:                                                                           # the clutch slips: the revs do not follow the road speed yet
-                flare, bite = (2550.0, 1050.0) if heavy else (4200.0, 1300.0)
-                if lt < 0.2:
-                    rpm = RPM_IDLE + (flare - RPM_IDLE) * lt / 0.2                                 # foot down, clutch in: revs flare
-                elif lt < 0.44:
-                    rpm = flare + (bite - flare) * (lt - 0.2) / 0.24                              # clutch bites: the load drags the revs down
+                lt = math.inf
+            if lt < clutch_end:                                                                     # the clutch slips: the revs do not follow the road speed yet
+                flare = 2550.0 if heavy else 4200.0
+                if lt < actors.CLUTCH_FLARE:
+                    a, b_, u = flare_from, flare, lt / actors.CLUTCH_FLARE
+                elif lt < clutch_bite_at:
+                    a, b_, u = flare, bite, (lt - actors.CLUTCH_FLARE) / actors.CLUTCH_BITE
                 else:
-                    rpm = bite + (rpm - bite) * (lt - 0.44) / 0.62                                # clutch fully up: back onto the road speed
+                    a, b_, u = bite, rpm, (lt - clutch_bite_at) / actors.CLUTCH_SETTLE
+                rpm = a + (b_ - a) * u * u * (3.0 - 2.0 * u)
             elif v < 1.5 and thr < 0.05:
                 rpm = RPM_IDLE + 15 * math.sin(now * 54) + 10 * math.sin(now * 138)                 # uneven idle
             eng_gear[id(b)] = g
@@ -1762,8 +1887,10 @@ def main():
     snap = False
     last_phase = None
     hitch_t0 = time.perf_counter()
+    last_stream = hitch_t0
     win_focus = True
     while not rl.window_should_close():
+        frame_start = time.perf_counter()
         dt_real = rl.get_frame_time()
         dt = 1 / 60 if a.test else min(dt_real, 0.05)
         if present_mod.pending_quit:                    # the exit button was pressed inside the frame buffer
@@ -2105,13 +2232,14 @@ def main():
         tgt_ppm = max(tgt_ppm, (0.97 if sim.mode == "car" else 3.64) / 0.6)     # the farthest zoom-out is 60% of what it was (ppm floor = old floor / 0.6)
         ppm += (tgt_ppm - ppm) * min(1.0, 2.5 * dt)
         sim.view_r = max(150.0, min(300.0, 1250.0 / max(ppm, 1.0) + 60.0))      # parked cars are placed this far round the camera
-        k = min(1.0, 6.0 * dt)
+        k = min(1.0, 6.0 * dt) if sim.mode == "car" else -math.expm1(-6.0 * dt)
         if snap:                                   # teleported: jump the camera instead of flying across the city
             snap = False
             cam_x, cam_y, k = fx, fy, 1.0
             cam_h = None
-        cam_x += (fx + fvx * 0.45 - cam_x) * k
-        cam_y += (fy + fvy * 0.45 - cam_y) * k
+        lookahead = 0.45 if sim.mode == "car" else 0.15
+        cam_x += (fx + fvx * lookahead - cam_x) * k
+        cam_y += (fy + fvy * lookahead - cam_y) * k
         if sim.mode == "car":
             foc_h = sim.car.az if sim.car.az is not None else world.ground_y(fx, fy)
         else:
@@ -2171,7 +2299,8 @@ def main():
         else:
             renderer.view_far, renderer.far_keys = 0.0, None
             wanted = want_list(cam_x, cam_y, ppm, sw, sh, 70) if lod else []
-        guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
+        if a.test:
+            guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         if lod:
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
@@ -2278,9 +2407,18 @@ def main():
             rl.end_drawing()
         ft_hist.append(dt_real)
         t_now = time.perf_counter()
+        swap_ms = (t_now - t_sw) * 1000
+        if not a.test and not show_map and not want_menu and not want_chars and not present_mod.pending_quit:
+            stream_ms = min(4.0, (1 / 60 - (t_sw - frame_start)) * 1000)
+            ui_input = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or any(
+                rl.is_key_pressed(key) for key in (rl.KEY_ESCAPE, rl.KEY_M, rl.KEY_L, rl.KEY_F11))
+            if not ui_input and (stream_ms > 0.0 or t_now - last_stream >= 0.1):
+                guard.run("stream", streamer.update, wanted, lod, max(0.5, stream_ms), lite_)
+                last_stream = t_now
+                t_now = time.perf_counter()
         if t_now - hitch_t0 > 0.1 and hitch_n < 300 and not a.test:
             hitch_n += 1
-            parts = sorted(guard.ms.items(), key=lambda kv: -kv[1])[:6] + [("gc", gc_t[1] * 1000), ("swap", (t_now - t_sw) * 1000)]
+            parts = sorted(guard.ms.items(), key=lambda kv: -kv[1])[:6] + [("gc", gc_t[1] * 1000), ("swap", swap_ms)]
             log(f"[hitch] {(t_now - hitch_t0) * 1000:.0f} ms ({sim.mode}): " + ", ".join(f"{k} {v:.0f}" for k, v in parts if v >= 1.0))
         hitch_t0 = t_now
         if not a.test:                                     # every 5 s one [fps] line: where a slow frame really goes
@@ -2309,6 +2447,7 @@ def main():
             elif avg_ < 1 / 55:
                 auto_q = min(1.0, auto_q + 0.002)
             sim.dens_traffic, sim.dens_peds = cfg.traffic_mult * auto_q, cfg.ped_mult * auto_q
+            renderer.ped_quality = auto_q
         boom_ = int(os.environ.get("SK242_TEST_BOOM", "-1"))
         if a.test and boom_ > 0 and frame == boom_:       # test hook: blow something up in front of the camera, shots follow
             particles.explosion(cam_x, cam_y)
@@ -2320,6 +2459,8 @@ def main():
             rl.unload_image(img)
         if a.test and frame >= a.test:
             break
+    if mpg is not None:
+        mpg.ses.leave()
     spk.dead = True
     if aud.dry:
         for (nm_, src_), n_ in sorted(aud.stats.items()):
@@ -2346,6 +2487,10 @@ def main():
     photobg.stop()
     if sim.tproc is not None:
         sim.tproc.stop()
+    renderer.close_ped_models()
+    if night.lm is not None:
+        night.lm.close()
+    surfacepack.close()
     rl.close_window()
     # normal exit: hard-exit so no lingering non-daemon thread or child process keeps python (and the console window) alive
     try:

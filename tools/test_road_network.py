@@ -15,6 +15,7 @@ import signals
 from transit import Transit
 import vehicles
 from actors import Body, Car, Traffic, drive, fly, turn_radius_factor
+from crosswalks import CrossingMap, walk_path
 from driving import fastest_route, follow_speed, road_control_speed, turn_lanes
 from roadwidth import half_width
 from sidewalk_audit import raster
@@ -140,6 +141,30 @@ class RoadNetworkTests(unittest.TestCase):
         pedestrian.vy = -5.0
         self.assertFalse(traffic._ped_in_way(car))
 
+    def test_pedestrian_path_reaches_a_zebra_instead_of_cutting_across(self):
+        crossings = CrossingMap([(0, 5, 0, 1, 4, 1)])
+        world = SimpleNamespace(pedestrian_ground=lambda x, y: abs(x) > 2 or crossings.zebra(x, y))
+        path = walk_path(world, (-5, 0), (5, 0))
+        self.assertIsNotNone(path)
+        across = [p for p in path if abs(p[0]) <= 2]
+        self.assertTrue(across)
+        self.assertTrue(all(crossings.zebra(*p) for p in across))
+
+    def test_drivers_yield_ahead_at_zebras_and_brake_for_imminent_contact_elsewhere(self):
+        traffic = Traffic.__new__(Traffic)
+        traffic.w = SimpleNamespace(on_zebra=lambda *_: False)
+        car = Car()
+        car.x = car.y = car.h = 0.0
+        car.kind, car.v = 1, 6.0
+        ped = SimpleNamespace(vx=0.0, vy=0.0)
+        traffic.hash = {(0, 0): [(8.0, 0.0, 0.3, 0.4, ped, None, 0.0)]}
+        self.assertIsNone(traffic._ped_gap(car))
+        traffic.w.on_zebra = lambda *_: True
+        self.assertIsNotNone(traffic._ped_gap(car))
+        traffic.w.on_zebra = lambda *_: False
+        traffic.hash[(0, 0)] = [(4.0, 0.0, 0.3, 0.4, ped, None, 0.0)]
+        self.assertIsNotNone(traffic._ped_gap(car))
+
     def test_bus_yields_to_a_moving_pedestrian_crossing(self):
         transit = Transit.__new__(Transit)
         body = SimpleNamespace(x=0.0, y=0.0, h=0.0, vx=3.0, vy=0.0, kind=vehicles.BUS)
@@ -208,8 +233,8 @@ class RoadNetworkTests(unittest.TestCase):
         self.assertFalse(traffic._exit_blocked(c, 4.0))
 
     def test_turn_radius_tightens_more_at_low_speed(self):
-        self.assertAlmostEqual(turn_radius_factor(0.0), 0.67 * 0.75 * 0.75)
-        self.assertAlmostEqual(turn_radius_factor(12.0), 0.67 * 0.75)
+        self.assertAlmostEqual(turn_radius_factor(0.0), 0.67 * 0.75 * 0.75 * 0.75)
+        self.assertAlmostEqual(turn_radius_factor(12.0), 0.67 * 0.75 * 0.75)
 
     def test_coasting_turns_do_not_create_speed_and_cars_cap_at_160_kph(self):
         p = Body(0.0, 0.0, 0.0, 1)

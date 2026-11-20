@@ -2,6 +2,18 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Multiplayer world handoff
+
+- Remote driving and turn indicators work without disabling multiplayer updates.
+- During separation or a brief loss of world snapshots, a client continues local traffic and pedestrian simulation. Nearby clients wait for usable shared state before handing their simulation back to the authority.
+- The multiplayer minimap has a compact 10-second receive and send graph with live ping.
+- An independent UDP heartbeat keeps multiplayer connected while a game window is stalled. Closing the game sends the leave or close message before exit.
+- Compound fences, gates and rooftop stairs are prepared during loading, removing their geometry build from the first gameplay frame.
+
+## Character detail
+
+- The full pedestrian and hero rosters use redesigned meshes. Graphics → Детали на ликовите sets the maximum detail, with three tiers selected automatically by viewing distance and frame time.
+
 ## Sound rework (2026-11-12)
 - Every sound effect without a library recording is now synthesised realistically (src/sfx_synth.py): shots, explosions, crashes, glass, doors, machines, crowds, animals, birds. 116 keys that were silent before now play.
 - One loudness scale for effects, engines, footsteps, sirens, library ambiences and speech (src/loudness.py, docs/SOUND_LEVELS.md); music was already level.

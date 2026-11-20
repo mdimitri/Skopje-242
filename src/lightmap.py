@@ -8,6 +8,7 @@ import math
 
 import numpy as np
 import pyray as rl
+import raylib as RL
 
 V3 = rl.Vector3
 SIZE = 512
@@ -30,7 +31,11 @@ out vec4 finalColor;
 void main(){
   vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
   if (abs(n.y) > 0.6) discard;                                            // walls only
-  vec3 tx = texture(texture0, fragTexCoord).rgb;
+  vec2 uvDx = dFdx(fragTexCoord), uvDy = dFdy(fragTexCoord);
+  float dist = length(wp.xz - wc.xy);
+  float fade = 1.0 - smoothstep(0.75 * wc.z, wc.z, dist);
+  if (fade <= 0.0) discard;
+  vec3 tx = textureGrad(texture0, fragTexCoord, uvDx, uvDy).rgb;
   float lum = dot(tx, vec3(0.333));
   float avg = dot(textureLod(texture0, fragTexCoord, 3.0).rgb, vec3(0.333));         // the facade's local average: glazing is darker than its surroundings
   float glass = max(1.0 - smoothstep(0.18, 0.36, lum), clamp((avg - lum) * 7.0 - 0.1, 0.0, 1.0));
@@ -38,9 +43,6 @@ void main(){
   vec2 cell = floor(vec2((wp.x + wp.z) / 3.4, wp.y / 3.0));                // one random flag per ~3 m cell
   float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
   float on = step(0.5, h) * (0.75 + 0.25 * fract(h * 7.0));
-  float dist = length(wp.xz - wc.xy);
-  float fade = 1.0 - smoothstep(0.75 * wc.z, wc.z, dist);                 // no hard cutoff ring
-  if (fade <= 0.0) discard;
   vec3 col = mix(vec3(1.0, 0.78, 0.45), vec3(0.75, 0.88, 1.0), step(0.93, h));     // warm, a few TV-blue
   finalColor = vec4(col * glass * on * wglow * fade * 1.1, 1.0);
 }"""
@@ -76,6 +78,16 @@ class LightMap:
         self.span = 100.0
         self.cx = self.cz = 0.0
         self.win = None
+        self._overlay_model = None
+        self._overlay_bounds = None
+        self._axis = np.arange(GRID + 1)
+        i, j = np.meshgrid(self._axis[:-1], self._axis[:-1], indexing="ij")
+        corner = (j * (GRID + 1) + i).ravel()
+        opposite = corner + GRID + 2
+        self._indices = np.column_stack((corner, corner + 1, opposite, corner, opposite, corner + GRID + 1)).astype(np.uint16)
+        self._positions = np.empty(((GRID + 1) ** 2, 3), dtype=np.float32)
+        self._uv = np.empty(((GRID + 1) ** 2, 2), dtype=np.float32)
+        self._colors = np.full(((GRID + 1) ** 2, 4), 255, dtype=np.uint8)
         self.street = False
 
     # ------------------------------------------------------------ region + queue (before the frame's drawing starts)
@@ -123,31 +135,63 @@ class LightMap:
             rl.end_texture_mode()
 
     # ------------------------------------------------------------ draw: overlay (inside the scene's render target, after the night tint)
+    def _update_overlay(self, dark):
+        bounds = (self.ox, self.oz, self.span)
+        strength = min(1.0, dark * 1.5)
+        geometry_changed = self._overlay_bounds != bounds
+        if geometry_changed:
+            xs = self.ox + self._axis * (self.span / GRID)
+            zs = self.oz + self._axis * (self.span / GRID)
+            x, z = np.meshgrid(xs, zs)
+            self._positions[:, 0] = x.ravel()
+            self._positions[:, 1] = (self.w.th_v(x, z).ravel() if self.w.hilly else 0.0) + LIFT
+            self._positions[:, 2] = z.ravel()
+            self._uv[:, 0] = ((x - self.ox) / self.span).ravel()
+            self._uv[:, 1] = (1.0 - (z - self.oz) / self.span).ravel()
+            radius = np.maximum(np.abs(x - self.cx), np.abs(z - self.cz)) / (self.span / 2)
+            self._fade = (1.0 - np.clip((radius - 0.75) / 0.25, 0.0, 1.0)).ravel()
+            self._overlay_bounds = bounds
+        if geometry_changed or self._strength != strength:
+            self._colors[:, 3] = 255 * strength * self._fade
+            self._strength = strength
+            if self._overlay_model is not None:
+                mesh = self._overlay_model.meshes[0]
+                if geometry_changed:
+                    RL.UpdateMeshBuffer(mesh, 0, rl.ffi.from_buffer(self._positions), self._positions.nbytes, 0)
+                    RL.UpdateMeshBuffer(mesh, 1, rl.ffi.from_buffer(self._uv), self._uv.nbytes, 0)
+                RL.UpdateMeshBuffer(mesh, 3, rl.ffi.from_buffer(self._colors), self._colors.nbytes, 0)
+        if self._overlay_model is None:
+            mesh = rl.Mesh()
+            mesh.vertexCount = len(self._positions)
+            mesh.triangleCount = self._indices.size // 3
+            mesh.vertices = rl.ffi.from_buffer("float[]", self._positions)
+            mesh.texcoords = rl.ffi.from_buffer("float[]", self._uv)
+            mesh.colors = rl.ffi.from_buffer("unsigned char[]", self._colors)
+            mesh.indices = rl.ffi.cast("unsigned short *", rl.mem_alloc(self._indices.nbytes))
+            rl.ffi.memmove(mesh.indices, rl.ffi.from_buffer(self._indices), self._indices.nbytes)
+            rl.upload_mesh(rl.ffi.addressof(mesh), True)
+            # DrawMesh uses the retained raylib-owned index pointer to select indexed drawing.
+            mesh.vertices = mesh.texcoords = mesh.colors = rl.ffi.NULL
+            self._overlay_model = rl.load_model_from_mesh(mesh)
+            self._overlay_model.materials[0].maps[0].texture = self.rt.texture
+
+    def close(self):
+        if self._overlay_model is not None:
+            rl.unload_model(self._overlay_model)
+        if self.win:
+            rl.unload_shader(self.win[0])
+        rl.unload_texture(self.soft)
+        rl.unload_render_texture(self.rt)
+
     def overlay(self, cam, dark):
-        w, n = self.w, GRID
-        xs = self.ox + np.arange(n + 1) * (self.span / n)
-        zs = self.oz + np.arange(n + 1) * (self.span / n)
-        X, Z = np.meshgrid(xs, zs)
-        Y = (w.th_v(X, Z) if w.hilly else np.zeros_like(X, np.float32)) + LIFT
-        r = np.maximum(np.abs(X - self.cx), np.abs(Z - self.cz)) / (self.span / 2)
-        fade = 1.0 - np.clip((r - 0.75) / 0.25, 0.0, 1.0)                  # the map fades out at its border: no hard edge
-        A = (255 * np.minimum(1.0, dark * 1.5) * fade).astype(int)
+        self._update_overlay(dark)
         rl.begin_mode_3d(cam)
         try:
             rl.rl_disable_backface_culling()
             rl.rl_enable_depth_test()
             rl.rl_disable_depth_mask()
             rl.begin_blend_mode(rl.BLEND_ADDITIVE)
-            rl.rl_set_texture(self.rt.texture.id)
-            rl.rl_begin(rl.RL_QUADS)
-            for i in range(n):
-                for j in range(n):
-                    for di, dj in ((0, 0), (1, 0), (1, 1), (0, 1)):
-                        a_, b_ = i + di, j + dj
-                        rl.rl_color4ub(255, 255, 255, int(A[b_, a_]))
-                        rl.rl_tex_coord2f((X[b_, a_] - self.ox) / self.span, 1.0 - (Z[b_, a_] - self.oz) / self.span)
-                        rl.rl_vertex3f(float(X[b_, a_]), float(Y[b_, a_]), float(Z[b_, a_]))
-            rl.rl_end()
+            rl.draw_model(self._overlay_model, V3(0, 0, 0), 1.0, rl.WHITE)
             rl.rl_set_texture(self.soft.id)
             rl.rl_begin(rl.RL_QUADS)
             p, q = cam.position, cam.target

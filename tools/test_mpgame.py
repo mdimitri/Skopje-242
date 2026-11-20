@@ -57,6 +57,15 @@ def far_point():
 def err(a_list, b_list):
     return max(min(math.hypot(c.x - h.x, c.y - h.y) for h in b_list) for c in a_list)
 
+def paired_stats(label, store, live):
+    live_ids = {id(o) for o in live}
+    matched = [(e, hg.byid[wid]) for wid, e in store.items()
+               if e["obj"] is not None and wid in hg.byid and id(hg.byid[wid]) in live_ids]
+    assert matched, label
+    error = max(math.hypot(e["obj"].x - h.x, e["obj"].y - h.y) for e, h in matched)
+    age = max(gg.now - e["seen"] for e, _ in matched)
+    print(f"  {label} wire IDs: {len(matched)}/{len(store)} matched, max error {error:.2f} m, max snapshot age {age:.3f} s")
+
 # ---- 1. together: host is the authority, guest follows
 frames(240, (1.0, 0.0))
 print("1 near : auth", hg.auth, "guest client", gs.client, "| puppet cars %d peds %d" % (len(gs.traffic.cars), len(gs.peds.list)))
@@ -64,6 +73,8 @@ assert hg.auth == {0: 0, 1: 0} and gs.client and not hs.client
 assert len(gs.traffic.cars) > 0 and len(gs.peds.list) > 0
 print("  puppet error: cars %.2f m, peds %.2f m" % (err(gs.traffic.cars, hs.traffic.cars), err(gs.peds.list, hs.peds.list)))
 assert err(gs.traffic.cars, hs.traffic.cars) < 6 and err(gs.peds.list, hs.peds.list) < 4
+paired_stats("cars", gg.cars, hs.traffic.cars)
+paired_stats("peds", gg.peds, hs.peds.list)
 assert 1 in hs.remote_foot and 0 in gs.remote_foot
 # ---- 2. guest far away: both run their own world
 hx, hy = hs.focus()[:2]
@@ -157,9 +168,25 @@ assert gs.riding is not None and gs.mode == "car" and gs.car in gs.bodies
 assert hg.remote[1].get("body") is None and 1 not in hs.remote_foot
 gs.exit_car(); frames(10)
 assert gs.mode == "foot"
+# Keep the session and player updates flowing while its world snapshots stop.
+gw = gs.walker
+gw.x, gw.y = pb[0].x + .3, pb[0].y + 1.2
+gw.lx, gw.ly = gw.x, gw.y
+assert gs.try_enter() is True and gs.riding is not None
+snap = hg._snapshot_for
+hg._snapshot_for = lambda *_: []
+frames(40)
+assert g.state == "playing" and not gs.client and gs.traffic.cars and gs.peds.list
+assert gs.mode == "foot" and gs.riding is None
+hg._snapshot_for = snap
+frames(100)
+assert gs.client and gs.traffic.cars and gs.peds.list
+print("6g region loss: guest simulated locally and rejoined with replacement state")
 # ---- 7. wire ids of cars / pedestrians that left the world are forgotten
 frames(int(11 / dt))
 live = {id(o) for o in hs.traffic.cars} | {id(o) for o in hs.peds.list} | {id(o) for o in hs.bodies}
+hg._prune_ids()
+assert all(id(o) in live for o in hg.byid.values())
 print("7 wire ids kept: %d, all alive: %s" % (len(hg.byid), all(id(o) in live for o in hg.byid.values())))
 frames(1)
 # ---- 8. a message from one guest for another guest is passed on by the host

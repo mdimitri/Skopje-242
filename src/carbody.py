@@ -460,6 +460,48 @@ def build(name, L, W, belt, roof, body_c, accent, two, shade, glass, tyre_r):
     return parts
 
 
+def indicator_mounts(name, length, width, belt):
+    """Front and rear amber lens centres on the positive side of the generated lamp clusters."""
+    s = spec(name, length)
+    sill = s["gc"]
+    nose, tail = belt - s["dn"], belt + s["dd"] - s["dt"]
+    fw = rw = width * 0.5 * (1.0 - s["rnd"] * 0.23)
+    if name == "Pachuvka 2CV":
+        fw *= 0.67 + 0.33 * math.exp(-((length * 0.5 - s["ax_f"]) / 0.46) ** 2)
+        rw *= 0.67 + 0.33 * math.exp(-((-length * 0.5 - s["ax_r"]) / 0.46) ** 2)
+
+    def mount(end, y, z, depth, lens_w, lens_h):
+        top, rake = (nose, s["nrF"]) if end == 1 else (tail, s["nrR"])
+        taper = max(0.0, min(1.0, (y - sill - 0.2) / max(0.1, top - sill - 0.2)))
+        return (end * (length * 0.5 - rake * taper + depth), y, z, lens_w, lens_h)
+
+    if name in ("Golf Dvojka", "Mercedes 190", "Taxi Zlatna Zolta", "BMW E36 Bavarka"):
+        if name == "Golf Dvojka":
+            front = mount(1, sill + 0.1285, 0.505, 0.064, 0.16, 0.047)
+        else:
+            front = mount(1, nose - 0.151, fw - 0.086, 0.043, 0.084, 0.105)
+        return front, mount(-1, tail - 0.093, rw - 0.10, 0.043, 0.09, 0.068)
+
+    reference, _, head, rear, _ = ROAD[name]
+    lamp, _, lh, _ = head
+    rear_style, lens_w, lens_h = rear
+    scale = length / reference[0]
+    bumper = sill + 0.024 + min(0.19, (nose - sill) * 0.34)
+    bottom = nose - 0.041 - min(lh * scale, max(0.105, nose - bumper - 0.047))
+    if name == "Lada Niva":
+        front = mount(1, nose - 0.055, fw - 0.1375, 0.025, 0.12, 0.054)
+    elif lamp in ("stalk", "round", "quad", "rect"):
+        bottom = max(sill + 0.055, min(bottom - 0.079, bumper - 0.064))
+        front = mount(1, bottom + 0.026, fw - 0.1075, 0.065, 0.09, 0.046)
+    else:
+        front = mount(1, (bottom + nose - 0.041) * 0.5, fw - 0.105, 0.027, 0.07, 0.059)
+    rear_top = tail - 0.042
+    rh = min(lens_h * scale, max(0.09, rear_top - sill - 0.174))
+    rw -= 0.045
+    rw -= max(0.044, min(lens_w * scale, rw - 0.12) * (0.28 if rear_style == "roundpair" else 0.16))
+    return front, mount(-1, rear_top - rh * 0.39, rw, 0.027, 0.08, 0.045)
+
+
 def _shaded(verts, tcol, gmask, yb, belt, shade):
     """Per-triangle outward normal -> lit vertex colours (body gets the same darker-underneath gradient as the old model)."""
     tri = verts.reshape(-1, 3, 3)

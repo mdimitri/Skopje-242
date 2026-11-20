@@ -1,4 +1,4 @@
-"""Ликови што можеш да ги избереш на почеток (од likovi.txt).  Сликите (карикатури) се во assets/likovi/<id>.png;
+"""Ликови што можеш да ги избереш на почеток (од likovi.txt).  Сликите (карикатури) се во assets/likovi/<id>.jpg;
 ако некоја недостасува, се црта привремена картичка.  Статистиките се текст; во играта влијае само почетниот паричник."""
 from texts import TXT
 import os
@@ -40,8 +40,11 @@ LIKOVI = [
 LIKOVI = [(h, hero_names.NAMES.get(h, n), st, m) for h, n, st, m in LIKOVI]      # full names (Инфлуенсер Давид ...)
 
 
-def image_path(i):
-    p = os.path.join(DIR, LIKOVI[i][0] + ".png")
+def image_path(i, variant=""):
+    name = LIKOVI[i][0]
+    if variant:
+        name += "_" + variant
+    p = os.path.join(DIR, name + ".jpg")
     return p if os.path.exists(p) else None
 
 

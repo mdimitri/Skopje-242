@@ -5,9 +5,12 @@ import json
 import math
 import os
 import pickle
+import time
 import zlib
 
 import numpy as np
+from crosswalks import CrossingMap
+from roadwidth import half_width, has_sidewalk
 
 
 class WorldError(Exception):
@@ -31,20 +34,30 @@ def validate(path):
 
 def _read_with_progress(fn, progress, label, base, span):
     size = os.path.getsize(fn)
-    buf = bytearray()
     with open(fn, "rb") as f:
-        while True:
-            b = f.read(4 * 1024 * 1024)
-            if not b:
-                break
-            buf += b
-            progress(base + span * 0.6 * len(buf) / max(size, 1), f"{label}: reading {len(buf) / 1e6:.0f}/{size / 1e6:.0f} MB")
-    progress(base + span * 0.6, f"{label}: unpacking")
-    return pickle.loads(buf)                           # (bytes(buf) copied the whole file once more)
+        if progress is None:
+            return pickle.load(f)
+
+        class Reader:
+            readline = staticmethod(f.readline)
+            readinto = staticmethod(f.readinto)
+            next_yield = 0.0
+
+            def read(self, n):
+                now = time.monotonic()
+                if now >= self.next_yield:
+                    self.next_yield = now + 0.008
+                    pos = f.tell()
+                    progress(base + span * pos / max(size, 1), f"{label}: reading {pos / 1e6:.0f}/{size / 1e6:.0f} MB")
+                    time.sleep(0)                 # Pickle frame boundaries let the window thread run during large decodes.
+                return f.read(n)
+
+        return pickle.load(Reader())
 
 
 class World:
     LEAN_SKIP = ("areas", "buildings", "chunks")       # not needed by the AI traffic worker (trafficproc.py)
+    crossings = CrossingMap()
 
     def __init__(self, path, progress=None, on_part=None, lean=False):
         """lean: only what the road graph and the ground heights need (no buildings, chunks, collision grids): a worker's copy."""
@@ -58,7 +71,7 @@ class World:
             for i, name in enumerate(PARTS):
                 if lean and name in self.LEAN_SKIP:
                     continue
-                d = _read_with_progress(os.path.join(path, name + ".pkl"), P, name, i / n * 0.6, 0.6 / n)
+                d = _read_with_progress(os.path.join(path, name + ".pkl"), progress, name, i / n * 0.6, 0.6 / n)
                 self.__dict__.update(d)
                 if on_part:
                     on_part(name, d)
@@ -76,6 +89,7 @@ class World:
         self.ncx = int(2 * self.hx / self.cell)
         self.ncy = int(2 * self.hy / self.cell)
         self._load_terrain()
+        self.crossings = CrossingMap(getattr(self, "xwalks", ()), getattr(self, "junction_cores", ()))
         if not lean:
             self._build_collision(lambda f, note="": P(0.6 + 0.2 * f, note))
         self._build_graph(lambda f, note="": P(0.8 + 0.2 * f, note))
@@ -93,8 +107,18 @@ class World:
         ix = int((x + self.hx) / self.cell)
         iy = int((y + self.hy) / self.cell)
         if 0 <= ix < self.ncx and 0 <= iy < self.ncy:
-            return self.surf[iy * self.ncx + ix]
+            surface = self.surf[iy * self.ncx + ix]
+            return 3 if surface == 0 and self.crossings.core(x, y) else surface
         return 0
+
+    def on_zebra(self, x, y):
+        return self.crossings.zebra(x, y)
+
+    def pedestrian_ground(self, x, y):
+        if self.crossings.core(x, y):
+            return False
+        surface = self.surface(x, y)
+        return surface != 1 and (surface != 3 or self.on_zebra(x, y) or self.kerb(x, y))
 
     # ---- static collision: building footprints (edges) + trees/lamps (circles) in hashed grids
     def _build_collision(self, P):
@@ -123,7 +147,9 @@ class World:
             for i in range(m):
                 (ax, ay), (bx, by) = ring[i], ring[(i + 1) % m]
                 pieces = [(ax, ay, bx, by)]
-                if ug and any((int(px // cg), int(py // cg)) in ug for px, py in ((ax, ay), (bx, by), ((ax + bx) / 2, (ay + by) / 2))):
+                if ug and ((int(ax // cg), int(ay // cg)) in ug
+                           or (int(bx // cg), int(by // cg)) in ug
+                           or (int(((ax + bx) / 2) // cg), int(((ay + by) / 2) // cg)) in ug):
                     L = math.hypot(bx - ax, by - ay)
                     n = max(1, int(L / 0.5))
                     pieces, run = [], None
@@ -141,8 +167,8 @@ class World:
                     if run is not None:
                         pieces.append((ax + (bx - ax) * run, ay + (by - ay) * run, bx, by))
                 for pa in pieces:
-                    x0, x1 = sorted((pa[0], pa[2]))
-                    y0, y1 = sorted((pa[1], pa[3]))
+                    x0, x1 = (pa[0], pa[2]) if pa[0] <= pa[2] else (pa[2], pa[0])
+                    y0, y1 = (pa[1], pa[3]) if pa[1] <= pa[3] else (pa[3], pa[1])
                     for cx in range(int(x0 // cg), int(x1 // cg) + 1):
                         for cy in range(int(y0 // cg), int(y1 // cg) + 1):
                             g.setdefault((cx, cy), []).append(pa)
@@ -152,10 +178,16 @@ class World:
         pg = {}
         th = self.th
         P(0.8, "trees")
-        ta = np.array(self.trees, np.float64).reshape(-1, 4)
-        tt = self.th_v(ta[:, 0], ta[:, 1]).tolist()                       # all heights at once: th() per tree was most of this function's time
-        for (x, y, r, _s), t, cx, cy in zip(self.trees, tt, (ta[:, 0] // cg).astype(np.int64).tolist(), (ta[:, 1] // cg).astype(np.int64).tolist()):
-            pg.setdefault((cx, cy), []).append((x, y, 0.5 if r < 3.5 else 0.65, t - 1.0, t + 9.0))
+        ta = np.empty((len(self.trees), 4), np.float64)
+        for start in range(0, len(ta), 8192):
+            trees = self.trees[start:start + 8192]
+            batch = ta[start:start + len(trees)]
+            batch[:] = trees
+            xs, ys = batch[:, 0], batch[:, 1]
+            for (x, y, r, _s), t, cx, cy in zip(trees, self.th_v(xs, ys).tolist(),
+                    (xs // cg).astype(np.int64).tolist(), (ys // cg).astype(np.int64).tolist()):
+                pg.setdefault((cx, cy), []).append((x, y, 0.5 if r < 3.5 else 0.65, t - 1.0, t + 9.0))
+            P(0.8 + 0.15 * (start + len(trees)) / len(ta), "trees")
         for x, y in self.lamps:
             t = th(x, y)
             pg.setdefault((int(x // cg), int(y // cg)), []).append((x, y, 0.22, t - 1.0, t + 6.5))
@@ -206,11 +238,18 @@ class World:
         self.pg2 = {}
         plats = list(getattr(self, "plats", ()))
         have = {(round(pl[1][0][0], 1), round(pl[1][0][1], 1)) for pl in plats if pl[0] == 1}
+        roofs = []
         for b in getattr(self, "buildings", ()):                    # every other roof is solid too: a fall from a taller roof lands on it, not in it
             ring = b["ring"]
             if b["h"] >= 2.5 and len(ring) >= 3 and (round(ring[0][0], 1), round(ring[0][1], 1)) not in have:
-                gy = sum(self.th(x, y) for x, y in ring) / len(ring)
-                plats.append((1, [(float(x), float(y)) for x, y in ring], float(gy + b["h"])))
+                roofs.append((ring, b["h"]))
+        if roofs:
+            points = np.array([point for ring, _ in roofs for point in ring], dtype=np.float64)
+            lengths = np.array([len(ring) for ring, _ in roofs])
+            heights = self.th_v(points[:, 0], points[:, 1]).astype(np.float64)
+            bases = np.add.reduceat(heights, lengths.cumsum() - lengths) / lengths
+            for (ring, height), base in zip(roofs, bases):
+                plats.append((1, [(float(x), float(y)) for x, y in ring], float(base + height)))
         for pl in plats:
             if pl[0] == 0:
                 r = math.hypot(pl[5], pl[6])
@@ -384,7 +423,7 @@ class World:
             return a + (b - a) * ty + self.quay_cut(x, y)
         return a + (b - a) * ty
 
-    def th_v(self, x, y):
+    def th_v(self, x, y, *, quay=None):
         """Vectorised terrain height for numpy arrays (mesh building)."""
         st = self.tstep
         fx = np.clip((np.asarray(x, np.float64) + self.hx) / st, 0, self.tnx - 1.001)
@@ -395,14 +434,16 @@ class World:
         a = g[iy, ix] * (1 - tx) + g[iy, ix + 1] * tx
         b = g[iy + 1, ix] * (1 - tx) + g[iy + 1, ix + 1] * tx
         if self.qidx is not None:
-            return (a * (1 - ty) + b * ty + self.quay_cut_v(x, y)).astype(np.float32)
+            if quay is None:
+                quay = self.quay_cut_v(x, y)
+            return (a * (1 - ty) + b * ty + quay).astype(np.float32)
         return (a * (1 - ty) + b * ty).astype(np.float32)
 
     def ground_y(self, x, y):
         """Height of the walkable surface on the ground here: terrain + asphalt / pavement build-up."""
         st = self.tstep                                         # (th() inlined: this is called thousands of times per frame)
-        fx = (x + self.hx) / st
-        fy = (y + self.hy) / st
+        dx, dy = x + self.hx, y + self.hy
+        fx, fy = dx / st, dy / st
         nx = self.tnx
         if fx < 0.0:
             fx = 0.0
@@ -423,19 +464,19 @@ class World:
             t += self.quay_cut(x, y)
         if self.hgt is None:
             return t
-        ix = int((x + self.hx) / self.cell)
-        iy = int((y + self.hy) / self.cell)
+        fx, fy = dx / self.cell, dy / self.cell
+        ix, iy = int(fx), int(fy)
         if 0 <= ix < self.ncx and 0 <= iy < self.ncy:
             k = iy * self.ncx + ix
             he = self._hedge
             if he is None:
                 he = self._hedge_mask()
             c = self.hgt[k] & 3
-            if c == 1 or he[k]:                                 # asphalt (its height depends on the road's rank) or a kerb / verge edge
+            if c in (1, 2) or he[k]:                            # resolve asphalt and each side's kerb against the ribbon
                 sub = self._hsub.get(k)
                 if sub is None:
                     sub = self._hsub_cell(ix, iy, c)
-                return t + sub[min(3, int(((y + self.hy) / self.cell - iy) * 4)) * 4 + min(3, int(((x + self.hx) / self.cell - ix) * 4))]
+                return t + sub[min(3, int((fy - iy) * 4)) * 4 + min(3, int((fx - ix) * 4))]
             return t + self.GROUND_Y[c]
         return t
 
@@ -457,18 +498,27 @@ class World:
             if ed.get("bridge"):
                 continue
             base = ed["cls"].replace("_link", "")
-            sw = base in self.KERB_CLS
+            sides = tuple(has_sidewalk(ed, side) for side in (-1, 1))
             asp = None
             if ed.get("drive") or ed.get("walk"):                # asphalt top as tools/roads3d.py y_of() lays it (without its <1 cm jitter)
                 asp = 0.04 if base in self.FOOT_CLS else 0.05 + 0.016 * self.ROAD_RANK.get(base, 0)
-            if not (sw or asp):
+            if not (any(sides) or asp):
                 continue
-            hw = ed["w"] / 2
-            rr = hw + (self.KERB_W if sw else 0.0) + 1.0
-            for (ax, ay), (bx, by) in zip(ed["pts"], ed["pts"][1:]):
-                for cx in range(int((min(ax, bx) - rr) // 16), int((max(ax, bx) + rr) // 16) + 1):
-                    for cy in range(int((min(ay, by) - rr) // 16), int((max(ay, by) + rr) // 16) + 1):
-                        g.setdefault((cx, cy), []).append((ax, ay, bx, by, hw, sw, asp))
+            sw = ed.get("sw", self.KERB_W)
+            width = ed["w"] / 2
+            taper = ed.get("taper", (None, None))
+            fixed_width = None if any(taper) else width
+            reach = width + sum(max(0.0, end[1] - width) for end in taper if end) + (sw if any(sides) else 0.0)
+            for k, ((ax, ay), (bx, by)) in enumerate(zip(ed["pts"], ed["pts"][1:])):
+                s0, s1 = ed["cum"][k:k + 2]
+                dx, dy = bx - ax, by - ay
+                x0, x1 = min(ax, bx) - reach, max(ax, bx) + reach
+                y0, y1 = min(ay, by) - reach, max(ay, by) + reach
+                seg = (x0, x1, y0, y1, ax, ay, dx, dy, dx * dx + dy * dy or 1e-9, ed, s0, s1 - s0,
+                       fixed_width, sides, sw, asp)
+                for cx in range(int(x0 // 16), int(x1 // 16) + 1):
+                    for cy in range(int(y0 // 16), int(y1 // 16) + 1):
+                        g.setdefault((cx, cy), []).append(seg)
         self._hgrid = g
         return self._hedge
 
@@ -509,15 +559,18 @@ class World:
                 x = (ix + (i + 0.5) / 4) * self.cell - self.hx
                 y = (iy + (j + 0.5) / 4) * self.cell - self.hy
                 top, pav = None, False
-                for ax, ay, bx, by, hw, sw, asp in self._hgrid.get((int(x // 16), int(y // 16)), ()):
-                    dx, dy = bx - ax, by - ay
-                    l2 = dx * dx + dy * dy or 1e-9
-                    tt = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
-                    d = math.hypot(x - ax - dx * tt, y - ay - dy * tt)
+                for x0, x1, y0, y1, ax, ay, dx, dy, l2, ed, s0, length, width, sides, sw, asp in self._hgrid.get(
+                        (int(x // 16), int(y // 16)), ()):
+                    if not (x0 <= x <= x1 and y0 <= y <= y1):
+                        continue
+                    px, py = x - ax, y - ay
+                    tt = max(0.0, min(1.0, (px * dx + py * dy) / l2))
+                    d = math.hypot(px - dx * tt, py - dy * tt)
+                    hw = half_width(ed, s0 + tt * length) if width is None else width
                     if asp is not None and d < hw:
                         if top is None or asp > top:
                             top = asp                           # asphalt wins over pavement; the higher-ranked road on top
-                    elif sw and d < hw + self.KERB_W:
+                    elif sides[int(dx * py > dy * px)] and d < hw + sw:
                         pav = True
                 if top is None and pav:
                     out.append(min(self.GROUND_Y[2], self._ramp_h(x, y)))   # dropped kerb at a zebra (tools/roads3d.py _kerb_ramps)
@@ -572,11 +625,12 @@ class World:
                 best = ha + (hb - ha) * t
         return best
 
-    def level(self, x, y, wy, plat=False):
+    def level(self, x, y, wy, plat=False, *, ground=None):
         """Surface that something whose feet are at absolute height `wy` stands on: deck if on / above it, else ground.
-        plat=True (people and bikes): fire escapes, roofs and jump ramps count too."""
+        plat=True (people and bikes): fire escapes, roofs and jump ramps count too.
+        ground can reuse a terrain sample for the exact same point."""
         d = self.deck_h(x, y) if self.dgrid else None
-        g = self.ground_y(x, y)
+        g = self.ground_y(x, y) if ground is None else ground
         if d is not None and wy >= d - 0.7 and d > g:          # (a deck profile running on below the street at a bridge end is buried: the street wins)
             g = d
         if plat and self.pg2:
@@ -608,6 +662,8 @@ class World:
         return (self.level(x + dx * d, y + dy * d, wy) - self.level(x - dx * d, y - dy * d, wy)) / (2 * d)
 
     def edges_near(self, x, y, r):
+        if not hasattr(self, "cgrid"):
+            return ()
         cg = self.cg
         g = self.cgrid
         out = []
@@ -755,27 +811,36 @@ class World:
         for e in self.edges:
             if not e["drive"] or e["bridge"]:
                 continue
-            hw, k = e["w"] / 2, e["cls"] in self.KERB_CLS
-            for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
-                rr = hw + self.KERB_W + 1
+            sides = tuple(has_sidewalk(e, side) for side in (-1, 1))
+            sw = e.get("sw", self.KERB_W) if any(sides) else 0.0
+            for i, ((ax, ay), (bx, by)) in enumerate(zip(e["pts"], e["pts"][1:])):
+                s0, s1 = e["cum"][i:i + 2]
+                rr = max(e["w"] / 2, half_width(e, s0), half_width(e, s1)) + sw + 1
                 for cx in range(int((min(ax, bx) - rr) // 16), int((max(ax, bx) + rr) // 16) + 1):
                     for cy in range(int((min(ay, by) - rr) // 16), int((max(ay, by) + rr) // 16) + 1):
-                        g.setdefault((cx, cy), []).append((ax, ay, bx, by, hw, k))
+                        g.setdefault((cx, cy), []).append((ax, ay, bx, by, e, s0, s1 - s0, sides, sw))
         self._kg = g
 
     def kerb(self, x, y):
         """True when (x, y) is on a raised pavement beside a city street (and not on any road's asphalt)."""
+        if self.crossings.cores and self.crossings.core(x, y):
+            return False
         if getattr(self, "_kg", None) is None:
             self._kerb_grid()
         on = False
-        for ax, ay, bx, by, hw, k in self._kg.get((int(x // 16), int(y // 16)), ()):
+        for ax, ay, bx, by, e, s0, length, sides, sw in self._kg.get((int(x // 16), int(y // 16)), ()):
             dx, dy = bx - ax, by - ay
             l2 = dx * dx + dy * dy or 1e-9
             t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
             d = math.hypot(x - ax - dx * t, y - ay - dy * t)
+            hw = half_width(e, s0 + t * length)
             if d < hw:
                 return False                           # asphalt of some road wins (junctions)
-            if k and d < hw + self.KERB_W:
+            if sw > self.KERB_W:
+                px, py = ax + dx * t, ay + dy * t
+                edge_end = min(math.hypot(px - qx, py - qy) for qx, qy in (e["pts"][0], e["pts"][-1]))
+                sw = self.KERB_W + (sw - self.KERB_W) * min(1.0, max(0.0, (edge_end - 10.0) / 6.0))
+            if sides[int(dx * (y - ay) > dy * (x - ax))] and d < hw + sw:
                 on = True
         return on
 

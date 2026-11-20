@@ -1,0 +1,88 @@
+"""Spatial queries shared by the road mesh and the pedestrian simulation."""
+import heapq
+import math
+
+
+class CrossingMap:
+    CELL = 24
+
+    def __init__(self, zebras=(), cores=()):
+        self.zebras, self.cores = {}, {}
+        for x, y, dx, dy, width, *_ in zebras:
+            r = width / 2 + 2
+            self._add(self.zebras, (x, y, dx, dy, width / 2), x - r, y - r, x + r, y + r)
+        for ring in cores:
+            xs, ys = zip(*ring)
+            self._add(self.cores, ring, min(xs), min(ys), max(xs), max(ys))
+
+    def _add(self, grid, value, x0, y0, x1, y1):
+        for ix in range(int(x0 // self.CELL), int(x1 // self.CELL) + 1):
+            for iy in range(int(y0 // self.CELL), int(y1 // self.CELL) + 1):
+                grid.setdefault((ix, iy), []).append(value)
+
+    def zebra(self, x, y):
+        for px, py, dx, dy, half in self.zebras.get((int(x // self.CELL), int(y // self.CELL)), ()):
+            ox, oy = x - px, y - py
+            if abs(ox * dx + oy * dy) <= 1.45 and abs(oy * dx - ox * dy) <= half + 1.0:
+                return True
+        return False
+
+    def core(self, x, y):
+        for ring in self.cores.get((int(x // self.CELL), int(y // self.CELL)), ()):
+            if all((bx - ax) * (y - ay) >= (by - ay) * (x - ax)
+                   for (ax, ay), (bx, by) in zip(ring, (*ring[1:], ring[0]))):
+                return True
+        return False
+
+
+def crosses_wall(world, x, y, tx, ty):
+    if not hasattr(world, "edges_near"):
+        return False
+    dx, dy = tx - x, ty - y
+    for ax, ay, bx, by in world.edges_near((x + tx) / 2, (y + ty) / 2, math.hypot(dx, dy) / 2 + 0.3):
+        wx, wy = bx - ax, by - ay
+        cross = dx * wy - dy * wx
+        if abs(cross) < 1e-6:
+            continue
+        ox, oy = ax - x, ay - y
+        t, u = (ox * wy - oy * wx) / cross, (ox * dy - oy * dx) / cross
+        if 0.0 < t <= 1.0 and 0.0 <= u <= 1.0:
+            return True
+    return False
+
+
+def walk_path(world, start, goal):
+    """Find a short route around an asphalt core, crossing roads only at marked crossings."""
+    def clear(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        steps = max(1, math.ceil(math.hypot(dx, dy) / 0.65))
+        return (all(world.pedestrian_ground(a[0] + dx * i / steps, a[1] + dy * i / steps)
+                    for i in range(1, steps + 1))
+                and not crosses_wall(world, *a, *b))
+
+    if clear(start, goal):
+        return [goal]
+    step = 1.2
+    origin = round(start[0] / step), round(start[1] / step)
+    finish = round(goal[0] / step), round(goal[1] / step)
+    todo = [(math.dist(origin, finish), 0.0, origin)]
+    best, links = {origin: 0.0}, {}
+    while todo and len(best) < 950:
+        _, cost, cell = heapq.heappop(todo)
+        if cost != best[cell]:
+            continue
+        point = start if cell == origin else (cell[0] * step, cell[1] * step)
+        if math.dist(point, goal) <= 2.2 and clear(point, goal):
+            path = [goal]
+            while cell != origin:
+                path.append((cell[0] * step, cell[1] * step))
+                cell = links[cell]
+            return list(reversed(path))
+        for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            cell2 = cell[0] + dx, cell[1] + dy
+            target = cell2[0] * step, cell2[1] * step
+            new = cost + math.hypot(dx, dy)
+            if new < best.get(cell2, math.inf) and clear(point, target):
+                best[cell2], links[cell2] = new, cell
+                heapq.heappush(todo, (new + math.dist(cell2, finish), new, cell2))
+    return None

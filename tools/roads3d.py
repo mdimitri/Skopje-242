@@ -461,12 +461,16 @@ def _pdist(px, py, ax, ay, bx, by):
     return math.hypot(px - ax - dx * t, py - ay - dy * t)
 
 
+from crosswalks import CrossingMap
+
+
 class Cover:
     """Which asphalt covers a point?  Only built around junctions, where roads actually overlap."""
 
     CELL = 24.0
 
-    def __init__(self, edges):
+    def __init__(self, edges, junction_cores=()):
+        self.plazas = CrossingMap(cores=junction_cores)
         deg = {}
         for e in edges:
             if e["drive"] or e["walk"]:
@@ -503,6 +507,8 @@ class Cover:
                     self.cores.setdefault((int(p[0] // c), int(p[1] // c)), []).append((p[0], p[1], plates[nd][1] + 1.5))
 
     def in_core(self, x, y):
+        if self.plazas.core(x, y):
+            return True
         c = self.CELL
         cx, cy = int(x // c), int(y // c)
         for dx in (-1, 0, 1):
@@ -518,6 +524,8 @@ class Cover:
 
     def others(self, x, y, me, skip=()):
         """Is any other road's centreline indexed in this cell (cheap pre-check before sampling covered())?"""
+        if self.plazas.core(x, y):
+            return True
         c = self.CELL
         return any(sg[0] != me and sg[0] not in skip for sg in self.segs.get((int(x // c), int(y // c)), ()))
 
@@ -542,6 +550,8 @@ class Cover:
 
     def covered(self, x, y, me, bridge, my_rank=None, skip=()):
         """True when another road's asphalt (for markings: of higher precedence) lies over (x, y)."""
+        if not bridge and self.plazas.core(x, y):
+            return True
         c = self.CELL
         for s in self.segs.get((int(x // c), int(y // c)), ()):
             i, ax, ay, bx, by, hw, rk, br = s
@@ -1398,14 +1408,14 @@ def _prepare(edges, joints, plates, decks, T):
 _W = [None]                                                # the worker's own copy of the context
 
 
-def _init_worker(edges, joints, plates, decks, T, chunk):
+def _init_worker(edges, joints, plates, decks, T, chunk, junction_cores):
     global _T
     _T = T
     _MICRO.clear()
     for i_, e_ in enumerate(edges):
         _MICRO[id(e_)] = (i_ * 5 % 8) * 0.0011
     X = _prepare(edges, joints, plates, decks, T)
-    X.cov = Cover(edges)
+    X.cov = Cover(edges, junction_cores)
     X.cov.set_cores(edges, plates)
     X.chunk_of = lambda x, z: (math.floor(x / chunk), math.floor(z / chunk))      # = build_world.chunk_of
     X.roadof = {id(d): r for r, d in (decks or {}).items()}
@@ -1438,7 +1448,7 @@ def _merge(out, packed, decks):
         out.n += len(pos)
 
 
-def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
+def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=()):
     """Adds all road geometry to the mesh accumulator.  -> (number of vertices, pier collision posts)."""
     global _T
     _T = T
@@ -1446,7 +1456,7 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
 
     def prog(f, note=None):
         bar.update(int(1000 * f), note)
-    cov = Cover(edges)
+    cov = Cover(edges, junction_cores)
     prog(0.02, "cover grid")
     _MICRO.clear()
     for i_, e_ in enumerate(edges):
@@ -1489,7 +1499,7 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     if nj > 1 and len(order) > 400 and chunk_of(CHUNK * 3 + 1, -CHUNK * 2 - 1) == (3, -3):
         nslice = nj * 6
         slices = [[(i, False) for i in order[k * len(order) // nslice:(k + 1) * len(order) // nslice]] for k in range(nslice)]
-        for k_, (po, pp, rb, tr, pr, n1, n2) in enumerate(par.pmap(_edge_job, slices, init=(_init_worker, (edges, joints, plates, decks, T, CHUNK)), chunk=1)):
+        for k_, (po, pp, rb, tr, pr, n1, n2) in enumerate(par.pmap(_edge_job, slices, init=(_init_worker, (edges, joints, plates, decks, T, CHUNK, junction_cores)), chunk=1)):
             prog(0.06 + 0.64 * (k_ + 1) / nslice, "streets")
             _merge(out, po, decks)
             _merge(pout, pp, decks)
@@ -1512,6 +1522,14 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None):
     hulls = []
     _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
     _junctions(out, edges, plates, ribs, hulls)
+    for ring in junction_cores:
+        x, y = (sum(p[k] for p in ring) / len(ring) for k in (0, 1))
+        hulls.append((min(p[0] for p in ring), min(p[1] for p in ring),
+                      max(p[0] for p in ring), max(p[1] for p in ring), ring))
+        h = y_of({"cls": "tertiary", "bridge": False}) + 0.015
+        for a, b in zip(ring, (*ring[1:], ring[0])):
+            out.quad((x, h, y), (a[0], h, a[1]), (b[0], h, b[1]), (b[0], h, b[1]), FILL["tertiary"])
+            out.quad((x, h, y), (b[0], h, b[1]), (a[0], h, a[1]), (a[0], h, a[1]), FILL["tertiary"])
     _TICK[0] = lambda f: prog(0.82 + 0.12 * f, "corners")
     _corners(out, edges, plates, ribs, trims, cov, hulls)
     _TICK[0] = None

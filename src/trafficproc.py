@@ -26,7 +26,9 @@ import actors
 
 ON = os.environ.get("SK242_TRAFFIC_PROC", "1") != "0"
 SYNC = tuple(s for s in actors.Car.__slots__ if s not in ("blk", "uid"))      # blk points at another object: worker-side only
-PED_MODES = ("walk", "flee", "rage", "brawl")                                 # the people Traffic.update brakes for
+POSITION = (SYNC.index("x"), SYNC.index("y"))
+MAX_CATCHUP = 0.1
+REPLY_TIMEOUT = 5.0
 
 
 # ------------------------------------------------------------------------------------------------ worker side
@@ -137,23 +139,24 @@ def _serve(conn, path, seed):
             sim.view_rect = msg.get("view")
             tr.signals.t, tr.signals.pre = msg["sig_t"], msg["sig_pre"]
             bl = []
-            for k, (x, y, h, vx, vy, kind, trh, air, service, out) in enumerate(msg["bodies"]):
+            for k, (x, y, h, vx, vy, kind, trh, air, service, out, az) in enumerate(msg["bodies"]):
                 b = bodies.get(k)
                 if b is None:
                     b = bodies[k] = actors.Body.__new__(actors.Body)
                 b.x, b.y, b.h, b.vx, b.vy, b.kind, b.trh, b.air, b.service, b.out = x, y, h, vx, vy, kind, trh, air, service, out
+                b.az = az
                 bl.append(b)
             pl = []
-            for k, (x, y, mode) in enumerate(msg["peds"]):
+            for k, (x, y, vx, vy, mode, gz, arch) in enumerate(msg["peds"]):
                 p = peds.get(k)
                 if p is None:
                     p = peds[k] = actors.Ped.__new__(actors.Ped)
-                p.x, p.y, p.mode = x, y, mode
+                p.x, p.y, p.vx, p.vy, p.mode, p.gz, p.arch = x, y, vx, vy, mode, gz, arch
                 pl.append(p)
             wk = None
             if msg["walker"] is not None:
                 wk = actors.Walker.__new__(actors.Walker)
-                wk.x, wk.y, wk.health = msg["walker"]
+                wk.x, wk.y, wk.vx, wk.vy, wk.health, wk.az = msg["walker"]
             tr.update(msg["dt"], msg["fx"], msg["fy"], bl, pl, wk)
             for c in tr.cars:
                 if getattr(c, "uid", None) is None:
@@ -176,9 +179,12 @@ def _serve(conn, path, seed):
                 if old is None or c.uid in pokes_u:
                     out.append((c.uid, st))
                 else:
-                    out.append((c.uid, [(i, v) for i, (v, o) in enumerate(zip(st, old)) if v is not o and v != o]))
+                    changes = [(i, v) for i, (v, o) in enumerate(zip(st, old)) if v is not o and v != o]
+                    # Resync even a stopped car if the game extrapolated its previous velocity.
+                    changes.extend((i, st[i]) for i in POSITION if st[i] == old[i])
+                    out.append((c.uid, changes))
                 sent[c.uid] = st
-            conn.send(("ok", out, tr.signals.pre, shop, tr.despawned,
+            conn.send(("ok", out, tr.signals.pre, shop, tr.despawned, tr.queue,
                        (time.perf_counter() - t0) * 1000.0))
         except Exception:  # noqa: BLE001
             conn.send(("err", traceback.format_exc()))
@@ -187,9 +193,10 @@ def _serve(conn, path, seed):
 
 # ------------------------------------------------------------------------------------------------ game side
 class TrafficProc:
-    def __init__(self, sim, world):
+    def __init__(self, sim, world, report=print):
         import multiprocessing as mp
         self.sim, self.tr = sim, sim.traffic
+        self.report = report
         self.by_uid = {}
         self.uid_next = 2
         self.published = set()
@@ -199,6 +206,7 @@ class TrafficProc:
         self.ms = 0.0                       # the worker's own time for the last frame (ms)
         self.wait_ms = 0.0                  # how long the game waited for it in the last frame
         self.dt_acc = 0.0                   # frame time the worker has not heard of yet (it was still busy)
+        self.sent_at = 0.0
         ctx = mp.get_context("spawn")
         self.conn, child = ctx.Pipe()
         main = sys.modules.get("__main__")
@@ -214,21 +222,25 @@ class TrafficProc:
                 main.__file__ = mf
         child.close()
 
-    def wait_ready(self, timeout=120.0):
-        """Block (while loading) until the worker has its world; False -> stay in-process."""
-        if self.conn.poll(timeout):
-            try:
-                r = self.conn.recv()
-            except (EOFError, OSError):
-                r = ("err", "the worker exited")
-            if r[0] == "ready":
-                self.ok = True
-                print(f"[traffic] AI traffic runs in its own process (pid {r[1]})")
-                return True
-            print(f"[traffic] worker failed, traffic stays in the game process:\n{r[1]}")
-        else:
-            print("[traffic] worker did not start in time, traffic stays in the game process")
-        self.stop()
+    def wait_ready(self, timeout=120.0, draw=None):
+        """Wait for the worker's world while continuing to draw the loading screen."""
+        deadline = time.perf_counter() + timeout
+        try:
+            while not self.conn.poll(min(0.01, max(0.0, deadline - time.perf_counter()))):
+                if time.perf_counter() >= deadline:
+                    self._fail("startup timed out")
+                    return False
+                if draw is not None:
+                    draw()
+            r = self.conn.recv()
+        except (EOFError, OSError) as e:
+            self._fail(f"worker exited during startup: {e!r}")
+            return False
+        if r[0] == "ready":
+            self.ok = True
+            self.report(f"[traffic] AI traffic runs in its own process (pid {r[1]})")
+            return True
+        self._fail(r[1])
         return False
 
     def stop(self):
@@ -243,6 +255,7 @@ class TrafficProc:
                 self.proc.kill()
         except Exception:  # noqa: BLE001
             pass
+        self.conn.close()
 
     def poke(self, c, field, value):
         """The game changed one field of a traffic car (the worker owns the state): pass it on."""
@@ -252,8 +265,13 @@ class TrafficProc:
             self.pokes.append((u, field, value))
 
     def _fail(self, why):
-        print(f"[traffic] worker lost ({why}); traffic is back in the game process")
-        self.stop()
+        self.ok = False
+        self.report(f"[traffic] falling back to in-process traffic: {why}")
+        self.conn.close()
+        try:
+            self.proc.kill()
+        except OSError:
+            pass
 
     def step(self, dt, fx, fy, bodies, peds, walker):
         """In place of Traffic.update.  -> False when the worker is gone (the caller runs Traffic.update itself)."""
@@ -261,16 +279,26 @@ class TrafficProc:
             return False
         tr, sim = self.tr, self.sim
         cur = tr.cars
-        if self.pending and not self.conn.poll() and self.dt_acc < 0.1:
-            # The worker is still on the last frame: never wait for it (that held the whole game to the worker's pace,
-            # 8-10 fps with one core busy).  Cars glide on along their heading; the worker gets the summed dt next time.
-            self.dt_acc += dt
-            self.wait_ms = 0.0
-            for c in cur:
-                if c.v:
-                    c.x += math.cos(c.h) * c.v * dt
-                    c.y += math.sin(c.h) * c.v * dt
-            return True
+        if self.pending:
+            try:
+                ready = self.conn.poll()
+            except (EOFError, OSError) as e:
+                self._fail(f"poll failed: {e!r}")
+                return False
+            if not ready:
+                if time.perf_counter() - self.sent_at >= REPLY_TIMEOUT:
+                    self._fail(f"no response for {REPLY_TIMEOUT:g} seconds")
+                    return False
+                # Coast only briefly. Cap catch-up so a slow worker never forces an oversized physics step.
+                coast = min(dt, MAX_CATCHUP - self.dt_acc)
+                self.dt_acc += coast
+                self.wait_ms = 0.0
+                if coast > 0.0:
+                    for c in cur:
+                        if c.v:
+                            c.x += math.cos(c.h) * c.v * coast
+                            c.y += math.sin(c.h) * c.v * coast
+                return True
         dt, self.dt_acc = dt + self.dt_acc, 0.0
         live = set()
         adds = []
@@ -292,14 +320,14 @@ class TrafficProc:
             try:
                 r = self.conn.recv()
             except (EOFError, OSError) as e:
-                self._fail(e)
+                self._fail(f"receive failed: {e!r}")
                 return False
             self.wait_ms = (time.perf_counter() - t0) * 1000.0
             self.pending = False
             if r[0] != "ok":
                 self._fail(r[1])
                 return False
-            _ok, states, pre, shop, despawned, self.ms = r
+            _ok, states, pre, shop, despawned, tr.queue, self.ms = r
             new_ids = {u for u, _v in states}
             keep = []
             for u, vals in states:
@@ -319,9 +347,15 @@ class TrafficProc:
             for u, _vals in adds:
                 if u not in new_ids:
                     keep.append(self.by_uid[u])                   # added this frame: the worker hears of it now
-            gone = [u for u in self.by_uid if u not in new_ids and u not in {a[0] for a in adds}]
+            retained_ids = new_ids.union(u for u, _ in adds)
+            gone = self.by_uid.keys() - retained_ids
             for u in gone:
                 del self.by_uid[u]
+            # A reply describes the previous step. Keep newer game-side damage and contact changes visible.
+            for u, field, value in self.pokes:
+                c = self.by_uid.get(u)
+                if c is not None:
+                    setattr(c, field, value)
             tr.cars[:] = keep                                     # same list object: anyone holding it sees the new cars
             tr.despawned = despawned
             if getattr(sim, "lights", None) is not None:
@@ -335,9 +369,9 @@ class TrafficProc:
                     stn.shoppers.append(j)
         self.published = {c.uid for c in tr.cars}
         lights, trn = getattr(sim, "lights", None), getattr(sim, "trains", None)
-        bl = [(b.x, b.y, b.h, b.vx, b.vy, b.kind, b.trh, b.air, b.service, b.out) for b in bodies]
-        pl = [(p.x, p.y, p.mode) for p in peds if p.mode in PED_MODES]
-        wk = (walker.x, walker.y, walker.health) if walker is not None else None
+        bl = [(b.x, b.y, b.h, b.vx, b.vy, b.kind, b.trh, b.air, b.service, b.out, b.az) for b in bodies]
+        pl = [(p.x, p.y, p.vx, p.vy, p.mode, p.gz, p.arch) for p in peds if p.mode in actors.TRAFFIC_PED_MODES]
+        wk = (walker.x, walker.y, walker.vx, walker.vy, walker.health, walker.az) if walker is not None else None
         msg = {"dt": dt, "fx": fx, "fy": fy, "kill": kills, "add": adds, "poke": self.pokes,
                "target": tr.target, "aggro": getattr(sim, "aggro", 1),
                "hour": sim.clock.hour, "cspeed": sim.clock.speed,
@@ -348,19 +382,20 @@ class TrafficProc:
         try:
             self.conn.send(msg)
         except (EOFError, OSError) as e:
-            self._fail(e)
+            self._fail(f"send failed: {e!r}")
             return True                                           # this frame's cars are already in place
         self.pending = True
+        self.sent_at = time.perf_counter()
         return True
 
 
-def start(sim, world):
+def start(sim, world, report=print):
     """Start the worker while loading (a process start must not land inside a frame).  -> TrafficProc or None."""
     if not ON or getattr(sim, "client", False) or (getattr(sys, "frozen", False) and not hasattr(sys, "_MEIPASS")):
         return None
     try:
-        return TrafficProc(sim, world)
+        return TrafficProc(sim, world, report)
     except Exception as e:  # noqa: BLE001
-        print(f"[traffic] no worker process: {e}")
+        report(f"[traffic] no worker process: {e!r}")
         return None
 

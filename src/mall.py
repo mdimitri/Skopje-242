@@ -340,7 +340,7 @@ class Mall:
         wz = C[1] + pos[:, 0] * SA + pos[:, 2] * CA
         out = np.stack((wx, pos[:, 1] + self.floor, wz), 1).astype(np.float32)
         col = np.concatenate([np.asarray(K, np.uint8), np.full((len(K), 1), 255, np.uint8)], 1)
-        self.model = gl3d.make_model(out, np.zeros((len(out), 2), np.float32), col)
+        self.model = gl3d.object_detail(gl3d.make_model(out, np.zeros((len(out), 2), np.float32), col), "interior")
 
     def draw(self, cam):
         """Inside a 3D pass with the mall camera."""

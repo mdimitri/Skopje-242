@@ -3,6 +3,7 @@ from texts import TXT
 import math
 import numpy as np
 import random
+import time
 
 import pyray as rl
 import font   # noqa: E402
@@ -88,6 +89,47 @@ def draw_players(sim, cam, sw, sh):
         ly = max(8, min(sh - 26, ay - math.sin(a) * 40 - 8))
         font.draw_text(lab, int(lx) + 1, int(ly) + 1, 16, rl.Color(0, 0, 0, 160))
         font.draw_text(lab, int(lx), int(ly), 16, rl.Color(*q["color"], 190))
+
+
+def _draw_network(network, x, y, width):
+    history, window, ping = network
+    now = time.monotonic()
+    start = now - window
+    points = list(history)
+    while len(points) > 1 and points[1][0] <= start:
+        points.pop(0)
+    if points[0][0] < start:
+        t0, rx0, tx0 = points.pop(0)
+        t1, rx1, tx1 = points[0] if points else (now, rx0, tx0)
+        k = (start - t0) / (t1 - t0)
+        points.insert(0, (start, rx0 + (rx1 - rx0) * k, tx0 + (tx1 - tx0) * k))
+    _, rx, tx = points[-1]
+    points.append((now, rx, tx))
+    peak = max(1.0, max(max(r, s) for _, r, s in points))
+    order = 10 ** math.floor(math.log10(peak))
+    scale = next(order * n for n in (1, 2, 5, 10) if order * n >= peak)
+    right = x + width - 8
+    left, plot_right, top, bottom = x + 8, right - 22, y + 20, y + 46
+    rl.draw_rectangle_rounded(rl.Rectangle(x, y, width, 64), .18, 5, rl.Color(10, 14, 20, 182))
+    grid = rl.Color(185, 205, 226, 45)
+    for gy in (top, (top + bottom) // 2, bottom):
+        rl.draw_line(left, gy, plot_right, gy, grid)
+    rl.draw_line((left + plot_right) // 2, top, (left + plot_right) // 2, bottom, grid)
+    for i, arrow, col in ((1, "↓", (93, 218, 231)), (2, "↑", (255, 188, 103))):
+        trace = [(left + (sample[0] - start) * (plot_right - left) / window,
+                  bottom - sample[i] * (bottom - top) / scale) for sample in points]
+        strip = rl.ffi.new("Vector2[]", [point for px, py in trace for point in ((px, py), (px, bottom))])
+        rl.draw_triangle_strip(rl.ffi.cast("Vector2 *", strip), len(strip), rl.Color(*col, 84))
+        stroke = rl.Color(*col, 235)
+        for a, b in zip(trace, trace[1:]):
+            rl.draw_line_v(rl.Vector2(*a), rl.Vector2(*b), stroke)
+        label = f"{arrow} {points[-1][i]:.1f}"
+        font.draw_text(label, left if i == 1 else x + 63, y + 3, 12, rl.Color(*col, 255))
+    dim = rl.Color(198, 214, 231, 224)
+    ping_text = "Ping —" if ping is None else f"Ping {round(ping)} ms"
+    for label, yy, size in (("KB/s", y + 3, 11), (f"{scale:g}", top - 4, 10), (ping_text, y + 49, 11)):
+        font.draw_text(label, right - font.measure_text(label, size), yy, size, dim)
+    font.draw_text(f"{window:g} s", left, y + 49, 11, dim)
 
 
 def waypoint_screen_dir(cam, gx, gz):
@@ -541,6 +583,8 @@ class Hud:
             self.sel, self._drag, self._menu_rect = None, False, None
             ms = max(130, min(300, int(sh * 0.27)))                       # 240 px at 900 p; shrinks with the render resolution
             mx, my = 16, sh - ms - 16
+            if mpv and mpv.get("network"):
+                _draw_network(mpv["network"], mx, my - 71, max(148, min(190, ms)))
             span = 380
             half = span * k / 2
             cx = min(max((fx + HX) * k, half), N - half)

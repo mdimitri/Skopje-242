@@ -1,12 +1,16 @@
 """Emergency services: an ambulance drives to a run-over / dead person (or the player) and revives them, a fire engine
-drives to a burning or burnt-out car and puts it out.  Routes are planned on the drivable road graph (Dijkstra) and the
+drives to a burning or burnt-out car and puts it out. Routes are planned by travel time on the drivable road graph and the
 vehicles are ordinary physics Bodies steered by a small pure-pursuit controller (their `ctl` = (throttle, steer, handbrake))."""
 from texts import TXT
 import heapq
 import math
 import random
 
+import numpy as np
+
 import actors
+from driving import brake_speed, edge_seconds, fastest_route, follow_speed, road_control_speed, turn_indicator
+from roadwidth import half_width, lane_count
 import slang
 import vehicles
 
@@ -29,15 +33,12 @@ class Job:
         self.crew = []
         self.path = []
         self.pi = 0
-        self.stuck = 0.0
-        self.rev = 0.0
         self.work_t = 0.0
         self.spray_t = 0.0
         self.said = False
         self.queue = []                  # more emergencies on the same screen, served one by one before the crew drive off
         self.done = 0
         self.age = 0.0
-        self.off = self.off_goal = self.off_t = self.cool = 0.0     # detour sideways round a blockage (see _ctl)
 
 
 class Services:
@@ -48,37 +49,56 @@ class Services:
         self.amb_on = True
         self.fire_on = True
         self._nodes = None
-        self._adj = None
+        self._radj = None
 
     # ------------------------------------------------------------------ road graph
     def _graph(self):
-        if self._adj is not None:
+        if self._radj is not None:
             return
         w = self.sim.w
-        nodes, adj, radj = {}, {}, {}
+        nodes, radj = {}, {}
         for i, e in enumerate(w.edges):
-            if not e["drive"] or e["len"] < 1:
+            if not e["drive"] or e["a"] not in w.main or e["b"] not in w.main:
                 continue
-            if e["a"] in w.main and e["b"] in w.main:            # only the connected network: every call is reachable
-                nodes[e["a"]] = e["pts"][0]
-                nodes[e["b"]] = e["pts"][-1]
-            adj.setdefault(e["a"], []).append((e["b"], i, 1))
-            radj.setdefault(e["b"], []).append((e["a"], e["len"]))
+            nodes[e["a"]] = e["pts"][0]
+            nodes[e["b"]] = e["pts"][-1]
+            radj.setdefault(e["b"], []).append((e["a"], i, 1))
             if not e["ow"]:
-                adj.setdefault(e["b"], []).append((e["a"], i, -1))
-                radj.setdefault(e["a"], []).append((e["b"], e["len"]))
-        self._nodes, self._adj, self._radj = nodes, adj, radj
+                radj.setdefault(e["a"], []).append((e["b"], i, -1))
+        self._nodes, self._radj = nodes, radj
+        self._node_ids = tuple(nodes)
+        self._node_xy = np.asarray(tuple(nodes.values()), dtype=np.float64).reshape(-1, 2)
+        self._route_costs = {}
+        for entries in radj.values():
+            for _, index, direction in entries:
+                edge = w.edges[index]
+                self._route_costs[index, direction] = (
+                    edge_seconds(edge, direction, 13.0, 0),
+                    lane_count(edge, direction),
+                    3.0 if edge["cls"] == "service" else 0.0,
+                )
 
     def _nearest_node(self, x, y):
-        best, bn = 1e18, None
-        for n, p in self._nodes.items():
-            d = (p[0] - x) ** 2 + (p[1] - y) ** 2
-            if d < best:
-                best, bn = d, n
-        return bn
+        if not self._node_ids:
+            return None
+        delta = self._node_xy - (x, y)
+        d2 = np.square(delta[:, 0]) + np.square(delta[:, 1])
+        i = int(np.argmin(d2))
+        return self._node_ids[i] if d2[i] < 1e18 else None
+
+    def _route_delay(self, move):
+        cost = self._route_costs.get(move)
+        if cost is None:
+            i, d = move
+            edge = self.sim.w.edges[i]
+            lanes = lane_count(edge, d)
+            surcharge = 3.0 if edge["cls"] == "service" else 0.0
+        else:
+            _, lanes, surcharge = cost
+        return 2.2 * self.sim.traffic.queue.get(move, 0) / lanes + surcharge
 
     def route(self, x0, y0, x1, y1):
-        """Dijkstra from the node nearest (x0,y0) to the node nearest (x1,y1) -> list of (x, y) waypoints, or []"""
+        """Legal lane waypoints (x, y, speed) from the nearest network node to the call."""
         self._graph()
         if not self._nodes:
             return []
@@ -86,68 +106,54 @@ class Services:
         a, b = self._nearest_node(x0, y0), self._nearest_node(x1, y1)
         if a is None or b is None:
             return []
-        dist, prev = {a: 0.0}, {}
-        pq = [(0.0, a)]
-        while pq:
-            d, n = heapq.heappop(pq)
-            if n == b:
-                break
-            if d > dist.get(n, 1e18):
-                continue
-            for m, ei, sgn in self._adj.get(n, ()):
-                nd = d + w.edges[ei]["len"]
-                if nd < dist.get(m, 1e18):
-                    dist[m] = nd
-                    prev[m] = (n, ei, sgn)
-                    heapq.heappush(pq, (nd, m))
-        if b not in dist:
+        path = fastest_route(w, a, b, self._nodes[b], speed_cap=13.0, delay=self._route_delay, budget=3500, main_only=True)
+        if not path:
             return []
-        segs, n = [], b
-        while n != a:
-            p, ei, sgn = prev[n]
-            pts = w.edges[ei]["pts"]
-            segs.append(pts if sgn == 1 else pts[::-1])
-            n = p
         out = []
-        for s in reversed(segs):
-            out.extend(s)
-        # drop points closer than 3 m so the pursuit controller does not zig-zag
-        res = [out[0]]
-        for q in out[1:]:
-            if math.hypot(q[0] - res[-1][0], q[1] - res[-1][1]) > 3.0:
-                res.append(q)
-        return res
+        for k, (ei, direction) in enumerate(path):
+            e = w.edges[ei]
+            length = e["len"]
+            speed = min(13.0, e["speed"])
+            lane = actors.Traffic.lanes_of(e, direction)[-1]
+            # Keep the edge endpoint for turns and sample the lane in between, even on long straight edges.
+            count = max(1, math.ceil(length / 7.0))
+            for j in range(count + 1):
+                if k and j == 0:
+                    x, y, old_speed = out[-1]
+                    out[-1] = (x, y, min(old_speed, speed))
+                    continue
+                distance = length * j / count
+                s = distance if direction == 1 else length - distance
+                x, y, dx, dy = w.edge_point(e, s)
+                taper = min(1.0, distance / 6.0 if k else 1.0, (length - distance) / 6.0)
+                hw = half_width(e, s)
+                clear = max(0.0, hw - max(vehicles.HALF_W[AMBULANCE], vehicles.HALF_W[FIRE_ENGINE]) - 0.35)
+                off = min(lane * 2.0 * hw / e["w"], clear) * direction * taper
+                out.append((x - dy * off, y + dx * off, speed))
+        return out
 
-    def _to(self, x, y, limit=900.0):
-        """Driving distance from every node within `limit` to the node nearest (x, y), with the traffic (one-ways too)."""
+    def _to(self, x, y, limit=105.0):
+        """Estimated driving seconds to the call from nearby dispatch nodes."""
         b = self._nearest_node(x, y)
         dist, pq = {b: 0.0}, [(0.0, b)]
         while pq:
             d, n = heapq.heappop(pq)
             if d > dist.get(n, 1e18) or d > limit:
                 continue
-            for m, ln in self._radj.get(n, ()):
-                if d + ln < dist.get(m, 1e18):
-                    dist[m] = d + ln
-                    heapq.heappush(pq, (d + ln, m))
+            for m, ei, direction in self._radj.get(n, ()):
+                move = ei, direction
+                seconds, lanes, surcharge = self._route_costs[move]
+                delay = 2.2 * self.sim.traffic.queue.get(move, 0) / lanes + surcharge
+                nd = d + seconds + delay
+                if nd <= limit and nd < dist.get(m, math.inf):
+                    dist[m] = nd
+                    heapq.heappush(pq, (nd, m))
         return dist
 
-    def _spawn_node(self, x, y, lo=70.0, hi=150.0, to_call=False):
+    def _spawn_node(self, x, y, lo=70.0, hi=150.0):
         self._graph()
         fx, fy, _, _ = self.sim.focus()
         c = [p for p in self._nodes.values() if lo < math.hypot(p[0] - x, p[1] - y) < hi and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
-        if c and to_call:                       # out of sight, but the one with the shortest drive to the call
-            dist = self._to(x, y)
-            near = [(dist[n], p) for n, p in self._nodes.items() if n in dist and lo < math.hypot(p[0] - x, p[1] - y) < hi
-                    and math.hypot(p[0] - fx, p[1] - fy) > 65.0]
-            if near:
-                return min(near)[1]
-        if not c and to_call:                   # nothing in the ring: still the shortest drive, never a random far node
-            dist = self._to(x, y)
-            near = [(dist[n], p) for n, p in self._nodes.items() if n in dist and math.hypot(p[0] - fx, p[1] - fy) > 65.0
-                    and math.hypot(p[0] - x, p[1] - y) > 30.0]
-            if near:
-                return min(near)[1]
         if not c:
             c = [p for p in self._nodes.values() if math.hypot(p[0] - x, p[1] - y) > 80.0]
         return self.rng.choice(c) if c else None
@@ -209,9 +215,14 @@ class Services:
         b = j.body
         fx, fy = math.cos(b.h), math.sin(b.h)
         vf = b.vx * fx + b.vy * fy
-        while j.pi < len(j.path) - 1 and math.hypot(j.path[j.pi][0] - b.x, j.path[j.pi][1] - b.y) < 7.0:
+        while j.pi < len(j.path) - 1:
+            tx, ty, _ = j.path[j.pi]
+            qx, qy, _ = j.path[j.pi + 1]
+            dist = math.hypot(tx - b.x, ty - b.y)
+            if dist > 3.1 and (dist > 6.0 or (b.x - tx) * (qx - tx) + (b.y - ty) * (qy - ty) < 0.0):
+                break
             j.pi += 1
-        tx, ty = j.path[j.pi]
+        tx, ty, _ = j.path[j.pi]
         if math.hypot(tx - b.x, ty - b.y) > 30.0:         # missed the turn / pushed off the route: plan a new one from here, over roads
             j.lost = getattr(j, "lost", 0.0) + dt
             if j.lost > 2.0:
@@ -219,70 +230,51 @@ class Services:
                 new = self.route(b.x, b.y, j.path[-1][0], j.path[-1][1])
                 if len(new) > 1:
                     j.path, j.pi = new, 1
-                    tx, ty = j.path[1]
+                    tx, ty, _ = j.path[1]
         else:
             j.lost = 0.0
-        # a siren may swing onto the oncoming lane or briefly up the kerb round whatever blocks the road, then comes back
-        gap0 = self._gap(b, 9.0 + max(vf, 0.0) * 1.5)
-        j.cool = max(0.0, j.cool - dt)
-        if j.off_goal:
-            j.off_t += dt
-            timed = j.off_t > 5.5
-            if timed or (j.off_t > 1.5 and gap0 is None and self._gap(b, 14.0, -j.off_goal) is None):
-                j.off_goal, j.cool = 0.0, 4.0 if timed else 0.5
-        elif gap0 is not None and gap0 < 9.0 and vf < 3.0 and j.cool <= 0:
-            for o in (3.0, -3.0, 4.6, -4.6):
-                if self._gap(b, 16.0, o) is None:
-                    j.off_goal, j.off_t = o, 0.0
-                    break
-        j.off += max(-2.0 * dt, min(2.0 * dt, j.off_goal - j.off))
-        if j.off:
-            tx, ty = tx - math.sin(b.h) * j.off, ty + math.cos(b.h) * j.off
         err = _wrap(math.atan2(ty - b.y, tx - b.x) - b.h)
         dend = math.hypot(j.path[-1][0] - b.x, j.path[-1][1] - b.y)
         vmax = vehicles.PERF[b.kind][0] * 0.55
-        v = min(v_cruise, vmax) * (1.0 - min(0.8, abs(err) / 0.8))
-        k = min(len(j.path) - 1, j.pi + 3)                    # slow down for a bend coming up
-        if k > j.pi:
-            bend = abs(_wrap(math.atan2(j.path[k][1] - ty, j.path[k][0] - tx) - math.atan2(ty - b.y, tx - b.x)))
-            v = min(v, max(4.0, v_cruise * (1.0 - min(0.65, bend / 1.2))))
-        gap = self._gap(b, 10.0 + max(vf, 0.0) * 2.6, j.off_goal)          # never drive into anything: brake for what is ahead
+        v = min(v_cruise, vmax, j.path[max(0, j.pi - 1)][2]) * (1.0 - min(0.8, abs(err) / 0.8))
+        dist, px, py, signal = 0.0, b.x, b.y, 0
+        for i in range(j.pi, min(j.pi + 9, len(j.path))):
+            x, y, speed = j.path[i]
+            dist += math.hypot(x - px, y - py)
+            if 0 < i < len(j.path) - 1:
+                ax, ay, _ = j.path[i - 1]
+                nx, ny, _ = j.path[i + 1]
+                turn = _wrap(math.atan2(ny - y, nx - x) - math.atan2(y - ay, x - ax))
+                signal = signal or turn_indicator(turn, dist, vf)
+                bend = abs(turn)
+                if bend > 0.35:
+                    speed = min(speed, 5.5 if bend < 0.85 else 3.8)
+            v = min(v, brake_speed(dist - 1.0, 3.0, speed))
+            px, py = x, y
+        b.signal_turn(signal, dt)
+        gap = self._gap(b, 10.0 + max(vf, 0.0) * 2.6)
         if gap is not None:
-            v = min(v, max(0.0, (gap - 2.5) * 0.7))
+            v = min(v, follow_speed(*gap))
+        v = min(v, road_control_speed(self.sim, b.x, b.y, b.h, vehicles.HALF_L[b.kind], vf))
         if stop_at_end:
-            v = min(v, max(0.0, (dend - 7.0) * 0.55))
-        if j.rev > 0:                                 # reversing out of a jam
-            j.rev -= dt
-            b.ctl = (-1.0, -max(-1.0, min(1.0, err * 2)), False)
-            return False
+            v = min(v, brake_speed(dend - 7.0, 2.5))
         thr = max(-1.0, min(1.0, (v - vf) * 0.7))
-        if gap is not None and vf > v + 1.0:
-            b.ctl = (-1.0, max(-1.0, min(1.0, err * 1.8)), gap < 3.0)         # brake hard
-            return False
-        b.ctl = (thr, max(-1.0, min(1.0, err * 1.8)), stop_at_end and dend < 9.0 and v < 0.5)
-        if abs(vf) < 0.6 and (v > 2.5 or (gap is not None and gap < 3.0)):      # stalled, or nosed into something
-            j.stuck += dt
-            if j.stuck > 3.0:
-                j.stuck, j.rev = 0.0, 1.6
-            if j.age > 60 and j.stuck > 2.0:        # hopelessly jammed: skip ahead a bit
-                j.pi = min(len(j.path) - 1, j.pi + 2)
-                b.x, b.y = j.path[j.pi]
-        else:
-            j.stuck = 0.0
+        b.ctl = (thr, max(-1.0, min(1.0, err * 1.8)), v < 0.3 and abs(vf) < 0.8)
         return dend < 9.0 and abs(vf) < 1.0
 
-    def _gap(self, b, look, lat=0.0):
-        """Free distance ahead of body b along its heading (cars, other bodies, people on foot), or None if clear."""
+    def _gap(self, b, look):
+        """Bumper gap and speed of the nearest obstacle ahead at the same road level."""
         sim = self.sim
         hx, hy = math.cos(b.h), math.sin(b.h)
         rx, ry = -hy, hx
-        bx, by = b.x + rx * lat, b.y + ry * lat                # probe from a sideways-moved position (detour check)
         hw_b, hl_b = vehicles.HALF_W[b.kind] + 0.3, vehicles.HALF_L[b.kind]
         best = None
 
-        def test(ox, oy, hw, hl, oh):
+        def test(ox, oy, hw, hl, oh, height, speed=0.0):
             nonlocal best
-            dx, dy = ox - bx, oy - by
+            if height is not None and b.az is not None and abs(height - b.az) > 3.0:
+                return
+            dx, dy = ox - b.x, oy - b.y
             fwd = dx * hx + dy * hy
             if fwd < 0.3 or fwd > look + hl:
                 return
@@ -292,34 +284,51 @@ class Services:
             if abs(dx * rx + dy * ry) > hw + hw_b:
                 return
             g = fwd - hl_b - hl
-            if best is None or g < best:
-                best = g
+            if best is None or g < best[0]:
+                best = (g, max(0.0, speed))
 
         for o in sim.bodies:
             if o is not b and abs(o.x - b.x) < look + 8 and abs(o.y - b.y) < look + 8:
-                test(o.x, o.y, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind], o.h)
+                test(o.x, o.y, vehicles.HALF_W[o.kind], vehicles.HALF_L[o.kind], o.h, o.az, o.vx * hx + o.vy * hy)
         for c in sim.traffic.cars:
             if abs(c.x - b.x) < look + 8 and abs(c.y - b.y) < look + 8:
-                test(c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c.h)
+                test(c.x, c.y, vehicles.HALF_W[c.kind], vehicles.HALF_L[c.kind], c.h, c.gz, c.v * math.cos(c.h - b.h))
         for p in sim.peds.list:
             if p.mode in ("walk", "flee", "rage", "brawl") and abs(p.x - b.x) < look + 4 and abs(p.y - b.y) < look + 4:
-                test(p.x, p.y, 1.2, 0.4, None)
+                test(p.x, p.y, 1.2, 0.4, None, p.gz)
         wk = sim.walker
         if wk is not None and sim.mode == "foot":
-            test(wk.x, wk.y, 1.2, 0.4, None)
+            test(wk.x, wk.y, 1.2, 0.4, None, wk.az)
         return best
 
     def _spawn_vehicle(self, j, kind, dest_x, dest_y):
         sim = self.sim
+        self._graph()
         fx, fy, _, _ = sim.focus()
-        sp = self._spawn_node(dest_x, dest_y, to_call=True)
-        if sp is None:
+        candidates = []
+        for node, eta in self._to(dest_x, dest_y).items():
+            if node not in self._nodes:
+                continue
+            x, y = self._nodes[node]
+            distance = math.hypot(x - dest_x, y - dest_y)
+            if distance > 35.0 and math.hypot(x - fx, y - fy) > 65.0:
+                candidates.append((not 70.0 < distance < 150.0, eta, x, y))
+        for _, _, x, y in heapq.nsmallest(12, candidates):
+            path = self.route(x, y, dest_x, dest_y)
+            if len(path) < 2:
+                continue
+            h = math.atan2(path[1][1] - path[0][1], path[1][0] - path[0][0])
+            b = actors.Body(path[0][0], path[0][1], h, kind, 0 if kind == AMBULANCE else 3)
+            # A stationary probe uses the same collision circles as the vehicle and cannot break props.
+            b.az = sim.w.ground_y(b.x, b.y)
+            if actors._bld_top(sim.w, b.x, b.y) is not None:
+                continue
+            actors.collide_static(b, sim.w)
+            if math.hypot(b.x - path[0][0], b.y - path[0][1]) > 0.05 or self._gap(b, 6.0) is not None:
+                continue
+            break
+        else:
             return False
-        path = self.route(sp[0], sp[1], dest_x, dest_y)
-        if len(path) < 2:
-            return False
-        h = math.atan2(path[1][1] - path[0][1], path[1][0] - path[0][0])
-        b = actors.Body(path[0][0], path[0][1], h, kind, 0 if kind == AMBULANCE else 3)
         b.empty = False
         b.service = True
         b.siren = self.rng.random() < 0.35                    # lights always, the siren only on some calls (less noise)
@@ -380,7 +389,7 @@ class Services:
         sp = self._spawn_node(b.x, b.y, 250, 400)
         path = self.route(b.x, b.y, sp[0], sp[1]) if sp else []
         j.state = "leave"
-        j.path, j.pi = path if len(path) > 1 else [(b.x, b.y), (b.x + 400, b.y)], 0
+        j.path, j.pi = path if len(path) > 1 else [(b.x, b.y, 0.0)], 0
         j.age = 100.0 + 60 * j.done
 
     def _step(self, j, dt):

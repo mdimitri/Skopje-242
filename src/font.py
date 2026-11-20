@@ -96,6 +96,8 @@ def wrap(text, size, width, bold=False):
 
 # ---------------------------------------------------------------------------- clickable buttons (menu / exit)
 _latch = {"p": False, "pos": None}
+_loading_keys = (rl.KEY_Q, rl.KEY_E, rl.KEY_LEFT, rl.KEY_RIGHT, rl.KEY_ESCAPE, rl.KEY_ENTER, rl.KEY_Y, rl.KEY_N)
+_latched_keys = set()
 
 
 def poll_latch():
@@ -103,9 +105,11 @@ def poll_latch():
     so a click made while the loader was busy is not lost (a press+release inside one poll gap would otherwise vanish)."""
     if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
         _latch["p"], _latch["pos"] = True, rl.get_mouse_position()
+    _latched_keys.update(key for key in _loading_keys if rl.is_key_pressed(key))
     rl.poll_input_events()
     if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
         _latch["p"], _latch["pos"] = True, rl.get_mouse_position()
+    _latched_keys.update(key for key in _loading_keys if rl.is_key_pressed(key))
 
 
 def clicked():
@@ -116,6 +120,11 @@ def clicked():
 def clear_latch():
     _latch["p"] = False
     _latch["pos"] = None
+    _latched_keys.clear()
+
+
+def key_pressed(key):
+    return key in _latched_keys or rl.is_key_pressed(key)
 
 
 def pointer():
@@ -148,6 +157,7 @@ def seal(x, y, r=26):
 def confirm_quit(in_frame=False):
     """Modal "really quit?" card.  -> True when the player confirms.  `in_frame`: the caller is between begin/end_drawing."""
     import time
+    clear_latch()                                      # the click opening the dialog has already been consumed
     if in_frame:
         rl.end_drawing()
     t0 = time.time()
@@ -169,11 +179,14 @@ def confirm_quit(in_frame=False):
         draw_text(hint, bx + (bw - measure_text(hint, 16)) // 2, by + 76, 16, rl.Color(170, 174, 185, 255))
         stay = button("Остани", bx + bw // 2 + 10, by + 116, bw // 2 - 40, 44, 20)
         leave = button("Излези", bx + 30, by + 116, bw // 2 - 40, 44, 20)
+        leave = leave or key_pressed(rl.KEY_Y) or key_pressed(rl.KEY_ENTER)
+        stay = stay or key_pressed(rl.KEY_N) or key_pressed(rl.KEY_ESCAPE)
+        clear_latch()
         rl.end_drawing()
         if time.time() - t0 > 0.25:                      # the click that opened the card must not answer it
-            if leave or rl.is_key_pressed(rl.KEY_Y) or rl.is_key_pressed(rl.KEY_ENTER):
+            if leave:
                 ans = True
-            elif stay or rl.is_key_pressed(rl.KEY_N) or rl.is_key_pressed(rl.KEY_ESCAPE):
+            elif stay:
                 ans = False
     if in_frame:
         rl.begin_drawing()

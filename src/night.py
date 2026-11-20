@@ -41,20 +41,22 @@ class Night:
         self.lm = None                                 # the light map (lightmap.py), made on first use
         self.active = False                            # prepare() queued lights for this frame
         self.lamp_r = {}
+        self.lamp_height = {}
 
     def _seen(self, cam, x, z, y):
         """False when a building wall stands between the camera and the point (x, height y, z)."""
         p = cam.position
-        key = (round(p.x), round(p.y), round(p.z))      # 1 m steps: a moving camera reuses the answers for a few frames
+        px, py, pz = p.x, p.y, p.z
+        key = (round(px), round(py), round(pz))          # 1 m steps: a moving camera reuses the answers for a few frames
         if key != self.vis_cam:
             self.vis, self.vis_cam = {}, key
         k = (round(x, 1), round(z, 1), round(y, 1))
         r = self.vis.get(k)
         if r is not None:
             return r
-        dx, dz, dy = x - p.x, z - p.z, y - p.y
+        dx, dz, dy = x - px, z - pz, y - py
         n = max(1, int(math.hypot(dx, dz) / (OG * 0.5)))
-        cells = {(int((p.x + dx * i / n) // OG), int((p.z + dz * i / n) // OG)) for i in range(n + 1)}
+        cells = {(int((px + dx * i / n) // OG), int((pz + dz * i / n) // OG)) for i in range(n + 1)}
         r = True
         for c in cells:
             for ax, ay, bx, by, top in self.og.get(c, ()):
@@ -62,20 +64,22 @@ class Night:
                 den = dx * ey - dz * ex
                 if abs(den) < 1e-9:
                     continue
-                t = ((ax - p.x) * ey - (ay - p.z) * ex) / den      # along camera -> light
-                u = ((ax - p.x) * dz - (ay - p.z) * dx) / den      # along the wall
-                if 0.0 < t < 0.97 and 0.0 <= u <= 1.0 and p.y + dy * t < top:
+                t = ((ax - px) * ey - (ay - pz) * ex) / den       # along camera -> light
+                if not 0.0 < t < 0.97:
+                    continue
+                u = ((ax - px) * dz - (ay - pz) * dx) / den        # along the wall
+                if 0.0 <= u <= 1.0 and py + dy * t < top:
                     r = False
                     break
             if not r:
                 break
         if r:                                      # vehicles near the camera hide lights too (not the one the light belongs to)
+            l2 = dx * dx + dz * dz or 1e-9
             for ox, oz, orad, top in self.occ:
                 if (x - ox) ** 2 + (z - oz) ** 2 < (orad * 2.6) ** 2:
                     continue
-                l2 = dx * dx + dz * dz or 1e-9
-                t = ((ox - p.x) * dx + (oz - p.z) * dz) / l2
-                if 0.0 < t < 0.97 and (p.x + dx * t - ox) ** 2 + (p.z + dz * t - oz) ** 2 < orad * orad and p.y + dy * t < top:
+                t = ((ox - px) * dx + (oz - pz) * dz) / l2
+                if 0.0 < t < 0.97 and (px + dx * t - ox) ** 2 + (pz + dz * t - oz) ** 2 < orad * orad and py + dy * t < top:
                     r = False
                     break
         self.vis[k] = r
@@ -124,10 +128,10 @@ class Night:
                     self._lights(cam, p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], ppm, dark, False)
             for c in (sim.traffic.cars if self.detail >= 1 else ()):
                 if self._vis(cam, rect, c.x, c.y):
-                    self._lights(cam, c.x, c.y, c.h, c.kind, ppm, dark, c.braking)
+                    self._lights(cam, c.x, c.y, c.h, c.kind, ppm, dark, c.braking, c.trh)
             for b in sim.bodies:
                 if self._vis(cam, rect, b.x, b.y) and b.alive and not b.empty and not b.exploded:
-                    self._lights(cam, b.x, b.y, b.h, b.kind, ppm, dark, b.braking)
+                    self._lights(cam, b.x, b.y, b.h, b.kind, ppm, dark, b.braking, b.trh)
         lights = getattr(sim, "lights", None)
         if lights is not None:                                       # traffic lights glow like tail lights: faint by day, bright at night
             col = ((60, 255, 110), (255, 205, 40), (255, 40, 30))
@@ -191,21 +195,35 @@ class Night:
                 for x, y in self.cells.get((cx, cy), ()):
                     if lm.inside(x, y, 30.0):
                         lm.pool(x, y, self._lamp_r(x, y), (255, 205, 120), 0.55)
-                        lm.bulb(x, self.w.ground_y(x, y) + 4.6, y, (255, 215, 140))
+                        key = x, y
+                        height = self.lamp_height.get(key)
+                        if height is None:
+                            height = self.lamp_height[key] = self.w.ground_y(x, y) + 4.6
+                        lm.bulb(x, height, y, (255, 215, 140))
         if self.detail >= 1:
             for p in sim.peds.list:
                 if p.mode == "walk" and p.arch in vehicles.JACK_KIND and lm.inside(p.x, p.y, 10.0):
                     self._vehicle(p.x, p.y, p.h, vehicles.JACK_KIND[p.arch], False)
             for c in sim.traffic.cars:
                 if lm.inside(c.x, c.y, 10.0):
-                    self._vehicle(c.x, c.y, c.h, c.kind, c.braking)
+                    self._vehicle(c.x, c.y, c.h, c.kind, c.braking, c.trh)
         for b in sim.bodies:
             if b.alive and not b.empty and not b.exploded and lm.inside(b.x, b.y, 10.0):
-                self._vehicle(b.x, b.y, b.h, b.kind, b.braking)
+                self._vehicle(b.x, b.y, b.h, b.kind, b.braking, b.trh)
         lm.render()
         self.active = True
 
-    def _vehicle(self, x, y, h, kind, braking):
+    @staticmethod
+    def _tail(x, y, h, kind, rear_heading):
+        length = vehicles.HALF_L[kind]
+        if kind == vehicles.ARTIC_BUS and rear_heading is not None:
+            x += math.cos(h) * vehicles.ARTIC_HINGE
+            y += math.sin(h) * vehicles.ARTIC_HINGE
+            h = rear_heading
+            length += vehicles.ARTIC_HINGE
+        return x - math.cos(h) * length, y - math.sin(h) * length, math.cos(h), math.sin(h)
+
+    def _vehicle(self, x, y, h, kind, braking, rear_heading=None):
         """Headlight beams and tail light pools of one vehicle into the light map."""
         lm = self.lm
         ca, sa = math.cos(h), math.sin(h)
@@ -213,8 +231,9 @@ class Night:
         if kind in vehicles.BIKES:
             lm.pool(x - ca * L * 0.9, y - sa * L * 0.9, 2.5, (255, 30, 20), 0.7 if braking else 0.3)
             return
+        tx, ty, rc, rs = self._tail(x, y, h, kind, rear_heading)
         for s in (-1, 1):
-            lm.pool(x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7, 3.2, (255, 30, 20), 0.7 if braking else 0.3)
+            lm.pool(tx - rs * s * W * 0.7, ty + rc * s * W * 0.7, 3.2, (255, 30, 20), 0.7 if braking else 0.3)
 
     def _beam(self, cam, x, y, ca, sa, a, length=13.0, spread=0.3):
         """A headlight beam: exactly one soft triangle from the lamp forward."""
@@ -244,7 +263,7 @@ class Night:
         rl.rl_vertex2f(p2.x, p2.y)
         rl.rl_end()
 
-    def _lights(self, cam, x, y, h, kind, ppm, dark, braking):
+    def _lights(self, cam, x, y, h, kind, ppm, dark, braking, rear_heading=None):
         ca, sa = math.cos(h), math.sin(h)
         L, W = vehicles.DIMS[kind][0] / 2, vehicles.DIMS[kind][1] / 2
         a = 150 * dark
@@ -257,9 +276,10 @@ class Night:
             tx, ty = x - ca * L * 0.9, y - sa * L * 0.9
             self._glow(cam, tx, ty, 0.6, (1.8 if braking else 1.0) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
             return
+        tx, ty, rc, rs = self._tail(x, y, h, kind, rear_heading)
         for s in (-1, 1):
             hx, hy = x + ca * L - sa * s * W * 0.7, y + sa * L + ca * s * W * 0.7
             self._beam(cam, hx, hy, ca, sa, a)
             self._glow(cam, hx, hy, lamp_y, 0.9 * ppm, (255, 250, 230), a * 1.4)
-            tx, ty = x - ca * L - sa * s * W * 0.7, y - sa * L + ca * s * W * 0.7
-            self._glow(cam, tx, ty, lamp_y, (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))
+            self._glow(cam, tx - rs * s * W * 0.7, ty + rc * s * W * 0.7, lamp_y,
+                       (2.2 if braking else 1.2) * ppm, (255, 20, 20), a * (1.6 if braking else 0.7))

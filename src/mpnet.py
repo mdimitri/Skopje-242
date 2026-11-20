@@ -3,31 +3,39 @@
 Packet = MAGIC(4) kind(1) seq(4) payload.
   UNREL  snapshots / inputs (newest wins, dropped if late)    REL  ordered, acked, resent (JSON objects)
   ACK    acknowledges a REL seq                               HELLO  hole-punch / keep-alive / join request
+  PING/PONG measure the gameplay round trip without entering the reliable queue.
 Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
 """
 import json
 import socket
 import struct
+import threading
 import time
 
 PORT = 24242
 MAGIC = b"S242"
 HDR = struct.Struct("!4sBI")
 UNREL, REL, ACK, HELLO = 0, 1, 2, 3
+PING, PONG = 4, 5
 MAX_PAYLOAD = 1100          # stays under typical MTU so no IP fragmentation
 RESEND = 0.12               # s before an unacked REL packet is sent again
 TIMEOUT = 8.0               # s of silence before a peer is dropped
 KEEPALIVE = 1.0
+PING_PERIOD, PING_FRESH = 1.0, 3.0
 
 
 class Peer:
-    __slots__ = ("addr", "out", "q", "expect", "ooo", "last_rx", "last_tx", "up", "rtt", "unrel_seq", "rx_unrel")
+    __slots__ = ("addr", "out", "q", "expect", "ooo", "last_rx", "last_tx", "up", "rtt", "unrel_seq", "rx_unrel", "rx_unrel_mask")
+    __slots__ += ("ping_sent", "ping_seq", "ping_at", "ping_ms")
 
     def __init__(self, addr, now):
         self.addr, self.out, self.q = addr, 1, {}      # q: seq -> [packet, first_sent, last_sent]
         self.expect, self.ooo = 1, {}
         self.last_rx = self.last_tx = now
         self.up, self.rtt, self.unrel_seq, self.rx_unrel = False, 0.1, 0, 0
+        self.rx_unrel_mask = 1
+        self.ping_sent, self.ping_seq = now - PING_PERIOD, None
+        self.ping_at, self.ping_ms = -float("inf"), 0.0
 
 
 class Net:
@@ -38,8 +46,33 @@ class Net:
         self.sock.setblocking(False)
         self.port = self.sock.getsockname()[1]
         self.accept = accept          # host: create peers for unknown senders that say HELLO
+        self.unrel_reorder = False    # gameplay packets carry their own per-stream revisions
+        self.probe_rtt = False
         self.peers = {}
         self.bytes_tx = self.bytes_rx = 0
+        self._tx_lock = threading.Lock()
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat = None
+
+    def start_heartbeat(self):
+        """Keep established game connections alive while the window thread is blocked."""
+        if self._heartbeat is None:
+            self._heartbeat_stop.clear()
+            self._heartbeat = threading.Thread(target=self._keepalive, daemon=True)
+            self._heartbeat.start()
+
+    def _keepalive(self):
+        while not self._heartbeat_stop.wait(KEEPALIVE):
+            now = time.monotonic()
+            for addr, p in list(self.peers.items()):
+                if p.up and now - p.last_tx >= KEEPALIVE:
+                    self.hello(addr)
+
+    def stop_heartbeat(self):
+        if self._heartbeat is not None:
+            self._heartbeat_stop.set()
+            self._heartbeat.join(timeout=.25)
+            self._heartbeat = None
 
     # ---- peers
     def add_peer(self, addr):
@@ -57,12 +90,20 @@ class Net:
     # ---- sending
     def _raw(self, addr, kind, seq, payload=b""):
         pkt = HDR.pack(MAGIC, kind, seq) + payload
-        try:
-            self.sock.sendto(pkt, addr)
-            self.bytes_tx += len(pkt)
-        except OSError:
-            pass
+        self._send_packet(addr, pkt)
         return pkt
+
+    def _send_packet(self, addr, pkt):
+        try:
+            sent = self.sock.sendto(pkt, addr)
+        except OSError:
+            return
+        with self._tx_lock:
+            self.bytes_tx += sent
+
+    def ping_ms(self, now, addresses=None):
+        peers = self.peers.values() if addresses is None else (self.peers[a] for a in addresses if a in self.peers)
+        return max((p.ping_ms for p in peers if p.up and now - p.ping_at < PING_FRESH), default=None)
 
     def send_rel(self, addr, obj):
         p = self.peers.get(addr)
@@ -136,10 +177,23 @@ class Net:
                 e = p.q.pop(seq, None)
                 if e:
                     p.rtt = 0.8 * p.rtt + 0.2 * (now - e[1])
+            elif kind == PING:
+                self._raw(addr, PONG, seq)
+            elif kind == PONG and seq == p.ping_seq:
+                sample = (now - p.ping_sent) * 1000
+                p.ping_ms = p.ping_ms * .6 + sample * .4 if now - p.ping_at < PING_FRESH else sample
+                p.ping_at, p.ping_seq = now, None
             elif kind == UNREL:
-                if ((seq - p.rx_unrel) & 0xFFFFFFFF) < 0x80000000 and seq != p.rx_unrel:   # newer only
+                ahead = (seq - p.rx_unrel) & 0xFFFFFFFF
+                if 0 < ahead < 0x80000000:
                     p.rx_unrel = seq
+                    p.rx_unrel_mask = ((p.rx_unrel_mask << ahead) & ((1 << 64) - 1) if ahead < 64 else 0) | 1
                     ev.append(("unrel", addr, body))
+                elif self.unrel_reorder and ahead:
+                    behind = (p.rx_unrel - seq) & 0xFFFFFFFF
+                    if behind < 64 and not p.rx_unrel_mask & (1 << behind):
+                        p.rx_unrel_mask |= 1 << behind
+                        ev.append(("unrel", addr, body))
         for a, p in list(self.peers.items()):
             if p.up and now - p.last_rx > TIMEOUT:
                 self.peers.pop(a)
@@ -147,17 +201,19 @@ class Net:
                 continue
             for seq, e in p.q.items():
                 if now - e[2] > RESEND:
-                    try:
-                        self.sock.sendto(e[0], a)
-                    except OSError:
-                        pass
+                    self._send_packet(a, e[0])
                     e[2] = now
-            if now - p.last_tx > KEEPALIVE:
+            probe_wait = PING_PERIOD if p.ping_seq is None else PING_FRESH
+            if self.probe_rtt and p.up and now - p.ping_sent >= probe_wait:
+                p.ping_sent, p.ping_seq = now, int(now * 1000) & 0xFFFFFFFF
+                self._raw(a, PING, p.ping_seq)
+            if now - p.last_tx > KEEPALIVE and (not p.up or self._heartbeat is None):
                 self._raw(a, HELLO, 0)
                 p.last_tx = now
         return ev
 
     def close(self):
+        self.stop_heartbeat()
         try:
             self.sock.close()
         except OSError:

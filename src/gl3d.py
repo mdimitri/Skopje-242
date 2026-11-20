@@ -1,9 +1,12 @@
 """3D helpers: mesh upload, procedural textures, procedural car / pedestrian / pickup models (with dents)."""
 import math
 import random
+from functools import lru_cache
 
 import numpy as np
 
+import characterart
+import surfacepack
 import weaponart
 import pyray as rl
 
@@ -40,6 +43,7 @@ def set_texture(model, tex):
 
 def free_model(model):
     if model is not None:
+        surfacepack.forget(model)
         rl.unload_model(model)
 
 
@@ -1369,7 +1373,7 @@ def turret_model():
     rgba = np.empty((len(pos), 4), np.uint8)
     rgba[:, :3] = np.clip(np.concatenate([p[1] for p in parts]), 0, 255)
     rgba[:, 3] = 255
-    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+    return object_detail(make_model(pos, np.zeros((len(pos), 2), np.float32), rgba), "metal")
 
 
 def rotor_model(kind, tail=False):
@@ -1407,7 +1411,7 @@ def rotor_model(kind, tail=False):
     rgba = np.empty((len(pos), 4), np.uint8)
     rgba[:, :3] = np.clip(col, 0, 255)
     rgba[:, 3] = 255
-    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+    return object_detail(make_model(pos, np.zeros((len(pos), 2), np.float32), rgba), "metal", kind)
 
 
 def stairs_model(flights):
@@ -1448,7 +1452,7 @@ def stairs_model(flights):
     rgba = np.empty((len(pos), 4), np.uint8)
     rgba[:, :3] = np.clip(col, 0, 255)
     rgba[:, 3] = 255
-    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+    return object_detail(make_model(pos, np.zeros((len(pos), 2), np.float32), rgba), "metal", 3)
 
 
 
@@ -1488,6 +1492,23 @@ def visual_dims(kind):
     return carbody.render_dims(name, dims)
 
 
+@lru_cache(maxsize=None)
+def indicator_mounts(kind):
+    """Lens rectangles on each end, in the same local frames as the vehicle meshes."""
+    name, style = V.IDS[kind], V.STYLE[kind]
+    length, width, bottom, belt, _ = visual_dims(kind)
+    if style in carbody.LOFT_STYLES and carbody.has(name):
+        return carbody.indicator_mounts(name, length, width, belt)
+    if kind == V.SEMI:
+        return ((V.SEMI_SHIFT + V.SEMI_TRACTOR_L / 2 + 0.014, belt - 0.23, width * 0.424, 0.105, 0.075),
+                (V.SEMI_HITCH - V.SEMI_TRAILER_L + 0.096, 1.23, 1.135, 0.07, 0.064))
+    if kind in V.BIKES:
+        return (length * 0.5 - 0.05, 0.78, 0.16, 0.045, 0.039), (-length * 0.5 + 0.12, 0.73, 0.14, 0.045, 0.039)
+    y = belt - 0.215
+    return ((length * 0.5 + 0.012, y, width * 0.423, 0.105, 0.078),
+            (-length * 0.5 - 0.012, y, width * 0.423, 0.105, 0.074))
+
+
 def _wheel_layout(st, L, name=None):
     """(x, radius, width) of every wheel pair, the front axle first."""
     if name is not None and st in carbody.LOFT_STYLES and carbody.has(name):          # the real car's axle positions and tyre size
@@ -1495,7 +1516,7 @@ def _wheel_layout(st, L, name=None):
         r = lay["tr"] or _TYRE_R.get(st, 0.34)
         return [(lay["ax_f"], r, 0.7 * r), (lay["ax_r"], r, 0.7 * r)]
     if name == "JSP Zglobni":
-        return [(L * 0.30, 0.493, 0.30), (-L * 0.08, 0.493, 0.30), (-L * 0.34, 0.493, 0.30)]
+        return [(x, 0.493, 0.30) for x in (V.ARTIC_FRONT_AXLE, V.ARTIC_MIDDLE_AXLE, V.ARTIC_REAR_AXLE)]
     if name == "Voen Hamer":
         return [(L*0.326, 0.432, 0.252), (-L*0.347, 0.432, 0.252)]
     if name == "Voena Niva":
@@ -1524,7 +1545,8 @@ def _bike_wheel_model(kind):
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
-    return x, r, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+    model = object_detail(make_model(v, np.zeros((len(v), 2), np.float32), rgba), "vehicle", kind)
+    return x, r, model
 
 
 def front_wheel(kind):
@@ -1551,7 +1573,8 @@ def front_wheel(kind):
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
-    return wx, wr, track, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+    model = object_detail(make_model(v, np.zeros((len(v), 2), np.float32), rgba), "vehicle", kind)
+    return wx, wr, track, model
 
 
 def rear_axles(kind):
@@ -1580,7 +1603,8 @@ def rear_axles(kind):
         rgba = np.empty((len(v), 4), np.uint8)
         rgba[:, :3] = np.clip(c, 0, 255)
         rgba[:, 3] = 255
-        out.append((wx + (V.SEMI_SHIFT if semi else 0.0), wr, 0.0, make_model(v, np.zeros((len(v), 2), np.float32), rgba)))
+        model = object_detail(make_model(v, np.zeros((len(v), 2), np.float32), rgba), "vehicle", kind)
+        out.append((wx + (V.SEMI_SHIFT if semi else 0.0), wr, 0.0, model))
     return out
 
 
@@ -1700,7 +1724,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
 
     cl_f, cx_f, ft, rt, stp, nwin = _CAB[st]
     if L > 11:
-        nwin = 8 if name == "JSP Zglobni" else 9
+        nwin = 11 if name == "JSP Zglobni" else 9
     if name == "JSP Dvokatnik":
         ft, rt, stp, nwin = 0.020, 0.012, 0.026, 6
     elif name == "JSP Zglobni":
@@ -1879,7 +1903,7 @@ def _car_arrays(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=Fal
                 if start < stop:
                     quad((start, y0 - 0.02, zs), (stop-start, 0, 0), (0, 0.06, 0), (0, 0, s), (40, 40, 42))
     if name == "JSP Zglobni":
-        joint = -L * 0.23
+        joint = V.ARTIC_HINGE
         box(joint, y0, 0, 0.76, roof - y0, W*1.014, (43, 43, 46))
         for k in range(8):
             x = joint - 0.326 + k*0.093
@@ -1995,7 +2019,7 @@ def trailer_arrays(wheels=True):
 
 def trailer_model():
     pos, uv, col = trailer_arrays(False)
-    return make_model(pos, uv, col)
+    return object_detail(make_model(pos, uv, col), "metal", 5)
 
 
 def trailer_axles():
@@ -2011,7 +2035,8 @@ def trailer_axles():
     rgba = np.empty((len(v), 4), np.uint8)
     rgba[:, :3] = np.clip(c, 0, 255)
     rgba[:, 3] = 255
-    return (-T + 1.4, -T + 2.6, -T + 3.8), 0.5, make_model(v, np.zeros((len(v), 2), np.float32), rgba)
+    wheels = object_detail(make_model(v, np.zeros((len(v), 2), np.float32), rgba), "vehicle", 5)
+    return (-T + 1.4, -T + 2.6, -T + 3.8), 0.5, wheels
 
 
 def _finish_arrays(parts, dents, burnt, belt):
@@ -2065,34 +2090,178 @@ def door_model(kind, color):
     rgba = np.empty((len(pos), 4), np.uint8)
     rgba[:, :3] = np.clip(np.concatenate([q[1] for q in parts]), 0, 255)
     rgba[:, 3] = 255
-    return make_model(pos, np.zeros((len(pos), 2), np.float32), rgba)
+    return object_detail(make_model(pos, np.zeros((len(pos), 2), np.float32), rgba), "paint", kind)
 
 
-def car_model(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False):
-    pos, uv, col = car_arrays(kind, color, dents, burnt, player, steer_wheels)
-    return gloss_apply(make_model(pos, uv, col))
+_BUS_BELLOWS_HALF = 0.58
+_BUS_BELLOWS_OVERLAP = 0.06
+
+
+def _bus_section(arrays, rear=False):
+    """Trim the existing bus shell at the bellows, preserving materials on cut triangles."""
+    pos, uv, col = arrays
+    side = -1 if rear else 1
+    cut = V.ARTIC_HINGE + side * _BUS_BELLOWS_HALF
+    dist = ((pos[:, 0] - cut) * side).reshape(-1, 3)
+    inside = dist >= 0
+    keep = np.repeat(inside.all(axis=1), 3)
+    edges = np.flatnonzero(inside.any(axis=1) & ~inside.all(axis=1))
+    attrs = np.column_stack((pos, uv, col)).reshape(-1, 3, 9)
+    clipped = []
+    for i in edges:
+        face = []
+        for j in range(3):
+            a, b = attrs[i, j - 1], attrs[i, j]
+            da, db = dist[i, j - 1], dist[i, j]
+            if (da >= 0) != (db >= 0):
+                face.append(a + (b - a) * da / (da - db))
+            if db >= 0:
+                face.append(b)
+        for j in range(1, len(face) - 1):
+            clipped.extend((face[0], face[j], face[j + 1]))
+    if not clipped:
+        return pos[keep], uv[keep], col[keep]
+    cut_vertices = np.asarray(clipped, dtype=np.float32)
+    return (np.concatenate((pos[keep], cut_vertices[:, :3])),
+            np.concatenate((uv[keep], cut_vertices[:, 3:5])),
+            np.concatenate((col[keep], np.rint(cut_vertices[:, 5:]).astype(np.uint8))))
+
+
+def bus_rear_model():
+    arrays = car_arrays(V.ARTIC_BUS, 0, steer_wheels=True)
+    return gloss_apply(make_model(*_bus_section(arrays, rear=True)), V.ARTIC_BUS)
+
+
+def bus_bellows_arrays(bend):
+    """The folds span the front and rear cross-sections at the given articulation angle."""
+    _, width, bottom, _, top = visual_dims(V.ARTIC_BUS)
+    hinge, gap = V.ARTIC_HINGE, _BUS_BELLOWS_HALF + _BUS_BELLOWS_OVERLAP
+    c, s = math.cos(bend), math.sin(bend)
+    rings = []
+    for i in range(13):
+        f = i / 12
+        w = width * 0.5 - (0.05 if i % 2 else 0.0)
+        roof = top - (0.045 if i % 2 else 0.015)
+        rings.append([((1 - f) * (hinge + gap) + f * (hinge - gap * c - z * s), y,
+                       (1 - f) * z + f * (-gap * s + z * c))
+                      for y, z in ((bottom, w), (roof, w), (roof, -w), (bottom, -w))])
+    pos, colors = [], []
+    for i, (a, b) in enumerate(zip(rings, rings[1:])):
+        for j in range(4):
+            k = (j + 1) % 4
+            pos.extend((a[j], a[k], b[k], a[j], b[k], b[j]))
+            shade = (59 if i % 2 == 0 else 39) + (9 if j == 1 else 0)
+            colors.extend([(shade, shade, shade + 3, 255)] * 6)
+    return np.asarray(pos, np.float32), np.zeros((len(pos), 2), np.float32), np.asarray(colors, np.uint8)
+
+
+def car_scene_arrays(kind, color, dents=(), burnt=0.0, player=False):
+    arrays = car_arrays(kind, color, dents, burnt, player, steer_wheels=True)
+    return _bus_section(arrays) if kind == V.ARTIC_BUS else arrays
+
+
+def car_model(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False, scene=False):
+    pos, uv, col = car_scene_arrays(kind, color, dents, burnt, player) if scene else car_arrays(kind, color, dents, burnt, player, steer_wheels)
+    return gloss_apply(make_model(pos, uv, col), kind)
 
 
 # ------------------------------------------------------------------ glossy cars: clear-coat / metallic paint and reflective glass
 # One extra shader, no extra draw calls: sky reflection (fresnel), sun/moon highlight.  Off = the default raylib shader, as before.
+OBJECT_VS = """#version 330
+in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
+uniform mat4 mvp; uniform mat4 matModel;
+out vec4 fragColor; out vec3 wp; out vec3 localPos; out vec2 uv;
+void main(){ fragColor = vertexColor; uv = vertexTexCoord; localPos = vertexPosition;
+             wp = (matModel * vec4(vertexPosition, 1.0)).xyz;
+             gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
+OBJECT_FS = """#version 330
+in vec4 fragColor; in vec3 wp; in vec3 localPos; in vec2 uv;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse; uniform vec4 colSpecular;
+uniform vec3 SUNL;
+out vec4 finalColor;
+""" + surfacepack.SHADER + """void main(){
+  vec4 base = texture(texture0, uv) * colDiffuse * fragColor;
+  if (generatedSurfaces == 2){
+    float family = round(colSpecular.r * 255.0);
+    float variant = round(colSpecular.g * 255.0);
+    float lum = dot(base.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 localN = normalize(cross(dFdx(localPos), dFdy(localPos)));
+    vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
+    if (family == 25.0) {
+      vec2 slot = floor(clamp(uv, vec2(0.0), vec2(0.99999)) * vec2(4.0, 2.0));
+      float tile = slot.x + 4.0 * slot.y;
+      family = tile >= 7.0 ? 16.0 : (tile >= 6.0 ? 17.0 : (tile == 0.0 && lum < 0.24 ? 15.0 : 14.0));
+      variant = mod(variant + tile * 3.0, 20.0);
+    } else if (family == 26.0) {
+      if (uv.x > 1.5) { finalColor = base; return; }
+      family = uv.x > 0.5 ? 20.0 : (lum < 0.18 ? 21.0 : (base.r - base.b > 0.14 ? 11.0 : (lum > 0.55 ? 7.0 : 22.0)));
+    } else if (family == 27.0) {
+      family = abs(localN.y) > 0.78 ? (lum < 0.27 ? 13.0 : (base.r - base.b > 0.13 ? 11.0 : 12.0)) :
+                                      (base.r - base.b > 0.10 ? 11.0 : 4.0);
+    }
+    float repeatM = family >= 14.0 && family <= 19.0 ? 0.48 : (family >= 20.0 && family <= 22.0 ? 0.60 : 2.2);
+    vec4 detail = objectSample(surfaceProjection(localPos, localN) / repeatM, family, variant);
+    vec3 bumped = surfaceNormal(wp, n, detail.a, surfaceAmplitude(family));
+    float light = clamp(1.0 + 0.55 * (dot(bumped, SUNL) - dot(n, SUNL)), 0.64, 1.36);
+    base.rgb *= mix(vec3(1.0), detail.rgb * 2.0, family == 16.0 ? 0.28 : 0.70) * light;
+  }
+  finalColor = base;
+}"""
+_object_shader = None
+_OBJECT_ROLES = {name: i for i, name in enumerate(surfacepack.EXPANDED_FAMILIES + ("character", "vehicle", "interior"))}
+
+
+def object_detail(model, role, variant=0):
+    """Give a mesh a stable material family and variant in the expanded pack."""
+    global _object_shader
+    if model is None:
+        return None
+    if _object_shader is None:
+        sh = rl.load_shader_from_memory(OBJECT_VS, OBJECT_FS)
+        if sh.id and sh.id != rl.rl_get_shader_id_default():
+            _sun_register(sh)
+            surfacepack.register(sh)
+            sh.locs[rl.SHADER_LOC_COLOR_SPECULAR] = rl.get_shader_location(sh, "colSpecular")
+            _object_shader = sh
+        else:
+            _object_shader = False
+    if _object_shader:
+        material = model.materials[0]
+        material.shader = _object_shader
+        material.maps[rl.MATERIAL_MAP_SPECULAR].color = rl.Color(_OBJECT_ROLES[role], int(variant) % 20, 0, 255)
+        surfacepack.track(model)
+    return model
+
+
 CAR_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp; uniform mat4 matModel;
-out vec4 fragColor; out vec3 wp; out float mat;
-void main(){ fragColor = vertexColor; mat = vertexTexCoord.x; wp = (matModel * vec4(vertexPosition, 1.0)).xyz;
+out vec4 fragColor; out vec3 wp; out vec3 localPos; out float mat;
+void main(){ fragColor = vertexColor; mat = vertexTexCoord.x; localPos = vertexPosition; wp = (matModel * vec4(vertexPosition, 1.0)).xyz;
              gl_Position = mvp * vec4(vertexPosition, 1.0); }"""
 CAR_FS = """#version 330
-in vec4 fragColor; in vec3 wp; in float mat;
-uniform vec4 colDiffuse;
+in vec4 fragColor; in vec3 wp; in vec3 localPos; in float mat;
+uniform vec4 colDiffuse; uniform vec4 colSpecular;
 uniform vec3 SUNL; uniform vec3 viewPos;
 uniform vec4 gloss;              // x = strength (0 = exactly the plain look), y = light-source strength
 uniform vec3 skyZ; uniform vec3 skyH; uniform vec3 grnd; uniform vec3 lightC; uniform vec3 lightD;
 out vec4 finalColor;
-void main(){
+""" + surfacepack.SHADER + """void main(){
   vec4 base = colDiffuse * fragColor;
+  vec3 N = normalize(cross(dFdx(wp), dFdy(wp)));
+  if (generatedSurfaces == 2 && mat < 1.5){
+    float lum = dot(base.rgb, vec3(0.299, 0.587, 0.114));
+    float family = mat > 0.5 ? 20.0 : (lum < 0.13 ? 21.0 : 22.0);
+    vec3 localN = normalize(cross(dFdx(localPos), dFdy(localPos)));
+    vec4 detail = objectSample(surfaceProjection(localPos, localN) / 0.65, family, round(colSpecular.r * 255.0));
+    vec3 bumped = surfaceNormal(wp, N, detail.a, surfaceAmplitude(family));
+    base.rgb *= mix(vec3(1.0), detail.rgb * 2.0, 0.45)
+              * clamp(1.0 + 0.48 * (dot(bumped, lightD) - dot(N, lightD)), 0.73, 1.27);
+    N = bumped;
+  }
   float k = gloss.x * step(0.5, mat);
   if (k <= 0.0) { finalColor = base; return; }
-  vec3 N = normalize(cross(dFdx(wp), dFdy(wp)));
   vec3 V = normalize(viewPos - wp);
   if (dot(N, V) < 0.0) N = -N;
   float nv = clamp(dot(N, V), 0.0, 1.0);
@@ -2121,13 +2290,19 @@ def _gloss_shader():
         _gloss["sh"] = sh
         _gloss["loc"] = {n: rl.get_shader_location(sh, n) for n in ("viewPos", "gloss", "skyZ", "skyH", "grnd", "lightC", "lightD")}
         _sun_register(sh)
+        surfacepack.register(sh)
+        sh.locs[rl.SHADER_LOC_COLOR_SPECULAR] = rl.get_shader_location(sh, "colSpecular")
     return _gloss["sh"]
 
 
-def gloss_apply(model):
-    """Give a freshly made car model the gloss shader when the setting is on (models made while off keep the default)."""
-    if model is not None and _gloss["on"]:
-        model.materials[0].shader = _gloss_shader()
+def gloss_apply(model, variant=0):
+    """Give a car its paint and glass shader when gloss is enabled."""
+    if model is None or not _gloss["on"]:
+        return object_detail(model, "vehicle", variant)
+    material = model.materials[0]
+    material.shader = _gloss_shader()
+    material.maps[rl.MATERIAL_MAP_SPECULAR].color = rl.Color(int(variant) % 20, 0, 0, 255)
+    surfacepack.track(model)
     return model
 
 
@@ -2165,10 +2340,59 @@ def gloss_frame(cam_pos, hour, dark, sun, on, strength):
 # ------------------------------------------------------------------ pedestrians
 SKIN = [(236, 190, 160), (200, 150, 110), (150, 105, 80), (240, 205, 180)]
 HAIR = [(50, 36, 28), (190, 150, 80), (20, 20, 22), (120, 70, 40)]
+_STREET_SCALES = {"Dete": .64, "Devojka": .95, "Pop": 1.04, "Penzioner": .95, "Advokat": 1.03,
+                  "Teretana Brat": 1.10, "Golabar": .93, "Dedo na Kolo": .95, "Trotinet Dete": .64}
+
+
+class _StreetParts:
+    """Shared human mesh primitives plus rigid props for the ambient role recipes."""
+
+    def __init__(self, tier):
+        self.tier = tier
+        self.parts, self.uvs = [], []
+
+    def add(self, cx, y, cz, sx, sy, sz, col, form=None, material=0):
+        color = np.asarray(col, np.float32)
+        if form is None:
+            # Signs, shields, vehicle panels and other rigid props keep their flat faces.
+            for vertices, normal in box_faces(cx, y, cz, sx, sy, sz).values():
+                self.parts.append((vertices, np.tile(color * _shade(np.asarray(normal)), (len(vertices), 1))))
+                self.uvs.append(np.tile((.125, .25), (len(vertices), 1)))
+            return
+        detail = self.tier if form != 'feature' else max(1, self.tier - 1)
+        tile = material if self.tier == 3 else int(self.tier == 2 and material != 0)
+        vertices, normals, uv = characterart.street_part(form, detail, tile)
+        size = np.array((sx, sy, sz), np.float32)
+        points = vertices * size + np.array((cx, y + sy/2, cz), np.float32)
+        lighting = .64 + .43 * np.maximum(0., characterart.unit(normals / size) @ SUN)
+        self.parts.append((points, color * lighting[:, None]))
+        self.uvs.append(uv)
+
+    def wheel(self, cx, cy, cz, radius, width, col=(26, 26, 28), hub=(170, 170, 176)):
+        pos, rgb = _cyl(cx, cy, cz, radius, width, np.asarray(col), np.asarray(hub), sides=(8, 12, 16)[self.tier - 1])
+        self.parts.append((pos, rgb))
+        self.uvs.append(np.tile((.125, .25), (len(pos), 1)))
+
+    def head(self, x, y, skin, hair, width=.27, height=.29, nose=.065):
+        self.add(x, y, 0, .27, height, width, skin, 'round', 7)
+        self.add(x + .122, y + height*.34, 0, nose, .064, .067, skin, 'feature', 7)
+        self.add(x + .131, y + height*.24, 0, .018, .022, .092, (121, 69, 56), 'feature')
+        for side in (-1, 1):
+            z = side * width
+            self.add(x - .016, y + height*.40, z*.48, .068, .071, .043, skin, 'feature', 7)
+            self.add(x + .129, y + height*.58, z*.23, .024, .033, .058, (238, 225, 208), 'feature')
+            self.add(x + .142, y + height*.59, z*.23, .014, .027, .028, (48, 34, 32), 'feature')
+            if self.tier >= 2:
+                self.add(x + .124, y + height*.72, z*.23, .027, .016, .065, hair, 'feature', 6)
+
+    def arrays(self, pos):
+        rgba = np.full((len(pos), 4), 255, np.uint8)
+        rgba[:, :3] = np.clip(np.concatenate([part[1] for part in self.parts]), 0, 255)
+        return pos, np.concatenate(self.uvs, dtype=np.float32), rgba
 
 
 def _swing(parts, i0, px, py, ang):
-    """Rotate the boxes parts[i0:] about the pivot (px, py) in the walking plane (x forward, y up): a limb swings from its joint."""
+    """Rotate parts[i0:] around a joint in the walking plane (x forward, y up)."""
     if abs(ang) < 1e-4:
         return
     c, s_ = math.cos(ang), math.sin(ang)
@@ -2219,34 +2443,31 @@ def _knee(sg, th, ph, run):
     return 0.08 + (1.35 if run else 0.8) * max(0.0, -sg * math.sin(ph))
 
 
-def _leg(parts, add, z, a, flex, hip, col, shin_col, shoe, feet, sole=None, heel=False, w=0.17, toe=0.28):
+def _leg(parts, add, z, a, flex, hip, col, shin_col, shoe, feet, bare_thigh=False, bare_shin=False, w=0.17, toe=0.28):
     """Thigh from the hip, shin from the knee, foot from the ankle (toes forward). The thigh swings by a, the shin
     bends back by flex at the knee; the boxes overlap at the joints so no gap opens when they bend.
     The foot boxes' indices go to feet (the caller plants the lowest one on the ground)."""
     k = hip / 2
     i0 = len(parts)
-    add(0.0, k - 0.03, z, w + 0.02, hip - k + 0.05, w, col)                  # thigh: knee .. a little above the hip
+    add(0.0, k - 0.048, z, w + 0.034, hip - k + 0.08, w + .02, col, 'limb', 7 if bare_thigh else 4)
     i1 = len(parts)
-    add(0.0, 0.07, z, w, k - 0.03, w - 0.02, shin_col)                       # shin: ankle .. knee
+    add(0.0, 0.052, z, w, k + 0.023, w - 0.01, shin_col, 'limb', 7 if bare_shin else 4)
     f0 = len(parts)
-    add(0.06, 0.0, z, toe, 0.09, w, shoe)
-    if sole:
-        add(0.06, 0.0, z, toe + 0.01, 0.02, w + 0.01, sole)
-    if heel:
-        add(-0.06, 0.0, z, 0.04, 0.12, 0.05, shoe)
+    add(0.06, 0.0, z, toe, 0.12, w, shoe, 'round', 1)
     feet.extend(range(f0, len(parts)))
     _swing(parts, i0, 0.0, hip, a)
     _swing(parts, i1, k * math.sin(a), hip - k * math.cos(a), -flex)
 
 
-def _arm(parts, add, x, sh, z, a, bend, col, hand, u=0.34, f=0.3, w=0.13, fore=None, held=()):
+def _arm(parts, add, x, sh, z, a, bend, col, hand, held=()):
     """Upper arm from the shoulder (x, sh), forearm from the elbow, hand; held = boxes (cx, y, cz, sx, sy, sz, col)
     gripped in the hand, which move with the forearm. The arm swings by a, the forearm bends forward by bend."""
+    u, f, w = .34, .30, .13
     i0 = len(parts)
-    add(x, sh - u - 0.02, z, w, u + 0.06, w - 0.01, col)                     # upper arm: elbow .. into the shoulder
+    add(x, sh - u - 0.048, z, w * 1.18, u + 0.10, w * 1.04, col, 'limb', 1)
     i1 = len(parts)
-    add(x, sh - u - f + 0.02, z, w - 0.01, f, w - 0.02, fore if fore is not None else col)
-    add(x, sh - u - f - 0.1, z, w - 0.02, 0.12, w - 0.03, hand)
+    add(x, sh - u - f - 0.018, z, w, f + .065, w - 0.01, col, 'limb', 1)
+    add(x, sh - u - f - 0.085, z, w - 0.02, 0.12, w - 0.025, hand, 'round', 7)
     for b in held:
         add(*b)
     _swing(parts, i0, x, sh, a)
@@ -2286,39 +2507,33 @@ def _strike(add, kind, sk, legc, shoe, arm=None):
     5 = high front kick with the right leg."""
     arm = sk if arm is None else arm
     if kind == 4:
-        add(0.2, 1.24, 0.3, 0.36, 0.13, 0.13, arm)            # right upper arm, horizontal from the shoulder
-        add(0.54, 1.24, 0.3, 0.34, 0.12, 0.12, arm)           # forearm
-        add(0.72, 1.23, 0.3, 0.14, 0.14, 0.14, sk)            # fist
-        add(0.06, 1.0, -0.34, 0.13, 0.38, 0.12, arm)          # left upper arm hangs from the shoulder to the elbow
-        add(0.2, 1.0, -0.3, 0.3, 0.12, 0.12, arm)             # forearm raised forward (guard)
-        add(0.38, 1.0, -0.3, 0.12, 0.13, 0.12, sk)
+        add(0.2, 1.24, 0.3, 0.40, 0.15, 0.15, arm, 'round', 1)
+        add(0.52, 1.24, 0.3, 0.37, 0.135, 0.135, arm, 'round', 1)
+        add(0.69, 1.23, 0.3, 0.16, 0.15, 0.15, sk, 'round', 7)
+        add(0.06, 1.0, -0.34, 0.15, 0.39, 0.14, arm, 'limb', 1)
+        add(0.2, 1.0, -0.3, 0.34, 0.135, 0.135, arm, 'round', 1)
+        add(0.37, 1.0, -0.3, 0.13, 0.13, 0.125, sk, 'round', 7)
     else:
-        add(0.28, 0.74, 0.11, 0.56, 0.18, 0.16, legc)         # thigh forward
-        add(0.7, 0.8, 0.11, 0.34, 0.16, 0.15, legc)           # shin swinging up
-        add(0.9, 0.8, 0.11, 0.26, 0.12, 0.18, shoe)           # foot
+        add(0.26, 0.74, 0.11, 0.57, 0.19, 0.18, legc, 'round', 4)
+        add(0.67, 0.8, 0.11, 0.41, 0.16, 0.16, legc, 'round', 4)
+        add(0.87, 0.8, 0.11, 0.27, 0.13, 0.18, shoe, 'round', 1)
 
 
-def _ped_special(arch, tone, frame, skin):
-    """The 30 extra road users (arch 10..39): walkers with props, plus cyclists, mopeds, scooters, skaters and a horse cart."""
+def _ped_special(arch, tone, frame, skin, tier):
+    """Street roles with equipment or ride-specific poses, using shared human parts."""
     A = lambda c: np.array(c, np.float32)
     strike = frame if frame in (4, 5) else 0
+    jump = frame == 16
     if strike:
         frame = 0
     name = V.PED_IDS[arch]
     sk = A(SKIN[skin % 4])
     hair = A(HAIR[(skin + tone) % 4])
-    parts = []
-
-    def add(cx, y, cz, sx, sy, sz, col, pitch=0.0):
-        for nm, (v, n) in box_faces(cx, y, cz, sx, sy, sz).items():
-            parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1))))
-
-    def wheel(x, y, z, r, wd, col=(26, 26, 28), hub=(170, 170, 176)):
-        v, c = _cyl(x, y, z, r, wd, A(col), A(hub))
-        parts.append((v, c))
+    mesh = _StreetParts(tier)
+    parts, add, wheel = mesh.parts, mesh.add, mesh.wheel
 
     # (scale, torso colours, legs, shoes, skirt?, hat kind)
-    D = dict(scale=1.0, torso=(120, 120, 130), legs=(52, 66, 104), shoe=(30, 28, 28), skirt=None, rider=None,
+    D = dict(torso=(120, 120, 130), legs=(52, 66, 104), shoe=(30, 28, 28), skirt=None, rider=None,
              belly=0.0, wide=0.0, shorts=False, arms_up=False, head_fwd=0.0, stride=1.0, grip=None)
     hat = None
     held = []                         # (sx, sy, sz, col, y, z) hand-held boxes swinging with the right arm
@@ -2339,7 +2554,7 @@ def _ped_special(arch, tone, frame, skin):
         extra += [(0.0, 0.95, 0, 0.3, 0.06, 0.54, (240, 240, 120)), (0.16, 0.8, 0.0, 0.02, 0.6, 0.12, (240, 240, 120))]
         held = [(0.2, 0.03, 0.15, (240, 240, 240), 0.7, 0.0)]
     elif name == "Pop":
-        D.update(torso=(22, 22, 26), legs=(22, 22, 26), skirt=(22, 22, 26), scale=1.04); hat = ("tall", (22, 22, 26))
+        D.update(torso=(22, 22, 26), legs=(22, 22, 26), skirt=(22, 22, 26)); hat = ("tall", (22, 22, 26))
         extra += [(0.14, 1.28, 0, 0.1, 0.22, 0.16, (200, 200, 196)), (0.1, 0.9, 0, 0.04, 0.35, 0.05, (210, 170, 40))]
         held = [(0.05, 0.22, 0.12, (214, 176, 50), 0.6, 0.0)]
     elif name == "Hipster":
@@ -2354,7 +2569,7 @@ def _ped_special(arch, tone, frame, skin):
         hat = ("hood", (110, 110, 124))
         extra += [(0.3, 1.1, 0, 0.03, 0.16, 0.08, (20, 20, 24))]
     elif name == "Penzioner":
-        D.update(torso=(130, 100, 70), legs=(60, 60, 72), scale=0.95); hat = ("flat", (110, 102, 92))
+        D.update(torso=(130, 100, 70), legs=(60, 60, 72)); hat = ("flat", (110, 102, 92))
         held = [(0.04, 0.75, 0.04, (110, 70, 40), 0.0, 0.0)]
     elif name == "Kafana Chicko":
         D.update(torso=(236, 236, 226), legs=(40, 40, 52), belly=0.12); hat = None
@@ -2372,19 +2587,17 @@ def _ped_special(arch, tone, frame, skin):
         hat = None
     elif name == "Majka so Kolichka":
         D.update(torso=(200, 120, 160), legs=(48, 62, 100)); hat = ("long", tuple(hair))
-        extra += [(0.98, 0.28, 0, 0.75, 0.1, 0.55, (230, 230, 236)), (0.98, 0.38, 0, 0.6, 0.4, 0.5, (240, 160, 190)),
-                  (0.64, 0.38, 0, 0.06, 0.62, 0.42, (60, 60, 66))]                # pram, its push bar in both hands
         D["grip"] = (0.62, 0.98)
     elif name == "Partiski Aktivist":
         D.update(torso=(50, 90, 200), legs=(36, 40, 60)); hat = None
         extra += [(0.14, 0.9, 0, 0.03, 0.4, 0.05, (210, 30, 40)), (0.0, 0.62, -0.4, 0.1, 0.3, 0.3, (240, 240, 240))]
         held = [(0.03, 1.5, 0.03, (170, 150, 120), 0.2, 0.0), (0.02, 0.45, 0.7, (210, 30, 40), 1.6, 0.0)]
     elif name == "Advokat":
-        D.update(torso=(30, 32, 40), legs=(30, 32, 40), scale=1.03); hat = None
+        D.update(torso=(30, 32, 40), legs=(30, 32, 40)); hat = None
         extra += [(0.14, 0.9, 0, 0.02, 0.5, 0.14, (236, 236, 236)), (0.14, 1.46, 0, 0.1, 0.05, 0.24, (14, 14, 16))]
         held = [(0.1, 0.28, 0.42, (190, 192, 198), 0.2, 0.0)]
     elif name == "Teretana Brat":
-        D.update(torso=(232, 232, 236), legs=(30, 30, 36), scale=1.1, wide=0.22, shorts=True); hat = None
+        D.update(torso=(232, 232, 236), legs=(30, 30, 36), wide=0.22, shorts=True); hat = None
         held = [(0.1, 0.26, 0.1, (50, 90, 200), 0.65, 0.0)]
     elif name == "Kiosk Chika":
         D.update(torso=(180, 60, 100), legs=(60, 60, 70)); hat = ("bun", tuple(hair))
@@ -2395,7 +2608,7 @@ def _ped_special(arch, tone, frame, skin):
         extra += [(0.9, 1.5, 0.35, 1.9, 0.03, 0.03, (90, 66, 40))]
         held_l = [(0.25, 0.3, 0.25, (50, 90, 160), 0.44, 0.06)]               # the bucket, carried in the left hand
     elif name == "Golabar":
-        D.update(torso=(120, 110, 100), legs=(70, 66, 60), scale=0.93); hat = ("scarf", (150, 70, 90))
+        D.update(torso=(120, 110, 100), legs=(70, 66, 60)); hat = ("scarf", (150, 70, 90))
         extra += [(0.3, 0.0, 0.2, 0.14, 0.12, 0.1, (130, 130, 138)), (0.5, 0.0, -0.2, 0.14, 0.12, 0.1, (110, 110, 120)),
                   (0.25, 0.0, -0.4, 0.14, 0.12, 0.1, (150, 150, 156)), (0.12, 0.7, 0.4, 0.2, 0.22, 0.14, (230, 220, 190))]
     elif name == "Komunalec":
@@ -2404,7 +2617,6 @@ def _ped_special(arch, tone, frame, skin):
         held = [(0.2, 0.03, 0.26, (200, 40, 40), 0.7, 0.0)]
     elif name == "Nevesta":
         D.update(torso=(248, 248, 250), legs=(248, 248, 250), skirt=(248, 248, 250)); hat = ("long", tuple(hair))
-        extra += [(0.0, 0.1, 0, 0.7, 0.55, 0.8, (248, 248, 250)), (-0.18, 0.7, 0, 0.03, 0.95, 0.42, (240, 240, 246))]
         held = [(0.12, 0.12, 0.12, (240, 120, 160), 0.7, 0.0)]
     elif name == "Dostavuvach":
         D.update(torso=(255, 208, 0), legs=(36, 40, 50)); hat = ("cap", (255, 208, 0))
@@ -2417,13 +2629,13 @@ def _ped_special(arch, tone, frame, skin):
     elif name == "Velosipedist":
         D.update(torso=P3((240, 230, 40), (230, 40, 40), (40, 120, 230)), legs=(30, 30, 36), rider="road", shorts=True); hat = ("helmet", (30, 30, 34))
     elif name == "Dedo na Kolo":
-        D.update(torso=(120, 100, 70), legs=(70, 64, 56), scale=0.95, rider="old"); hat = ("flat", (110, 102, 92))
+        D.update(torso=(120, 100, 70), legs=(70, 64, 56), rider="old"); hat = ("flat", (110, 102, 92))
     elif name == "Moped Tomos":
         D.update(torso=(90, 60, 40), legs=(40, 50, 80), rider="moped"); hat = None
     elif name == "Glovo Skuter":
         D.update(torso=(255, 208, 0), legs=(36, 40, 50), rider="courier"); hat = ("helmet", (240, 240, 240))
     elif name == "Trotinet Dete":
-        D.update(torso=P3((240, 80, 80), (60, 180, 240), (250, 200, 40)), legs=(52, 66, 104), scale=0.64, rider="kick"); hat = ("helmet", (240, 120, 40))
+        D.update(torso=P3((240, 80, 80), (60, 180, 240), (250, 200, 40)), legs=(52, 66, 104), rider="kick"); hat = ("helmet", (240, 120, 40))
     elif name == "E-Trotinet Hipster":
         D.update(torso=(70, 110, 90), legs=(30, 30, 34), rider="escooter"); hat = ("beanie", (64, 64, 66))
         extra += [(0.14, 1.34, 0, 0.1, 0.12, 0.2, (66, 44, 30))]
@@ -2434,14 +2646,13 @@ def _ped_special(arch, tone, frame, skin):
         extra += [(0.0, 0.7, -0.4, 0.14, 0.2, 0.12, (30, 30, 34)), (0.0, 0.7, 0.4, 0.14, 0.2, 0.12, (30, 30, 34))]
     elif name == "Kocija":
         D.update(torso=(130, 100, 70), legs=(60, 56, 50), rider="cart"); hat = ("brim", (150, 130, 80))
-    scale, torso, legc = D["scale"], D["torso"], D["legs"]
+    torso, legc = D["torso"], D["legs"]
     rider = D["rider"]
-    frame, th, lean, ph, run = _phase(frame)
+    frame, th, lean, ph, run = _phase(3 if jump else frame)
     if strike:
         th = lean = 0.0
         ph = None
     th = max(-1.1, min(1.1, th * D["stride"]))             # (a long-striding jogger still keeps the hips together)
-    sw = {0: 0.28, 1: -0.28, 2: 0.0, 3: 0.0}[frame] * D["stride"]          # (riders: pedalling / horse legs)
     sit = rider in ("road", "old", "moped", "courier", "cart") and frame < 2
     Y = -0.2 if sit else 0.0                                 # upper body lowered when seated
     bx = -0.05 if sit else 0.0
@@ -2482,11 +2693,19 @@ def _ped_special(arch, tone, frame, skin):
                     wheel(xx, 0.07, zz, 0.05, 0.04, (220, 220, 220))
         elif rider == "cart":
             horse = (110, 70, 40)
-            add(1.7, 0.7, 0, 1.3, 0.6, 0.5, horse); add(2.5, 1.0, 0, 0.5, 0.5, 0.32, horse); add(2.8, 1.1, 0, 0.3, 0.2, 0.2, (90, 56, 34))
-            add(2.1, 1.35, 0, 0.5, 0.1, 0.1, (40, 28, 20))
+            add(1.68, .69, 0, 1.48, .66, .53, horse, 'round', 6)
+            add(2.18, .89, 0, .47, .75, .36, horse, 'limb', 6)
+            add(2.48, 1.18, 0, .57, .35, .31, horse, 'round', 6)
+            add(2.70, 1.19, 0, .27, .21, .24, (90, 56, 34), 'round', 6)
+            add(2.09, 1.16, 0, .29, .42, .15, (51, 37, 25), 'limb', 6)
+            add(.99, .58, 0, .16, .63, .15, (51, 37, 25), 'limb', 6)
+            for s in (-1, 1):
+                add(2.36, 1.47, s*.10, .12, .18, .083, horse, 'feature', 6)
+                add(2.55, 1.39, s*.125, .063, .052, .033, (36, 26, 22), 'feature')
             for k, (lx, lz) in enumerate(((2.2, -0.15), (2.2, 0.15), (1.2, -0.15), (1.2, 0.15))):
                 off = 0.18 * (1 if (k + frame) % 2 else -1)
-                add(lx + off, 0.0, lz, 0.12, 0.7, 0.1, (90, 56, 34))
+                add(lx + off, .015, lz, .148, .89, .143, (90, 56, 34), 'limb', 6)
+                add(lx + off+.036, 0., lz, .185, .12, .144, (53, 41, 36), 'round')
             add(0.0, 0.5, 0, 2.2, 0.15, 1.2, (150, 110, 70)); add(0.0, 0.65, -0.6, 2.2, 0.35, 0.06, (130, 94, 58))
             add(0.0, 0.65, 0.6, 2.2, 0.35, 0.06, (130, 94, 58)); add(-1.1, 0.65, 0, 0.06, 0.35, 1.2, (130, 94, 58))
             add(1.1, 0.55, 0, 1.2, 0.04, 0.05, (90, 66, 40))
@@ -2500,10 +2719,10 @@ def _ped_special(arch, tone, frame, skin):
         for s in (-1, 1):
             pd = 0.3 * (1 if (frame == 0) == (s > 0) else -1) * (0.0 if rider in ("moped", "courier", "cart") else 1.0)
             i0 = len(parts)
-            add(hx0 + 0.22, 0.6, s * 0.11, 0.48, 0.15, 0.15, legc)
+            add(hx0 + 0.22, 0.585, s * 0.11, 0.52, 0.18, 0.18, legc, 'round', 4)
             i1 = len(parts)
-            add(hx0 + 0.42, 0.06, s * 0.11, 0.15, 0.6, 0.15, legc)
-            add(hx0 + 0.47, 0.0, s * 0.11, 0.26, 0.09, 0.16, D["shoe"])
+            add(hx0 + 0.42, 0.04, s * 0.11, 0.18, 0.66, 0.16, legc, 'limb', 4)
+            add(hx0 + 0.47, 0.0, s * 0.11, 0.26, 0.11, 0.16, D["shoe"], 'round', 1)
             _swing(parts, i0, hx0, 0.67, 0.5 * pd)           # pedalling: the knee rises and falls ...
             _swing(parts, i1, hx0 + 0.42 * math.cos(0.5 * pd), 0.67 + 0.42 * math.sin(0.5 * pd), -0.6 * pd)   # ... the shin follows it
     else:
@@ -2512,29 +2731,35 @@ def _ped_special(arch, tone, frame, skin):
         for s in (-1, 1):
             if strike == 5 and s > 0:
                 continue
-            _leg(parts, add, s * 0.11, -s * th, _knee(-s, th, ph, run), 0.82, sk if skirt else lc2, sk if (skirt or D["shorts"]) else lc2,
-                 D["shoe"], feet, w=0.15 if skirt else 0.17, toe=0.38 if rider == "blades" else 0.28)
-        if skirt:
-            add(0.0, 0.3, 0, 0.4, 0.6, 0.48, D["skirt"])
+            step = -.45 if jump else -s * th
+            flex = 1.0 if jump else _knee(-s, th, ph, run) * (.64, .85, 1.)[tier - 1]
+            bare_shin = skirt or D["shorts"]
+            _leg(parts, add, s * 0.11, step, flex, 0.82, sk if skirt else lc2, sk if bare_shin else lc2,
+                 D["shoe"], feet, bare_thigh=skirt, bare_shin=bare_shin, w=0.15 if skirt else 0.17, toe=0.38 if rider == "blades" else 0.28)
+        if name == "Nevesta":
+            add(0, .08, 0, .63, .84, .72, D["skirt"], 'hem', 5)
+            add(-.147, .88, 0, .08, .76, .40, (223, 222, 237), 'hem', 5)
+        elif skirt:
+            add(0.0, 0.3, 0, 0.4, 0.61, 0.50, D["skirt"], 'hem', 5)
         else:
-            add(bx, 0.7, 0, 0.27, 0.16, 0.44, lc2)                # hips: cover the tops of the thighs as they swing
+            add(bx, 0.685, 0, 0.29, 0.24, 0.45, lc2, 'round', 4)
     # ---------------- torso, arms, head
     wd = 0.5 + D["wide"]
-    add(bx, 0.8 + Y, 0, 0.26 + D["belly"], 0.62, wd, torso)
-    add(bx, 1.3 + Y, 0, 0.24, 0.1, wd + 0.08, torso)          # shoulders: the arms hang from them, no gap to the chest
-    asw = 0.0
-    ac = A(torso) * 0.92 if not D["shorts"] or name == "Teretana Brat" else A(torso) * 0.92
+    add(bx, 0.773 + Y, 0, 0.30 + D["belly"], 0.65, wd + .018, torso, 'torso', 1)
+    add(bx, 1.239 + Y, 0, 0.255, 0.185, wd + 0.08, torso, 'round', 1)
+    add(bx + .016, 1.347 + Y, 0, .146, .18, .141, sk, 'round', 7)
+    ac = A(torso) * 0.92
     if frame == 3 or D["arms_up"]:
-        add(0.0, 1.0 + Y, -0.36 - D["wide"] / 2, 0.14, 0.7, 0.12, sk)
-        add(0.0, 1.0 + Y, 0.36 + D["wide"] / 2, 0.14, 0.7, 0.12, sk)
+        for side in (-1, 1):
+            _arm(parts, add, bx, 1.36 + Y, side * (.30 + D["wide"]/2), 2.28, .30, ac, sk)
     elif sit or rider in ("kick", "escooter"):
         grip = {"road": (0.5, 0.88), "old": (0.5, 1.0), "moped": (0.55, 1.0), "courier": (0.55, 1.0), "cart": (0.75, 0.75),
                 "kick": (0.4, 0.92), "escooter": (0.5, 1.15)}[rider]
         for s in (-1, 1):                                    # both hands on the handlebar (the reins), the elbows bent to reach it
             a, bend = _reach(bx, 1.36 + Y, *grip, 0.34, 0.34)
-            _arm(parts, add, bx, 1.36 + Y, s * 0.34, a, bend, ac, sk)
+            _arm(parts, add, bx, 1.36 + Y, s * .285, a, bend, ac, sk)
     else:
-        z = 0.34 + D["wide"] / 2
+        z = .283 + D["wide"] / 2
         for zz_, sg in ((-z, -1), (z, 1)):
             if strike == 4:                                  # (punching: both arms are drawn by _strike)
                 continue
@@ -2544,338 +2769,69 @@ def _ped_special(arch, tone, frame, skin):
                 a, bend = _reach(0.0, 1.38, *D["grip"], 0.34, 0.34)
             else:
                 a = sg * th * (0.5 if hb else 0.9)
-                bend = 0.15 if hb else _elbow(a, run)
+                bend = 0.15 if hb else _elbow(a, run) * (.72, .91, 1.)[tier - 1]
             _arm(parts, add, 0.0, 1.38, zz_, a, bend, ac, sk, held=hb)
     for (x, y, z, sx, sy, sz, col) in extra:
         if frame == 2 and y < 0.3:
             continue
         add(bx + x, y + Y + (0.0 if y < 0.3 else 0.0), z, sx, sy, sz, col)
     hx = 0.02 + D["head_fwd"]
-    add(hx + bx, 1.42 + Y, 0, 0.26, 0.26, 0.24, sk)
+    head_y = 1.42 + Y
+    old = name in ("Penzioner", "Dedo na Kolo", "Kafana Chicko")
+    mesh.head(hx + bx, head_y, sk, hair, .286 if old else .252, .282, .083 if old else .059)
     if hat:
         k, col = hat
         if k == "cap":
-            add(hx + bx, 1.62 + Y, 0, 0.3, 0.08, 0.3, col); add(hx + 0.14 + bx, 1.6 + Y, 0, 0.14, 0.03, 0.26, col)
+            add(hx + bx, 1.62 + Y, 0, 0.3, 0.11, 0.3, col, 'round', 1)
+            add(hx + 0.13 + bx, 1.61 + Y, 0, 0.17, 0.043, 0.26, col, 'round', 1)
         elif k == "tall":
-            add(hx + bx, 1.62 + Y, 0, 0.3, 0.26, 0.3, col)
+            add(hx + bx, 1.62 + Y, 0, 0.3, 0.26, 0.3, col, 'limb', 2)
         elif k in ("beanie", "hood", "scarf", "bun", "helmet", "band"):
-            add(hx + bx, 1.6 + Y, 0, 0.31, 0.14, 0.3, col)
+            add(hx + bx, 1.6 + Y, 0, 0.31, 0.16, 0.3, col, 'round', 3 if k == 'scarf' else 1)
             if k == "bun":
-                add(hx - 0.14 + bx, 1.64 + Y, 0, 0.12, 0.12, 0.12, col)
+                add(hx - 0.14 + bx, 1.64 + Y, 0, 0.12, 0.12, 0.12, col, 'round', 6)
             if k == "helmet":
-                add(hx - 0.1 + bx, 1.56 + Y, 0, 0.14, 0.1, 0.3, col)
+                add(hx - 0.1 + bx, 1.56 + Y, 0, 0.14, 0.1, 0.3, col, 'round', 1)
         elif k == "flat":
-            add(hx + bx, 1.62 + Y, 0, 0.32, 0.07, 0.32, col)
+            add(hx + bx, 1.62 + Y, 0, 0.32, 0.084, 0.32, col, 'round', 2)
         elif k == "brim":
-            add(hx + bx, 1.62 + Y, 0, 0.5, 0.05, 0.5, col); add(hx + bx, 1.65 + Y, 0, 0.28, 0.1, 0.28, col)
+            add(hx + bx, 1.62 + Y, 0, 0.5, 0.05, 0.5, col, 'round', 1)
+            add(hx + bx, 1.65 + Y, 0, 0.28, 0.1, 0.28, col, 'round', 1)
         elif k == "long":
-            add(hx - 0.03 + bx, 1.5 + Y, 0, 0.27, 0.12, 0.26, col); add(hx - 0.12 + bx, 1.0 + Y, 0, 0.1, 0.55, 0.28, col)
+            add(hx - 0.03 + bx, 1.53 + Y, 0, 0.28, 0.20, 0.28, col, 'round', 6)
+            add(hx - 0.12 + bx, 1.0 + Y, 0, 0.14, 0.59, 0.28, col, 'limb', 6)
     else:
-        add(hx - 0.03 + bx, 1.54 + Y, 0, 0.27, 0.15, 0.26, hair)
+        add(hx - 0.045 + bx, 1.584 + Y, 0, 0.29, 0.17, 0.269, hair, 'round', 6)
     if strike:
         _strike(add, strike, sk, D["legs"], D["shoe"], ac)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
-    col = np.concatenate([p[1] for p in parts])
     if not rider:
         _lean(pos, lean)
         if ph is not None:
             pos[:, 1] = np.maximum(pos[:, 1] - _ground(parts, feet), 0.0)   # the standing foot stays planted (the body bobs), nothing carried sinks in
-    pos *= scale
+    if D["grip"] and frame < 2 and not strike:
+        # Add the pram after the walk transforms so its wheels stay on the ground.
+        start = len(parts)
+        add(.91, .25, 0, .58, .12, .45, (104, 105, 116), 'round')
+        add(1.02, .34, 0, .74, .34, .48, (229, 156, 175), 'hem', 5)
+        add(1.20, .52, 0, .38, .30, .48, (158, 105, 134), 'round', 1)
+        for side in (-1, 1):
+            add(.70, .31, side*.20, .047, .67, .05, (63, 61, 67))
+            for x in (.74, 1.23):
+                wheel(x, .13, side*.218, .13, .047)
+        add(.66, .94, 0, .083, .059, .55, (45, 44, 52), 'round')
+        pos = np.concatenate([pos, *(part[0] for part in parts[start:])]).astype(np.float32, copy=False)
+    pos *= ped_scale(arch)
     if frame == 2:
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
         pos[:, 0] = -y
         pos[:, 1] = x + 0.18
-    rgba = np.empty((len(pos), 4), np.uint8)
-    rgba[:, :3] = np.clip(col, 0, 255)
-    rgba[:, 3] = 255
-    return pos, np.zeros((len(pos), 2), np.float32), rgba
+    return mesh.arrays(pos)
 
 
-# ------------------------------------------------------------------ the player's own character (from likovi.png)
-# per character: skin, hair (colour, style), top, legs, shoes, scale, belly, headwear, extras
-_HERO = [
-    dict(sk=(232, 178, 150), hair=((60, 44, 34), "bald"), top=(110, 84, 52), legs=(60, 56, 52), shoe=(40, 30, 24), belly=0.12, scale=1.02, extras=("moustache", "gloves")),
-    dict(sk=(240, 196, 170), hair=((246, 232, 170), "long"), top=(236, 90, 170), legs=None, shoe=(236, 60, 160), scale=0.95, extras=("heels", "mic", "lips")),
-    dict(sk=(214, 160, 126), hair=((34, 28, 24), "short"), top=(28, 28, 30), legs=(48, 56, 84), shoe=(30, 28, 28), belly=0.06, extras=("chain", "stubble")),
-    dict(sk=(232, 186, 156), hair=((80, 56, 36), "messy"), top=(170, 40, 50), vest=(48, 64, 104), legs=(52, 76, 130), shoe=(120, 100, 80), extras=("backpack", "partyhat", "burek")),
-    dict(sk=(236, 190, 160), hair=((110, 70, 40), "quiff"), top=(186, 188, 192), legs=(60, 62, 66), shoe=(236, 236, 240), extras=("shades", "selfie", "backpack")),
-    dict(sk=(222, 170, 136), hair=((120, 84, 50), "long"), top=(200, 200, 204), legs=(28, 28, 32), shoe=(28, 28, 32), scale=0.96, extras=("shades", "phone", "lips", "crop")),
-    dict(sk=(230, 176, 146), hair=((70, 50, 36), "scarf"), scarf=(70, 80, 150), top=(140, 150, 200), legs=None, skirt=(110, 80, 120), shoe=(50, 40, 36), belly=0.1, scale=0.92, extras=("pin",)),
-    dict(sk=(220, 180, 160), hair=((190, 190, 190), "scarf"), scarf=(120, 110, 140), top=(70, 70, 74), legs=None, skirt=(100, 84, 70), shoe=(40, 36, 34), scale=0.86, stoop=0.08, extras=("glasses", "cane", "bag")),
-    dict(sk=(222, 176, 150), hair=((180, 180, 180), "cap"), cap=(90, 90, 94), top=(110, 76, 50), legs=(60, 60, 64), shoe=(36, 30, 26), scale=0.94, stoop=0.05, extras=("paper",)),
-    dict(sk=(226, 172, 140), hair=((40, 34, 30), "police"), top=(34, 48, 110), legs=(28, 36, 80), shoe=(20, 20, 22), belly=0.12, scale=1.04, extras=("belt", "phones")),
-    dict(sk=(230, 184, 154), hair=((24, 22, 22), "short"), top=(244, 244, 244), legs=(50, 50, 56), shoe=(20, 20, 22), extras=("shades", "coat", "tie", "stetho")),
-    dict(sk=(240, 196, 170), hair=((120, 80, 44), "short"), top=(40, 110, 110), legs=(40, 40, 70), shoe=(40, 40, 46), scale=0.68, belly=0.04, extras=("puffer",)),
-    dict(sk=(214, 164, 132), hair=((70, 56, 40), "hardhat"), top=(130, 110, 80), legs=(56, 74, 110), shoe=(70, 54, 40), extras=("overalls", "bottle", "stubble")),
-    # ---- likovi2: the 11 added characters (own look instead of wrapping onto the first 13)
-    dict(sk=(240, 214, 190), hair=((70, 50, 38), "short"), top=(240, 240, 236), legs=(60, 60, 66), shoe=(40, 30, 24), belly=0.18, extras=("pin", "stubble")),
-    dict(sk=(226, 176, 146), hair=((230, 230, 230), "cap"), cap=(245, 245, 245), top=(245, 245, 245), legs=(50, 50, 56), shoe=(40, 30, 24), belly=0.2, extras=("bottle", "moustache")),
-    dict(sk=(232, 184, 152), hair=((200, 150, 80), "long"), top=(240, 70, 150), legs=(28, 28, 34), shoe=(244, 244, 248), scale=0.96, extras=("phone", "crop", "lips")),
-    dict(sk=(214, 166, 134), hair=((30, 26, 24), "short"), top=(240, 240, 240), legs=(40, 40, 46), shoe=(30, 30, 34), scale=1.1, belly=0.1, extras=("stubble", "shades", "chain")),
-    dict(sk=(236, 184, 154), hair=((235, 215, 150), "long"), top=(30, 30, 34), legs=(30, 30, 34), shoe=(250, 250, 250), scale=0.97, extras=("lips", "phone", "shades")),
-    dict(sk=(240, 196, 170), hair=((90, 60, 36), "messy"), top=(230, 170, 40), legs=(70, 90, 140), shoe=(230, 230, 230), scale=0.72, extras=("backpack",)),
-    dict(sk=(232, 186, 156), hair=((40, 30, 24), "quiff"), top=(60, 60, 70), legs=(50, 60, 100), shoe=(240, 240, 240), scale=0.92, extras=("backpack", "phones")),
-    dict(sk=(222, 172, 142), hair=((34, 28, 24), "cap"), cap=(70, 90, 50), top=(84, 100, 60), legs=(70, 84, 50), shoe=(30, 26, 22), belly=0.04, extras=("belt",)),
-    dict(sk=(226, 172, 140), hair=((60, 44, 34), "short"), top=(200, 30, 40), legs=(30, 30, 34), shoe=(240, 240, 240), extras=("bottle", "stubble")),
-    dict(sk=(236, 186, 160), hair=((90, 60, 40), "short"), top=(210, 210, 226), legs=None, skirt=(90, 90, 110), shoe=(60, 50, 50), extras=("glasses", "paper", "lips")),
-    dict(sk=(230, 180, 150), hair=((150, 140, 130), "short"), top=(70, 60, 100), legs=None, skirt=(60, 50, 70), shoe=(40, 34, 34), extras=("glasses", "paper")),
-]
-
-
-_PROBE = {"on": False, "fa": 0.0}                     # hero_hand: _hero appends the right hand as one extra vertex so it goes through every pose transform
-_HANDS = {}
-
-
-def hero_hand(i, frame):
-    """Body-local (x forward, y up, z side) point of the right hand in this hero pose, and the forearm angle (rad, 0 = hanging, + = forward).
-    Cached; built by running the model once, so it includes lean, bob, scale, lying and crawling. None if the pose has no free right hand."""
-    key = (i % len(_HERO), frame)
-    if key not in _HANDS:
-        _PROBE["on"], _PROBE["fa"] = True, 0.0
-        try:
-            pos = ped_arrays(100 + i, 0, frame)[0]
-            _HANDS[key] = (tuple(float(c) for c in pos[-1]), _PROBE["fa"])
-        finally:
-            _PROBE["on"] = False
-    return _HANDS[key]
-
-
-def _swing_pose(parts, add, x0, u, arm_c, hand, fore):
-    """Two-handed bat swing at progress u: the upper body twists with the bat, both hands grip it in front of the chest
-    (two-bone reach from each shoulder), and the grip travels with the bat's azimuth. Matches render's bat placement (swing_grip)."""
-    psi = weaponart.swing_az(u)
-    tau = 0.5 * max(-1.6, min(1.6, psi))
-    ct, st_ = math.cos(tau), math.sin(tau)
-    for k, (v, c) in enumerate(parts):                   # torso, head: twisted about the vertical axis, fading out towards the hips
-        v = np.array(v, np.float32)
-        w = np.clip((v[:, 1] - 0.74) / 0.26, 0.0, 1.0)
-        w = w * w * (3 - 2 * w)
-        ang = tau * w
-        ca, sa = np.cos(ang), np.sin(ang)
-        x, z = v[:, 0].copy(), v[:, 2].copy()
-        v[:, 0], v[:, 2] = x * ca - z * sa, x * sa + z * ca
-        parts[k] = (v, c)
-    gx, gy, gz = weaponart.swing_grip(psi)
-    for z in (-0.34, 0.34):
-        sx_, sz_ = x0 * ct - z * st_, x0 * st_ + z * ct      # the shoulder after the twist
-        dx, dz = gx - sx_, gz - sz_
-        beta = math.atan2(dz, dx)
-        a, bend = _reach(0.0, 1.36, math.hypot(dx, dz), gy, 0.36, 0.32)
-        i0 = len(parts)
-        _arm(parts, add, x0, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore)
-        cb, sb = math.cos(beta), math.sin(beta)
-        for k in range(i0, len(parts)):                  # the arm was built hanging in the x-y plane: yaw it towards the grip
-            v, c = parts[k]
-            v = np.array(v, np.float32)
-            px, pz = v[:, 0] - x0, v[:, 2] - z
-            v[:, 0], v[:, 2] = sx_ + px * cb - pz * sb, sz_ + px * sb + pz * cb
-            parts[k] = (v, c)
-
-
-def _hero(i, frame):
-    d = _HERO[i % len(_HERO)]
-    A = lambda c: np.array(c, np.float32)
-    strike = frame if frame in (4, 5) else 0
-    sw = frame - 60 if 60 <= frame < 68 else None        # swing phase 0..7 (arms are built at the end)
-    if strike or sw is not None:
-        frame = 0
-    parts = []
-
-    def add(cx, y, cz, sx, sy, sz, col):
-        for name, (v, n) in box_faces(cx, y, cz, sx, sy, sz).items():
-            parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1))))
-
-    sk, top, ex = d["sk"], d["top"], d["extras"]
-    hc, hs = d["hair"]
-    legc = d.get("legs") or sk
-    shoe, belly, st = d["shoe"], d.get("belly", 0.0), d.get("stoop", 0.0)
-    jump = frame == 16                                   # airborne: arms up, both knees tucked, body upright
-    ride = frame == 13                                   # seated on a two-wheeler: feet on the pedals, hands on the bars
-    frame, th, lean, ph, run = _phase(3 if jump else (12 if ride else frame))
-    if strike or sw is not None:
-        th = lean = 0.0
-        ph = None
-    # legs: thigh swings from the hip, shin from the knee (the swinging leg folds), foot with a sole
-    feet = []
-    for sg, z in ((1, -0.11), (-1, 0.11)):
-        if strike == 5 and z > 0:                       # this leg is the kicking one (drawn by _strike)
-            continue
-        if jump:
-            a, flex = -0.45, 1.0
-        elif ride:                                      # knee forward and up, the foot on the pedal (one up, one down)
-            t_, b_ = _reach(0.0, 0.84, 0.32 + 0.08 * sg, 0.36 + 0.06 * sg, 0.42, 0.42)
-            a, flex = 2 * math.atan2(0.32 + 0.08 * sg, 0.48 - 0.06 * sg) - t_, b_
-        else:
-            a, flex = th * sg, _knee(sg, th, ph, run)
-        _leg(parts, add, z, a, flex, 0.84, legc, legc if d.get("legs") else sk, shoe, feet, sole=(24, 22, 22),
-             heel="heels" in ex, w=0.17)
-    if d.get("skirt") or d.get("legs") is None:
-        add(0.0, 0.5, 0, 0.36, 0.34, 0.44, d.get("skirt") or top)                 # skirt / dress
-    # body: hips, belly, chest, shoulders, neck
-    add(0.0, 0.7, 0, 0.26, 0.24, 0.44, legc if d.get("legs") else top)
-    add(0.02 + belly * 0.5, 0.86, 0, 0.26 + belly, 0.3, 0.46 + belly * 0.6, top)
-    add(-st, 1.1, 0, 0.27, 0.3, 0.5, top)
-    add(-st, 1.34, 0, 0.24, 0.07, 0.56, top)
-    add(-st + 0.02, 1.38, 0, 0.12, 0.08, 0.12, sk)
-    if "crop" in ex:
-        add(0.02 + belly * 0.5, 0.86, 0, 0.27, 0.12, 0.47, sk)
-    if "belt" in ex:
-        add(0.0, 0.86, 0, 0.3, 0.07, 0.48, (24, 24, 26))
-        add(0.0, 0.84, 0.24, 0.14, 0.16, 0.06, (20, 20, 22))
-    if "vest" in d:
-        add(-st, 0.88, 0, 0.29, 0.5, 0.36, d["vest"])
-    if "coat" in ex:
-        add(0.0, 0.4, 0, 0.29, 0.98, 0.5, (246, 246, 246))
-    if "overalls" in ex:
-        add(0.0, 0.8, 0, 0.29, 0.5, 0.44, legc)
-        for z in (-0.13, 0.13):
-            add(0.14, 1.1, z, 0.02, 0.3, 0.05, legc)
-    if "puffer" in ex:
-        for y in (0.86, 1.02, 1.18):
-            add(0.0, y, 0, 0.3, 0.09, 0.52, tuple(A(top) * 1.15))
-    if "tie" in ex:
-        add(0.15, 0.92, 0, 0.02, 0.42, 0.1, (20, 20, 22))
-    if "chain" in ex:
-        add(0.15, 1.24, 0, 0.02, 0.04, 0.22, (240, 200, 60))
-    if "stetho" in ex:
-        add(0.15, 1.1, 0, 0.02, 0.26, 0.03, (30, 30, 34))
-    if "backpack" in ex:
-        add(-0.24, 0.9, 0, 0.16, 0.44, 0.36, (70, 60, 50) if i == 3 else (30, 30, 34))
-    # arms: upper, forearm, hand (props gripped in it move with the forearm); frame 3 = arms up
-    arm_c = A(top) * 0.92 if "coat" not in ex else A((240, 240, 240))
-    hand = (24, 24, 26) if "gloves" in ex else sk
-    fore = sk if ("crop" in ex or i == 1) else arm_c
-    R, props = -st, {1: [], -1: []}
-    if frame not in (2, 3) and not ride:
-        if "mic" in ex:
-            props[1] += [(R + 0.12, 0.8, 0.34, 0.05, 0.22, 0.05, (30, 30, 34)), (R + 0.14, 1.0, 0.34, 0.08, 0.08, 0.08, (160, 160, 166))]
-        if "selfie" in ex:
-            props[1] += [(R + 0.3, 0.7, 0.36, 0.6, 0.03, 0.03, (30, 30, 34)), (R + 0.6, 0.7, 0.36, 0.04, 0.14, 0.08, (20, 20, 22))]
-        if "phone" in ex or "phones" in ex:
-            props[1] += [(R + 0.12, 0.7, 0.34, 0.02, 0.16, 0.09, (230, 200, 200) if i == 5 else (30, 30, 34))]
-        if "burek" in ex:
-            props[1] += [(R + 0.12, 0.66, 0.34, 0.16, 0.06, 0.16, (220, 180, 110))]
-        if "pin" in ex:
-            props[1] += [(R + 0.1, 0.66, 0.34, 0.08, 0.08, 0.5, (190, 140, 80))]
-        if "cane" in ex:
-            props[1] += [(R + 0.12, 0.0, 0.34, 0.04, 0.66, 0.04, (120, 80, 50))]
-        if "bag" in ex:
-            props[-1] += [(R, 0.4, -0.38, 0.22, 0.24, 0.06, (240, 240, 240)), (R, 0.5, -0.385, 0.08, 0.08, 0.065, (40, 170, 70))]
-        if "paper" in ex:
-            props[-1] += [(R + 0.06, 0.7, -0.4, 0.22, 0.3, 0.03, (226, 222, 210))]
-        if "bottle" in ex:
-            props[-1] += [(R + 0.04, 0.6, -0.38, 0.06, 0.24, 0.06, (40, 110, 50))]
-    hp_ = (0.72, 1.23, 0.3) if strike == 4 else None       # (the punching fist)
-    for sg, z in ((-1, -0.34), (1, 0.34)):
-        if strike == 4 or ride or sw is not None:       # punching: both arms are drawn by _strike; riding / swinging: added below
-            continue
-        if frame == 3:
-            add(0.0, 1.32, z, 0.13, 0.5, 0.12, arm_c)
-            add(0.0, 1.8, z, 0.12, 0.12, 0.11, hand)
-            if sg == 1:
-                hp_, _PROBE["fa"] = (0.0, 1.86, 0.34), 3.0
-        else:
-            a = sg * th * (0.45 if props[sg] else 0.9)  # an arm holding a prop swings less, the prop with it
-            bend = (0.2 + 0.4 * abs(a)) if props[sg] else _elbow(a, run)
-            if sg == 1:                                 # the right hand: elbow, then the forearm (and the hand box) from it
-                ex_, ey_ = -st + 0.36 * math.sin(a), 1.36 - 0.36 * math.cos(a)
-                hp_, _PROBE["fa"] = (ex_ + 0.38 * math.sin(a + bend), ey_ - 0.38 * math.cos(a + bend), z), a + bend
-            _arm(parts, add, -st, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore, held=props[sg])
-    # head: skull, nose, ears, eyes, brows, mouth
-    hx, hy = 0.02 - st * 1.6, 1.46
-    add(hx, hy, 0, 0.28, 0.3, 0.27, sk)
-    add(hx + 0.16, hy + 0.08, 0, 0.08, 0.08, 0.07, tuple(A(sk) * 0.92))               # big caricature nose
-    for z in (-0.145, 0.145):
-        add(hx - 0.01, hy + 0.1, z, 0.06, 0.09, 0.03, tuple(A(sk) * 0.9))             # ears
-        add(hx + 0.141, hy + 0.17, z * 0.5, 0.01, 0.04, 0.05, (250, 250, 250))
-        add(hx + 0.145, hy + 0.17, z * 0.5, 0.01, 0.03, 0.025, (30, 26, 24))          # eyes
-        add(hx + 0.142, hy + 0.22, z * 0.5, 0.02, 0.02, 0.07, tuple(A(hc) * 0.7))     # brows
-    add(hx + 0.142, hy + 0.04, 0, 0.01, 0.025, 0.1, (200, 60, 70) if "lips" in ex else (130, 70, 60))
-    if "lips" in ex:
-        add(hx + 0.145, hy + 0.035, 0, 0.02, 0.04, 0.12, (220, 60, 90))
-    if "moustache" in ex:
-        add(hx + 0.15, hy + 0.06, 0, 0.04, 0.05, 0.2, (40, 30, 24))
-    if "stubble" in ex:
-        add(hx + 0.12, hy - 0.005, 0, 0.05, 0.06, 0.24, tuple(A(sk) * 0.7))
-    if "shades" in ex:
-        add(hx + 0.15, hy + 0.15, 0, 0.02, 0.06, 0.24, (16, 16, 18))
-    if "glasses" in ex:
-        add(hx + 0.15, hy + 0.15, 0, 0.01, 0.06, 0.22, (110, 80, 60))
-    # hair / headwear
-    if hs == "bald":
-        for z in (-0.13, 0.13):
-            add(hx - 0.06, hy + 0.12, z, 0.14, 0.1, 0.03, hc)
-    elif hs in ("short", "messy", "quiff"):
-        add(hx - 0.03, hy + 0.24, 0, 0.29, 0.08, 0.28, hc)
-        add(hx - 0.12, hy + 0.08, 0, 0.06, 0.2, 0.28, hc)
-        if hs == "quiff":
-            add(hx + 0.08, hy + 0.3, 0, 0.12, 0.08, 0.2, hc)
-        if hs == "messy":
-            add(hx + 0.0, hy + 0.3, 0.06, 0.1, 0.05, 0.1, hc)
-    elif hs == "long":
-        add(hx - 0.03, hy + 0.24, 0, 0.3, 0.09, 0.3, hc)
-        add(hx - 0.12, hy - 0.36, 0, 0.08, 0.62, 0.32, hc)
-        for z in (-0.15, 0.15):
-            add(hx - 0.02, hy - 0.2, z, 0.18, 0.44, 0.03, hc)
-    elif hs == "scarf":
-        sc = d.get("scarf", (120, 100, 140))
-        add(hx - 0.02, hy + 0.12, 0, 0.3, 0.2, 0.31, sc)
-        add(hx - 0.12, hy - 0.1, 0, 0.08, 0.3, 0.2, sc)
-    elif hs == "cap":
-        add(hx - 0.02, hy + 0.25, 0, 0.3, 0.08, 0.3, d.get("cap", (90, 90, 94)))
-        add(hx + 0.14, hy + 0.25, 0, 0.1, 0.03, 0.26, d.get("cap", (90, 90, 94)))
-    elif hs == "police":
-        add(hx - 0.02, hy + 0.26, 0, 0.32, 0.1, 0.32, (24, 32, 80))
-        add(hx + 0.16, hy + 0.26, 0, 0.1, 0.03, 0.28, (16, 16, 18))
-        add(hx + 0.15, hy + 0.3, 0, 0.02, 0.05, 0.06, (230, 200, 60))
-        if "phones" in ex:
-            for z in (-0.15, 0.15):
-                add(hx, hy + 0.08, z, 0.1, 0.12, 0.04, (20, 20, 22))
-    elif hs == "hardhat":
-        add(hx - 0.02, hy + 0.24, 0, 0.36, 0.12, 0.36, (240, 200, 30))
-        add(hx + 0.0, hy + 0.36, 0, 0.2, 0.04, 0.26, (240, 200, 30))
-    if "partyhat" in ex:
-        add(hx - 0.02, hy + 0.32, 0, 0.12, 0.1, 0.12, (220, 50, 60))
-        add(hx - 0.02, hy + 0.42, 0, 0.06, 0.1, 0.06, (240, 220, 60))
-    if strike:
-        _strike(add, strike, A(sk), legc, shoe, arm_c)
-    if sw is not None:
-        _swing_pose(parts, add, -st, (sw + 0.5) / 8.0, arm_c, hand, fore)
-    if ride:                                            # lean the seated body over the bars, then reach both hands to them
-        rl_ = 0.45
-        for k, (v, c) in enumerate(parts):
-            v = np.array(v, np.float32)
-            v[:, 0] += np.maximum(v[:, 1] - 0.8, 0.0) * rl_
-            parts[k] = (v, c)
-        sx_ = -st + rl_ * 0.56
-        for z in (-0.3, 0.3):
-            a, bend = _reach(sx_, 1.36, 0.8, 0.95, 0.36, 0.32)
-            _arm(parts, add, sx_, 1.36, z, a, bend, arm_c, hand, u=0.36, f=0.28, fore=fore)
-    gnd = _ground(parts, feet) if ph is not None else 0.0
-    if _PROBE["on"]:
-        parts.append((np.array([hp_ or (0.2, 0.8, 0.34)], np.float32), np.zeros((1, 3), np.float32)))
-    pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
-    col = np.concatenate([p[1] for p in parts])
-    _lean(pos, lean)
-    if ph is not None:
-        pos[:, 1] = np.maximum(pos[:, 1] - gnd, 0.0)   # the standing foot stays planted (the body bobs), nothing carried sinks in
-    pos *= d.get("scale", 1.0)
-    if frame == 2:
-        x, y = pos[:, 0].copy(), pos[:, 1].copy()
-        pos[:, 0] = -y
-        pos[:, 1] = x + 0.18
-    rgba = np.empty((len(pos), 4), np.uint8)
-    rgba[:, :3] = np.clip(col, 0, 255)
-    rgba[:, 3] = 255
-    return pos, np.zeros((len(pos), 2), np.float32), rgba
-
-
-def ped_arrays(arch, tone, frame, skin=0):
-    """arch = archetype (see vehicles.PED_NAMES), tone 0..2 = colour variant, frame 0/1 walk, 2 lying, 3 arms up, 4 punch, 5 kick."""
-    if 60 <= frame < 68 and arch >= 100:                # 60..67: the two-handed bat / chain swing (hero only)
-        return _hero(arch - 100, frame)
-    if frame >= 40:                                    # 40..47: crawling on all fours, face down, the walk cycle drives the limbs
-        pos, uv, rgba = ped_arrays(arch, tone, frame - 20, skin)
+def _street_arrays(arch, tone, frame, skin, tier):
+    if 40 <= frame <= 47:                              # crawling on all fours, face down, the walk cycle drives the limbs
+        pos, uv, rgba = _street_arrays(arch, tone, frame - 20, skin, tier)
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
         pos = pos.copy()
         c = np.clip(x, -0.15, 0.3)                     # the body's own depth: front (chest) down, back up
@@ -2883,36 +2839,26 @@ def ped_arrays(arch, tone, frame, skin=0):
         pos[:, 0] = y * 0.55 - 0.1 + (x - c) * 0.7     # on all fours: head forward, body shortened; a limb swung forward
         pos[:, 1] = (0.3 - hx) * 0.8 + 0.22 + np.abs(np.sin(math.pi * (frame % 10) / 4)) * 0.03   # reaches along the body, not up
         return pos, uv, rgba
-    if arch >= 100:
-        return _hero(arch - 100, frame)                # (13 = seated on a two-wheeler)
     if arch >= 10:
-        return _ped_special(arch, tone, frame, skin)
+        return _ped_special(arch, tone, frame, skin, tier)
     A = lambda c: np.array(c, np.float32)
     strike = frame if frame in (4, 5) else 0
+    jump = frame == 16
     if strike:
         frame = 0
     sk = A(SKIN[skin % 4])
     hair = A(HAIR[(skin + tone) % 4])
-    parts = []
-
-    def add(cx, y, cz, sx, sy, sz, col):
-        for name, (v, n) in box_faces(cx, y, cz, sx, sy, sz).items():
-            parts.append((v, np.tile(A(col) * _shade(A(n)), (len(v), 1))))
+    mesh = _StreetParts(tier)
+    parts, add = mesh.parts, mesh.add
 
     jeans, dark = (52, 66, 104), (34, 36, 44)
-    scale, legc, torso, arm, shoe = 1.0, jeans, (200, 60, 60), None, (30, 28, 28)
+    legc, shoe = jeans, (30, 28, 28)
     pal = [[(200, 60, 60), (60, 90, 190), (70, 150, 90)], [(100, 60, 90), (70, 84, 70), (120, 100, 60)],
            [(40, 44, 60), (60, 60, 66), (34, 50, 70)], [(80, 90, 120), (150, 70, 50), (60, 110, 100)],
            [(200, 30, 30), (200, 30, 30), (220, 220, 220)], [(240, 200, 40), (60, 160, 220), (230, 100, 140)],
            [(240, 120, 20), (240, 120, 20), (230, 200, 30)], [(220, 90, 140), (90, 150, 220), (240, 220, 100)],
            [(236, 236, 232), (236, 236, 232), (236, 236, 232)], [(60, 130, 60)] * 3]
     torso = pal[arch][tone % 3]
-    if arch == 1:
-        scale = 0.88
-    elif arch == 5:
-        scale = 0.64
-    elif arch == 7:
-        scale = 0.95
     if arch == 2:
         legc = (36, 38, 50)
     elif arch == 6:
@@ -2921,7 +2867,7 @@ def ped_arrays(arch, tone, frame, skin=0):
         legc = (60, 70, 100) if tone != 1 else (50, 50, 54)
     elif arch == 9:
         legc = (46, 52, 78)
-    frame, th, lean, ph, run = _phase(frame)
+    frame, th, lean, ph, run = _phase(3 if jump else frame)
     if strike:
         th = lean = 0.0
         ph = None
@@ -2931,15 +2877,18 @@ def ped_arrays(arch, tone, frame, skin=0):
     for sg, z_ in ((1, -0.11), (-1, 0.11)):
         if strike == 5 and sg < 0:                           # (the kicking leg is drawn by _strike)
             continue
-        _leg(parts, add, z_, th * sg, _knee(sg, th, ph, run), 0.82, sk if skirt else legc, sk if skirt else legc, shoe, feet,
-             w=0.15 if skirt else 0.17)
+        step = -.45 if jump else th * sg
+        flex = 1.0 if jump else _knee(sg, th, ph, run) * (.64, .85, 1.)[tier - 1]
+        _leg(parts, add, z_, step, flex, 0.82, sk if skirt else legc, sk if skirt else legc, shoe, feet,
+             bare_thigh=skirt, bare_shin=skirt, w=0.15 if skirt else 0.17)
     if skirt:
-        add(0.0, 0.42, 0, 0.38, 0.46, 0.46, torso if arch == 7 else (90, 70, 60))
+        add(0.0, 0.38, 0, 0.42, 0.51, 0.48, torso if arch == 7 else (90, 70, 60), 'hem', 5)
     else:
-        add(0.0, 0.7, 0, 0.27, 0.16, 0.44, legc)             # hips: cover the tops of the thighs as they swing
-    add(0, 0.8, 0, 0.26, 0.62, 0.5, torso)                    # torso
-    add(0, 1.3, 0, 0.24, 0.1, 0.58, torso)                    # shoulders: the arms hang from them, no gap to the chest
-    asw = 0.0
+        add(0.0, 0.68, 0, 0.29, 0.24, 0.45, legc, 'round', 4)
+    chest = {0: (.36,.50), 3: (.28,.47), 5: (.28,.45), 6: (.33,.55), 7: (.29,.43)}
+    depth, width = chest.get(arch, (.30,.50))
+    add(0, .765, 0, depth, .65, width, torso, 'torso', 2 if arch == 0 else 1)
+    add(0, 1.239, 0, .255, .185, width + .07, torso, 'round', 1)
     arms_c = A(torso) * 0.92
     if arch == 4:
         add(0.0, 1.30, 0, 0.30, 0.12, 0.54, (230, 230, 232) if tone != 1 else (20, 20, 20))      # scarf
@@ -2951,10 +2900,10 @@ def ped_arrays(arch, tone, frame, skin=0):
     if arch == 8:
         add(0.14, 0.45, 0, 0.04, 0.55, 0.46, (246, 246, 244))                                      # apron
     if frame == 3:
-        add(0.0, 1.0, -0.36, 0.14, 0.7, 0.12, sk)
-        add(0.0, 1.0, 0.36, 0.14, 0.7, 0.12, sk)
+        for side in (-1, 1):
+            _arm(parts, add, 0., 1.38, side*.30, 2.28, .30, arms_c, sk)
     else:
-        for z_, sg in ((-0.34, -1), (0.34, 1)):
+        for sg in (-1, 1):
             if strike == 4:                                   # (punching: both arms are drawn by _strike)
                 continue
             held = ()
@@ -2963,23 +2912,21 @@ def ped_arrays(arch, tone, frame, skin=0):
             if sg > 0 and arch == 1:
                 held = ((0.0, 0.4, 0.42, 0.18, 0.26, 0.2, (180, 60, 60)),)                         # shopping bag
             a = sg * th * (0.5 if held else 0.9)              # a loaded hand swings less
-            _arm(parts, add, 0.0, 1.38, z_, a, 0.1 if held else _elbow(a, run), arms_c, sk, held=held)
+            bend = .1 if held else _elbow(a, run) * (.72, .91, 1.)[tier - 1]
+            _arm(parts, add, 0.0, 1.38, (width/2 + .025)*sg, a, bend, arms_c, sk, held=held)
         if arch == 8:
             add(0.16, 0.9, 0, 0.3, 0.05, 0.5, (210, 170, 110))                                     # burek tray
-    add(0.02, 1.42, 0, 0.26, 0.26, 0.24, sk)                  # head
-    add(0.15, 1.48, 0, 0.02, 0.03, 0.08, (60, 40, 30))        # eyebrows hint
-    for z in (-0.06, 0.06):
-        add(0.151, 1.53, z, 0.01, 0.03, 0.03, (24, 22, 22))   # eyes
-    add(0.16, 1.47, 0, 0.05, 0.06, 0.05, sk * 0.92)          # nose
-    add(0.02, 1.38, 0, 0.12, 0.05, 0.12, sk)                 # neck
+    mesh.head(.02, 1.42, sk, hair, .275 if arch in (0, 5) else .248, .29, .076 if arch == 0 else .057)
+    add(.02, 1.35, 0, .145, .165, .13, sk, 'round', 7)
     if arch not in (1, 7):
-        add(0.0, 0.8, 0, 0.27, 0.06, 0.51, (30, 28, 30))      # belt
+        add(0.0, .80, 0, depth*.90, .055, width*.92, (30, 28, 30), 'round', 1)
     if arch == 0 and tone != 2:
-        add(0.145, 1.44, 0, 0.03, 0.04, 0.16, hair * 0.8)       # moustache
+        add(.157, 1.493, 0, .045, .041, .162, hair * .8, 'feature', 6)
     if arch == 1:
-        add(-0.0, 1.44, 0, 0.30, 0.22, 0.30, (130, 60, 80) if tone != 1 else (60, 80, 120))        # headscarf
+        add(-.04, 1.50, 0, .29, .22, .30, (130, 60, 80) if tone != 1 else (60, 80, 120), 'round', 3)
     elif arch == 6:
-        add(0.0, 1.62, 0, 0.32, 0.12, 0.32, (240, 210, 30))                                          # hard hat
+        add(0, 1.613, 0, .327, .173, .321, (238, 182, 33), 'round')
+        add(.038, 1.613, 0, .386, .047, .345, (250, 203, 44), 'round')
     elif arch == 8:
         add(0.0, 1.62, 0, 0.26, 0.26, 0.26, (248, 248, 246))                                         # chef hat
     elif arch == 4:
@@ -2987,38 +2934,65 @@ def ped_arrays(arch, tone, frame, skin=0):
     elif arch == 9:
         add(0.0, 1.62, 0, 0.32, 0.08, 0.30, (40, 90, 40))
     else:
-        add(-0.03, 1.54, 0, 0.27, 0.15, 0.26, hair)
+        add(-.035, 1.571, 0, .28, .182, .28, hair, 'round', 6)
         if arch == 7:
-            add(-0.1, 1.05, 0, 0.1, 0.55, 0.28, hair)                                                # long hair
+            add(-.10, 1.05, 0, .12, .57, .29, hair, 'limb', 6)
     if arch in (3, 5):
-        add(-0.2, 0.8, 0, 0.14, 0.5 if arch == 3 else 0.34, 0.34, (40, 70, 160) if tone != 1 else (190, 60, 40))   # backpack
+        add(-.17, .82, 0, .25, .50 if arch == 3 else .34, .36, (40, 70, 160) if tone != 1 else (190, 60, 40), 'round', 1)
+        for side in (-1, 1):
+            add(.112, .983, side*.139, .041, .29, .053, (47, 46, 60), 'limb', 2)
     if strike:
         _strike(add, strike, sk, legc, shoe, arms_c)
     pos = np.concatenate([p[0] for p in parts]).astype(np.float32)
-    col = np.concatenate([p[1] for p in parts])
     _lean(pos, lean)
     if ph is not None:
         pos[:, 1] = np.maximum(pos[:, 1] - _ground(parts, feet), 0.0)   # the standing foot stays planted (the body bobs), nothing carried sinks in
-    pos *= scale
+    pos *= ped_scale(arch)
     if frame == 2:                                          # lie on the back: rotate about z
         x, y = pos[:, 0].copy(), pos[:, 1].copy()
         pos[:, 0] = -y
         pos[:, 1] = x + 0.18
-    rgba = np.empty((len(pos), 4), np.uint8)
-    rgba[:, :3] = np.clip(col, 0, 255)
-    rgba[:, 3] = 255
-    return pos, np.zeros((len(pos), 2), np.float32), rgba
+    return mesh.arrays(pos)
 
 
 def ped_scale(arch):
     """Body size of a person model (its stride scales with it)."""
     if arch >= 100:
-        return _HERO[(arch - 100) % len(_HERO)].get("scale", 1.0)
-    return {1: 0.88, 5: 0.64, 7: 0.95}.get(arch, 1.0)
+        arch = characterart.hero_arch(arch)
+    if arch in characterart.DESIGNS:
+        return characterart.scale(arch)
+    return _STREET_SCALES.get(V.PED_IDS[arch], 1.0)
 
 
 def ped_model(arch, tone, frame, skin=0):
     return make_model(*ped_arrays(arch, tone, frame, skin))
+
+
+def ped_visual(arch, tone, frame, skin, tier):
+    if arch >= 100:
+        arch = characterart.hero_arch(arch)
+    frame = characterart.lod_frame(frame, tier)
+    if arch in characterart.DESIGNS:
+        return characterart.mesh(arch, tone, frame, skin, tier)
+    return _street_arrays(arch, tone, frame, skin, tier), None
+
+
+def ped_arrays(arch, tone, frame, skin=0):
+    return ped_visual(arch, tone, frame, skin, 1)[0]
+
+
+def ped_atlas(tier):
+    size = characterart.ATLAS_SIZES[tier - 1]
+    pixels = characterart.atlas(size)
+    image = rl.Image()
+    image.data = ffi.from_buffer(pixels)
+    image.width = image.height = size
+    image.mipmaps = 1
+    image.format = rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+    tex = rl.load_texture_from_image(image)
+    rl.gen_texture_mipmaps(ffi.addressof(tex))
+    rl.set_texture_filter(tex, rl.TEXTURE_FILTER_TRILINEAR)
+    return tex
 
 
 # ------------------------------------------------------------------ pickups
@@ -3049,17 +3023,18 @@ def _boxes_model(boxes):
 
 def weapon_model(kind):
     d = weaponart.DEPTH[kind]
-    return _boxes_model([(x + w / 2, y, 0.0, w, h, d, c) for x, y, w, h, c in weaponart.BOXES[kind]])
+    model = _boxes_model([(x + w / 2, y, 0.0, w, h, d, c) for x, y, w, h, c in weaponart.BOXES[kind]])
+    return object_detail(model, "metal", sum(map(ord, kind)))
 
 
 def dog_model(coat, frame):
     import dogart
-    return _boxes_model(dogart.boxes(coat, frame))
+    return object_detail(_boxes_model(dogart.boxes(coat, frame)), "fur", coat)
 
 
 def bird_model(art, frame):
     import birdart
-    return _boxes_model(birdart.boxes(art, frame))
+    return object_detail(_boxes_model(birdart.boxes(art, frame)), "feather", sum(map(ord, str(art))))
 
 
 def wreck_model(kind, seed):
@@ -3081,14 +3056,14 @@ def wreck_model(kind, seed):
 
 def pickup_model(kind):
     if kind == "burek":
-        return make_model(*prism_arrays(0.55, 0.42, 9, (240, 200, 90), (196, 130, 60)))
+        return object_detail(make_model(*prism_arrays(0.55, 0.42, 9, (240, 200, 90), (196, 130, 60))), "paper")
     if kind == "cash":
-        return make_model(*prism_arrays(0.42, 0.14, 6, (120, 200, 110), (60, 140, 70)))
+        return object_detail(make_model(*prism_arrays(0.42, 0.14, 6, (120, 200, 110), (60, 140, 70))), "paper", 6)
     if kind in weaponart.BOXES:                          # the weapon itself, barrel along +x (spun in the world, held by the avatar)
         return weapon_model(kind)
     if kind == "fuel":                                   # red jerry can
-        return make_model(*prism_arrays(0.45, 0.6, 4, (210, 40, 30), (150, 20, 20)))
-    return make_model(*prism_arrays(0.32, 0.7, 8, (240, 240, 240), (190, 36, 30)))      # ajvar jar
+        return object_detail(make_model(*prism_arrays(0.45, 0.6, 4, (210, 40, 30), (150, 20, 20))), "plastic")
+    return object_detail(make_model(*prism_arrays(0.32, 0.7, 8, (240, 240, 240), (190, 36, 30))), "ceramic")
 
 
 # ------------------------------------------------------------------ sun state shared by the ground, road and building shaders
@@ -3181,7 +3156,7 @@ DETAIL_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
 uniform sampler2D texture0; uniform sampler2D texture1; uniform sampler2D texture2; uniform vec4 colDiffuse; uniform float time;
 out vec4 finalColor;
-""" + BUMP_FN + """const vec3 WATER = vec3(0.337, 0.573, 0.776);
+""" + BUMP_FN + surfacepack.SHADER + """const vec3 WATER = vec3(0.337, 0.573, 0.776);
 const vec3 GROUND = vec3(0.788, 0.769, 0.714);
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 // road wear: the further from the centre (world origin), the rougher; asphalt only (dark grey), not pavements
@@ -3236,6 +3211,7 @@ void main(){
   float ground = 1.0 - smoothstep(0.05, 0.16, distance(base.rgb, GROUND));
   float grass = clamp((base.g - max(base.r, base.b)) * 8.0, 0.0, 1.0);
   float k = max(max(ground, grass), 0.3);                          // roads keep a light asphalt grain
+  if (generatedSurfaces != 0) k *= 0.45;
   vec3 c = base.rgb * mix(1.0, lit * (0.88 + 0.24 * d.g), k);
   if (ground > 0.0) {                                              // dirt / ochre-green patches: only on bare ground (texture fetches skipped elsewhere)
     float big = texture(texture1, wpos / 41.0).b;                  // large patches of dirt / worn ground
@@ -3257,6 +3233,30 @@ void main(){
     c = wear(c, road, crack);
   }
   float wet = 1.0 - smoothstep(0.04, 0.12, distance(base.rgb, WATER));   // rivers / lakes: moving ripples
+  vec4 material = vec4(0.5);
+  float materialBump = 0.0;
+  if (generatedSurfaces != 0) {
+    float asphalt = grey * (1.0 - smoothstep(0.47, 0.59, lum));
+    float paving = (1.0 - smoothstep(0.025, 0.085, distance(base.rgb, vec3(0.72, 0.70, 0.66)))) * (1.0 - ground);
+    float plants = smoothstep(0.01, 0.12, base.g - max(base.r, base.b));
+    float soil = max(ground, smoothstep(0.04, 0.17, base.r - base.b) *
+                             smoothstep(0.005, 0.09, base.r - base.g) *
+                             smoothstep(0.025, 0.09, base.g - base.b));
+    float family = asphalt >= paving ? 0.0 : 1.0;
+    float coverage = max(asphalt, paving);
+    if (plants > coverage) { family = 2.0; coverage = plants; }
+    if (soil > coverage) { family = 3.0; coverage = soil; }
+    vec2 uvMaterial = wpos / 3.0;
+    coverage *= 1.0 - wet;
+    if (generatedSurfaces == 2 && wet > 0.5){
+      family = 8.0;
+      coverage = wet;
+      uvMaterial = wpos / 4.0 + vec2(time * 0.017, time * 0.009);
+    }
+    material = surfaceSample(uvMaterial, wpos, family, coverage);
+    materialBump = surfaceAmplitude(family);
+    if (generatedSurfaces == 1) c *= material.rgb * 2.0;
+  }
   float wh = 0.0;
   if (wet > 0.0) {
     float r1 = texture(texture1, wpos / 9.0 + vec2(time * 0.031, time * 0.012)).r;
@@ -3271,7 +3271,12 @@ void main(){
     vec3 n0 = geoN(wp);
     float hb = mix(d.r, wh, wet);
     float strg = mix(mix(0.10, 0.05, grass), 0.012, wet);
+    if (generatedSurfaces != 0) strg *= mix(0.45, 1.0, wet);
     vec3 nb = bumpN(wp, n0, hb, strg * 1.25);
+    if (generatedSurfaces == 2){
+      c *= mix(vec3(1.0), material.rgb * 2.0, mix(1.0, 0.32, wet));
+      nb = surfaceNormal(wp, nb, material.a, materialBump);
+    }
     float rough = mix(mix(0.92, 0.97, grass), 0.86, paved);                                // grass / dirt chalky, asphalt a little tighter
     rough = mix(rough, 0.12, wet);                                                         // water: glossy
     c = relight(c, n0, nb, rough, fadeb * mix(0.7, 1.4, wet));
@@ -3291,7 +3296,7 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
   c *= 1.0 - road * crack * 0.3;
   c = wear(c, road, crack);
   float sw = step(0.55, lum) * step(lum, 0.8) * grey * step(0.92, abs(nrm.y));   // pale flat concrete = pavement: slabs, tone, grit
-  if (sw > 0.0) {
+  if (sw > 0.0 && generatedSurfaces == 0) {
     vec2 sp = wpos / vec2(0.95, 0.62) + vec2(0.0, 0.0);
     vec2 cell = floor(sp);
     float tone = h21(cell + 3.7);
@@ -3302,12 +3307,34 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     float stain = smoothstep(0.55, 0.8, texture(texture1, wpos / 23.0).b);
     c *= 1.0 + sw * ((tone - 0.5) * 0.09 + grit * 0.1 - stain * 0.07 - seam * 0.16);
   }
+  vec4 material = vec4(0.5);
+  float materialBump = 0.0;
+  if (generatedSurfaces != 0) {
+    float family = road >= sw ? 0.0 : 1.0;
+    float weight = max(road, sw);
+    vec2 uv = wpos / 3.0;
+    if (generatedSurfaces == 2 && weight < 0.20){
+      float leafy = smoothstep(0.045, 0.14, base.g - max(base.r, base.b));
+      float bark = smoothstep(0.04, 0.14, base.r - base.b) *
+                   smoothstep(0.02, 0.16, lum) * (1.0 - smoothstep(0.45, 0.65, lum));
+      float upright = 1.0 - smoothstep(0.60, 0.95, abs(nrm.y));
+      family = leafy > 0.25 ? 10.0 : (bark > 0.23 ? 9.0 : (lum > 0.45 ? 23.0 : 7.0));
+      weight = max(leafy, upright * max(bark, 0.36)) * (1.0 - smoothstep(0.68, 0.85, lum));
+      uv = surfaceProjection(wp, nrm) / (family >= 23.0 ? 2.4 : 1.2);
+    }
+    material = surfaceSample(uv, wpos, family, weight);
+    materialBump = surfaceAmplitude(family);
+    c *= material.rgb * 2.0;
+  }
   {
     float fadeb = 1.0 - smoothstep(35.0, 110.0, gl_FragCoord.z / gl_FragCoord.w);
     float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
     float flat_ = step(0.92, abs(nrm.y));
     float hb = texture(texture1, (flat_ > 0.5 ? wpos : vec2(wp.x + wp.z, wp.y)) / 1.3).r + 0.6 * texture(texture2, wpos / 7.0).r * road;   // grain, cracks sunk in
-    vec3 nb = bumpN(wp, nrm, hb, road > 0.5 ? 0.15 : (sw > 0.5 ? 0.1 : 0.0));
+    float strg = road > 0.5 ? 0.15 : (sw > 0.5 ? 0.1 : 0.0);
+    if (generatedSurfaces != 0) strg *= 0.45;
+    vec3 nb = bumpN(wp, nrm, hb, strg);
+    if (generatedSurfaces == 2) nb = surfaceNormal(wp, nb, material.a, materialBump);
     float rough = mix(0.62, 0.9, flat_);                                                     // poles, signs, car bodies of the mesh: semi-gloss; ground-level slabs: matt
     rough = mix(rough, 0.95, road + sw);                                                     // asphalt, pavement: matt
     rough = mix(rough, 0.3, (1.0 - road) * (1.0 - sw) * (1.0 - flat_));                  // upright props (signs, billboards, lamp poles): smooth painted metal, no relief
@@ -3319,9 +3346,9 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
 # facades and roofs: texture emboss towards the fixed sun (window frames, bricks, tiles get relief), fine grit and weathering streaks
 BUILD_FS = """#version 330
 in vec2 fragTexCoord; in vec4 fragColor; in vec2 wpos; in vec3 wp;
-uniform sampler2D texture0; uniform sampler2D texture1; uniform vec4 colDiffuse;
+uniform sampler2D texture0; uniform sampler2D texture1; uniform vec4 colDiffuse; uniform vec4 colSpecular;
 out vec4 finalColor;
-""" + BUMP_FN + """float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+""" + BUMP_FN + surfacepack.SHADER + """float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
   vec4 base = texture(texture0, fragTexCoord) * colDiffuse * fragColor;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -3335,12 +3362,25 @@ void main(){
   float fade = 1.0 - smoothstep(60.0, 160.0, gl_FragCoord.z / gl_FragCoord.w);   // detail only up close (far away it would shimmer)
   float k = 1.0 + fade * (grit * 0.16 - (stain - 0.5) * (wall > 0.5 ? 0.22 : 0.14));
   vec3 c = base.rgb * k;
+  vec4 material = vec4(0.5);
+  float materialBump = 0.0;
+  if ((generatedSurfaces == 1 && colSpecular.r < 0.5) || (generatedSurfaces == 2 && colSpecular.g < 0.5)) {
+    // The red component carries the atlas row. Dark window glass uses the original atlas.
+    float family = round((generatedSurfaces == 2 ? colSpecular.g : colSpecular.r) * 255.0);
+    vec2 uv = wp.xz;
+    if (wall > 0.5) uv = vec2(dot(wp.xz, normalize(vec2(nrm.z, -nrm.x))), -wp.y);
+    float mask = wall > 0.5 ? smoothstep(0.27, 0.53, l0) : 1.0;
+    material = surfaceSample(uv / 4.0, wpos, family, mask * fade);
+    materialBump = surfaceAmplitude(family);
+    c *= material.rgb * 2.0;
+  }
   {
     // normal map from the facade texture: dark mortar / frames / sills sit low, glazing is smooth and glossy, plaster and brick chalky
     float sat = max(base.r, max(base.g, base.b)) - min(base.r, min(base.g, base.b));
     float glass = (1.0 - smoothstep(0.16, 0.30, l0)) * wall;                              // dark glazing
     float hb = l0 + 0.5 * grit * 0.16;
     vec3 nb = bumpN(wp, nrm, hb, 0.45 * (1.0 - glass));
+    if (generatedSurfaces == 2) nb = surfaceNormal(wp, nb, material.a, materialBump);
     float rough = mix(0.88, 0.22, glass);
     rough = mix(rough, 0.75, (1.0 - wall) * 0.6);                                          // roofs: tile / metal sheet, a little sheen
     c = relight(c, nrm, nb, rough, fade * (0.9 + 1.4 * glass));
@@ -3373,17 +3413,26 @@ def building_detail():
                 sh = rl.load_shader_from_memory(DETAIL_VS, BUILD_FS)
                 if sh.id and sh.id != rl.rl_get_shader_id_default():
                     _sun_register(sh)
+                    surfacepack.register(sh)
+                    sh.locs[rl.SHADER_LOC_COLOR_SPECULAR] = rl.get_shader_location(sh, "colSpecular")
                     _bld = (sh, d[1])
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] building detail off: {e}")
     return _bld or None
 
 
-def apply_building_detail(model):
+# Atlas rows for the baked facade and roof materials. A value of 255 skips glass and trim.
+_BUILD_SURFACE_FAMILIES = (4, 7, 6, 255, 1, 4, 255, 5, 1, 1, 4, 5, 4, 1, 1, 5, 7, 255, 255, 255)
+_EXPANDED_BUILD_FAMILIES = (4, 7, 6, 255, 23, 4, 255, 5, 23, 23, 4, 5, 4, 23, 12, 5, 7, 7, 7, 22)
+
+
+def apply_building_detail(model, material):
     d = building_detail()
     if d is not None and model is not None:
         model.materials[0].shader = d[0]
         model.materials[0].maps[1].texture = d[1]
+        model.materials[0].maps[rl.MATERIAL_MAP_SPECULAR].color = rl.Color(
+            _BUILD_SURFACE_FAMILIES[material], _EXPANDED_BUILD_FAMILIES[material], 0, 255)
         if SHADOW_TEX is not None:
             model.materials[0].maps[3].texture = SHADOW_TEX
 
@@ -3402,6 +3451,7 @@ def road_detail():
                 sh = rl.load_shader_from_memory(DETAIL_VS, SOLID_FS)
                 if sh.id and sh.id != rl.rl_get_shader_id_default():
                     _sun_register(sh)
+                    surfacepack.register(sh)
                     _solid = (sh, d[1], d[3])
             except Exception as e:  # noqa: BLE001
                 print(f"[gfx] road detail off: {e}")
@@ -3491,6 +3541,7 @@ def ground_detail():
         if not sh.id or sh.id == rl.rl_get_shader_id_default():
             raise RuntimeError("shader did not compile")
         _sun_register(sh)
+        surfacepack.register(sh)
         _detail = (sh, tex, rl.get_shader_location(sh, "time"), ctex)
     except Exception as e:  # noqa: BLE001 - plain baked ground then
         print(f"[gfx] ground detail off: {e}")

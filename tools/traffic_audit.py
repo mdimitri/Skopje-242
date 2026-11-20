@@ -11,6 +11,8 @@ counts the faults a player would notice, only for vehicles within VIEW m of the 
   speeding  more than 1.4 x the limit
   tailgate  closer than 1 m behind another car at > 6 m/s
   boxblock  standing still inside a junction for more than 6 s
+  boxstop   standing inside any junction for more than 2 s, with the active braking reason
+  openstop  standing for more than 3 s with no visible lead or traffic control, with the active braking reason
 Usage: python3 tools/traffic_audit.py <world_dir> <osm_dir> <out.jsonl> [hood ...]      (one JSON line per hood)"""
 import collections
 import json
@@ -24,6 +26,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from traffic_study import HOODS      # noqa: E402  (same hoods as the study)
 
 VIEW, GHOST_QUIET = 85.0, 10.0
+PARTIZANSKI = {"Franklin Ruzvelt": (-1219, -368), "8-mi Septemvri": (-1930, -500),
+               "Kliment Ohridski": (-211, -93), "Ljubljanska": (-3124, -718)}
 
 
 def _box(x, y, h, hw, hl):
@@ -61,7 +65,7 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
     import signals
     import transit
     import vehicles
-    from actors import Car, Sim
+    from actors import Car, Sim, _RAD, parts
     random.seed(seed)
     if os.environ.get("NOPARK"):
         world.parked = world.parked[:0]              # diagnostic: no kerb-parked cars at all
@@ -75,12 +79,14 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
     sim.bodies.remove(sim.car)          # the car the idle player left would stand in the road and jam it
     inp = {"throttle": 0, "steer": 0, "handbrake": False, "horn": False, "move": (0.0, 0.0), "run": False, "attack": False, "buy": None, "jump": False}
     dt, T = 0.05, sim.traffic
+    T.audit_stops = {}
     upd = T.update
     T.update = lambda d, fx, fy, bodies, peds, walker=None: upd(d, fx, fy, bodies, peds, None)      # the idle player is no obstacle
     ghost_at = {}                      # id(car) -> last time it was ghosting
     ov_open, rr_state, ro_open = {}, {}, {}
     standing = collections.defaultdict(float)
-    out = dict(overlap=[], redrun=[], runover=[], jam=[], uturn=[], loop=[], wrongway=[], oncoming=[], speeding=[], tailgate=[], boxblock=[])
+    out = dict(overlap=[], redrun=[], runover=[], jam=[], uturn=[], loop=[], wrongway=[], oncoming=[], speeding=[],
+               tailgate=[], boxblock=[], boxstop=[], openstop=[])
     yaw = collections.defaultdict(lambda: collections.deque(maxlen=48))        # unwrapped heading, every 0.25 s for 12 s
     flagged = collections.defaultdict(float)                                   # (kind, car) -> time of the last report
     state = collections.defaultdict(float)                                     # seconds a condition has held
@@ -102,7 +108,14 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
         return ok
     T._next_edge = next_edge
     trail = collections.defaultdict(lambda: collections.deque(maxlen=80))
+    last_sample = {}
     nodes = [(n, jx, jz, idx) for n, ((jx, jz), idx) in lights.nodes.items()]
+    junctions = {}
+    for e in world.edges:
+        if e["drive"]:
+            for n, (x, y) in ((e["a"], e["pts"][0]), (e["b"], e["pts"][-1])):
+                if n in T.junctions and math.hypot(x - cx, y - cy) <= VIEW + 15.0:
+                    junctions[n] = (x, y, min(10.0, max(4.0, T.junctions[n] * 0.65)))
     for k in range(int((warm + secs) / dt)):
         t = k * dt
         lights.update(dt)
@@ -124,17 +137,25 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
         if k % 5 == 0:
             for v in veh:
                 c = v[7]
+                key = v[0]
+                if key in last_sample and k - last_sample[key] > 5:
+                    standing[key] = 0.0
+                    trail[key].clear()
+                    yaw[key].clear()
+                    for tag in ("bb", "boxstop", "openstop", "ww", "oc"):
+                        state.pop((tag, key), None)
+                last_sample[key] = k
                 trail[v[0]].append((round(t, 1), round(v[2], 1), round(v[3], 1), round(v[4], 2), round(v[5], 1), getattr(c, "e", 0), getattr(c, "d", 0),
                                     round(getattr(c, "s", 0), 1), round(getattr(c, "rev", 0), 1), round(getattr(c, "shift", 0), 1), round(getattr(c, "avoid", 0), 1),
                                     round(getattr(c, "man", 0), 1), round(getattr(c, "stuck", 0), 1)))
-        boxes = [(v, _box(v[2], v[3], v[4], vehicles.DIMS[v[1]][1] / 2, vehicles.DIMS[v[1]][0] / 2)) for v in veh]
+        boxes = [(v, [_box(x, y, h, hw, hl) for x, y, h, hl, hw in parts(v[7])]) for v in veh]
         now = set()
         for i in range(len(boxes)):
             for j in range(i + 1, len(boxes)):
                 a, b = boxes[i], boxes[j]
-                if math.hypot(a[0][2] - b[0][2], a[0][3] - b[0][3]) > 14.0:
+                if math.hypot(a[0][2] - b[0][2], a[0][3] - b[0][3]) > _RAD[a[0][1]] + _RAD[b[0][1]]:
                     continue
-                p = _pen(a[1], b[1])
+                p = max(_pen(pa, pb) for pa in a[1] for pb in b[1])
                 if p > 0.05:
                     key = (a[0][0], b[0][0])
                     now.add(key)
@@ -156,30 +177,32 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
         for key in list(ov_open):
             if key not in now:
                 del ov_open[key]
-        # red lights: crossing the junction centre against the approach's signal
+        # Red lights: track each approach's fixed stop plane with the vehicle's front bumper.
         for v in veh:
-            if v[5] < 1.0:
-                continue
             hx, hy = math.cos(v[4]), math.sin(v[4])
+            c_ = v[7]
+            moves = {(c_.e, c_.d), c_.nxt, *(move for move, _ in (c_.nx2 or ()))} if v[6] == "car" else None
+            hl = vehicles.HALF_L[v[1]]
             for n, jx, jz, idx in nodes:
                 if abs(jx - v[2]) > 45 or abs(jz - v[3]) > 45:
                     continue
-                fwd = (jx - v[2]) * hx + (jz - v[3]) * hy
-                key = (v[0], n)
                 for i in idx:
-                    sl = lights.stopd.get((lights.items[i][1], lights.items[i][2]), 9.0)     # the approach's own stop line (at its pole)
-                    if not (rr_state.get(key) is not None and rr_state[key] > sl >= fwd):     # crossed it this tick
-                        continue
                     ax, ay = lights._axis(i)
-                    c_ = v[7]
-                    ie = lights.items[i][1]
-                    mine = v[6] != "car" or ie == c_.e or (c_.nxt is not None and ie == c_.nxt[0])      # a car only owes the signal of the approach it is on
-                    if mine and ax * hx + ay * hy > 0.8 and lights.state(i) == 2:
+                    ie, end = lights.items[i][1:3]
+                    if lights.by_edge[(ie, end)] != i:
+                        continue                                      # multiple lamp heads control the same approach
+                    if ((moves is not None and (ie, 1 if end else -1) not in moves) or ax * hx + ay * hy < 0.8
+                            or abs((jx - v[2]) * ay - (jz - v[3]) * ax) > world.edges[ie]["w"] * 0.5 + 1.2):
+                        continue
+                    distance = (jx - v[2] - hx * hl) * ax + (jz - v[3] - hy * hl) * ay
+                    sl = lights.stopd.get((ie, end), 9.0)
+                    key = (v[0], i)
+                    old = rr_state.get(key, (k, distance))
+                    rr_state[key] = (k, distance)
+                    if old[0] == k - 1 and old[1] > sl >= distance and v[5] >= 0.8 and lights.state(i) == 2:
                         out["redrun"].append(dict(node=n, item=i, ie=ie, t=round(t, 1), x=round(v[2]), y=round(v[3]), who=v[6], v=round(v[5], 1),
                                                   stuck=round(getattr(v[7], "stuck", 0), 1), e=getattr(v[7], "e", None), d=getattr(v[7], "d", None), s=round(getattr(v[7], "s", 0)),
                                                   nxt=str(getattr(v[7], "nxt", None)), trail=list(trail[v[0]])[-16::3]))
-                        break
-                rr_state[key] = fwd
         # pedestrians
         for p in sim.peds.list:
             if p.mode not in ("walk", "flee", "rage", "brawl") or math.hypot(p.x - cx, p.y - cy) > VIEW:
@@ -205,11 +228,13 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
                     continue
                 c = v[7]
                 e = world.edges[c.e]
-                red = lights.stop_for(c.e, 1 if c.d == 1 else 0) and e["len"] - c.s < 160
+                red_distance = T._red_rem(c, e["len"], lights)
+                red = red_distance is not None and -2.5 < red_distance < 45.0
                 if v[5] < 0.3 and not red:
                     standing[v[0]] += 1.0
                     if standing[v[0]] == 25.0:
                         out["jam"].append(dict(t=round(t, 1), x=round(c.x), y=round(c.y), cls=e["cls"], rem=round(e["len"] - c.s), edge=c.e,
+                                               reason=T.audit_stops.get(c), next=c.nxt,
                                                blk=type(c.blk).__name__ if c.blk is not None else None, rev=c.rev > 0))
                 else:
                     if standing[v[0]] >= 25.0:
@@ -248,11 +273,20 @@ def run(world, osm_dir, name, cx, cy, cars=90, hour=11.0, aggro=1, secs=240, war
                 if g is not None and g < 1.0 and v[5] > 6.0 and isinstance(T.lead[4] if T.lead else None, type(c)) and t - flagged[("tg", key)] > 20:
                     flagged[("tg", key)] = t
                     out["tailgate"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), v=round(v[5], 1), gap=round(g, 2)))
-                inbox = any(abs(jx - v[2]) < 5 and abs(jz - v[3]) < 5 for _n, jx, jz, _i in nodes)
+                inbox = any((jx - v[2]) ** 2 + (jz - v[3]) ** 2 < radius ** 2 for jx, jz, radius in junctions.values())
                 state[("bb", key)] = state[("bb", key)] + 0.25 if (inbox and v[5] < 0.3) else 0.0
                 if state[("bb", key)] > 6.0 and t - flagged[("bb", key)] > 30:
                     flagged[("bb", key)] = t
                     out["boxblock"].append(dict(t=round(t, 1), x=round(v[2]), y=round(v[3]), cls=e["cls"]))
+                reason = T.audit_stops.get(c)
+                for tag, condition, threshold in (
+                    ("boxstop", inbox, 2.0),
+                    ("openstop", reason in ("open lane", "clearance", "borrowed lane", "crossing"), 3.0),
+                ):
+                    state[(tag, key)] = state[(tag, key)] + 0.25 if v[5] < 0.3 and condition else 0.0
+                    if state[(tag, key)] == threshold:
+                        out[tag].append(dict(t=round(t, 1), x=round(v[2], 1), y=round(v[3], 1), edge=c.e, direction=c.d,
+                                             rem=round(e["len"] - c.s, 1), reason=reason, next=c.nxt, turn=round(c.turn, 2)))
     return dict(name=name, cars=cars, secs=secs, counts={k: len(v) for k, v in out.items()}, **out)
 
 
@@ -269,8 +303,9 @@ def _job(a):
 
 if __name__ == "__main__":
     wd, od, outp = sys.argv[1:4]
-    names = sys.argv[4:] or list(HOODS)
-    jobs = [(wd, od, dict(name=n, cx=HOODS[n][0], cy=HOODS[n][1], seed=sd, hour=hr, aggro=ag))
+    names = list(PARTIZANSKI) if sys.argv[4:] == ["partizanski"] else sys.argv[4:] or list(HOODS)
+    sites = {**HOODS, **PARTIZANSKI}
+    jobs = [(wd, od, dict(name=n, cx=sites[n][0], cy=sites[n][1], seed=sd, hour=hr, aggro=ag))
             for sd, hr, ag in ((1, 11.0, 1), (2, 17.0, 2), (3, 8.0, 3)) for n in names]
     with mp.Pool(4) as pool, open(outp, "w", encoding="utf-8") as f:
         for r in pool.imap(_job, jobs):

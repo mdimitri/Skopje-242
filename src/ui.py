@@ -73,7 +73,8 @@ MK_SUB = {"geometry": "геометрија", "checking what changed": "пров
           "school yards": "школски дворови", "hedges along streets": "живи огради", "cover grid": "мрежа на покриеност",
           "joints": "споеви", "junction plates": "плочи на крстосниците", "streets": "улици", "corners": "агли",
           "crossings": "пешачки премини", "mesh": "мрежа", "parks and squares": "паркови и плоштади", "trees on the lots": "дрвја на плацевите",
-          "replacing the old world": "го заменувам стариот свет", "meta": "основни податоци", "props": "дрвја, лампи и коли",
+          "replacing the old world": "го заменувам стариот свет", "done": "готово", "checking": "проверувам",
+          "meta": "основни податоци", "props": "дрвја, лампи и коли",
           "buildings": "згради", "chunks": "делови на градот", "surf": "површини на земјата", "terrain": "рељеф", "roads": "патишта"}
 # map pixel colours per kind of thing
 MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
@@ -156,7 +157,6 @@ class Loader:
         self.fresh = []                     # (rows, cols, colour) painted white by the last slices; they settle to their layer colour
         self.fresh_t = 0.0
         self.last_note = ("", 0.0)
-        self.rng = np.random.default_rng(242)
         self.rate_hist = collections.deque()
         self.b_label = None
         self.b_t0 = 0.0
@@ -375,14 +375,14 @@ class Loader:
     # ---------------------------------------------------------------- drawing
     def draw(self, force=False):
         now = time.time()
-        if self.music is not None:
-            self.music.update()
-        if not force and now - self.last_draw < 0.04:
-            font.poll_latch()                                        # keep clicks that land between two drawn frames
+        frame_start = time.monotonic()
+        if not force and frame_start - self.last_draw < 1 / 60:
             return
-        self.last_draw = now
+        font.poll_latch()
         if rl.window_should_close():
             raise SystemExit(0)
+        self.last_draw = frame_start
+        ui_input = font.clicked() or any(font.key_pressed(key) for key in (rl.KEY_Q, rl.KEY_E, rl.KEY_LEFT, rl.KEY_RIGHT))
         if now - self.quip_t > 9.0:
             self.quip_t = now
             self.quip = random.choice(slang.LOADING_QUIPS)
@@ -395,7 +395,6 @@ class Loader:
         full_w = max(120, min(int(W * 0.30), int(H * 0.42 / asp)))
         self.map_w = int(full_w * 0.75)                               # 75% of the old size
         self.GEO_W = 2 * self.map_w                                   # painted at twice the size, shown at half with bilinear filtering
-        self._paint()
         rl.begin_drawing()
         poster_mod.draw_splash(W, H)
         panel_h = int(self.map_w * asp) + 50                          # map + legend
@@ -435,8 +434,13 @@ class Loader:
             self.music.widget()
         font.exit_button()
         font.draw_version(W, H)
-        rl.end_drawing()
         font.clear_latch()
+        rl.end_drawing()
+        if self.music is not None:
+            self.music.update()
+        spare = 1 / 60 - (time.monotonic() - frame_start)
+        if not ui_input and not poster_mod.tearing() and spare > 0:
+            self._paint(budget=min(0.003, spare))
 
     @staticmethod
     def _tbar(x, y, w, h, f, col, left, right):
@@ -510,7 +514,7 @@ class Loader:
     def plot_lines(self, layer, polylines):
         """Roads, rivers, outlines: a list of (N, 2) polylines (or lists of points), sampled along their length when painted."""
         if len(polylines):
-            self.mq.append((layer, "lines", polylines))
+            self.mq.append((layer, "lines", collections.deque(polylines)))
 
     def mark_rect(self, x0, y0, x1, y1):
         """A baked / streamed city chunk: its outline on the map."""
@@ -539,7 +543,9 @@ class Loader:
         if "buildings" in d:
             self.plot("buildings", [b["ring"][0] for b in d["buildings"]])
         if len(d.get("trees", ())):
-            self.plot("trees", np.asarray(d["trees"], np.float64).reshape(-1, 4)[::2, :2])
+            trees = d["trees"]
+            stride = max(2, (len(trees) + 8191) // 8192)
+            self.plot("trees", np.asarray(trees[::stride], np.float64).reshape(-1, 4)[:, :2])
         if len(d.get("parked", ())):
             self.plot("parked", [p[:2] for p in d["parked"]])
         self.say("✓ " + MK_PART.get(name, name).capitalize())
@@ -559,7 +565,7 @@ class Loader:
             self.cv_dirty = True
             self.fresh = []
 
-    def _paint(self, budget=0.012):
+    def _paint(self, budget=0.003):
         """Paint queued map work for about `budget` seconds and upload the canvas.  New pixels flash white, then settle."""
         if not self.mq and not self.fresh and not self.cv_dirty:
             return
@@ -580,11 +586,10 @@ class Loader:
                 layer, kind, data = self.mq.popleft()
                 col = (*MAP_COL.get(layer, (255, 255, 255)), 255)
                 if kind == "lines":
-                    if len(data) > 25:                                   # a long list is painted in small slices, in random order
-                        data = list(data)
-                        self.rng.shuffle(data)
-                        self.mq.appendleft((layer, "lines", data[25:]))
-                        data = data[:25]
+                    if len(data) > 25:
+                        batch = [data.popleft() for _ in range(25)]
+                        self.mq.appendleft((layer, "lines", data))
+                        data = batch
                     parts = []
                     for p in data:
                         p = np.asarray(p, np.float64).reshape(-1, 2)
@@ -600,9 +605,8 @@ class Loader:
                 else:
                     pts = data
                     if len(pts) > 500:
-                        idx = self.rng.permutation(len(pts))
-                        self.mq.appendleft((layer, "pts", pts[idx[500:]]))
-                        pts = pts[idx[:500]]
+                        self.mq.appendleft((layer, "pts", pts[500:]))
+                        pts = pts[:500]
                 cc = ((pts[:, 0] - bx[0]) * kx).astype(int)
                 rr = ((pts[:, 1] - bx[1]) * ky).astype(int)
                 ok = (cc >= 0) & (cc < w) & (rr >= 0) & (rr < h)

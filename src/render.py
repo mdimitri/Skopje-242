@@ -2,6 +2,7 @@
 import math
 import time
 import os
+from collections import OrderedDict
 
 import numpy as np
 import pyray as rl
@@ -9,6 +10,7 @@ import raylib as RL            # the raw cffi functions: no per-call argument co
 
 import actors
 import birdart
+import characterart
 import fx
 import gl3d
 import farview
@@ -38,6 +40,12 @@ def gait_cycle(arch, run):
     return gl3d.ped_scale(arch) * (2.85 if run else 1.85)
 
 
+def character_tier(height_px, maximum, quality=1.0):
+    """Lower the detailed mesh bands as the frame-time scaler falls."""
+    px = height_px * quality
+    return min(maximum, 3 if px >= 44.0 else 2 if px >= 23.0 else 1)
+
+
 
 def _hull(pts):
     """Convex hull (monotone chain), counter-clockwise."""
@@ -48,7 +56,12 @@ def _hull(pts):
     def half(seq):
         out = []
         for p in seq:
-            while len(out) >= 2 and (out[-1][0] - out[-2][0]) * (p[1] - out[-2][1]) - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0]) <= 0:
+            x, z = p
+            while len(out) >= 2:
+                ax, az = out[-2]
+                bx, bz = out[-1]
+                if not (bx - ax) * (z - az) - (bz - az) * (x - ax) <= 0:
+                    break
                 out.pop()
             out.append(p)
         return out[:-1]
@@ -262,7 +275,12 @@ class Renderer:
         self._own = {}                         # id(body) -> body with its own model
         self._frames = 0
         self.log, self._vanish_t = print, -99.0          # main points log at logs/game.log
-        self.ped_models = {}
+        self.ped_models = {}                       # tier 1 with the default palette, used as worker fallbacks
+        self.ped_variants = OrderedDict()
+        self.ped_variant_vertices = 0
+        self.ped_textures = {}
+        self.ped_detail = 3
+        self.ped_quality = 1.0
         self.dog_models = {}
         self.bird_models = {}
         self.pick_models = {}
@@ -327,7 +345,7 @@ class Renderer:
                 gl3d.free_model(b.model)
                 b.model = None                             # never keep a freed model if the rebuild below fails
             b.model = gl3d.car_model(b.kind, b.color, b.dents, 1.0 if b.exploded else min(1.0, b.burn / 6.0) * 0.5,
-                                     b.color < 0, True)
+                                     b.color < 0, scene=True)
             b.dirty = False
             self._own[id(b)] = b
         if b.model is not None:
@@ -337,7 +355,7 @@ class Renderer:
         key = (b.kind, b.color)
         m = self.car_models.get(key)
         if m is None:
-            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, (), 0.0, True, True)
+            m = self.car_models[key] = gl3d.car_model(b.kind, b.color, player=True, scene=True)
         return m
 
     trailer_m = None
@@ -471,6 +489,71 @@ class Renderer:
         mid = vehicles.SEMI_TRAILER_L / 2 - 0.3
         sh.append((hx - math.cos(th) * mid, hy - math.sin(th) * mid, th, vehicles.SEMI_TRAILER_L / 2 + 0.2, vehicles.DIMS[vehicles.SEMI][1] / 2, 70, gy, 3.9))
 
+    def _bus_rear(self, M, bend, x, z, gy, tint):
+        hinge = vehicles.ARTIC_HINGE
+        joint = rl.matrix_multiply(rl.matrix_translate(-hinge, 0, 0), rl.matrix_rotate_y(-bend))
+        joint = rl.matrix_multiply(joint, rl.matrix_translate(hinge, 0, 0))
+        rear_basis = rl.matrix_multiply(joint, M)
+        rear = self.car_models.get("bus_rear")
+        if rear is None:
+            rear = self.car_models["bus_rear"] = gl3d.bus_rear_model()
+        step = round(bend / 0.035)
+        key = ("bus_bellows", step)
+        bellows = self.car_models.get(key)
+        if bellows is None:
+            angle = max(-vehicles.ARTIC_JACK, min(vehicles.ARTIC_JACK, step * 0.035))
+            bellows = self.car_models[key] = gl3d.object_detail(gl3d.make_model(*gl3d.bus_bellows_arrays(angle)), "rubber")
+        for model, transform in ((rear, rear_basis), (bellows, M)):
+            if model is not None:
+                old = _keep(model.transform)
+                model.transform = transform
+                rl.draw_model(model, ZERO, 1.0, tint)
+                if self._near(x, z):
+                    self._proj_shadow(model, transform, gy, 70)
+                model.transform = old[0]
+        return rear_basis
+
+    @staticmethod
+    def _indicator_lens(cam, pose, mount, side, end, glows, body_end=None):
+        x, y, z, width, height = mount
+        z *= side
+        center = rl.vector3_transform(V3(x, y, z), pose)
+        normal = rl.vector3_transform(V3(x + end, y, z), pose)
+        eye = cam.position
+        dx, dy, dz = eye.x - center.x, eye.y - center.y, eye.z - center.z
+        facing = (normal.x - center.x) * dx + (normal.y - center.y) * dy + (normal.z - center.z) * dz > 0.0
+        if facing:
+            a, b, c, d = [rl.vector3_transform(V3(x, y + sy * height * 0.5, z + sz * width * 0.5), pose)
+                          for sy, sz in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            if end < 0:
+                b, d = d, b
+            amber = rl.Color(255, 191, 66, 255)
+            rl.draw_triangle_3d(a, b, c, amber)
+            rl.draw_triangle_3d(a, c, d, amber)
+        if body_end is not None and dy > math.hypot(dx, dz) * 1.1:
+            # At a high angle, the bumper can hide the lens. Its spill is still visible just outside it.
+            spill = rl.vector3_transform(V3(body_end + 0.10 * end, y, z), pose)
+            glows.append((spill, max(0.37, width * 3.0)))
+        elif facing:
+            glows.append((center, max(0.17, width * 2.5)))
+
+    def _indicator_glows(self, cam, glows):
+        if not glows:
+            return
+        texture = getattr(self, "_indicator_texture", None)
+        if texture is None:
+            image = rl.gen_image_gradient_radial(32, 32, 0.0, rl.Color(255, 169, 66, 128), rl.BLANK)
+            texture = self._indicator_texture = rl.load_texture_from_image(image)
+            rl.unload_image(image)
+            rl.set_texture_filter(texture, rl.TEXTURE_FILTER_BILINEAR)
+        rl.rl_disable_depth_mask()
+        rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+        for center, size in glows:
+            rl.draw_billboard_pro(cam, texture, rl.Rectangle(0, 0, texture.width, texture.height), center,
+                                  cam.up, rl.Vector2(size, size), rl.Vector2(size * 0.5, size * 0.5), 0.0, WHITE)
+        rl.end_blend_mode()
+        rl.rl_enable_depth_mask()
+
     def _free_orphans(self, bodies):
         """Dented / burnt cars own a model; give its video memory back once the car is gone (never for a car still in play)."""
         live = {id(b) for b in bodies}
@@ -482,6 +565,27 @@ class Renderer:
                 b.dirty = True
 
     BUILD_BUDGET = 2                      # new procedural models per frame (keeps the first sight of a new car/person smooth)
+
+    def warm_models(self, specs, progress):
+        """Generate startup meshes on the model workers, then upload them on the window thread."""
+        import time
+
+        for start in range(0, len(specs), self.mb.limit):
+            batch = specs[start:start + self.mb.limit]
+            for spec in batch:
+                self.mb.want(spec, spec)
+            while self.mb.jobs:
+                self._collect_models()
+                progress(start + len(batch) - len(self.mb.jobs), len(specs))
+                if self.mb.jobs:
+                    time.sleep(0.002)
+            # The normal synchronous path covers disabled workers and failed jobs.
+            for offset, spec in enumerate(batch, start + 1):
+                if spec[0] == "car":
+                    self.ai_model(*spec[1:])
+                elif self._cached_ped(spec[1:]) is None:
+                    self._upload_ped(spec[1:], gl3d.ped_visual(*spec[1:]))
+                progress(offset, len(specs))
 
     def ai_model(self, kind, color):
         key = (kind, color)
@@ -495,7 +599,7 @@ class Renderer:
                 if m is not None:
                     return m                                      # (none yet: build it now, a car is never invisible)
             self._built += 1
-            m = self.car_models[key] = gl3d.car_model(kind, color, (), 0.0, False, True)
+            m = self.car_models[key] = gl3d.car_model(kind, color, scene=True)
         return m
 
     LOD_PX = 40.0                         # a plain car shorter than this on screen is drawn as one model (front wheels straight)
@@ -516,19 +620,60 @@ class Renderer:
         # eight phases per stride cycle (two steps); anim is the ground covered, so feet stay planted
         return (30 if run else 20) + (int(anim * 8 / gait_cycle(arch, run)) & 7)
 
-    def ped_model(self, arch, tone, frame, skin):
-        key = (arch, tone, frame, skin)
-        m = self.ped_models.get(key)
-        if m is None:
-            fb = self.ped_models.get((arch, 0, frame, 0)) or self.ped_models.get((arch, 0, 0, 0))
-            if fb is not None and self.mb.want(("ped",) + key, ("ped",) + key):
-                return fb                                      # built on a worker; a similar pose until then
-            if self._built >= self.BUILD_BUDGET:
-                if fb is not None:
-                    return fb                                  # (none yet: build it now, a person is never just a shadow)
-            self._built += 1
-            m = self.ped_models[key] = gl3d.ped_model(arch, tone, frame, skin)
-        return m
+    def _cached_ped(self, key):
+        if key in self.ped_models:
+            return self.ped_models[key]
+        visual = self.ped_variants.get(key)
+        if visual is not None:
+            self.ped_variants.move_to_end(key)
+        return visual
+
+    def _upload_ped(self, key, data):
+        arrays, grip = data
+        model = gl3d.make_model(*arrays)
+        tier = key[-1]
+        gl3d.object_detail(model, "character" if tier > 1 else "cloth", key[0] + key[1] * 3)
+        visual = model, grip, key[2]
+        if tier == 1 and key[1] == key[3] == 0:
+            self.ped_models[key] = visual
+        else:
+            if tier > 1:
+                if tier not in self.ped_textures:
+                    self.ped_textures[tier] = gl3d.ped_atlas(tier)
+                gl3d.set_texture(model, self.ped_textures[tier])
+            self.ped_variants[key] = visual
+            self.ped_variant_vertices += model.meshes[0].vertexCount
+            while self.ped_variant_vertices > 2_000_000:         # limit extra VRAM as the street mixes stages, outfits and poses
+                _, (old, _, _) = self.ped_variants.popitem(last=False)
+                self.ped_variant_vertices -= old.meshes[0].vertexCount
+                gl3d.free_model(old)
+        return visual
+
+    def ped_model(self, arch, tone, frame, skin, tier=1):
+        if arch >= 100:
+            arch, tone, skin = characterart.hero_arch(arch), 0, 0
+        low = characterart.lod_frame(frame, 1)
+        key = (arch, tone, low if tier == 1 else frame, skin, tier)
+        visual = self._cached_ped(key)
+        if visual is not None:
+            return visual
+        fallback = (self._cached_ped((arch, tone, frame, skin, 2)) if tier == 3 else None)
+        fallback = (fallback or self._cached_ped((arch, tone, low, skin, 1))
+                    or self.ped_models.get((arch, 0, low, 0, 1))
+                    or self._cached_ped((arch, tone, 12, skin, 1))
+                    or self.ped_models.get((arch, 0, 12, 0, 1))
+                    or self.ped_models.get((arch, 0, 0, 0, 1)))
+        job = ("ped",) + key
+        if fallback is not None and (self.mb.want(job, job) or self._built >= self.BUILD_BUDGET):
+            return fallback
+        self._built += 1
+        return self._upload_ped(key, gl3d.ped_visual(*key))
+
+    def close_ped_models(self):
+        for model, _, _ in (*self.ped_models.values(), *self.ped_variants.values()):
+            gl3d.free_model(model)
+        for tex in self.ped_textures.values():
+            rl.unload_texture(tex)
 
     def bird_model(self, art, frame):
         key = (art, frame)
@@ -550,19 +695,19 @@ class Renderer:
             m = self.dog_models[key] = gl3d.dog_model(coat, frame)
         return m
 
-    def _held(self, weapon, x, gy, z, h, lik, frame, su=None):
-        """A weapon in a person's right hand: it rides the hand of the pose being played (gl3d.hero_hand, so it swings with the arm in
-        walk, run, jump, crawl and punch frames), pitched with the forearm; su = progress of a two-handed swing (the swing pose's grip)."""
+    def _held(self, weapon, x, gy, z, h, frame, grip):
+        """Attach the weapon to the right hand of the displayed pose."""
         wm = self.pick_model(weapon)
         if wm is None:
             return
         melee = weapon in actors.SWINGERS
-        if su is not None:
-            u = (min(7, int(su * 8)) + 0.5) / 8.0              # (the same eight poses the arms are drawn in)
+        if melee and 60 <= frame <= 67:
+            u = (frame - 60 + 0.5) / 8.0
             psi = weaponart.swing_az(u)
-            hand, pitch, yaw = weaponart.swing_grip(psi), 0.1 + 0.9 * (1.0 - u) ** 2, -psi
+            hand = grip[0]
+            pitch, yaw = 0.1 + 0.9 * (1.0 - u) ** 2, -psi
         else:
-            hand, fa = gl3d.hero_hand(lik, frame)
+            hand, fa = grip
             pitch = max(-0.8, min(1.4, (1.0 if melee else 0.05) + fa - 0.25))
             yaw = 0.0
         Mh = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(1.1, 1.1, 1.1), rl.matrix_rotate_z(pitch)),
@@ -583,9 +728,14 @@ class Renderer:
     def _collect_models(self):
         """Upload the models the workers finished (arrays -> VRAM)."""
         for key, arrs in self.mb.ready():
-            store, k = {"ped": self.ped_models, "car": self.car_models, "carlod": self.car_lods}[key[0]], key[1:]
+            kind, k = key[0], key[1:]
+            if kind == "ped":
+                if self._cached_ped(k) is None:
+                    self._upload_ped(k, arrs)
+                continue
+            store = self.car_models if kind == "car" else self.car_lods
             if store.get(k) is None:
-                store[k] = gl3d.make_model(*arrs) if key[0] == "ped" else gl3d.gloss_apply(gl3d.make_model(*arrs))
+                store[k] = gl3d.gloss_apply(gl3d.make_model(*arrs), k[0])
 
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
@@ -788,14 +938,14 @@ class Renderer:
             ca, sa = math.cos(h), math.sin(h)
             vx, vz = sx * ht, sz * ht
             fp = [(x + ca * lx - sa * lz, z + sa * lx + ca * lz) for lx, lz in ((-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw))]
-            hull = _hull(fp + [(px + vx, pz + vz) for px, pz in fp])
-            cx = sum(p[0] for p in hull) / len(hull)
-            cz = sum(p[1] for p in hull) / len(hull)
+            hull = _hull(fp + [(px + vx, pz + vz) for px, pz in fp] if vx or vz else fp)
+            # A convex polygon needs only n-2 triangles when anchored at a hull vertex.
+            x0, z0 = hull[0]
             y = gy + 0.04
             rl.rl_color4ub(10, 10, 20, a)
-            for i in range(len(hull)):
-                p0, p1 = hull[i], hull[(i + 1) % len(hull)]
-                rl.rl_vertex3f(cx, y, cz)
+            for i in range(1, len(hull) - 1):
+                p0, p1 = hull[i], hull[i + 1]
+                rl.rl_vertex3f(x0, y, z0)
                 rl.rl_vertex3f(p1[0], y, p1[1])
                 rl.rl_vertex3f(p0[0], y, p0[1])
         rl.rl_end()
@@ -836,6 +986,7 @@ class Renderer:
                 rl.draw_sphere(V3(x, self.w.ground_y(x, y) + z + 0.11, y), 0.11, rl.Color(240, 240, 236, 255))
 
     def _actors(self, rect, sim, t):
+        cam = self._cam
         w = self.w
         self._frames += 1
         self._sh_c = ((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5)
@@ -851,9 +1002,11 @@ class Renderer:
         sh = []
         # pickups
         for x, z, kind, alive, _t in sim.pickups:
-            if alive and self._in(x, z, rect):
+            if not alive or not (rect[0] - 6.0 < x < rect[2] + 6.0 and rect[1] - 6.0 < z < rect[3] + 6.0):
+                continue
+            gy0 = w.ground_y(x, z)
+            if self._in(x, z, rect, gy=gy0):
                 m = self.pick_model(kind)
-                gy0 = w.ground_y(x, z)
                 if kind in weaponart.BOXES:                           # weapons: the real shape, big, slowly turning, over a glow disc
                     rl.draw_cylinder(V3(x, gy0 + 0.04, z), 0.9, 0.9, 0.03, 16, rl.Color(255, 200, 60, 90))
                     Mw = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(2.4, 2.4, 2.4), rl.matrix_rotate_x(1.45)),   # side face up, so the top view shows the shape
@@ -871,7 +1024,8 @@ class Renderer:
                 key = (bk, seed % 6 if bk == "mid" else 0)
                 m = self.wreck_models.get(key)
                 if m is None and key not in self.wreck_models:
-                    m = self.wreck_models[key] = gl3d.wreck_model(bk, seed)
+                    family = "bark" if bk == "tree" else "metal"
+                    m = self.wreck_models[key] = gl3d.object_detail(gl3d.wreck_model(bk, seed), family, seed)
                 if m is not None:
                     rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
         for hx_, hy_, hz_, roof_ in getattr(sim, "helipads", ()):  # hospital helipads: grey disc with a white ring and H
@@ -900,12 +1054,18 @@ class Renderer:
             if self._stairs_m is not None:
                 rl.draw_model(self._stairs_m, V3(0, 0, 0), 1.0, WHITE)
         # cars
-        cars, doors, trailers = [], [], []
+        cars, doors, trailers, bus_bends, indicators = [], [], [], {}, {}
         for c in sim.traffic.cars:
             if self._in(c.x, c.y, rect, gy=c.gz):
                 cars.append((c.x, c.y, c.h, self.ai_model(c.kind, c.color), WHITE, c.gz, c.pitch, c.roll, c.kind, c.str, c.color, id(c), c.v))
+                if c.indicator:
+                    indicators[id(c)] = (c.indicator, c.trh)
                 if c.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, c.x, c.y, c.h, c.trh if c.trh is not None else c.h, c.gz, c.pitch, c.roll, c.tgz, c.tpitch, c.troll, id(c))
+                elif c.kind == vehicles.ARTIC_BUS:
+                    bus_bends[id(c)] = math.remainder(c.trh - c.h, math.tau) if c.trh is not None else 0.0
+                    if not self._near(c.x, c.y):
+                        sh.extend((*part, 70, c.gz, vehicles.DIMS[c.kind][4]) for part in actors.parts(c))
                 elif not self._near(c.x, c.y):
                     sh.append((c.x, c.y, c.h, vehicles.DIMS[c.kind][0] / 2, vehicles.DIMS[c.kind][1] / 2, 70, c.gz, vehicles.DIMS[c.kind][4]))
         for b in sim.bodies:
@@ -921,10 +1081,16 @@ class Renderer:
                              f"kind {b.kind} colour {b.color} y {gy}")
                 cars.append((b.x, b.y, b.h, m, tint, gy, b.pitch, b.roll, b.kind, b.wheel,
                              b.color if b.model is None and b.color >= 0 and not b.exploded else None, id(b), math.hypot(b.vx, b.vy)))
+                if b.indicator and b.alive and not b.exploded:
+                    indicators[id(b)] = (b.indicator, b.trh)
                 if b.door > 0.01:
                     doors.append((b, gy))
                 if b.kind == vehicles.SEMI:
                     self._trailer(trailers, sh, b.x, b.y, b.h, b.trh if b.trh is not None else b.h, gy, b.pitch, b.roll, getattr(b, "tgz", None), getattr(b, "tpitch", None), getattr(b, "troll", None), id(b))
+                elif b.kind == vehicles.ARTIC_BUS:
+                    bus_bends[id(b)] = math.remainder(b.trh - b.h, math.tau) if b.trh is not None else 0.0
+                    if not self._near(b.x, b.y):
+                        sh.extend((*part, 80, gy, vehicles.DIMS[b.kind][4]) for part in actors.parts(b))
                 elif not self._near(b.x, b.y):
                     sh.append((b.x, b.y, b.h, vehicles.DIMS[b.kind][0] / 2, vehicles.DIMS[b.kind][1] / 2, 80,
                                actors._heli_floor(b, w) if b.kind in vehicles.FLY else gy, vehicles.DIMS[b.kind][4]))
@@ -945,8 +1111,10 @@ class Renderer:
                 elif getattr(p, "v", 1.0) < 0.1 and p.mode not in ("flee", "brawl"):
                     frame, y = 12, 0.0                             # standing still: arms down
                 else:
-                    frame, y = self._gait(p.arch, p.anim, p.mode in ("flee", "brawl")), (p.hy if p.vault > 0.0 else 0.0)
-                    if p.vault > 0.0 and not p.vault_up:
+                    frame, y = self._gait(p.arch, p.anim, p.traffic_run or p.mode in ("flee", "brawl")), (p.hy if p.vault > 0.0 else 0.0)
+                    if p.vault > 0.0 and p.vault_up:
+                        frame = 16
+                    elif p.vault > 0.0:
                         frame = 40 + (int(p.anim * 3.0) & 7)       # ducking under a big vehicle: crawling
                 lean = 0.0
                 if p.pose == "spray":                              # fire fighter: arms out holding the nozzle
@@ -988,9 +1156,9 @@ class Renderer:
             if self._in(rp["x"], rp["y"], rect):
                 fr = rp["frame"] if rp["frame"] is not None else self._gait(100 + rp["lik"], rp["anim"], rp["run"])
                 gy = rp["z"] or w.ground_y(rp["x"], rp["y"])
-                peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3, 0.0, gy))
-                if rp.get("weapon") in weaponart.BOXES and fr != 2:
-                    self._held(rp["weapon"], rp["x"], gy, rp["y"], rp["h"], rp["lik"], fr)
+                weapon = rp.get("weapon")
+                peds.append((rp["x"], gy, rp["y"], rp["h"], 100 + rp["lik"], 0, fr, 3, 0.0, gy,
+                             weapon if weapon in weaponart.BOXES and fr != 2 else None))
                 if not self._near(rp["x"], rp["y"]):
                     sh.append((rp["x"], rp["y"], rp["h"], 0.14, 0.24, 60, gy, 1.75))
         wk = sim.walker
@@ -1016,11 +1184,11 @@ class Renderer:
             if wk.hurt_t > 0 and int(t * 20) & 1 and wk.health > 0:
                 pass                                       # flicker while hurt
             else:
-                peds.append((wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, 0.0,
-                             (wk.az - wk.z) if wk.az is not None else w.ground_y(wk.x, wk.y)))
-            if wk.health > 0 and wk.weapon in weaponart.BOXES and (wk.weapon in actors.MELEE or wk.ammo > 0):
-                su = (1.0 - wk.atk_t / actors.SWING_T) if swinging else None
-                self._held(wk.weapon, wk.x, wk.az if wk.az is not None else w.ground_y(wk.x, wk.y), wk.y, wk.h, getattr(sim, "lik", 0), frame, su)
+                weapon = (wk.weapon if wk.health > 0 and wk.weapon in weaponart.BOXES
+                          and (wk.weapon in actors.MELEE or wk.ammo > 0) else None)
+                feet = wk.az if wk.az is not None else w.ground_y(wk.x, wk.y)
+                peds.append((wk.x, feet, wk.y, wk.h, 100 + getattr(sim, "lik", 0), 0, frame, 3, 0.0,
+                             feet - wk.z if wk.az is not None else feet, weapon))
             if not self._near(wk.x, wk.y):
                 sh.append((wk.x, wk.y, wk.h, 0.14, 0.24, 70 if wk.z < 0.1 else 40, (wk.az - wk.z) if wk.az is not None else 0.0, 1.75 + wk.z))
         for kx, kz, kh in sim.kiosks:
@@ -1030,6 +1198,34 @@ class Renderer:
             self._audit3d(cars, trailers, peds)
         if self.shadows:
             self._shadow_batch(sh)
+        self._draw_vehicle_models(sim, cars, trailers, indicators, bus_bends, doors)
+        self._draw_ped_models(peds)
+        for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
+            if self._in(f[0], f[1], rect):
+                rl.rl_push_matrix()
+                rl.rl_translatef(f[0], f[2], f[1])
+                rl.rl_rotatef(f[6], 0.6, 0.3, 0.74)
+                rl.draw_cube(V3(0, 0, 0), f[8], f[9], f[8], rl.Color(f[10][0], f[10][1], f[10][2], 255))
+                rl.rl_pop_matrix()
+
+        # the player's marker shines through the bridge deck when they are underneath it
+        if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:
+            mx, mz, maz = sim.walker.x, sim.walker.y, sim.walker.az
+        elif sim.mode == "car" and sim.car is not None and sim.car.az is not None:
+            mx, mz, maz = sim.car.x, sim.car.y, sim.car.az
+        else:
+            return
+        dk = w.deck_h(mx, mz)
+        if dk is not None and maz < dk - 0.7:
+            rl.rl_draw_render_batch_active()
+            rl.rl_disable_depth_test()
+            rl.draw_cylinder(V3(mx, maz + 0.1, mz), 0.9, 0.9, 0.04, 20, rl.Color(255, 220, 60, 120))
+            rl.draw_circle_3d(V3(mx, maz + 0.16, mz), 1.2, V3(1, 0, 0), 90.0, rl.Color(255, 240, 120, 255))
+            rl.rl_draw_render_batch_active()
+            rl.rl_enable_depth_test()
+
+    def _draw_vehicle_models(self, sim, cars, trailers, indicators, bus_bends, doors):
+        cam = self._cam
         fr = self.frustum
         now_ = time.perf_counter()
         sdt_ = min(0.1, now_ - getattr(self, "_spin_t", now_))
@@ -1058,6 +1254,7 @@ class Renderer:
                 twm.transform = old_w[0]
             tm.transform = old[0]
         wheels = Batch()
+        blink_start, this_blink, indicator_glows = getattr(self, "_indicator_blinks", {}), {}, []
         for x, z, h, m, tint, gy, pitch, roll, kind, ang, col, ckey, cspd in cars:
             if m is None:
                 continue
@@ -1072,7 +1269,29 @@ class Renderer:
                     hf_ = max(hf_, rt_)
             if self._near(x, z):
                 self._proj_shadow(m, M, hf_ if hf_ is not None else gy, 75)
-            if col is not None and fr is not None and kind not in vehicles.BIKES and kind not in vehicles.FLY:
+            rear_basis = M
+            if kind == vehicles.ARTIC_BUS:
+                rear_basis = self._bus_rear(M, bus_bends[ckey], x, z, gy, tint)
+            if ckey in indicators:
+                side, rear_heading = indicators[ckey]
+                old_side, start = blink_start.get(ckey, (side, now_))
+                start = now_ if old_side != side else start
+                this_blink[ckey] = side, start
+                if (now_ - start) % 0.72 < 0.39:
+                    length = gl3d.visual_dims(kind)[0]
+                    nose, bumper = length * 0.5, -length * 0.5
+                    if kind == vehicles.SEMI:
+                        hinge = vehicles.SEMI_HITCH
+                        offset = (h if rear_heading is None else rear_heading) - h
+                        rear_basis = rl.matrix_multiply(rl.matrix_multiply(
+                            rl.matrix_multiply(rl.matrix_translate(-hinge, 0, 0), rl.matrix_rotate_y(-offset)),
+                            rl.matrix_translate(hinge, 0, 0)), M)
+                        nose = vehicles.SEMI_SHIFT + vehicles.SEMI_TRACTOR_L * 0.5
+                        bumper = hinge - vehicles.SEMI_TRAILER_L
+                    front, tail = gl3d.indicator_mounts(kind)
+                    self._indicator_lens(cam, M, front, side, 1, indicator_glows, nose)
+                    self._indicator_lens(cam, rear_basis, tail, side, -1, indicator_glows, bumper)
+            if col is not None and fr is not None and kind != vehicles.ARTIC_BUS and kind not in vehicles.BIKES and kind not in vehicles.FLY:
                 px, py, pz = fr.p
                 if vehicles.DIMS[kind][0] * fr.fpx < self.LOD_PX * math.sqrt((x - px) ** 2 + (gy - py) ** 2 + (z - pz) ** 2):
                     ml = self.car_lod(kind, col)
@@ -1138,8 +1357,11 @@ class Renderer:
                             wheels.add(wm, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_), rl.matrix_rotate_y(-ang * 0.6)),
                                                                                  rl.matrix_translate(ax_, rr_, sd)), M), tint)
                         continue
-                    wheels.add(am_, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), M), tint)
+                    base = rear_basis if kind == vehicles.ARTIC_BUS and i_ == 1 else M
+                    wheels.add(am_, rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(-sp_ * wr / max(0.1, rr_)), rl.matrix_translate(ax_, rr_, 0.0)), base), tint)
         wheels.flush()
+        self._indicator_blinks = this_blink
+        self._indicator_glows(cam, indicator_glows)
         for b, gy in doors:                                  # carjack: the driver's door swung out on its hinge
             key = ("door", b.kind, b.color)
             m = self.car_models.get(key)
@@ -1157,40 +1379,31 @@ class Renderer:
             m.transform = M
             rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
             m.transform = old[0]
+
+    def _draw_ped_models(self, peds):
+        fr = self.frustum
+        px, py, pz = fr.p
         for x, y, z, h, arch, tone, frame, skin, *ex in peds:
-            pm = self.ped_model(arch, tone, frame, skin)
+            tier = 1
+            if self.ped_detail > 1:
+                distance = math.sqrt((x-px)**2 + (y+.8-py)**2 + (z-pz)**2)
+                height_px = 1.75 * gl3d.ped_scale(arch) * fr.fpx / max(.25, distance)
+                tier = character_tier(height_px, self.ped_detail, self.ped_quality)
+            pm, grip, shown_frame = self.ped_model(arch, tone, frame, skin, tier)
             if pm is not None:
                 if frame != 2 and len(ex) > 1 and self._near(x, z):
-                    Mp = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
-                    self._proj_shadow(pm, Mp, ex[1], 60)
-                if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
                     M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
+                    self._proj_shadow(pm, M, ex[1], 60)
+                else:
+                    M = None
+                if ex and ex[0]:                                     # leaning over (CPR): tilt about the feet, then heading
+                    if M is None:
+                        M = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_rotate_z(ex[0]), rl.matrix_rotate_y(-h)), rl.matrix_translate(x, y, z))
                     old = _keep(pm.transform)
                     pm.transform = M
                     rl.draw_model(pm, V3(0, 0, 0), 1.0, WHITE)
                     pm.transform = old[0]
                 else:
                     rl.draw_model_ex(pm, V3(x, y, z), UP, -math.degrees(h), ONE, WHITE)
-        for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
-            if self._in(f[0], f[1], rect):
-                rl.rl_push_matrix()
-                rl.rl_translatef(f[0], f[2], f[1])
-                rl.rl_rotatef(f[6], 0.6, 0.3, 0.74)
-                rl.draw_cube(V3(0, 0, 0), f[8], f[9], f[8], rl.Color(f[10][0], f[10][1], f[10][2], 255))
-                rl.rl_pop_matrix()
-
-        # the player's marker shines through the bridge deck when they are underneath it
-        if sim.mode == "foot" and sim.walker is not None and sim.walker.az is not None:
-            mx, mz, maz = sim.walker.x, sim.walker.y, sim.walker.az
-        elif sim.mode == "car" and sim.car is not None and sim.car.az is not None:
-            mx, mz, maz = sim.car.x, sim.car.y, sim.car.az
-        else:
-            return
-        dk = w.deck_h(mx, mz)
-        if dk is not None and maz < dk - 0.7:
-            rl.rl_draw_render_batch_active()
-            rl.rl_disable_depth_test()
-            rl.draw_cylinder(V3(mx, maz + 0.1, mz), 0.9, 0.9, 0.04, 20, rl.Color(255, 220, 60, 120))
-            rl.draw_circle_3d(V3(mx, maz + 0.16, mz), 1.2, V3(1, 0, 0), 90.0, rl.Color(255, 240, 120, 255))
-            rl.rl_draw_render_batch_active()
-            rl.rl_enable_depth_test()
+                if len(ex) > 2 and ex[2] is not None and grip is not None:
+                    self._held(ex[2], x, y, z, h, shown_frame, grip)

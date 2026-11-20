@@ -46,6 +46,7 @@ STAGE = {
     "world": TXT("strings.0043"),
     "overview": TXT("strings.0044"),
     "textures": TXT("strings.0045"),
+    "site_meshes": "Ги подготвувам оградите, портите и скалите",
     "chunks": TXT("strings.0046"),
 }
 
@@ -81,6 +82,8 @@ BUILD = {
     "cables and ground": "Кабли и патишта на земјата",
     "saving the stage": "Го зачувувам направеното",
     "loading saved stages": "Го вчитувам зачуваното",
+    "downloading the world": "Го преземам светот",
+    "unpacking the world": "Го распакувам светот",
     "fire escapes and roof jumps": "Пожарни скали и скокови меѓу покриви",
     "monument": "Го кревам споменикот на плоштад",
     "petrol stations and car washes": "Бензинки и перална за коли",

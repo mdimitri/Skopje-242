@@ -3,6 +3,7 @@
 import json
 import os
 import random
+import threading
 import time
 
 import pyray as rl
@@ -15,7 +16,7 @@ HERO = "01_bazaar_baba_boza.jpg"                            # always the first s
 SPLASH_EXT = (".jpg", ".jpeg")
 SPLASH_HOLD = 20.0                                          # seconds per image
 TEAR = 1.6                                                  # seconds of the torn-poster change
-_S = {"files": None, "tex": {}, "i": 0, "t0": 0.0, "old": None, "tear": None}
+_S = {"files": None, "tex": {}, "i": 0, "t0": None, "old": None, "tear": None, "job": None, "failed": set()}
 
 
 def _splash_files():
@@ -30,33 +31,32 @@ def _splash_files():
     return fs
 
 
-def _load(path):
-    if path not in _S["tex"]:
-        _S["tex"][path] = None
+def _queue_poster(path):
+    job = {"path": path, "done": False, "image": None}
+
+    def decode():
         try:
-            with open(path, "rb") as f:                     # from memory: raylib's fopen mangles Cyrillic paths on Windows
-                raw = f.read()
-            ext = os.path.splitext(path)[1].lower()
-            img = rl.load_image_from_memory(".jpg" if ext == ".jpeg" else ext, raw, len(raw))
-            if img.width > 0:
-                t = rl.load_texture_from_image(img)
-                rl.gen_texture_mipmaps(t)
-                rl.set_texture_filter(t, rl.TEXTURE_FILTER_TRILINEAR)
-                _S["tex"][path] = t
-            rl.unload_image(img)
-        except Exception:  # noqa: BLE001
+            from PIL import Image
+            with Image.open(path) as photo:
+                rgb = photo.convert("RGB")
+                job["image"] = (rgb.tobytes(), rgb.width, rgb.height)
+        except (OSError, ValueError):
             pass
-    return _S["tex"][path]
+        finally:
+            job["done"] = True
+
+    _S["job"] = job
+    threading.Thread(target=decode, daemon=True).start()
 
 
 def splash():
     """The splash image on screen now (the hero image first); None if there is none."""
-    if _S["files"] is None:
-        _S["files"] = _splash_files()
-        _S["i"] = 0                                          # the hero image always comes first
-        _S["t0"] = time.time()
     fs = _S["files"]
-    return _load(fs[_S["i"]]) if fs else None
+    return _S["tex"].get(fs[_S["i"]]) if fs else None
+
+
+def tearing():
+    return _S["tear"] is not None
 
 
 def _cover(t, W, H):
@@ -64,20 +64,22 @@ def _cover(t, W, H):
     return s, (W - t.width * s) / 2, (H - t.height * s) / 2
 
 
-def _tear(t, W, H, k, seed):
-    """The old poster torn off in vertical strips: each strip starts at its own moment, sags, tilts and falls away."""
-    r = random.Random(seed)
+def _tear_strips():
     n = 9
+    edges = [0.0] + sorted(random.uniform(0.07, 0.93) for _ in range(n - 1)) + [1.0]
+    return [(edges[i], edges[i + 1], random.uniform(0.0, 0.45), random.uniform(-14, 14)) for i in range(n)]
+
+
+def _tear(t, W, H, k, strips):
+    """Draw the old poster with fixed trajectories for the duration of the tear."""
     s, dx, dy = _cover(t, W, H)
-    edges = [0.0] + sorted(r.uniform(0.07, 0.93) for _ in range(n - 1)) + [1.0]
-    for i in range(n):
-        x0, x1 = edges[i] * W, edges[i + 1] * W
-        start = r.uniform(0.0, 0.45)
+    for left, right, start, tilt in strips:
+        x0, x1 = left * W, right * W
         f = max(0.0, (k - start) / (1.0 - start))
         if f >= 1.0:
             continue
         drop = (f ** 2) * (H * 1.25)                                 # accelerating fall
-        ang = (f ** 1.5) * r.uniform(-14, 14)
+        ang = (f ** 1.5) * tilt
         sw = x1 - x0
         src = rl.Rectangle((x0 - dx) / s, (0 - dy) / s, sw / s, H / s)
         dst = rl.Rectangle(x0 + sw / 2, drop, sw, H)
@@ -90,29 +92,62 @@ def _tear(t, W, H, k, seed):
 
 
 def draw_splash(W, H):
-    """Full-window splash art (cover-fit), changing every SPLASH_HOLD s with a torn-poster effect; a dark background
-    when there is no image."""
-    cur = splash()
-    if cur is None:
-        rl.clear_background(rl.Color(24, 16, 30, 255))
-        return
-    now = time.time()
-    fs = _S["files"]
-    if len(fs) > 1 and now - _S["t0"] > SPLASH_HOLD:
-        nxt = (_S["i"] + 1) % len(fs)
-        if _load(fs[nxt]) is not None:
-            _S["old"], _S["tear"] = cur, (now, random.randrange(1 << 30))
-            _S["i"], _S["t0"] = nxt, now
-            cur = _load(fs[nxt])
-        else:
-            _S["t0"] = now
-    draw_fit(cur, 0, 0, W, H, 255, cover=True)
-    if _S["tear"]:
-        k = (now - _S["tear"][0]) / TEAR
-        if k >= 1.0:
+    """Preload the next poster during the hold and keep uploads out of the tear."""
+    if _S["files"] is None:
+        _S["files"] = _splash_files()
+    fs, textures, failed = _S["files"], _S["tex"], _S["failed"]
+    now = time.monotonic()
+    if _S["tear"] is not None:
+        last, elapsed, strips = _S["tear"]
+        elapsed += min(now - last, 1 / 30)           # a delayed frame must not skip a large part of the peel
+        if elapsed >= TEAR:
+            rl.unload_texture(textures.pop(_S["old"]))
             _S["old"] = _S["tear"] = None
         else:
-            _tear(_S["old"], W, H, k, _S["tear"][1])
+            _S["tear"] = now, elapsed, strips
+    job = _S["job"]
+    if job is not None and job["done"] and _S["tear"] is None:
+        _S["job"] = None
+        path, image = job["path"], job["image"]
+        if image is not None:
+            pixels, width, height = image
+            data = rl.ffi.from_buffer(pixels)
+            img = rl.Image(data, width, height, 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8)
+            tex = rl.load_texture_from_image(img)
+            if rl.is_texture_valid(tex):
+                rl.set_texture_filter(tex, rl.TEXTURE_FILTER_BILINEAR)
+                textures[path] = tex
+        if path not in textures:
+            failed.add(path)
+        now = time.monotonic()
+    if len(failed) == len(fs):
+        rl.clear_background(rl.Color(24, 16, 30, 255))
+        return
+    while fs[_S["i"]] in failed:
+        _S["i"] = (_S["i"] + 1) % len(fs)
+    current = fs[_S["i"]]
+    if current not in textures:
+        if _S["job"] is None:
+            _queue_poster(current)
+        rl.clear_background(rl.Color(24, 16, 30, 255))
+        return
+    if _S["t0"] is None:
+        _S["t0"] = now
+    if _S["tear"] is None and len(fs) - len(failed) > 1:
+        nxt = (_S["i"] + 1) % len(fs)
+        while fs[nxt] in failed:
+            nxt = (nxt + 1) % len(fs)
+        path = fs[nxt]
+        if path not in textures and _S["job"] is None:
+            _queue_poster(path)
+        if path in textures and now - _S["t0"] >= SPLASH_HOLD:
+            _S["old"], _S["tear"] = current, (now, 0.0, _tear_strips())
+            _S["i"], _S["t0"] = nxt, now
+            current = path
+    draw_fit(textures[current], 0, 0, W, H, 255, cover=True)
+    if _S["tear"] is not None:
+        _, elapsed, strips = _S["tear"]
+        _tear(textures[_S["old"]], W, H, elapsed / TEAR, strips)
 
 
 class Posters:

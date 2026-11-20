@@ -198,13 +198,15 @@ def install(sha, prog):
         prog["finished"] = True
 
 
-def _screen(lines, bar=None):
+def _screen(lines, bar=None, music=None):
     """Progress / error screen in the same comic panel as the update question."""
     import menu
     th = menu._th
     w, h = rl.get_screen_width(), rl.get_screen_height()
     pw, ph = min(w - 40, 880), 300
     px, py = (w - pw) // 2, (h - ph) // 2
+    if music is not None:
+        music.update()
     rl.begin_drawing()
     rl.clear_background(th["paper"])
     menu._panel(px, py, pw, ph)
@@ -220,16 +222,20 @@ def _screen(lines, bar=None):
         rl.draw_rectangle(bx, by, bw, 28, th["p2"])
         menu._skew(bx, by, max(2, int(bw * bar)), 28, -8, th["a1"])
         rl.draw_rectangle_lines_ex(rl.Rectangle(bx, by, bw, 28), 3, th["ink"])
+    if music is not None:
+        music.widget()
     rl.end_drawing()
 
 
-def _prompt(local, remote):
+def _prompt(local, remote, music=None):
     """Themed update question: comic panel + the menus' skewed buttons, mouse hover / click or Enter / Esc."""
     import menu
     t0 = rl.get_time()
     sel = 0
     last = None
     while not rl.window_should_close():
+        if music is not None:
+            music.update()
         W, H = rl.get_screen_width(), rl.get_screen_height()
         th = menu._th
         pw, ph = min(W - 40, 880), 300
@@ -261,26 +267,30 @@ def _prompt(local, remote):
             font.draw_text(txt, px + (pw - font.measure_text(txt, sz, "cond")) // 2, y, sz, col, bold="cond")
         for i, (lab, (bx, byy)) in enumerate(zip(("Преземи и ажурирај", "Продолжи со тековната"), rects)):
             menu._btn(bx, byy, bw, bh, lab, sel == i, 26)
+        if music is not None:
+            music.widget(keys=False)
         rl.end_drawing()
     return False
 
 
-def check():
+def check(wait, music=None):
     """Call once at launch with the window open. Returns True when the game was updated and must restart."""
     if not rl.is_window_ready():
         return False
-    use_git = is_git_checkout()
-    local, remote = git_versions() if use_git else (local_version(), remote_version())
+    def versions():
+        use_git = is_git_checkout()
+        return use_git, git_versions() if use_git else (local_version(), remote_version())
+
+    use_git, (local, remote) = wait(versions)
     if not remote or remote == local:
         return False
     white, grey = rl.WHITE, rl.Color(170, 174, 184, 255)
-    if not _prompt(local, remote):
+    if not _prompt(local, remote, music):
         return False
     prog = {"done": 0, "total": 0, "err": "", "finished": False}
     th = threading.Thread(target=install_git if use_git else install, args=(remote, prog), daemon=True)
     th.start()
     while not prog["finished"]:
-        rl.poll_input_events()
         if prog.get("phase") == "git":
             frac, what = 0.5, "Се ажурира преку git"
         elif prog.get("phase") == "extract":                      # download = first 70 %, unpacking files = the rest
@@ -289,11 +299,12 @@ def check():
             mb = prog["done"] / 1048576
             # codeload sends no Content-Length (chunked zip): fall back to a typical zip size so the bar still moves
             frac, what = 0.7 * min(0.99, prog["done"] / (prog["total"] or 60 * 1048576)), f"Се презема: {mb:.1f} MB"
-        _screen([("Се презема и ажурира ...", 30, white), (what, 20, grey)], frac)
+        _screen([("Се презема и ажурира ...", 30, white), (what, 20, grey)], frac, music)
     if prog["err"]:
         t0 = rl.get_time()
         while rl.get_time() - t0 < 4 and not rl.window_should_close():
-            _screen([("Ажурирањето не успеа - продолжува тековната верзија", 26, white), (prog["err"][:90], 18, grey)])
+            _screen([("Ажурирањето не успеа - продолжува тековната верзија", 26, white), (prog["err"][:90], 18, grey)],
+                    music=music)
         return False
     return True
 

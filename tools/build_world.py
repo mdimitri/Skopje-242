@@ -2979,11 +2979,13 @@ def main():
         pos[:, 1] += T.hs(float(pos[:, 0].mean()), float(pos[:, 2].mean()))
         mesh.add(key, mat, pos, uv, col)
 
+    junction_cores = []
     try:
         xwalks, posts, bridge_lamps = furniture.build(edges, roads, _is_water, _not_building, add_c, chunk_of, (HX, HY),
                                                       decks=decks, add_abs=mesh.add, terrain_h=lambda x, z: T.hs(x, z),
                                                       bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")),
                                                       signals=_read_list(os.path.join(a.src, "signals.json")))
+        junction_cores = list(furniture.JUNCTION_CORES)
         lamps += bridge_lamps
         _st = list(__import__("furniture").STOPS)
         if _st:                                                 # round 23: no parked car within 16 m of a bus stop
@@ -3104,6 +3106,8 @@ def main():
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
     stage("cleanup")
     phase("carriageway cleanup")
+    from crosswalks import CrossingMap
+    junction_map = CrossingMap(cores=junction_cores)
     cgrid_ = {}
     for e_ in span(edges, 0.0, 0.3, "lane grid"):
         if e_["drive"]:
@@ -3113,6 +3117,8 @@ def main():
                         cgrid_.setdefault((gx_, gy_), []).append((ax_, ay_, bx_, by_, e_["w"] / 2 - 0.2))
 
     def in_lane(x, y, r=0.0):
+        if junction_map.core(x, y):
+            return True
         for ax_, ay_, bx_, by_, hw_ in cgrid_.get((int(x // 20), int(y // 20)), ()):
             dx_, dy_ = bx_ - ax_, by_ - ay_
             t_ = max(0.0, min(1.0, ((x - ax_) * dx_ + (y - ay_) * dy_) / (dx_ * dx_ + dy_ * dy_ or 1e-9)))
@@ -3124,6 +3130,7 @@ def main():
     lamps = [q for q in span(lamps, 0.3, 0.4, "lamps") if not in_lane(q[0], q[1], 0.22)]
     trees = [q for q in span(trees, 0.4, 0.7, "trees") if not in_lane(q[0], q[1], q[2])]
     posts = [q for q in span(posts, 0.7, 1.0, "posts") if (len(q) >= 5 and q[3] > T.hs(q[0], q[1]) + 4.6) or not in_lane(q[0], q[1], q[2])]
+    parked = [q for q in parked if not junction_map.core(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
     stage("rail", data=("rail.json",))
@@ -3163,7 +3170,7 @@ def main():
     try:
         phase("3D roads")
         roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r) or __import__("monument").on_bridge(x, y)          # no bridge pier in a street passing underneath
-        nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks)
+        nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks, junction_cores=junction_cores)
         posts = list(posts) + piers
         roads3d_ok = True
         print(f"[build] 3D roads: {nv / 1e6:.2f} M vertices")
@@ -3318,7 +3325,7 @@ def main():
         "roads": {"roads": roads},
         "edges": {"edges": edges},
         "buildings": {"buildings": buildings},
-        "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "places": places,
+        "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "junction_cores": junction_cores, "places": places,
                   "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
                   "sites": sites, "works": works, "fuelsites": fsites, "stations": stations, "track": track},
         "chunks": {"chunks": chunks},

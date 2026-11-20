@@ -138,9 +138,3 @@ def reset_world(sim, seed):
     sim.safe, sim.safe_z = (sx, sy, sh), None
     sim.traffic.cars.clear()
     sim.peds.list.clear()
-    for _ in range(sim.base_cars * 6):
-        if len(sim.traffic.cars) < sim.base_cars:
-            sim.traffic.spawn(sx, sy, 60, 330)
-    for _ in range(sim.base_peds * 6):
-        if len(sim.peds.list) < sim.base_peds:
-            sim.peds.spawn(sx, sy)
