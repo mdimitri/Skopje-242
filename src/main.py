@@ -32,6 +32,24 @@ try:
     _crash_f.write(time.strftime("--- start %Y-%m-%d %H:%M:%S\n"))
     _crash_f.flush()
     faulthandler.enable(_crash_f, all_threads=True)
+    _crash_f.write(f"python {sys.version.split()[0]} {platform.platform()} {platform.machine()}\n")
+    _crash_f.flush()
+
+    def _crash_hook(et, ev, tb):                     # import-time and uncaught errors (stderr is gone when run.bat's window closes)
+        import traceback as _tb
+        _crash_f.write("[uncaught]\n" + "".join(_tb.format_exception(et, ev, tb)))
+        _crash_f.flush()
+        sys.__excepthook__(et, ev, tb)
+
+    def _thread_hook(a):
+        import traceback as _tb
+        _crash_f.write(f"[uncaught in thread {getattr(a.thread, 'name', '?')}]\n" + "".join(_tb.format_exception(a.exc_type, a.exc_value, a.exc_traceback)))
+        _crash_f.flush()
+
+    sys.excepthook = _crash_hook
+    threading.excepthook = _thread_hook
+    import atexit
+    atexit.register(lambda: (_crash_f.write(time.strftime("--- exit %H:%M:%S (python exit)\n")), _crash_f.flush()))
 except Exception:  # noqa: BLE001
     pass
 
@@ -2509,6 +2527,11 @@ if __name__ == "__main__":
     except BaseException:  # noqa: BLE001 - last line of defence: log, show, exit non-zero
         tb = traceback.format_exc()
         log("[fatal]\n" + tb)
+        try:
+            _crash_f.write("[fatal]\n" + tb)
+            _crash_f.flush()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if rl.is_window_ready():
                 fatal_screen(TXT("main.0053"), tb.strip().splitlines()[-8:] + ["", (TXT("main.0054") + f'{LOG_FILE}')], 0)
