@@ -1602,6 +1602,11 @@ class Peds:
             p.walk_route.clear()
             p.traffic_wait = 0.65
             self.adopt(p, keep_heading=True)
+            run = getattr(p, "vault_run", None)
+            p.vault_run = None
+            if run is not None:                                   # landed: keep sprinting the same way for a few metres, no standing around
+                p.traffic_target, p.traffic_waypoint = run, None
+                p.traffic_run, p.traffic_wait = True, 0.0
 
     def _avoid_traffic(self, p, nearby, dt, blocked=None):
         danger = self._traffic_danger(p, nearby)
@@ -1663,11 +1668,17 @@ class Peds:
                 zebra = getattr(self.w, "on_zebra", None)
                 if (zebra is not None and danger is not None and danger[0] < 0.85 and danger[4]
                         and not zebra(p.x, p.y) and distance > 0.75):
-                    leap = min(2.2, distance)
-                    lx, ly = p.x + dx * leap / distance, p.y + dy * leap / distance
+                    leap = min(3.0, max(distance, 2.2))                  # a real dive forward in the escape direction, then on running
+                    ux, uy = dx / distance, dy / distance
+                    lx, ly = p.x + ux * leap, p.y + uy * leap
+                    if self.w.surface(lx, ly) == 1 or not self._escape_clear(p, nearby, lx, ly, 5.0):
+                        leap = min(2.2, distance)
+                        lx, ly = p.x + ux * leap, p.y + uy * leap
                     if self._escape_clear(p, nearby, lx, ly, 5.0):
                         p.vault_path = p.x, p.y, lx, ly, 0.75
-                        p.vault, p.vault_t, p.vault_up = 0.44, 0.44, True
+                        p.vault, p.vault_t, p.vault_up = 0.5, 0.5, True
+                        rx, ry = lx + ux * 3.5, ly + uy * 3.5
+                        p.vault_run = (rx, ry) if self.w.surface(rx, ry) != 1 and self._escape_clear(p, nearby, rx, ry, 4.0, origin=(lx, ly)) else None
                         p.walk_route.clear()
                         self._advance_vault(p, dt)
                         return True
