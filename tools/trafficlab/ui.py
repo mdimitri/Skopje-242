@@ -21,7 +21,7 @@ import pyray as rl
 import font
 import traffic_tuning
 import vehicles
-from . import OUT, ROOT, batch, core, explore, params
+from . import tips, OUT, ROOT, batch, core, explore, params
 
 # ------------------------------------------------------------------ theme
 def C(r, g, b, a=255):
@@ -219,8 +219,10 @@ class UI:
             return True
         return False
 
-    def button(self, label, x, y, w, h=28, active=False, col=None, size=15, enabled=True):
+    def button(self, label, x, y, w, h=28, active=False, col=None, size=15, enabled=True, help=""):
         hot = self.over(x, y, w, h) and enabled
+        if self.over(x, y, w, h):
+            self.hint = help or tips.tip(label) or self.hint
         bg = col if col is not None else (ACC if active else (PANEL2 if not hot else LINE))
         rl.draw_rectangle_rounded(rl.Rectangle(x, y, w, h), 0.25, 6, bg)
         tc = FG if enabled else MUT
@@ -232,8 +234,8 @@ class UI:
         rl.draw_rectangle_rounded(rl.Rectangle(x, y + 3, 36, 18), 0.9, 8, ACC if value else LINE)
         rl.draw_circle(int(x + (27 if value else 9)), int(y + 12), 7, FG)
         self.text(label, x + 46, y + 3, 15, FG)
-        if help and self.over(x, y, w, h):
-            self.hint = help
+        if self.over(x, y, w, h):
+            self.hint = help or tips.tip(label) or "Click to switch on / off"
         if self.clicked(x, y, w, h):
             return not value
         return value
@@ -253,8 +255,8 @@ class UI:
             rl.draw_rectangle(int(x + w * fd) - 1, int(by - 3), 2, 12, MUT)
         rl.draw_circle(int(x + w * f), int(by + 3), 7, FG)
         hot = self.over(x, y, w, 32)
-        if hot and help:
-            self.hint = help
+        if hot:
+            self.hint = (help or tips.tip(label)) + ("  |  " if help or tips.tip(label) else "") + tips.SLIDER_HOW
         m = rl.get_mouse_position()
         if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and not self.mouse_used:
             self.slider_id = key
@@ -947,7 +949,7 @@ class UI:
             bw = (RIGHT - 16) / len(row)
             for i, t in enumerate(row):
                 label = t if self.tw(t, 13) < bw - 6 else t[:5]
-                if self.button(label, x0 + 8 + i * bw, y, bw - 3, 26, active=self.tab == t, size=13):
+                if self.button(label, x0 + 8 + i * bw, y, bw - 3, 26, active=self.tab == t, size=13, help=tips.tip(t)):
                     self.tab = t
             y += 30
         y += 4

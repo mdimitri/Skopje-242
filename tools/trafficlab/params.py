@@ -33,8 +33,8 @@ def _lab(key, tab, label, default, lo=None, hi=None, step=None, help="", **kw):
 
 LIST = [
     # ---- Run: the experiment itself
-    _lab("cars", "Run", "AI cars (base)", 140, 0, 600, 5, "Sim.base_cars: the game keeps base x hour factor (clock.traffic) cars alive around the player"),
-    _lab("peds", "Run", "Pedestrians (base)", 60, 0, 400, 5, "Sim.base_peds, scaled by the hour like the game"),
+    _lab("cars", "Run", "AI cars (base)", 140, 0, 2000, 10, "Sim.base_cars: the game keeps base x hour factor (clock.traffic) cars alive around the player"),
+    _lab("peds", "Run", "Pedestrians (base)", 60, 0, 1500, 10, "Sim.base_peds, scaled by the hour like the game"),
     _lab("hour", "Run", "Start hour", 11.0, 0.0, 23.9, 0.5, "game clock hour (route choice uses rush hours)"),
     _lab("freeze_clock", "Run", "Freeze the clock", True, help="keep the hour fixed during a run (the game runs a day in 22 min)"),
     _lab("duration", "Run", "Measured seconds", 240, 30, 3600, 30, "simulated seconds that count towards the report"),
