@@ -1225,6 +1225,7 @@ def _PED_R(p):
 
 
 class Peds:
+    CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
     extra = ()                                     # multiplayer: other players this PC simulates the world for (x, y)
 
     def _d2(self, x, y, fx, fy):
@@ -2094,10 +2095,11 @@ class Peds:
 
 # ===================================================================== traffic
 class Car:
-    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "stn", "dwell", "stn_t", "trh", "tra", "lcd", "nx2", "goff", "tgz", "tpitch", "troll", "uid", "goal", "rerouted", "turnaround", "indicator", "indicator_t", "health", "honk_t", "rev_box")
+    __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "stn", "dwell", "stn_t", "trh", "tra", "lcd", "nx2", "goff", "tgz", "tpitch", "troll", "uid", "goal", "rerouted", "turnaround", "indicator", "indicator_t", "health", "honk_t", "rev_box", "creep")
     def __init__(self):
         self.cab = random.random() < 0.25       # one in four has its radio on (heard muffled from outside)
         self.stuck = 0.0
+        self.creep = -1            # edge on which this car, standing at the line, may edge into the junction with a tighter exit gap
         self.ghost = 0.0
         self.braking = False
         self.indicator, self.indicator_t = 0, 0.0
@@ -3301,7 +3303,10 @@ class Traffic:
     def _exit_clearance(self, c):
         incoming, outgoing = self.w.edges[c.e], self.w.edges[c.nxt[0]]
         start = outgoing["a" if c.nxt[1] == 1 else "b"]
-        return max(incoming["w"] * 0.5, self.junctions.get(start, 0.0)) + 2.0 * vehicles.HALF_L[c.kind] + 1.0
+        box = max(incoming["w"] * 0.5, self.junctions.get(start, 0.0))
+        if c.creep == c.e:                                      # standing at the line: the body only has to fit clear of the junction box itself (cross flow is checked separately)
+            return box + vehicles.HALF_L[c.kind] + 0.5
+        return box + 2.0 * vehicles.HALF_L[c.kind] + 1.0
 
     def _exit_slots(self, c):
         """Directed lanes and distances needed to get the whole vehicle out of the junction."""
@@ -3389,6 +3394,8 @@ class Traffic:
             red = self._red_rem(c, self.w.edges[c.e]["len"], self.signals)
             if c.nxt is None or (red is not None and -2.5 < red < rem):
                 continue
+            if self.CREEP and c.v < 0.5 and c.creep != c.e and (red is None or red < -2.5 or red > 60.0):     # stopped at the line (no timer): may edge in if the body fits
+                c.creep = c.e
             slots = self._exit_slots(c)
             if not self._exit_complete(c, slots):
                 planned = list(c.nx2 or ())
