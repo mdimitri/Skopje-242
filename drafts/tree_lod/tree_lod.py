@@ -16,22 +16,35 @@ def anchor_cards(m, base, d, size, col, rnd, kind, n=2, shade=1.0):
         card(m, base, right, dd*size*.5*rnd.uniform(.9, 1.15), (kind, rnd.randint(0, 3)), tuple(int(c*shade) for c in jit(col, rnd, .1)))
 
 def crown_tree(m, top, cr, ch, nl, spr, lvl, rnd, bark, col, kind, droop=0.0, low=False):
-    """Limbs fan out of the trunk top, split twice; every tip (and some mid-limb points) carries a rooted sprite cluster."""
+    """Imperfect crown: limbs of uneven length and angle, a heavy side, gaps and bare limbs; sprites sit on tips AND along the limbs,
+    so leaves reach down into the middle of the crown instead of only capping it."""
     ns = 4; depth = 1 if lvl == 3 else 2; top = np.array(top, float)
-    def limb(p, d, ln, r, dp):
-        e = p+d*ln; cyl(m, p, e, r, r*.6, ns, bark)
+    bias = unit([rnd.uniform(-1, 1), 0, rnd.uniform(-1, 1)]); bias_k = rnd.uniform(.05, .2)          # one side grows heavier
+    def cl(p, f, d, size, shade, n=2):
+        q = p+d*0                                           # (kept for readability)
+        anchor_cards(m, q, d, size*rnd.uniform(.6, 1.3), col, rnd, kind, n, shade*rnd.uniform(.8, 1.0))
+    def limb(p, d, ln, r, dp, bare):
+        ln *= rnd.uniform(.75, 1.25); e = p+d*ln; cyl(m, p, e, r, r*.6, ns, bark)
+        fo = np.linalg.norm((e-top)*[1, 1.4, 1])/(cr*1.1+1e-9)
+        if not bare:
+            for f in ((.25, .5, .75) if dp >= 1 else (.4, .7)):    # sprites along the limb, pointing outward-up at random angles, so the mid crown is leafy too
+                if rnd.random() < .7:
+                    side = unit(d+np.array([rnd.uniform(-.8, .8), rnd.uniform(-.3, .5), rnd.uniform(-.8, .8)]))
+                    cl(p+(e-p)*f, f, side, cr*rnd.uniform(.22, .38), .62+.3*min(1, fo), 1 if lvl == 3 else 2)
         if dp == 0:
-            f = (np.linalg.norm((e-top)*[1, 1.6, 1])/(cr*1.1+1e-9)); anchor_cards(m, e, d+np.array([0, droop, 0]), cr*.55, col, rnd, kind, 2 if lvl == 3 else 3, .75+.3*min(1, f)); return
-        if dp == 1 and lvl == 4:                            # mid-limb sprites on the last-but-one segments
-            anchor_cards(m, p+(e-p)*.7, unit(d+np.array([0, .3, 0])+np.array([rnd.uniform(-.6, .6), 0, rnd.uniform(-.6, .6)])), cr*.4, col, rnd, kind, 2, .7)
+            if not bare and rnd.random() > .1:              # a few tips are left bare / broken
+                cl(e, 1, d+np.array([0, droop, 0]), cr*.48, .75+.3*min(1, fo), 2 if lvl == 3 else 3)
+            return
         for k in range(2 if dp <= 1 else 3):
-            a = rnd.uniform(0, 6.28); t = rnd.uniform(.5, .95)
-            nd = unit(d*math.cos(t)+np.array([math.cos(a), 0, math.sin(a)])*math.sin(t)+np.array([0, .15, 0]))
-            limb(e, nd, ln*rnd.uniform(.62, .78), r*.62, dp-1)
+            a = rnd.uniform(0, 6.28); t = rnd.uniform(.35, 1.1)
+            nd = unit(d*math.cos(t)+np.array([math.cos(a), 0, math.sin(a)])*math.sin(t)+np.array([0, rnd.uniform(-.1, .3), 0])+bias*bias_k)
+            limb(e, nd, ln*rnd.uniform(.55, .85), r*.62, dp-1, bare or rnd.random() < .04)
     for i in range(nl):
-        a = 6.28*i/nl+rnd.uniform(-.3, .3); el = rnd.uniform(.6, 1.1) if not low else rnd.uniform(.2, .5)
-        d = unit([math.cos(a)*math.cos(el)*spr*1.2, math.sin(el)+.2, math.sin(a)*math.cos(el)*spr*1.2])
-        limb(top, d, cr*(.62 if not low else .7), .13, depth)
+        a = 6.28*i/nl+rnd.uniform(-.5, .5); el = rnd.uniform(.35, 1.2) if not low else rnd.uniform(.1, .5)
+        d = unit([math.cos(a)*math.cos(el)*spr*1.2, math.sin(el)+.15, math.sin(a)*math.cos(el)*spr*1.2]+bias*bias_k)
+        limb(top, d, cr*rnd.uniform(.4, .72)*(1.0 if not low else 1.15), .13, depth, rnd.random() < .03)
+    for i in range(rnd.randint(2, 3)):                      # leafy shoots straight off the upper trunk
+        cl(top+np.array([rnd.uniform(-.4, .4), rnd.uniform(-.6, .9), rnd.uniform(-.4, .4)]), 0, unit([rnd.uniform(-1, 1), rnd.uniform(.2, .9), rnd.uniform(-1, 1)]), cr*.45, .6, 2)
 
 LEAFKIND = {"willow": "narrow"}
 def _leaf_pts(kind, ln, wd, r):
@@ -304,12 +317,12 @@ def tree(species, lvl, seed=7, season=0, cards=True):
         th = H*p["tf"]; cr = R; ch = cr*p["ry"]*p["aspect"]
         cx, cz = lx+ax*.3, lz+az*.3; cy = th+ch*.85
         if cards and lvl >= 3:
-            top = (lx, th+.5, lz); cyl(m, (0,0,0), top, .25, .13, ns, bark)
+            top = (lx, th*.85+.3, lz); cyl(m, (0,0,0), top, .25, .13, ns, bark)
             crown_tree(m, top, cr, ch, p["nl"], p["spr"], lvl, rnd, bark, col, p.get('leaf', 'ovate'), low=(species == "oldpine"))
         elif lvl == 1:
-            cyl(m, (0,0,0), (lx, th, lz), .17, .12, ns, bark); blob(m, (cx, cy, cz), cr, ch, cr, 0, col, rnd)
+            cyl(m, (0,0,0), (lx, th, lz), .17, .12, ns, bark); blob(m, (cx, cy, cz), cr*.88, ch*.88, cr*.88, 0, col, rnd)
         elif lvl == 2:
-            cyl(m, (0,0,0), (lx, th+.8, lz), .22, .1, ns, bark); blob(m, (cx, cy, cz), cr, ch, cr, 1, col, rnd, .1)
+            cyl(m, (0,0,0), (lx, th+.8, lz), .22, .1, ns, bark); blob(m, (cx, cy, cz), cr*.9, ch*.9, cr*.9, 1, col, rnd, .12)
         elif lvl == 3:
             cyl(m, (0,0,0), (lx, th+.8, lz), .24, .1, ns, bark)
             n = p["nl"]
