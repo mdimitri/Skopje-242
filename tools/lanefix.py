@@ -81,10 +81,72 @@ def dips(edges, chain_list, max_len=250.0):
     return found
 
 
-def repair(edges):
-    """Raise lane dips to the lower of their two neighbours (width follows).  Returns the number of edges changed."""
-    ch = chains(edges, through_pairs(edges))
+def _oriented(edges, ch):
+    """For every edge of a chain: True when its stored direction runs along the chain (a -> b)."""
+    fwd = []
+    for k, i in enumerate(ch):
+        e = edges[i]
+        if len(ch) == 1:
+            fwd.append(True)
+        elif k + 1 < len(ch):
+            o = edges[ch[k + 1]]
+            fwd.append(e["b"] in (o["a"], o["b"]))
+        else:
+            p = edges[ch[k - 1]]
+            fwd.append(e["a"] in (p["a"], p["b"]))
+    return fwd
+
+
+def _copy_profile(edges, dst, src, same_way):
+    """Give edge dst the lane layout of edge src (carriageway width, lane counts; the turn tag no longer fits)."""
+    d, s = edges[dst], edges[src]
+    d["w"], d["lanes"] = s["w"], s.get("lanes", 0)
+    dl = s.get("directional_lanes")
+    d["directional_lanes"] = (dl if same_way else dl[::-1]) if dl else None
+    d["turn"] = ("", "")
+
+
+def harmonize(edges, short=300.0):
+    """A through road keeps its carriageway: a stretch of at most `short` m that is narrower than both neighbours takes
+    the narrower neighbour's layout; a stretch that is wider than both neighbours, with no turn lanes marked, takes the
+    wider one's.  Class changes bound a chain.  Returns the number of edges changed."""
     changed = 0
+    for _ in range(4):
+        moved = 0
+        for ch in chains(edges, through_pairs(edges)):
+            fwd = _oriented(edges, ch)
+            k = 0
+            while k < len(ch):
+                j = k
+                while j + 1 < len(ch) and abs(edges[ch[j + 1]]["w"] - edges[ch[k]]["w"]) < 0.5 \
+                        and edges[ch[j + 1]]["cls"] == edges[ch[k]]["cls"]:
+                    j += 1
+                if 0 < k and j < len(ch) - 1:
+                    a, b, run = ch[k - 1], ch[j + 1], ch[k:j + 1]
+                    wa, wb, w = edges[a]["w"], edges[b]["w"], edges[ch[k]]["w"]
+                    base = lambda q: edges[q]["cls"].replace("_link", "")
+                    if base(a) == base(run[0]) == base(b) and sum(edges[i]["len"] for i in run) <= short:
+                        src = None
+                        if wa > w + 0.5 and wb > w + 0.5:
+                            src = (a, k - 1) if wa <= wb else (b, j + 1)
+                        elif wa < w - 0.5 and wb < w - 0.5 and not any(any(edges[i].get("turn", ("", ""))) for i in run):
+                            src = (a, k - 1) if wa >= wb else (b, j + 1)
+                        if src:
+                            for q, i in enumerate(run):
+                                _copy_profile(edges, i, src[0], fwd[k + q] == fwd[src[1]])
+                            moved += len(run)
+                k = j + 1
+        changed += moved
+        if not moved:
+            break
+    return changed
+
+
+def repair(edges):
+    """Level the lane count along through roads (see harmonize), then raise any lane dips left.  Returns the number of
+    edges changed."""
+    changed = harmonize(edges)
+    ch = chains(edges, through_pairs(edges))
     for _ in range(3):
         d = dips(edges, ch)
         if not d:

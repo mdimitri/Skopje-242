@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 75
+VERSION = 76
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2585,7 +2585,7 @@ def main():
                                   "directional_lanes": rd.get("directional_lanes"), "sidewalk_sides": rd.get("sidewalk_sides")})
                 start = i
     import lanefix
-    print(f"[build] lane dips repaired: {lanefix.repair(edges)} edges")
+    print(f"[build] lane steps levelled: {lanefix.repair(edges)} edges")
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
     frac(0.95, "rounded corners")

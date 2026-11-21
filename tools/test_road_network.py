@@ -54,6 +54,13 @@ class RoadNetworkTests(unittest.TestCase):
         right = edge(1, 2, (0, 0), (30, 0), ow=True)
         self.assertEqual(lanefix.through_pairs([left, right]), {(0, 1): 1, (1, 1): 0})
 
+    def test_short_narrow_stretch_of_a_boulevard_takes_the_neighbour_layout(self):
+        wide = dict(w=14.0, lanes=4, directional_lanes=(2, 2))
+        edges = [edge(0, 1, (0, 0), (100, 0), **wide), edge(1, 2, (100, 0), (130, 0), w=7.0),
+                 edge(2, 3, (130, 0), (230, 0), **wide)]
+        self.assertEqual(lanefix.harmonize(edges), 1)
+        self.assertEqual((edges[1]["w"], edges[1]["directional_lanes"]), (14.0, (2, 2)))
+
     def test_submetre_links_weld_without_merging_elevations(self):
         main = road((0, 1, 2, 3), ((0, 0), (10, 0), (10.7, 0), (20, 0)))
         access = road((1, 4), ((10, 0), (10, 9)))
