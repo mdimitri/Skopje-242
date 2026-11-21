@@ -1225,7 +1225,6 @@ def _PED_R(p):
 
 
 class Peds:
-    CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
     extra = ()                                     # multiplayer: other players this PC simulates the world for (x, y)
 
     def _d2(self, x, y, fx, fy):
@@ -2655,6 +2654,7 @@ class Traffic:
         return True
 
     SQUEEZE_V = 3.0
+    CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
 
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2, heading=None, include_cars=True):
         """Gap to the nearest thing in front of car c (or, moved by (ox, oy) / turned round, where it could go); the thing
