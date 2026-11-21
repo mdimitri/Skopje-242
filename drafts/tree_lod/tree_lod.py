@@ -4,21 +4,83 @@ import math, random, sys
 import numpy as np
 from PIL import Image, ImageDraw
 
-def leaf_tex(n=128, leaves=34, seed=1, size=(.09, .17)):
-    """Procedural alpha leaf-cluster sprite: (lightness 0..255, alpha 0/255). Tinted by the card's colour at draw time."""
-    r = random.Random(seed); L = Image.new("L", (n, n), 0); A = Image.new("L", (n, n), 0); dl, da = ImageDraw.Draw(L), ImageDraw.Draw(A)
-    tw = [(n*.5, n*.98), (n*.5+r.uniform(-.1, .1)*n, n*.55), (n*.5+r.uniform(-.2, .2)*n, n*.15)]
-    dl.line(tw, fill=70, width=2); da.line(tw, fill=255, width=2)
-    for _ in range(leaves):
-        t = r.random(); cx = n*.5+(tw[2][0]-n*.5)*t*r.uniform(0, 1.6)+r.uniform(-.3, .3)*n*(1-.4*t); cy = n*(.95-.85*t)+r.uniform(-.05, .05)*n
-        ln = r.uniform(*size)*n; wd = ln*r.uniform(.4, .6); a = r.uniform(0, 6.28); ca, sa = math.cos(a), math.sin(a)
-        poly = [(cx+ca*ln*x-sa*wd*y, cy+sa*ln*x+ca*wd*y) for x, y in ((-1, 0), (-.3, .9), (.6, .8), (1, 0), (.6, -.8), (-.3, -.9))]
-        dl.polygon(poly, fill=int(r.uniform(120, 255))); da.polygon(poly, fill=255)
-    return np.array(L, np.uint8), np.array(A, np.uint8)
+LEAFKIND = {"willow": "narrow"}
+def _leaf_pts(kind, ln, wd, r):
+    """Outline of one leaf, base at (0,0) pointing +x, as polygon points."""
+    n = 28; up, dn = [], []
+    for i in range(n+1):
+        x = i/n
+        if kind == "ovate":   w = math.sin(math.pi*x**.75)**.9*(1.0 if x > .1 else .6+x*4)         # heart-ish base, pointed tip
+        elif kind == "lobed": w = math.sin(math.pi*x)**.7*(.62+.38*math.cos(x*5.2*math.pi+.6))
+        elif kind == "serrate": w = math.sin(math.pi*x**.8)*(.85+.15*(1 if (i % 2) else -1))      # saw-tooth edge
+        elif kind == "narrow": w = math.sin(math.pi*x**.9)*.3
+        elif kind == "round": w = math.sin(math.pi*x**.9)**.55*(1.0 if x > .12 else .5+x*4)       # near-circular, heart base (Judas tree, mulberry)
+        else: w = math.sin(math.pi*x)
+        up.append((x*ln, w*wd)); dn.append((x*ln, -w*wd))
+    return up+dn[::-1]
+
+def leaf_tex(kind, variant, n=192):
+    """Procedural alpha foliage sprite, drawn at 2x and filtered down: (lightness 0..255, alpha 0..255). Tinted at draw time."""
+    r = random.Random(hash((kind, variant)) & 0xffff); S = n*2
+    L = Image.new("L", (S, S), 0); A = Image.new("L", (S, S), 0); dl, da = ImageDraw.Draw(L), ImageDraw.Draw(A)
+    def rot(pts, ox, oy, a): ca, sa = math.cos(a), math.sin(a); return [(ox+ca*x-sa*y, oy+sa*x+ca*y) for x, y in pts]
+    def twig(x0, y0, ang, ln, lvl):                        # recursive twig; leaves sit on the tips and along it
+        x1, y1 = x0+math.cos(ang)*ln, y0+math.sin(ang)*ln
+        dl.line([(x0, y0), (x1, y1)], fill=55, width=max(2, int(5-lvl*1.6))); da.line([(x0, y0), (x1, y1)], fill=255, width=max(2, int(5-lvl*1.6)))
+        return x1, y1
+    sz = {"palmate": (.2, .2), "palmcomp": (.22, .2), "round": (.14, .13), "ovate": (.17, .15), "lobed": (.2, .13), "serrate": (.11, .09), "narrow": (.26, .05), "pinnate": (.07, .05), "needles": (.2, .012)}[kind]
+    dens = r.randint(26, 42) if kind not in ("pinnate", "needles", "palmate", "palmcomp") else r.randint(7, 12)
+    curve = r.uniform(-.35, .35); ang = -math.pi/2+r.uniform(-.2, .2); x, y = S*.5, S*.97; pts = [(x, y)]
+    seg = S*.82/4
+    for _ in range(4):                                     # main twig, slightly bowed
+        ang += curve*.3; x, y = twig(x, y, ang, seg, 0); pts.append((x, y))
+    leaves = []
+    for i in range(dens):
+        t = r.random(); k = min(3, int(t*4)); bx, by = pts[k]; ex, ey = pts[k+1]; f = t*4-k
+        px, py = bx+(ex-bx)*f, by+(ey-by)*f; side = r.choice((-1, 1)) if kind != "needles" else r.choice((-1, 1))
+        la = math.atan2(ey-by, ex-bx)+side*r.uniform(.5, 1.3); ln_ = S*sz[0]*r.uniform(.75, 1.3)*(1.15-.5*t*.0)
+        leaves.append((t, px, py, la, ln_))
+    if kind not in ("pinnate", "needles"):
+        for _ in range(r.randint(1, 2)):                    # side twigs for body
+            k = r.randint(1, 3); bx, by = pts[k]; a2 = ang+r.choice((-1, 1))*r.uniform(.6, 1.1); ex, ey = twig(bx, by, a2, seg*r.uniform(.8, 1.4), 1)
+            for _ in range(dens//3): leaves.append((r.random(), ex+r.uniform(-.06, .06)*S, ey+r.uniform(-.06, .06)*S, a2+r.uniform(-1, 1), S*sz[0]*r.uniform(.7, 1.2)))
+    leaves.append((1, pts[-1][0], pts[-1][1], ang, S*sz[0]*1.2))                # terminal leaf
+    for t, px, py, la, ln_ in sorted(leaves, key=lambda q: q[0]):
+        shade = int(r.uniform(.45, 1.0)*255*(.7+.3*t))                           # lower / inner leaves darker, tips brighter
+        if kind == "pinnate":                               # compound leaf: rachis with paired leaflets
+            ex, ey = px+math.cos(la)*ln_*1.7, py+math.sin(la)*ln_*1.7; dl.line([(px, py), (ex, ey)], fill=70, width=3); da.line([(px, py), (ex, ey)], fill=255, width=3)
+            for q in range(7):
+                f = (q+1)/8
+                for sd in (-1, 1):
+                    c = (px+(ex-px)*f, py+(ey-py)*f); poly = rot([(0, 0), (S*.03, S*.012), (S*.06, 0), (S*.03, -S*.012)], c[0], c[1], la+sd*1.1)
+                    dl.polygon(poly, fill=int(shade*r.uniform(.8, 1.0))); da.polygon(poly, fill=255)
+            continue
+        if kind == "needles":                               # a spray of needles fanning out of the twig
+            for q in range(10):
+                a3 = la+r.uniform(-.8, .8); l3 = ln_*r.uniform(.5, 1.0); ex, ey = px+math.cos(a3)*l3, py+math.sin(a3)*l3
+                dl.line([(px, py), (ex, ey)], fill=int(shade*r.uniform(.7, 1)), width=3); da.line([(px, py), (ex, ey)], fill=255, width=3)
+            continue
+        if kind in ("palmate", "palmcomp"):                  # plane / maple: 5 pointed lobes from one base; chestnut: 7 long leaflets
+            nl = 5 if kind == "palmate" else 7
+            for q in range(nl):
+                a4 = la+(q-(nl-1)/2)*(.62 if kind == "palmate" else .42); l4 = ln_*(1.0-.22*abs(q-(nl-1)/2)/((nl-1)/2)*(1 if kind == "palmate" else .5))
+                poly = rot(_leaf_pts("serrate" if kind == "palmate" else "ovate", l4, l4*(.26 if kind == "palmate" else .3), r), px, py, a4)
+                dl.polygon(poly, fill=int(shade*r.uniform(.85, 1.0))); da.polygon(poly, fill=255); dl.line(rot([(0, 0), (l4*.9, 0)], px, py, a4), fill=min(255, shade+55), width=2)
+            continue
+        poly = rot(_leaf_pts(kind, ln_, ln_*sz[1]/sz[0]*r.uniform(.85, 1.15), r), px, py, la)
+        dl.polygon(poly, fill=shade); da.polygon(poly, fill=255)
+        mid = rot([(0, 0), (ln_*.92, 0)], px, py, la)                             # midrib and side veins, lighter than the blade
+        dl.line(mid, fill=min(255, shade+60), width=2)
+        for q in range(1, 5):
+            vx = ln_*q*.2
+            for for_ in (-1, 1):
+                dl.line(rot([(vx, 0), (vx+ln_*.14, for_*ln_*sz[1]/sz[0]*.55)], px, py, la), fill=min(255, shade+35), width=1)
+    Li, Ai = L.resize((n, n), Image.LANCZOS), A.resize((n, n), Image.LANCZOS)
+    return np.array(Li, np.uint8), np.array(Ai, np.uint8)
 _TEX = {}
-def tex(seed):
-    if seed not in _TEX: _TEX[seed] = leaf_tex(seed=seed)
-    return _TEX[seed]
+def tex(key):
+    if key not in _TEX: _TEX[key] = leaf_tex(*key)
+    return _TEX[key]
 
 def card(m, c, right, up, t, col):
     """One alpha-tested leaf-cluster quad = 2 triangles"""
@@ -26,12 +88,12 @@ def card(m, c, right, up, t, col):
     q = [c-right, c+right, c+right+up*2, c-right+up*2]
     m.card.append((q, t, col)); m.ncard += 2
 
-def cards_at(m, c, size, n, col, rnd, seedtex, flat=False):
+def cards_at(m, c, size, n, col, rnd, kind, flat=False):
     for i in range(n):
         a = math.pi*i/n+rnd.uniform(-.3, .3); tilt = rnd.uniform(-.5, .5)
         right = np.array([math.cos(a), 0, math.sin(a)])*size*.5; up = np.array([math.sin(a)*tilt*.5, 1, -math.cos(a)*tilt*.5]); up = up/np.linalg.norm(up)*size*.5
         if flat: up = np.array([0, 0, 0.]) + np.array([-math.sin(a), 0, math.cos(a)])*size*.5
-        card(m, np.array(c)-up*(0 if flat else 1)*1.0, right, up, seedtex, jit(col, rnd, .1))
+        card(m, np.array(c)-up*(0 if flat else 1)*1.0, right*rnd.uniform(.8, 1.2), up*rnd.uniform(.8, 1.2), (kind, rnd.randint(0, 3)), jit(col, rnd, .12))
 
 class M:
     def __init__(s): s.t = []; s.card = []; s.ncard = 0          # (p0,p1,p2,rgb) lit later
@@ -104,17 +166,25 @@ def mix(a, b, t): return tuple(int(x+(y-x)*t) for x, y in zip(a, b))
 GREENS = [(84,140,62),(70,128,58),(96,150,64),(110,140,52),(62,114,54),(124,150,70)]
 AUTUMN = [(196,120,40),(210,170,50),(170,70,40)]
 # species: kind, bark, leaf palette, base height, trunk fraction, crown radius / height factors
-SPECIES = {
- "spruce":   dict(kind="conifer", bark=BARK, pal=[(46,92,56),(40,84,60),(56,100,60)], h=(8,13), rad=(2.2,3.2), tiers=(8,11), droop=(.1,.3)),
- "fir":      dict(kind="conifer", bark=(80,62,48), pal=[(34,80,62),(44,90,70)], h=(9,15), rad=(1.6,2.2), tiers=(10,14), droop=(.05,.15)),
+SPECIES = {   # Skopje / Balkan street, park, riverside and hill trees
+ "spruce":   dict(kind="conifer", bark=BARK, pal=[(46,92,56),(40,84,60),(56,100,60)], h=(8,14), rad=(2.2,3.2), tiers=(8,11), droop=(.1,.3)),
+ "blackpine":dict(kind="conifer", bark=(76,58,46), pal=[(38,78,50),(46,88,52)], h=(9,16), rad=(2.4,3.4), tiers=(6,9), droop=(0,.1)),
+ "cedar":    dict(kind="conifer", bark=(90,70,56), pal=[(52,98,80),(60,106,88)], h=(9,15), rad=(3.2,4.4), tiers=(5,7), droop=(.3,.5)),
  "cypress":  dict(kind="column", bark=(100,80,60), pal=[(40,86,52),(48,96,56)], h=(8,14), rad=(.8,1.3), tf=.08),
- "poplar":   dict(kind="column", bark=BARK, pal=[(70,130,58),(84,140,62)], h=(11,16), rad=(1.1,1.7), tf=.2),
- "lime":     dict(kind="broad", bark=BARK, pal=GREENS, h=(7,11), rad=(3,4.4), ry=.8, tf=.3, lumps=(5,7), spread=(.8,1.1)),
- "oak":      dict(kind="broad", bark=(84,66,50), pal=[(72,118,52),(86,126,50),(96,120,48)], h=(8,12), rad=(4,5.6), ry=.62, tf=.26, lumps=(6,9), spread=(1.0,1.3)),
- "birch":    dict(kind="broad", bark=(228,228,220), pal=[(96,150,64),(110,160,70)], h=(8,12), rad=(2.4,3.3), ry=.9, tf=.38, lumps=(4,6), spread=(.7,1.0)),
- "acacia":   dict(kind="broad", bark=(78,64,52), pal=[(104,140,60),(120,150,66)], h=(6,9), rad=(3.2,4.4), ry=.38, tf=.5, lumps=(5,7), spread=(1.0,1.3)),
- "willow":   dict(kind="weep", bark=(86,72,54), pal=[(120,150,70),(132,158,76)], h=(7,10), rad=(3.4,4.6), tf=.3),
- "stonepine":dict(kind="broad", bark=(110,76,52), pal=[(58,104,56),(66,112,58)], h=(8,12), rad=(3.5,4.8), ry=.28, tf=.68, lumps=(5,7), spread=(1.0,1.4)),
+ "poplar":   dict(kind="column", bark=BARK, pal=[(70,130,58),(84,140,62)], h=(11,18), rad=(1.1,1.7), tf=.2),
+ "plane":    dict(kind="broad", bark=(150,142,122), pal=[(98,142,60),(108,150,64)], h=(12,20), rad=(4.5,6.2), ry=.62, tf=.32, lumps=(7,10), spread=(1.0,1.3), fall=[(200,150,50),(176,120,40),(150,100,40)], leaf="palmate"),
+ "linden":   dict(kind="broad", bark=(90,76,62), pal=[(80,134,58),(90,142,62)], h=(10,16), rad=(3.2,4.6), ry=.85, tf=.3, lumps=(6,8), spread=(.8,1.1), fall=[(210,180,60),(190,150,50)], leaf="ovate"),
+ "chestnut": dict(kind="broad", bark=(84,66,52), pal=[(52,104,48),(60,112,50)], h=(10,15), rad=(3.6,5), ry=.8, tf=.3, lumps=(6,8), spread=(.9,1.1), fall=[(190,110,40),(160,80,36)], leaf="palmcomp"),
+ "locust":   dict(kind="broad", bark=(70,58,50), pal=[(116,150,70),(126,158,76)], h=(10,16), rad=(3,4.2), ry=.7, tf=.4, lumps=(5,7), spread=(.9,1.2), fall=[(220,200,70),(200,170,50)], leaf="pinnate"),
+ "ailanthus":dict(kind="broad", bark=(110,100,88), pal=[(96,138,62),(106,146,66)], h=(8,14), rad=(3,4.4), ry=.7, tf=.36, lumps=(5,7), spread=(1.0,1.3), fall=[(200,170,60)], leaf="pinnate"),
+ "oak":      dict(kind="broad", bark=(84,66,50), pal=[(72,118,52),(86,126,50),(96,120,48)], h=(8,13), rad=(4,5.6), ry=.62, tf=.26, lumps=(6,9), spread=(1.0,1.3), fall=[(170,110,40),(150,90,40)], leaf="lobed"),
+ "walnut":   dict(kind="broad", bark=(96,88,78), pal=[(84,128,56),(92,136,58)], h=(9,14), rad=(4,5.5), ry=.75, tf=.3, lumps=(6,8), spread=(1.0,1.2), fall=[(200,170,60),(170,130,50)], leaf="pinnate"),
+ "maple":    dict(kind="broad", bark=(92,80,68), pal=[(90,140,56),(100,148,60)], h=(8,13), rad=(3,4.2), ry=.8, tf=.34, lumps=(5,7), spread=(.8,1.1), fall=[(196,60,36),(210,110,40),(220,170,50)], leaf="palmate"),
+ "judas":    dict(kind="broad", bark=(72,56,48), pal=[(86,130,70),(94,138,74)], h=(5,8), rad=(2.4,3.4), ry=.8, tf=.3, lumps=(4,6), spread=(.9,1.2), fall=[(220,190,70),(200,150,60)], leaf="round"),
+ "mulberry": dict(kind="broad", bark=(98,84,70), pal=[(100,144,60),(110,152,64)], h=(6,10), rad=(3,4.2), ry=.85, tf=.3, lumps=(5,7), spread=(.8,1.1), fall=[(220,200,70)], leaf="round"),
+ "birch":    dict(kind="broad", bark=(228,228,220), pal=[(96,150,64),(110,160,70)], h=(8,12), rad=(2.4,3.3), ry=.9, tf=.38, lumps=(4,6), spread=(.7,1.0), fall=[(220,190,60)], leaf="serrate"),
+ "willow":   dict(kind="weep", bark=(86,72,54), pal=[(120,150,70),(132,158,76)], h=(7,11), rad=(3.4,4.6), tf=.3, fall=[(200,180,70)]),
+ "oldpine":  dict(kind="broad", bark=(110,76,52), pal=[(58,104,56),(66,112,58)], h=(9,14), rad=(3.5,4.8), ry=.28, tf=.68, lumps=(5,7), spread=(1.0,1.4), leaf="needles"),
  "dead":     dict(kind="dead", bark=(80,66,54), h=(5,9), rad=(1.6,2.6), tf=.5),
 }
 
@@ -134,7 +204,7 @@ def params(species, seed):
     """Everything that varies between two trees of one species, drawn from the seed (same for every LOD)."""
     sp = SPECIES[species]; r = random.Random(seed*7919+13); u = lambda ab: r.uniform(*ab)
     p = dict(sp); p["H"] = u(sp["h"]); p["R"] = u(sp["rad"]); p["lean"] = (r.uniform(-.1, .1)*p["H"], r.uniform(-.1, .1)*p["H"])
-    p["col"] = jit(r.choice(AUTUMN) if sp["kind"] in ("broad", "weep") and r.random() < .1 else (r.choice(sp["pal"]) if "pal" in sp else BARK), r, .08)
+    p["col"] = jit(r.choice(sp.get("fall", AUTUMN)) if sp["kind"] in ("broad", "weep") and r.random() < .1 else (r.choice(sp["pal"]) if "pal" in sp else BARK), r, .08)
     p["bark"] = jit(sp["bark"], r, .12); p["asym"] = (r.uniform(-.25, .25)*p["R"], r.uniform(-.25, .25)*p["R"])
     p["aspect"] = r.uniform(.85, 1.2); p["nl"] = r.randint(*sp["lumps"]) if "lumps" in sp else 0
     p["spr"] = u(sp["spread"]) if "spread" in sp else 1.0; p["ntier"] = r.randint(*sp["tiers"]) if "tiers" in sp else 0
@@ -143,14 +213,14 @@ def params(species, seed):
 
 FALL = {0: None, 1: dict(t=.45, drop=0.0), 2: dict(t=.95, drop=0.0), 3: dict(t=1.0, drop=.3)}   # summer, early, full, late fall
 FALLCOLS = [(196,120,40),(210,170,50),(170,70,40),(184,140,44),(150,60,36)]
-def tree(species, lvl, seed=7, season=0, cards=False):
+def tree(species, lvl, seed=7, season=0, cards=True):
     p = params(species, seed)
-    ever = p["kind"] in ("conifer", "column") and species != "poplar"
+    ever = p["kind"] in ("conifer", "column") and species not in ("poplar",)
     f = FALL[season] if not ever else None
     SEA.update(on=bool(f))
     if f:
-        r0 = random.Random(seed*31+5); base = r0.choice(FALLCOLS)
-        SEA.update(f, cols=[base, mix(base, r0.choice(FALLCOLS), .5), r0.choice(FALLCOLS)])
+        r0 = random.Random(seed*31+5); fc = p.get('fall') or FALLCOLS; base = r0.choice(fc)
+        SEA.update(f, cols=[base, mix(base, r0.choice(fc), .5), r0.choice(fc)])
     rnd = random.Random(p["seed"]); m = M(); k = p["kind"]
     H, R, col, bark = p["H"], p["R"], p["col"], p["bark"]; lx, lz = p["lean"]; ax, az = p["asym"]
     ns = (4, 6, 8, 8)[lvl-1]
@@ -196,7 +266,7 @@ def tree(species, lvl, seed=7, season=0, cards=False):
         th = H*p["tf"]; cr = R; ch = cr*p["ry"]*p["aspect"]
         cx, cz = lx+ax*.3, lz+az*.3; cy = th+ch*.85
         if cards and lvl >= 3:
-            ts = rnd.randint(1, 3)
+            ts = p.get('leaf', 'ovate')
             if lvl == 3:
                 cyl(m, (0,0,0), (lx, th+.8, lz), .24, .1, ns, bark)
                 blob(m, (cx, cy, cz), cr*.7, ch*.55, cr*.7, 0, mix(col, (30, 50, 25), .35), rnd)       # dark inner core so the sprites don't show daylight
@@ -278,7 +348,7 @@ if __name__ == "__main__":
             for l in range(1, 5):
                 m = tree(s_, l); print(s_, l, "tris", m.n()); sheet.paste(render(m, W, H, ymax=16), (110+(l-1)*W, r*H))
     elif mode == "cards":                                   # per row: lumps L3, cards L3, lumps L4, cards L4
-        sp_ = ["lime", "oak", "birch", "acacia"]; sheet = Image.new("RGB", (W*4+110, H*len(sp_)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
+        sp_ = ["plane", "linden", "chestnut", "locust", "maple", "judas"]; sheet = Image.new("RGB", (W*4+110, H*len(sp_)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
         for r, s_ in enumerate(sp_):
             for q, (l, c) in enumerate(((3, False), (3, True), (4, False), (4, True))):
                 m = tree(s_, l, 3, 0, c); sheet.paste(render(m, W, H, ymax=16), (110+q*W, r*H)); dr.text((112+q*W, r*H+4), f"{s_} L{l} {'cards' if c else 'lumps'} {m.n()} tris", fill=(0, 0, 0)); print(s_, l, c, m.n())
