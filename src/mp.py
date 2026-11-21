@@ -72,7 +72,7 @@ class Session:
 
     def _info(self):
         return {"id": self.gid, "name": self.players[0]["name"], "n": len(self.players), "max": MAX_PLAYERS, "ver": VER,
-                "port": self.net.port, "addr": list(self.pub) if self.pub else None, "st": self.state}
+                "port": self.net.port, "laddr": _lan_ip(), "addr": list(self.pub) if self.pub else None, "st": self.state}
 
     # ------------------------------------------------------------------ guest
     def browse(self):
@@ -105,6 +105,7 @@ class Session:
         self._t0 = time.monotonic()
         self._notice = 0.0
         self._mine = None
+        self._game = game
         net.log("guest: joining %s (%s) at %s:%d, ver %d, notice board %s" % (
             game.get("name"), "LAN" if game.get("lan") else "internet", addr[0], addr[1], VER,
             "connected to " + self.mqtt.connected if self.mqtt and self.mqtt.connected else "OFFLINE"))
@@ -119,7 +120,12 @@ class Session:
         mine = discovery.stun_addr(self.net.sock)
         self._mine, self._hid = mine, hid
         net.log("guest: my public address %s%s" % (mine, "" if mine else " (STUN failed: the host cannot be told where to punch)"))
-        if mine:
+        la = self._game.get("laddr")
+        if mine and la and mine[0] == addr[0]:       # same public IP = same router: most routers cannot loop back, use the LAN address
+            addr = self._target = (la, int(self._game.get("port", addr[1])))
+            self.net.follow[addr[0]] = addr
+            net.log("guest: host is behind the same router (%s), connecting to its LAN address %s:%d" % (mine[0], addr[0], addr[1]))
+        elif mine:
             self.mqtt.publish("join/" + hid, {"addr": list(mine)})
             self._notice = time.monotonic()
         self.net.add_peer(addr)
@@ -210,7 +216,7 @@ class Session:
                     self._target + (bool(self._mine),)))
             elif self.net.peers.get(self._target) is not None:
                 self.net.hello(self._target, b"")
-                if self._mine and self.mqtt and now - self._notice > 2:      # a single notice can be lost: repeat it
+                if self._mine and self.mqtt and self._notice and now - self._notice > 2:      # a single notice can be lost: repeat it
                     self._notice = now
                     self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine)})
         evs = self.net.poll()
@@ -284,6 +290,19 @@ class Session:
                 self.state = "playing"
             elif t == "closed":
                 self.state, self.error = "closed", "Домаќинот ја затвори играта"
+
+
+def _lan_ip():
+    """This PC's LAN address (no packet is sent), or None."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 9))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
 
 
 def _name(n, players):

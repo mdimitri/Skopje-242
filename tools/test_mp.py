@@ -29,3 +29,16 @@ h.start(); pump([h] + g, 0.8)
 assert all(s.state == "playing" and s.start_info["spawn"] == 3 and s.start_info["ff"] for s in g[:3])
 assert len({s.start_info["seed"] for s in g[:3]}) == 1
 print("OK lobby: 4 players, deny-full, unique names, chat, colours, cfg, start")
+
+# same-router join: the host advertises its LAN address; a guest with the same public IP must use it, not the public one
+import discovery
+discovery.stun_addr = lambda sock, timeout=1.5: ("9.9.9.9", sock.getsockname()[1])
+class FakeMqtt:
+    connected = "x"
+    def publish(self, *a): pass
+h2 = mp.Session(prof("Домаќин", "h9")); h2.host(internet=False)
+g2 = mp.Session(prof("Гост", "g9")); g2.mqtt = FakeMqtt()
+g2.join({"id": "h9", "name": "x", "addr": ["9.9.9.9", 5], "laddr": "127.0.0.1", "port": h2.net.port})
+pump([h2, g2], 3, lambda: g2.state == "lobby")
+assert g2.state == "lobby", (g2.state, g2.error)
+print("OK same-router join through the LAN address")
