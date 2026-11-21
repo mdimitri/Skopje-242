@@ -84,8 +84,11 @@ def turn_lanes(edge, direction, angle):
     if not any(marked):
         return None
     move = "reverse" if abs(angle) > 2.2 else "right" if angle >= 0.5 else "left" if angle <= -0.5 else "through"
-    return [i for i, kinds in enumerate(marked) if not kinds or move in kinds or "slight_" + move in kinds
-            or "sharp_" + move in kinds or (move == "through" and bool(kinds & {"merge_to_left", "merge_to_right"}))]
+    lanes = [i for i, kinds in enumerate(marked) if not kinds or move in kinds or "slight_" + move in kinds
+             or "sharp_" + move in kinds or (move == "through" and bool(kinds & {"merge_to_left", "merge_to_right"}))]
+    if move == "through" and 0 not in lanes and marked[0] <= {"left", "slight_left", "sharp_left", "reverse"}:
+        lanes.insert(0, 0)                    # the leftmost lane may turn left and still carries on straight: it keeps its lane
+    return lanes
 
 
 def _slip_bypasses(world):

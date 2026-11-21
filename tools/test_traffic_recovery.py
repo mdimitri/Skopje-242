@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from actors import HERO, Body, Car, Ped, Peds, Sim, Traffic, Walker, _corners, _sat, drive, parts, tow, turn_radius_factor
-from driving import fastest_route, movement_lanes, turn_angle
+from driving import fastest_route, movement_lanes, turn_angle, turn_lanes
 from vehicles import ARTIC_BUS, ARTIC_HINGE, ARTIC_JACK, ARTIC_REAR_AXLE, BUS, DIMS, IDS
 from world import World
 
@@ -220,6 +220,13 @@ class TrafficRecoveryTest(unittest.TestCase):
         c.s, c.lcd = 40.0, 0.0
         tr._lane_for_turn(c, edges[1], 80.0, 0.05)
         self.assertEqual(c.lidx, 1)                            # further on it moves over for the right turn
+
+    def test_leftmost_left_turn_lane_also_carries_straight_traffic(self):
+        e = road(0, 1, (-60, 0), (0, 0), 10.5, True, lanes=3, turn=("left|through|through;right", ""))
+        self.assertEqual(turn_lanes(e, 1, 0.0), [0, 1, 2])
+        self.assertEqual(turn_lanes(e, 1, 1.5), [2])
+        e = road(0, 1, (-60, 0), (0, 0), 10.5, True, lanes=3, turn=("left|through|right", ""))
+        self.assertEqual(turn_lanes(e, 1, 0.0), [0, 1])
 
     def test_dead_end_uturn_starts_before_node_from_leftmost_lane(self):
         e = road(0, 1, (0, 0), (100, 0), 12, lanes=4)
