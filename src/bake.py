@@ -300,6 +300,8 @@ def _sphere(x0, z0, x1, z1, y0, y1):
     return ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5, 0.5 * math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2) + 1.0)
 
 
+TREE_NEAR, TREE_FAR = 3, 1                # tree detail level inside / beyond the full-detail ring (src/treegen.py)
+TREE_DOWN_AFTER = 120                    # updates a chunk must stay in the far ring before its trees drop to TREE_FAR (no flip-flop at the border)
 TREES_FROM = 78                      # world format version from which tree meshes are made at runtime (tools/build_world.py VERSION)
 
 
@@ -311,6 +313,8 @@ class Streamer:
         self.tex = tex
         self.max_ground, self.max_mesh = max_ground, max_mesh
         self.lite_keys = set()
+        self.tree_lvl = {}                       # key -> detail level of the tree meshes now loaded for the chunk (src/treegen.py)
+        self._lite_run = {}                      # key -> consecutive updates spent in the far ring (hysteresis for downgrades)
         self.stale = set()                       # chunks whose meshes are redone (a prop broke) while the old ones keep drawing
         self.detail = 2                          # the ДЕТАЛИ setting (main.py): 0 leaves out facade relief, 0-1 the clutter
         self.ground = {}      # key -> [rt, last_used]
@@ -407,7 +411,6 @@ class Streamer:
                 todo0.append(("trees", None))                    # the world stores only tree positions: their meshes are made here (src/treegen.py)
             part = self._part[key] = [{}, todo0, 1e9, -1e9, lite]
         out, todo = part[0], part[1]
-        (self.lite_keys.add if lite else self.lite_keys.discard)(key)
         processed = False
         while todo:
             if deadline is not None and (out or processed) and time.perf_counter() > deadline:
@@ -415,7 +418,7 @@ class Streamer:
             mat, (off, n) = todo.pop(0) if todo[0][0] != "trees" else (todo.pop(0)[0], (0, 0))
             processed = True
             if mat == "trees":
-                self._tree_models(key, ch, lite, out, part)
+                self._tree_models(key, ch, TREE_FAR if lite else TREE_NEAR, out, part)
                 continue
             pos, uv, col = self.world.mesh_arrays(off, n)
             if n:
@@ -449,6 +452,9 @@ class Streamer:
                 gl3d.free_model(m)
         y0, y1 = part[2], part[3]
         self.meshes[key] = [out, self.frame]
+        (self.lite_keys.add if lite else self.lite_keys.discard)(key)      # only now: a half-done upgrade must stay pending
+        if len(part) > 5:
+            self.tree_lvl[key] = part[5]
         bb = ch.get("bb") if ch else None
         self.recent.append((self.mesh_loaded + 1, bb))         # (the sun shadow redraws only for new meshes near it)
         if len(self.recent) > 256:
@@ -457,7 +463,7 @@ class Streamer:
         self.mesh_loaded += 1
         return True
 
-    def _tree_models(self, key, ch, lite, out, part):
+    def _tree_models(self, key, ch, lvl, out, part):
         """Runtime trees of one chunk: mat 20 = trunks / limbs / crown lumps, 21 = alpha-cut leaf sprites, 22 = a plain crown blob that
         only the sun-shadow pass draws (sprites would cast square shadows).  Far (lite) chunks get the cheapest level."""
         w = self.world
@@ -468,10 +474,9 @@ class Streamer:
         if not len(tr) or gl3d.tree_pack() is None:
             return
         rows = np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist()
-        lvl = 1 if lite else (2 if self.detail < 1 else 3)
         sol, crd = treegen.place(rows, lvl)
         parts = {20: sol, 21: crd}
-        if not lite:
+        if lvl > TREE_FAR:
             parts[22] = treegen.place(rows, 1)[0]
         for mat, arr in parts.items():
             if arr is None:
@@ -483,6 +488,27 @@ class Streamer:
             m = gl3d.tree_model(pos, uv, col)
             if m is not None:
                 out[mat] = m
+        if len(part) > 5:
+            part[5] = lvl
+        else:
+            part.append(lvl)
+
+    def _retree(self, key, lvl):
+        """Swap only the tree meshes of a loaded chunk for another level of detail (the rest of the chunk stays)."""
+        ch = self.world.chunks.get(key)
+        e = self.meshes.get(key)
+        if not ch or not e:
+            return
+        new, tmp = {}, [None, None, 1e9, -1e9]
+        self._tree_models(key, ch, lvl, new, tmp)
+        for mat in (20, 21, 22):
+            old = e[0].pop(mat, None)
+            if old is not None:
+                gl3d.free_model(old)
+        e[0].update(new)
+        self.tree_lvl[key] = lvl
+        self.mesh_loaded += 1                                    # (the sun shadow redraws for them)
+        self.recent.append((self.mesh_loaded, ch.get("bb")))
 
     def _drop_part(self, key):
         part = self._part.pop(key, None)
@@ -544,6 +570,14 @@ class Streamer:
                 self.ground[key][1] = self.frame
             if key in self.meshes:
                 self.meshes[key][1] = self.frame
+            if key in self.meshes and key not in self._part and self.tree_lvl.get(key) is not None:
+                run = self._lite_run[key] = self._lite_run.get(key, 0) + 1 if key in lite else 0
+                want = TREE_FAR if key in lite else TREE_NEAR
+                if self.tree_lvl[key] != want and (want == TREE_NEAR or run >= TREE_DOWN_AFTER) and not need_m:
+                    if n and (time.perf_counter() - t0) * 1000 > budget_ms:
+                        break
+                    self._retree(key, want)                      # approaching: sprites at once; receding: blobs after a while
+                    n += 1
             if not (need_g or need_m):
                 continue
             if n and (time.perf_counter() - t0) * 1000 > budget_ms:
@@ -580,6 +614,8 @@ class Streamer:
                     for m in e[0].values():
                         gl3d.free_model(m)
                     del self.meshes[key]
+                    self.tree_lvl.pop(key, None)
+                    self._lite_run.pop(key, None)
 
     # ---- decals: skid marks, blood, scorch burn into the ground textures and persist
     def add_decal(self, d):
