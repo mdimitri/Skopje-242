@@ -17,6 +17,7 @@ import joinwords
 GOLD = rl.Color(240, 200, 60, 255)
 PINK = rl.Color(226, 32, 104, 255)
 DIM = rl.Color(150, 150, 165, 255)
+GOOD = rl.Color(90, 210, 110, 255)
 PLACES = [p[0] for p in places.FALLBACK]
 L = {"title": "МУЛТИПЛЕЈЕР", "name": "Твоето корисничко име", "name_hint": "Внеси име и притисни Enter", "host": "Направи игра",
      "back": "Назад", "none": "Нема најдени игри... (бараме по мрежа и интернет)", "players": "Играчи", "chat": "Разговор",
@@ -390,6 +391,7 @@ def _room(prof, ses, music, cfg=None, aud=None):
         W, H = _frame(L["title"] + (" · " + prof.name))
         sz = max(20, H // 38)
         top, pw = H // 7, W // 2 - 50
+        info, per = ses.link_info()
         ph = H * 0.42
         v = ses.voice
         if v is not None:
@@ -411,6 +413,12 @@ def _room(prof, ses, music, cfg=None, aud=None):
             nx_ = int(cx_ + sz * .8)
             font.draw_text(p["name"] + ("  (домаќин)" if pid == 0 else ""), nx_, y - sz * .12, sz, GREEN if rdy else rl.WHITE, bold=(pid == ses.pid))
             font.draw_text(L["ready"] if rdy else L["notready"], nx_, y + sz * .82, max(11, sz * 2 // 5), GREEN if rdy else RED)
+            if pid in per:                                           # link ping (and the peer address, host only)
+                ms, ad = per[pid]
+                tag = ("%d ms" % round(ms)) if ms is not None else "… ms"
+                isz_ = max(11, sz * 2 // 5)
+                font.draw_text(tag + ("  " + ad if host else ""), nx_ + sz * 4.5, y + sz * .82, isz_,
+                               DIM if ms is None else (GOOD if ms < 80 else GOLD if ms < 160 else PINK))
             if v is None:
                 continue
             bx = 40 + pw - sz * 9.5
@@ -509,7 +517,12 @@ def _room(prof, ses, music, cfg=None, aud=None):
                 m = rl.get_mouse_position()
                 v.ptt = v.ptt or (rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT) and sx + 15 <= m.x < W - 55 and vy + bh + 6 <= m.y < vy + bh * 2 + 6) or hold
         # chat
-        cy0 = top + ph + 14
+        ly = top + ph + 10
+        lh = sz * 0.95 * (len(info) + 0.7)
+        _panel(40, ly, W - 80, lh)
+        for i, t in enumerate(info):
+            font.draw_text(font.fit(t, sz * 4 // 5, W - 110), 55, ly + sz * 0.3 + i * sz * 0.95, sz * 4 // 5, DIM)
+        cy0 = ly + lh + 10
         ch = H - cy0 - H // 6
         _panel(40, cy0, W - 80, ch)
         lines = []

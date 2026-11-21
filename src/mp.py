@@ -878,6 +878,27 @@ class Session:
         now = time.monotonic()
         return {g[0] for g in self._ghosts.values() if now - g[2] <= 90}
 
+    def link_info(self):
+        """Technical details of the link for the room screen: (lines, {pid: (ping ms or None, "ip:port" or "")})."""
+        n = self.net
+        if not n:
+            return [], {}
+        mine = self.pub if self.role == "host" else self._mine
+        loc = _lan_ip()
+        lines = ["%s · UDP порта %d · локална %s" % ("домаќин" if self.role == "host" else "гостин", n.port, loc or "?"),
+                 "јавна адреса %s" % ("%s:%d" % mine if mine else "непозната (STUN не одговара)"),
+                 "испратено %.1f KB · примено %.1f KB · интернет-табла %s" % (
+                     n.bytes_tx / 1024, n.bytes_rx / 1024, "да" if self.mqtt and self.mqtt.connected else "не")]
+        if mine and mine[1] != n.port:
+            lines[1] += " (NAT ја менува портата %d -> %d)" % (n.port, mine[1])
+        now = time.monotonic()
+        per = {}
+        for pid, p in self.players.items():
+            addr = self._target if self.role == "guest" and pid == 0 else p.get("addr")
+            if addr and addr in n.peers:
+                per[pid] = (n.ping_ms(now, [addr]), "%s:%d" % addr)
+        return lines, per
+
     def _pid_of(self, addr):
         for k, p in self.players.items():
             if p["addr"] == addr:
