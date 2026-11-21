@@ -2304,6 +2304,8 @@ def main():
         # ------------------------------------------------ streaming
         lod = ppm >= LOD_PPM
         lite_ = ()
+        av_ = sim.car if sim.mode == "car" else sim.walker
+        streamer.focus = (av_.x, av_.y) if av_ is not None else None      # tree detail by distance from the avatar, in every view
         if ch_on:                                  # street view: chunks out to 2.25x the full-detail radius, the far ring at low quality
             o_ = sim.car if sim.mode == "car" else sim.walker
             far_, near_ = selfie_mod.VIEW * 2.25, selfie_mod.VIEW
@@ -2427,7 +2429,7 @@ def main():
         t_now = time.perf_counter()
         swap_ms = (t_now - t_sw) * 1000
         if not a.test and not show_map and not want_menu and not want_chars and not present_mod.pending_quit:
-            stream_ms = min(4.0, (1 / 60 - (t_sw - frame_start)) * 1000)
+            stream_ms = max(2.0, min(4.0, (1 / 60 - (t_sw - frame_start)) * 1000))      # never starve: on long frames this fell to 0.5 ms and approaching chunks (and their tree upgrades) crawled in
             ui_input = rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) or any(
                 rl.is_key_pressed(key) for key in (rl.KEY_ESCAPE, rl.KEY_M, rl.KEY_L, rl.KEY_F11))
             if not ui_input and (stream_ms > 0.0 or t_now - last_stream >= 0.1):

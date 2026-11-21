@@ -1,4 +1,4 @@
-"""Dev test: the tree level of detail follows the ring in both directions (approach: sprites at once, recede: blobs after a while),
+"""Dev test: the tree level of detail follows the distance rings (bake.TREE_RINGS) in both directions (approach: sprites at once, recede: blobs after a while),
 also when a chunk upgrade is interrupted by the frame budget.   xvfb-run -a python tools/test_tree_lod.py <world dir>"""
 import math
 import os
@@ -38,7 +38,14 @@ def ring(x, y):
     return wanted, lite
 
 
+def level_at(k, x, y):
+    gx = max(k[0] * S - x, 0, x - (k[0] + 1) * S); gy = max(k[1] * S - y, 0, y - (k[1] + 1) * S)
+    g = math.hypot(gx, gy)
+    return next((lv for r, lv in bake.TREE_RINGS if g < r), bake.TREE_FAR)
+
+
 def settle(x, y, frames, budget):
+    st.focus = (x, y)
     wanted, lite = ring(x, y)
     for _ in range(frames):
         st.update(wanted, True, budget, lite)
@@ -47,9 +54,9 @@ def settle(x, y, frames, budget):
 
 def check(tag, x, y, frames=400, budget=2.0, far_pending_ok=False):
     wanted, lite = settle(x, y, frames, budget)
-    bad = [(k, st.tree_lvl.get(k), "far" if k in lite else "near") for k in wanted if k in st.meshes
-           and st.tree_lvl.get(k) is not None and st.tree_lvl[k] != (bake.TREE_FAR if k in lite else bake.TREE_NEAR)
-           and not (far_pending_ok and k in lite)]                       # a chunk that just left the full ring keeps its sprites for a while
+    bad = [(k, st.tree_lvl.get(k), level_at(k, x, y)) for k in wanted if k in st.meshes
+           and st.tree_lvl.get(k) is not None and st.tree_lvl[k] != level_at(k, x, y)
+           and not (far_pending_ok and st.tree_lvl[k] > level_at(k, x, y))]   # a chunk that just left a finer ring keeps its level for a while
     miss = [k for k in wanted if k not in st.meshes]
     near_n = sum(1 for k in wanted if k not in lite)
     print(f"[{tag}] wanted {len(wanted)} (near {near_n}) loaded {len(wanted) - len(miss)} wrong-level {len(bad)} {bad[:3]}")
@@ -60,7 +67,7 @@ def check(tag, x, y, frames=400, budget=2.0, far_pending_ok=False):
 x0, y0 = cx - 600, cy
 check("start far west", x0, y0)                          # everything first loaded from far (blobs) or near
 for i in range(1, 9):                                    # walk east 150 m at a time: chunks upgrade as they come close
-    check(f"approach {i}", x0 + 150 * i, y0, frames=60, budget=1.0, far_pending_ok=True)
+    check(f"approach {i}", x0 + 150 * i, y0, frames=400, budget=1.0, far_pending_ok=True)
 for i in range(8, -1, -1):                               # and back: they drop to blobs only after staying far
     check(f"recede {i}", x0 + 150 * i, y0, frames=400, budget=1.0)
 print("tree level of detail follows the ring both ways: OK")

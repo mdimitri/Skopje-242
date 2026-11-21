@@ -341,6 +341,8 @@ def _sphere(x0, z0, x1, z1, y0, y1):
 
 
 TREE_NEAR, TREE_FAR = 3, 1                # tree detail level inside / beyond the full-detail ring (src/treegen.py)
+TREE_RINGS = ((60.0, 4), (150.0, 3), (300.0, 2))   # metres from the avatar to the chunk -> tree level (4 = most detailed); beyond the last ring: TREE_FAR. Same in every view
+TREE_SLICE = 40                          # trees made per step of a chunk's tree job (spreads a dense chunk's ~90 ms over frames)
 TREE_DOWN_AFTER = 120                    # updates a chunk must stay in the far ring before its trees drop to TREE_FAR (no flip-flop at the border)
 TREES_FROM = 78                      # world format version from which tree meshes are made at runtime (tools/build_world.py VERSION)
 
@@ -354,6 +356,8 @@ class Streamer:
         self.max_ground, self.max_mesh = max_ground, max_mesh
         self.lite_keys = set()
         self.tree_lvl = {}                       # key -> detail level of the tree meshes now loaded for the chunk (src/treegen.py)
+        self.focus = None                        # (x, y) the avatar: chunks pick their tree level by distance from it (main.py sets it every frame)
+        self._tj = {}                            # key -> unfinished tree job (see _tree_models)
         self._lite_run = {}                      # key -> consecutive updates spent in the far ring (hysteresis for downgrades)
         self.stale = set()                       # chunks whose meshes are redone (a prop broke) while the old ones keep drawing
         self.detail = 2                          # the ДЕТАЛИ setting (main.py): 0 leaves out facade relief, 0-1 the clutter
@@ -480,7 +484,9 @@ class Streamer:
             mat, (off, n) = todo.pop(0) if todo[0][0] != "trees" else (todo.pop(0)[0], (0, 0))
             processed = True
             if mat == "trees":
-                self._tree_models(key, ch, TREE_FAR if lite else TREE_NEAR, out, part)
+                if not self._tree_models(key, ch, self._tree_want(key, lite), out, part, deadline):
+                    todo.insert(0, ("trees", None))              # unfinished: carries on next frame
+                    return False
                 continue
             pos, uv, col = self.world.mesh_arrays(off, n)
             if n:
@@ -525,25 +531,41 @@ class Streamer:
         self.mesh_loaded += 1
         return True
 
-    def _tree_models(self, key, ch, lvl, out, part):
+    def _tree_models(self, key, ch, lvl, out, part, deadline=None):
         """Runtime trees of one chunk: mat 20 = trunks / limbs / crown lumps, 21 = alpha-cut leaf sprites, 22 = a plain crown blob that
-        only the sun-shadow pass draws (sprites would cast square shadows).  Far (lite) chunks get the cheapest level."""
+        only the sun-shadow pass draws (sprites would cast square shadows).  The trees are made TREE_SLICE at a time and the job stops once
+        `deadline` has passed (a dense chunk at the finest level takes ~90 ms in one go); returns True when the meshes are in `out`."""
+        job = self._tj.get(key)
+        if job is None or job["lvl"] != lvl:
+            w = self.world
+            tr = w.trees[np.asarray(ch["t"], np.int64)]
+            S = w.chunk
+            own = (np.floor(tr[:, 0] / S) == key[0]) & (np.floor(tr[:, 1] / S) == key[1])      # a tree near an edge is listed by both chunks
+            tr = tr[own]
+            if not len(tr) or gl3d.tree_pack() is None:
+                self._tj.pop(key, None)
+                return True
+            job = self._tj[key] = {"lvl": lvl, "rows": np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist(), "i": 0, "p": {20: [], 21: [], 22: []}}
+        rows, acc = job["rows"], job["p"]
+        while True:                                              # at least one slice per call, so a starved chunk still gets there
+            i0 = job["i"]
+            sl = rows[i0:i0 + TREE_SLICE]
+            job["i"] = i0 + len(sl)
+            sol, crd = treegen.place(sl, lvl)
+            got = {20: sol, 21: crd, 22: treegen.place(sl, 1)[0] if lvl > TREE_FAR else None}
+            for mat, arr in got.items():
+                if arr is not None:
+                    acc[mat].append(arr)
+            if job["i"] >= len(rows):
+                break
+            if deadline is not None and time.perf_counter() > deadline:
+                return False
+        del self._tj[key]
         w = self.world
-        tr = w.trees[np.asarray(ch["t"], np.int64)]
-        S = w.chunk
-        own = (np.floor(tr[:, 0] / S) == key[0]) & (np.floor(tr[:, 1] / S) == key[1])      # a tree near an edge is listed by both chunks
-        tr = tr[own]
-        if not len(tr) or gl3d.tree_pack() is None:
-            return
-        rows = np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist()
-        sol, crd = treegen.place(rows, lvl)
-        parts = {20: sol, 21: crd}
-        if lvl > TREE_FAR:
-            parts[22] = treegen.place(rows, 1)[0]
-        for mat, arr in parts.items():
-            if arr is None:
+        for mat, lst in acc.items():
+            if not lst:
                 continue
-            pos, uv, col = arr
+            pos, uv, col = (np.concatenate([a[k] for a in lst]) for k in range(3))
             if w.broken or getattr(w, "broken_extra", None):
                 pos = w.hide_broken(pos, ch.get("bb"))
             part[2], part[3] = min(part[2], float(pos[:, 1].min())), max(part[3], float(pos[:, 1].max()))
@@ -554,15 +576,28 @@ class Streamer:
             part[5] = lvl
         else:
             part.append(lvl)
+        return True
 
-    def _retree(self, key, lvl):
+    def _tree_want(self, key, lite):
+        """Tree detail level a chunk should have: by its distance from the avatar (the same for the top-down and the chase view)."""
+        if self.focus is None:
+            return TREE_FAR if lite else TREE_NEAR
+        S, (fx, fy) = self.world.chunk, self.focus
+        gap = math.hypot(max(key[0] * S - fx, 0.0, fx - (key[0] + 1) * S), max(key[1] * S - fy, 0.0, fy - (key[1] + 1) * S))
+        for r, lv in TREE_RINGS:
+            if gap < r:
+                return lv
+        return TREE_FAR
+
+    def _retree(self, key, lvl, deadline=None):
         """Swap only the tree meshes of a loaded chunk for another level of detail (the rest of the chunk stays)."""
         ch = self.world.chunks.get(key)
         e = self.meshes.get(key)
         if not ch or not e:
-            return
+            return True
         new, tmp = {}, [None, None, 1e9, -1e9]
-        self._tree_models(key, ch, lvl, new, tmp)
+        if not self._tree_models(key, ch, lvl, new, tmp, deadline):
+            return False
         for mat in (20, 21, 22):
             old = e[0].pop(mat, None)
             if old is not None:
@@ -571,8 +606,10 @@ class Streamer:
         self.tree_lvl[key] = lvl
         self.mesh_loaded += 1                                    # (the sun shadow redraws for them)
         self.recent.append((self.mesh_loaded, ch.get("bb")))
+        return True
 
     def _drop_part(self, key):
+        self._tj.pop(key, None)
         part = self._part.pop(key, None)
         if part:
             for m in part[0].values():
@@ -633,12 +670,13 @@ class Streamer:
             if key in self.meshes:
                 self.meshes[key][1] = self.frame
             if key in self.meshes and key not in self._part and self.tree_lvl.get(key) is not None:
-                run = self._lite_run[key] = self._lite_run.get(key, 0) + 1 if key in lite else 0
-                want = TREE_FAR if key in lite else TREE_NEAR
-                if self.tree_lvl[key] != want and (want == TREE_NEAR or run >= TREE_DOWN_AFTER) and not need_m:
+                want = self._tree_want(key, key in lite)
+                run = self._lite_run[key] = self._lite_run.get(key, 0) + 1 if want < self.tree_lvl[key] else 0
+                if self.tree_lvl[key] != want and (want > self.tree_lvl[key] or run >= TREE_DOWN_AFTER) and not need_m:
                     if n and (time.perf_counter() - t0) * 1000 > budget_ms:
                         break
-                    self._retree(key, want)                      # approaching: sprites at once; receding: blobs after a while
+                    if not self._retree(key, want, t0 + budget_ms / 1000.0):      # approaching: sprites at once; receding: blobs after a while
+                        break                                    # unfinished: carries on next frame
                     n += 1
             if not (need_g or need_m):
                 continue
@@ -682,6 +720,7 @@ class Streamer:
                     del self.meshes[key]
                     self.tree_lvl.pop(key, None)
                     self._lite_run.pop(key, None)
+                    self._tj.pop(key, None)
 
     # ---- decals: skid marks, blood, scorch burn into the ground textures and persist
     def add_decal(self, d):

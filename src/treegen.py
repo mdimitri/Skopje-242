@@ -439,7 +439,7 @@ def place(trees, lvl):
     return cat(S, 3), cat(C, 3)
 
 
-def warm(levels=(1, 3)):
+def warm(levels=(1, 2, 3, 4)):
     """Make every species / variant mesh of these levels now (loading screen) so the first chunks do not stall a frame."""
     atlas()
     for sp in SPECIES:
