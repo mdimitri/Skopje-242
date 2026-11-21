@@ -55,6 +55,7 @@ class Session:
 
     def _host_net(self):
         self.pub = discovery.stun_addr(self.net.sock)
+        net.log("host: UDP port %d, public address %s, ver %d" % (self.net.port, self.pub, VER))
         self._busy = False
 
     def _on_mqtt(self, topic, obj):
@@ -63,7 +64,9 @@ class Session:
         except (KeyError, TypeError, ValueError, IndexError):
             return
         if self.state == "lobby" and len(self.players) < MAX_PLAYERS:
-            self._punch[a] = time.monotonic() + 12
+            if a not in self._punch:
+                net.log("host: join notice from %s:%d, punching" % a)
+            self._punch[a] = time.monotonic() + 30
             self.net.add_peer(a)
 
     def _info(self):
@@ -98,6 +101,12 @@ class Session:
         addr = (game["addr"][0], int(game["addr"][1]))
         self._target = addr
         self._t0 = time.monotonic()
+        self._notice = 0.0
+        self._mine = None
+        net.log("guest: joining %s (%s) at %s:%d, ver %d, notice board %s" % (
+            game.get("name"), "LAN" if game.get("lan") else "internet", addr[0], addr[1], VER,
+            "connected to " + self.mqtt.connected if self.mqtt and self.mqtt.connected else "OFFLINE"))
+        self.net.follow[addr[0]] = addr
         if game.get("lan") or self.mqtt is None:
             self.net.add_peer(addr)
         else:
@@ -106,8 +115,11 @@ class Session:
 
     def _guest_net(self, hid, addr):
         mine = discovery.stun_addr(self.net.sock)
+        self._mine, self._hid = mine, hid
+        net.log("guest: my public address %s%s" % (mine, "" if mine else " (STUN failed: the host cannot be told where to punch)"))
         if mine:
             self.mqtt.publish("join/" + hid, {"addr": list(mine)})
+            self._notice = time.monotonic()
         self.net.add_peer(addr)
         self._busy = False
 
@@ -192,9 +204,18 @@ class Session:
         if self.role == "guest" and self.state == "connecting":
             if now - self._t0 > 15:
                 self.state, self.error = "closed", "Нема врска"
+                net.log("guest: no answer from %s:%d in 15 s (notice sent: %s). Host firewall / NAT is the usual cause" % (
+                    self._target + (bool(self._mine),)))
             elif self.net.peers.get(self._target) is not None:
                 self.net.hello(self._target, b"")
+                if self._mine and self.mqtt and now - self._notice > 2:      # a single notice can be lost: repeat it
+                    self._notice = now
+                    self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine)})
         evs = self.net.poll()
+        for old, new in list(self.net.moved.items()):
+            del self.net.moved[old]
+            if old == getattr(self, "_target", None):
+                self._target = new
         for kind, addr, obj in evs:
             if kind == "up" and self.role == "guest" and addr == self._target:
                 self.net.send_rel(addr, {"t": "join", "name": self.prof.name, "uid": self.prof.uid, "ver": VER})
@@ -213,6 +234,7 @@ class Session:
     def _gone(self, addr):
         if self.role == "guest":
             self.state, self.error = "closed", self.error or "Врската се прекина"
+            net.log("guest: connection lost: host silent for %.0f s or closed" % net.TIMEOUT)
         else:
             pid = self._pid_of(addr)
             if pid is not None:
@@ -225,6 +247,7 @@ class Session:
         if self.role == "host":
             pid = self._pid_of(addr)
             if t == "join" and pid is None and self.state == "lobby":
+                net.log("host: join request from %s:%d name %r ver %r" % (addr + (m.get("name"), m.get("ver"))))
                 if m.get("ver") != VER:
                     self.net.send_rel(addr, {"t": "deny", "why": "ver"})
                 elif len(self.players) >= MAX_PLAYERS:
@@ -245,7 +268,9 @@ class Session:
         else:
             if t == "welcome":
                 self.pid, self.state = int(m["pid"]), "lobby"
+                net.log("guest: welcome, I am player %d" % self.pid)
             elif t == "deny":
+                net.log("guest: host denied the join: %s" % m.get("why"))
                 self.state, self.error = "closed", {"full": "Игрот е полн", "ver": "Друга верзија на играта"}.get(m.get("why"), "Одбиено")
             elif t == "roster":
                 self.players = {int(k): {"name": v[0], "color": v[1], "uid": v[2], "addr": None} for k, v in m["pl"].items()}

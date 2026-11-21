@@ -7,6 +7,7 @@ Packet = MAGIC(4) kind(1) seq(4) payload.
 Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
 """
 import json
+import os
 import socket
 import struct
 import threading
@@ -22,6 +23,23 @@ RESEND = 0.12               # s before an unacked REL packet is sent again
 TIMEOUT = 8.0               # s of silence before a peer is dropped
 KEEPALIVE = 1.0
 PING_PERIOD, PING_FRESH = 1.0, 3.0
+
+
+_LOGF = None
+
+
+def log(msg):
+    """Join / connection steps go to logs/multiplayer.log (append, timestamped) so a failed join can be diagnosed from both PCs."""
+    global _LOGF
+    try:
+        if _LOGF is None:
+            d = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+            os.makedirs(d, exist_ok=True)
+            _LOGF = open(os.path.join(d, "multiplayer.log"), "a", encoding="utf-8")
+        _LOGF.write("%s %s\n" % (time.strftime("%H:%M:%S"), msg))
+        _LOGF.flush()
+    except OSError:
+        pass
 
 
 class Peer:
@@ -49,6 +67,9 @@ class Net:
         self.unrel_reorder = False    # gameplay packets carry their own per-stream revisions
         self.probe_rtt = False
         self.peers = {}
+        self.follow = {}              # guest: host ip -> expected addr; a reply from the same ip on another port (NAT) re-targets the peer
+        self.moved = {}               # old addr -> new addr, read by mp.Session
+        self._stray = 0
         self.bytes_tx = self.bytes_rx = 0
         self._tx_lock = threading.Lock()
         self._heartbeat_stop = threading.Event()
@@ -154,12 +175,25 @@ class Net:
                 continue
             p = self.peers.get(addr)
             if p is None:
-                if not (self.accept and kind == HELLO):
+                old = self.follow.get(addr[0])
+                if old in self.peers and not self.peers[old].up:
+                    p = self.peers.pop(old)
+                    p.addr = addr
+                    self.peers[addr] = p
+                    self.moved[old] = addr
+                    log("reply came from %s:%d, not %s:%d (NAT remapped the port): following it" % (addr + old))
+                elif not (self.accept and kind == HELLO):
+                    if self._stray < 5:
+                        self._stray += 1
+                        log("ignored packet kind %d from unknown %s:%d" % ((kind,) + addr))
                     continue
-                p = self.add_peer(addr)
+                else:
+                    p = self.add_peer(addr)
+                    log("host: HELLO from new address %s:%d" % addr)
             p.last_rx = now
             if not p.up:
                 p.up = True
+                log("peer %s:%d up (first packet kind %d)" % (addr + (kind,)))
                 ev.append(("up", addr, pkt[HDR.size:] if kind == HELLO else None))
                 self._raw(addr, HELLO, 0)      # answer so the other side comes up too
             body = pkt[HDR.size:]
@@ -197,6 +231,7 @@ class Net:
         for a, p in list(self.peers.items()):
             if p.up and now - p.last_rx > TIMEOUT:
                 self.peers.pop(a)
+                log("peer %s:%d silent for %.1f s: dropped" % (a + (now - p.last_rx,)))
                 ev.append(("gone", a, None))
                 continue
             for seq, e in p.q.items():
