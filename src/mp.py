@@ -29,6 +29,10 @@ class Session:
         self.chat = []                        # (pid or -1, text)
         self.gid = prof.uid
         self.start_info = None
+        self.route = ""                       # how the guest reached the host: LAN | internet | same router
+        self._rx = self._tx = 0
+        self._rate = (0.0, 0.0)
+        self._rate_at = time.monotonic()
         self.ready = False                    # host: public address resolved, listening
         self.pub = None
         self.lan = None
@@ -46,6 +50,7 @@ class Session:
             self.net = net.Net(net.PORT, accept=True)
         except OSError:
             self.net = net.Net(0, accept=True)
+        self.net.probe_rtt = True
         self.pid, self.players = 0, {0: self._me(0)}
         self.lan = discovery.Lan()
         if internet:
@@ -100,6 +105,7 @@ class Session:
         self.role, self.state, self.error = "guest", "connecting", ""
         threading.Thread(target=net.ensure_firewall, daemon=True).start()
         self.net = net.Net(0)
+        self.net.probe_rtt = True
         addr = (game["addr"][0], int(game["addr"][1]))
         self._target = addr
         self._t0 = time.monotonic()
@@ -110,6 +116,7 @@ class Session:
             game.get("name"), "LAN" if game.get("lan") else "internet", addr[0], addr[1], VER,
             "connected to " + self.mqtt.connected if self.mqtt and self.mqtt.connected else "OFFLINE"))
         self.net.follow[addr[0]] = addr
+        self.route = "LAN" if game.get("lan") else "интернет"
         if game.get("lan") or self.mqtt is None:
             self.net.add_peer(addr)
         else:
@@ -124,6 +131,7 @@ class Session:
         if mine and la and mine[0] == addr[0]:       # same public IP = same router: most routers cannot loop back, use the LAN address
             addr = self._target = (la, int(self._game.get("port", addr[1])))
             self.net.follow[addr[0]] = addr
+            self.route = "ист рутер (LAN)"
             net.log("guest: host is behind the same router (%s), connecting to its LAN address %s:%d" % (mine[0], addr[0], addr[1]))
         elif mine:
             self.mqtt.publish("join/" + hid, {"addr": list(mine)})
@@ -132,6 +140,35 @@ class Session:
         self._busy = False
 
     # ------------------------------------------------------------------ common
+    def info(self):
+        """Technical lines for the lobby: [(label, value)]."""
+        n, now = self.net, time.monotonic()
+        if n is None:
+            return []
+        if now - self._rate_at >= 1:
+            dt = now - self._rate_at
+            self._rate = ((n.bytes_rx - self._rx) / 1000 / dt, (n.bytes_tx - self._tx) / 1000 / dt)
+            self._rx, self._tx, self._rate_at = n.bytes_rx, n.bytes_tx, now
+        fmt = lambda a: "%s:%d" % (a[0], a[1]) if a else "?"
+        host = self.role == "host"
+        out = [("Улога", "домаќин" if host else "гостин"), ("Верзија", "v%d" % VER),
+               ("Локална адреса", "%s:%d" % (_lan_ip() or "?", n.port))]
+        if host:
+            out.append(("Јавна адреса", fmt(self.pub) if self.pub else "се бара…"))
+            out.append(("Интернет-објава", "поврзано (" + self.mqtt.connected + ")" if self.mqtt and self.mqtt.connected else "нема"))
+            for pid, p in sorted(self.players.items()):
+                if pid:
+                    pm = n.ping_ms(now, [p["addr"]])
+                    out.append((p["name"], "%s  %s" % (fmt(p["addr"]), ("%d ms" % pm) if pm is not None else "… ms")))
+        else:
+            out.append(("Јавна адреса", fmt(self._mine) if getattr(self, "_mine", None) else "?"))
+            out.append(("Домаќин", fmt(self._target)))
+            out.append(("Врска", self.route or "?"))
+            pm = n.ping_ms(now, [self._target])
+            out.append(("Пинг", ("%d ms" % pm) if pm is not None else "се мери…"))
+        out.append(("Сообраќај", "↓ %.1f  ↑ %.1f kB/s" % self._rate))
+        return out
+
     def _me(self, pid):
         used = {p["color"] for p in self.players.values()}
         col = next((i for i in range(len(COLORS)) if i not in used), 0)

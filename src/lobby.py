@@ -107,6 +107,9 @@ def _browser(prof, ses, music):
                 full = g.get("n", 0) >= g.get("max", 4)
                 font.draw_text("%s%s   %d/%d" % (g.get("name", "?"), "  [LAN]" if g.get("lan") else "", g.get("n", 0), g.get("max", 4)),
                                x0 + 20, ry + sz * 0.3, sz, DIM if full else rl.WHITE, bold=True)
+                a = g.get("addr") or ["?", 0]
+                font.draw_text("%s:%s · %s · v%s" % (a[0], a[1], "LAN" if g.get("lan") else "интернет", g.get("ver", "?")),
+                               x0 + 20, ry + sz * 1.25, sz * 3 // 5, DIM)
                 if not full and font.button(L["join"], x0 + pw - 220, ry, 200, sz * 1.9, sz * 4 // 5):
                     ses.error = ""
                     ses.join(g)
@@ -189,7 +192,12 @@ def _room(prof, ses, music):
             lines.append((nm["color"], "%s: %s" % (nm["name"], t)))
         rows = max(1, int((ch - sz * 2.4) / (sz * 1.25)))
         for i, (col, t) in enumerate(lines[-rows:]):
-            font.draw_text(font.fit(t, sz, W - 120), 55, cy0 + 8 + i * sz * 1.25, sz, rl.Color(*mp.COLORS[col % 4], 255))
+            font.draw_text(font.fit(t, sz, W // 2 - 90), 55, cy0 + 8 + i * sz * 1.25, sz, rl.Color(*mp.COLORS[col % 4], 255))
+        isz = max(14, sz * 3 // 4)
+        for i, (k, v) in enumerate(ses.info()):
+            iy = cy0 + 8 + i * isz * 1.3
+            font.draw_text(k, W // 2 + 10, iy, isz, DIM)
+            font.draw_text(font.fit(v, isz, W // 2 - 60 - W // 6), W // 2 + W // 6 + 10, iy, isz, rl.WHITE)
         rl.draw_rectangle(48, int(cy0 + ch - sz * 1.9), W - 96, int(sz * 1.6), rl.Color(40, 42, 56, 255))
         font.draw_text(chat + ("_" if int(time.time() * 2) % 2 else "") if chat else L["say"], 58, cy0 + ch - sz * 1.75, sz, rl.WHITE if chat else DIM)
         if rl.is_key_pressed(rl.KEY_ENTER) and chat.strip():
