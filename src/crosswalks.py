@@ -1,6 +1,20 @@
 """Spatial queries shared by the road mesh and the pedestrian simulation."""
 import heapq
 import math
+import time
+
+_BUDGET_MS = 3.0            # route searches per frame (all pedestrians together) and per single search
+_frame_end = 0.0
+
+
+def begin_frame():
+    """Called once per pedestrian update: opens this frame's route-search budget."""
+    global _frame_end
+    _frame_end = time.perf_counter() + _BUDGET_MS / 1000.0
+
+
+def over_budget():
+    return time.perf_counter() >= _frame_end
 
 
 class CrossingMap:
@@ -67,7 +81,10 @@ def walk_path(world, start, goal):
     finish = round(goal[0] / step), round(goal[1] / step)
     todo = [(math.dist(origin, finish), 0.0, origin)]
     best, links = {origin: 0.0}, {}
+    stop = min(_frame_end, time.perf_counter() + _BUDGET_MS / 1000.0) if _frame_end else 0.0
     while todo and len(best) < 950:
+        if stop and time.perf_counter() > stop:       # out of time: give up like "no route" (the caller retries later)
+            return None
         _, cost, cell = heapq.heappop(todo)
         if cost != best[cell]:
             continue

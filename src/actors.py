@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import bible_lines
 import bump_lines
 import clock
-from crosswalks import crosses_wall, walk_path
+from crosswalks import begin_frame, crosses_wall, over_budget, walk_path
 from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, brake_speed, corridor_entry, fastest_route,
                      follow_speed, movement_lanes, turn_angle, turn_indicator, turn_lanes)
 import escride
@@ -1762,6 +1762,7 @@ class Peds:
         g_b, g_a = _cells(bodies), _cells((*bodies, *tc))          # 10 m grids: each person only checks the cars next to them
         dt0 = dt
         self._tick = getattr(self, "_tick", 0) + 1
+        begin_frame()                                             # route searches share a few ms per frame
         for pi, p in enumerate(self.list):
             dt = dt0
             if p.mode == "walk" and _lod_far(self, p.x, p.y, self._d2(p.x, p.y, fx, fy)):      # far from the player: one step in three, three times as long
@@ -2026,7 +2027,10 @@ class Peds:
                 p.s -= e["len"]
                 node = e["b"] if p.d == 1 else e["a"]
                 opts = [o for o in w.walk_out.get(node, ()) if o[0] != p.e] or list(w.walk_out.get(node, ()))
-                self._walk_corner(p, opts)
+                if over_budget():
+                    p.s = e["len"]                                # route budget spent this frame: wait at the corner
+                else:
+                    self._walk_corner(p, opts)
                 e = w.edges[p.e]
                 if p.walk_route:
                     out.append(p)
@@ -2042,7 +2046,7 @@ class Peds:
                          or crosses_wall(w, p.x, p.y, p.x + ex, p.y + ey))):
                 blocked = getattr(p, "walk_blocked", 0.0)
                 p.s = max(0.0, p.s - vv * dt)
-                if blocked == 0.0 or int(blocked) != int(blocked + dt):
+                if (blocked == 0.0 or int(blocked) != int(blocked + dt)) and not over_budget():
                     self._recover_walk_route(p, e)
                 if not p.walk_route:
                     p.walk_blocked = blocked + dt
