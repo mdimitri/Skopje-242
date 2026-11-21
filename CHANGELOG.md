@@ -2,6 +2,14 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Runtime trees
+
+- Trees are no longer baked into the world file (world format v78): it keeps only each tree's position, radius and kind, and `src/treegen.py` makes the meshes when a chunk streams in. The synthetic demo city has 127,000 trees: about 180 MB of baked tree meshes become a 2 MB list (the real map, roughly 500,000 trees, saves around 0.7 GB).
+- 19 Skopje and Balkan species (plane, linden, horse chestnut, black locust, tree of heaven, oak, walnut, maple, Judas tree, mulberry, birch, willow, poplar, cypress, spruce, black pine, cedar, old umbrella pine, dead tree), each varied per tree by a seeded script (height, crown shape, lean, heavy side, gaps, colour).
+- Four levels of detail: a solid blob far away, a rounder blob, then a branch skeleton with leaf sprites (alpha-cut textured cards rooted on the limbs, 9 leaf shapes, 4 variants each). Far chunks use the cheapest level.
+- A gentle wind sways the trees and shimmers the leaves (`WIND_SWAY` in `src/render.py`, 0 = still). Sun shadows use a plain crown blob so the sprites do not cast square shadows.
+- Worlds older than v78 still carry baked trees and draw as before; rebuild to get runtime trees. Fall colours are in the generator (`season`) but not switched on in the game yet.
+
 ## Multiplayer world handoff
 
 - Remote driving and turn indicators work without disabling multiplayer updates.

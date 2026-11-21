@@ -19,7 +19,7 @@ HALF = 150.0                        # the map covers 300 m x 300 m of ground aro
 RECENTER = 40.0                     # redraw when the camera has moved this far from the centre of the map
 SUN_STEP = 0.004                    # redraw when the sun direction changed by this much (about 0.25 degrees)
 BIAS_M = 0.35                       # depth bias in metres
-SKIP_MATS = (3, 6)                  # road surface and graffiti decals cast no shadow
+SKIP_MATS = (3, 6, 21)              # road surface, graffiti decals and leaf sprites (square shadows: a crown blob, mat 22, stands in) cast none
 
 DEPTH_VS = """#version 330
 in vec3 vertexPosition;

@@ -3437,6 +3437,88 @@ def apply_building_detail(model, material):
             model.materials[0].maps[3].texture = SHADOW_TEX
 
 
+# ------------------------------------------------------------------ runtime trees (src/treegen.py): leaf sprites + wind
+# One shader for trunk, limbs and sprites: vertex alpha carries the wind (bit 7 = sprite, low 7 bits = sway weight, see treegen.tree_mesh),
+# the fragment shader cuts the sprite texture's alpha out and lights it like every other prop (sun + shadow map).
+TREE_VS = """#version 330
+in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
+uniform mat4 mvp; uniform float time; uniform vec3 wind;
+out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos; out vec3 wp;
+void main(){
+  fragTexCoord = vertexTexCoord; fragColor = vec4(vertexColor.rgb, 1.0);
+  float a = vertexColor.a * 255.0; float leaf = step(127.5, a); float w = (a - 128.0 * leaf) / 127.0;
+  vec3 p = vertexPosition;
+  float ph = p.x * 0.045 + p.z * 0.037;                                        // a gust front sweeping over the trees
+  float gust = 0.65 + 0.35 * sin(time * 0.37 + ph * 0.5);
+  float sway = sin(time * 1.15 + ph) + 0.5 * sin(time * 2.3 + ph * 1.7);
+  p.xz += wind.xy * (sway * w * wind.z * gust);
+  float f1 = sin(time * 5.1 + p.x * 3.7 + p.z * 2.9 + p.y * 3.3), f2 = sin(time * 4.3 + p.x * 2.3 - p.z * 3.1);
+  p += vec3(f1, 0.4 * f1, f2) * (leaf * w * 0.035 * wind.z);                   // leaf shimmer
+  wpos = vertexPosition.xz; wp = vertexPosition;
+  gl_Position = mvp * vec4(p, 1.0); }"""
+TREE_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")] + """void main(){
+  vec4 base = texture(texture0, fragTexCoord);
+  if (base.a < 0.45) discard;
+  vec3 c = base.rgb * colDiffuse.rgb * fragColor.rgb;
+  vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
+  if (nrm.y < 0.0) nrm = -nrm;
+  c = shade(c, sunShadow(wp, nrm));
+  finalColor = vec4(c, 1.0);
+}"""
+_tree = None
+
+
+def tree_pack():
+    """(shader, atlas texture, wind uniform location, time uniform location) for the runtime trees, or None when the GPU cannot do it."""
+    global _tree
+    if _tree is not None:
+        return _tree or None
+    _tree = False
+    try:
+        import treegen
+        px = treegen.atlas()
+        img = rl.gen_image_color(px.shape[1], px.shape[0], rl.BLACK)
+        rl.image_format(img, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+        tex = rl.load_texture_from_image(img)
+        rl.unload_image(img)
+        rl.update_texture(tex, rl.ffi.new("unsigned char[]", px.tobytes()))
+        rl.gen_texture_mipmaps(tex)
+        rl.set_texture_filter(tex, rl.TEXTURE_FILTER_TRILINEAR)
+        rl.set_texture_wrap(tex, rl.TEXTURE_WRAP_CLAMP)
+        sh = rl.load_shader_from_memory(TREE_VS, TREE_FS)
+        if not sh.id or sh.id == rl.rl_get_shader_id_default():
+            raise RuntimeError("shader did not compile")
+        _sun_register(sh)
+        surfacepack.register(sh)
+        _tree = (sh, tex, rl.get_shader_location(sh, "wind"), rl.get_shader_location(sh, "time"))
+    except Exception as e:  # noqa: BLE001 - no runtime trees then (the world is built without baked ones)
+        print(f"[gfx] runtime trees off: {e}")
+    return _tree or None
+
+
+def tree_model(pos, uv, col):
+    """A runtime tree mesh (see tree_pack); None when trees are unavailable."""
+    d = tree_pack()
+    if d is None:
+        return None
+    m = make_model(pos, uv, col)
+    if m is not None:
+        m.materials[0].shader = d[0]
+        m.materials[0].maps[0].texture = d[1]
+        if SHADOW_TEX is not None:
+            m.materials[0].maps[3].texture = SHADOW_TEX
+    return m
+
+
+def tree_wind(t, amp=0.22, direction=(0.8, 0.6)):
+    """Wind for this frame: t seconds, sway in metres at the very top of a tree (the leaves shimmer in proportion), horizontal direction."""
+    d = tree_pack()
+    if d is None:
+        return
+    rl.set_shader_value(d[0], d[2], rl.ffi.new("float[3]", [direction[0], direction[1], amp]), rl.SHADER_UNIFORM_VEC3)
+    rl.set_shader_value(d[0], d[3], rl.ffi.new("float *", float(t)), rl.SHADER_UNIFORM_FLOAT)
+
+
 _solid = None
 
 

@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 77
+VERSION = 78
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -1817,73 +1817,6 @@ def box(cx, cz, sx, sz, h, y0, col, yaw=0.0):
     return np.array(pos, np.float32), np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
 
 
-TREE_GREENS = ((70, 128, 58), (86, 142, 62), (62, 114, 54), (110, 140, 52), (56, 96, 60), (124, 150, 70))
-AUTUMN = ((196, 120, 40), (210, 170, 50), (170, 70, 40))
-
-
-def tree_geo(x, z, r, shade_i, seed):
-    """Seven kinds of tree so streets and parks don't look cloned: cone (pine/spruce), round crown (lime, plane),
-    two-lump crown, tall poplar, birch (white trunk), autumn crown, bare dead tree."""
-    rr = random.Random(seed)
-    sp = rr.choices(range(7), (18, 30, 20, 10, 8, 9, 5))[0]
-    trunk_h = (2.1 + r * 0.25) * (1.25 if sp == 3 else 1.0)
-    pos, cols = [], []
-    bark = (230, 230, 222) if sp == 4 else ((92, 70, 50) if sp != 6 else (80, 66, 54))
-    tw = 0.12 if sp in (3, 4) else (0.17 + r * 0.02)
-    th = trunk_h + (r * 1.1 if sp == 6 else 0.0)
-    for ang in (0.0, math.pi / 2):
-        ca, sa = math.cos(ang) * tw, math.sin(ang) * tw
-        a = (x - ca, z - sa); b = (x + ca, z + sa)
-        q = [(a[0], 0, a[1]), (b[0], 0, b[1]), (b[0], th, b[1]), (a[0], 0, a[1]), (b[0], th, b[1]), (a[0], th, a[1])]
-        pos += q; cols += [(*bark, 255)] * 6
-    if sp == 4:                                                  # birch: dark marks on the white trunk
-        for k in range(3):
-            y = trunk_h * (0.25 + 0.22 * k)
-            pos += [(x - tw * 1.05, y, z), (x + tw * 1.05, y, z), (x + tw * 1.05, y + 0.08, z)]
-            cols += [(40, 40, 40, 255)] * 3
-    if sp == 6:                                                  # bare tree: a few branches, no leaves
-        for k in range(5):
-            a0 = rr.uniform(0, 6.28)
-            y0 = th * rr.uniform(0.45, 0.9)
-            ln = r * rr.uniform(0.6, 1.0)
-            ex, ez, ey = x + math.cos(a0) * ln, z + math.sin(a0) * ln, y0 + ln * 0.7
-            pos += [(x, y0, z), (x + math.cos(a0 + 1.57) * 0.06, y0 + 0.1, z + math.sin(a0 + 1.57) * 0.06), (ex, ey, ez)]
-            cols += [(*bark, 255)] * 3
-        return np.array(pos, np.float32), np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
-    g = AUTUMN[shade_i % 3] if sp == 5 else (TREE_GREENS[(shade_i + seed) % 6] if sp != 0 else (46, 92, 56))
-    g = tuple(min(255, max(0, c + rr.randint(-10, 10))) for c in g)
-
-    def crown(cx, cz, rad, y_lo, y_mid, y_hi, n, off):
-        nonlocal pos, cols
-        for i in range(n):
-            a0 = off + 2 * math.pi * i / n; a1 = off + 2 * math.pi * (i + 1) / n
-            p0 = (cx + math.cos(a0) * rad, y_mid, cz + math.sin(a0) * rad)
-            p1 = (cx + math.cos(a1) * rad, y_mid, cz + math.sin(a1) * rad)
-            sh = 0.82 + 0.25 * math.cos(a0 + 0.8)
-            lo = (*[min(255, c * sh * 0.78) for c in g], 255)
-            hi = (*[min(255, c * sh * 1.18) for c in g], 255)
-            pos += [p0, p1, (cx, y_hi, cz)]
-            cols += [lo, lo, hi]
-            if y_lo is not None:                                 # underside: a round crown, not a cone
-                pos += [p1, p0, (cx, y_lo, cz)]
-                cols += [lo, lo, (*[c * 0.55 for c in g], 255)]
-
-    off = rr.uniform(0, 6.28)
-    if sp == 0:                                                  # conifer: two stacked cones, tall and narrow
-        crown(x, z, r * 0.75, None, trunk_h - 0.6, trunk_h + r * 1.6, 7, off)
-        crown(x, z, r * 0.5, None, trunk_h + r * 0.8, trunk_h + r * 2.4, 6, off + 0.4)
-    elif sp == 3:                                                # poplar: slim and very tall
-        crown(x, z, r * 0.45, trunk_h - 0.8, trunk_h + r * 0.6, trunk_h + r * 2.8, 6, off)
-    elif sp == 2:                                                # two lumps side by side
-        for k in (-1, 1):                                        # lumps stay over the trunk and overlap: one crown, not two trees
-            cx, cz = x + math.cos(off) * k * r * 0.2, z + math.sin(off) * k * r * 0.2
-            crown(cx, cz, r * 0.85, trunk_h - 0.4, trunk_h + r * 0.5 + k * 0.1, trunk_h + r * 1.1 + k * 0.1, 6, off + k)
-    else:                                                        # round crowns (also birch and autumn)
-        rad = r * (0.7 if sp == 4 else 1.0)
-        crown(x, z, rad, trunk_h - 0.4, trunk_h + rad * 0.5, trunk_h + rad * 1.2, 7, off)
-    return np.array(pos, np.float32), np.zeros((len(pos), 2), np.float32), np.array(cols, np.uint8)
-
-
 def lamp_geo(x, z):
     pos, cols = [], []
     for ang in (0.0, math.pi / 2):
@@ -1941,10 +1874,6 @@ def load_elements(src):
                 seen.add(k)
                 elements.append(el)
     return elements
-
-
-def _tree_job(a):
-    return tree_geo(*a)
 
 
 def _lamp_job(a):
@@ -3200,9 +3129,7 @@ def main():
     hg_arr[water_a] |= 4                                        # bit 2: ground-level water (also under bridges)
     posts = [p if len(p) >= 5 else (p[0], p[1], p[2], T.hs(p[0], p[1]) - 1.0, T.hs(p[0], p[1]) + 2.4) for p in span(posts, 0.6, 0.7, "collision posts")]
 
-    tj_ = [(x, y, r_, sh, i) for i, (x, y, r_, sh) in enumerate(each(trees, "tree meshes", feed=("trees", None, lambda t: [t[0], t[1]])))]
-    for (x, y, _r, _s, _i), g_ in zip(tj_, par.pmap(_tree_job, tj_, chunk=256, on=lambda d, t: frac(0.7 + 0.2 * d / t, "tree meshes"))):                 # the meshes themselves on all cores
-        add_c(chunk_of(x, y), MAT_SOLID, *g_)
+    # trees are NOT baked any more (v78): the world keeps only (x, y, radius, kind) per tree and src/treegen.py makes the meshes at runtime
     lj_ = [(x, y) for x, y in each(lamps, "lamp meshes", feed=("props", None, lambda p: [p[0], p[1]]))]
     for (x, y), g_ in zip(lj_, par.pmap(_lamp_job, lj_, chunk=256, on=lambda d, t: frac(0.9 + 0.1 * d / t, "lamp meshes"))):
         add_c(chunk_of(x, y), MAT_SOLID, *g_)

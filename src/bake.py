@@ -14,6 +14,7 @@ import pyray as rl
 from gfx import disc, fill_tris, quad, rect_rot, seg
 import gl3d
 import surfacepack
+import treegen
 
 PPM = 4.0                       # chunk texture resolution, pixels per metre
 SKEW = 0.22                     # apparent roof lift per metre of building height
@@ -299,6 +300,9 @@ def _sphere(x0, z0, x1, z1, y0, y1):
     return ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5, 0.5 * math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z1 - z0) ** 2) + 1.0)
 
 
+TREES_FROM = 78                      # world format version from which tree meshes are made at runtime (tools/build_world.py VERSION)
+
+
 class Streamer:
     """LRU caches of baked ground textures and uploaded 3D chunk meshes, with a per-frame time budget."""
 
@@ -312,6 +316,8 @@ class Streamer:
         self.ground = {}      # key -> [rt, last_used]
         self.meshes = {}      # key -> [{mat: model}, last_used]
         self.bad = set()
+        if getattr(world, "version", 0) >= TREES_FROM:
+            treegen.warm()                           # runtime trees: every species / variant mesh made during loading
         self.frame = 0
         self.baked = 0
         self.bake_ms = 0.0
@@ -396,15 +402,21 @@ class Streamer:
             self._drop_part(key)
             part = None
         if part is None:
-            part = self._part[key] = [{}, list(ch["m"].items()) if ch else [], 1e9, -1e9, lite]
+            todo0 = list(ch["m"].items()) if ch else []
+            if ch and ch.get("t") and getattr(self.world, "version", 0) >= TREES_FROM:
+                todo0.append(("trees", None))                    # the world stores only tree positions: their meshes are made here (src/treegen.py)
+            part = self._part[key] = [{}, todo0, 1e9, -1e9, lite]
         out, todo = part[0], part[1]
         (self.lite_keys.add if lite else self.lite_keys.discard)(key)
         processed = False
         while todo:
             if deadline is not None and (out or processed) and time.perf_counter() > deadline:
                 return False
-            mat, (off, n) = todo.pop(0)
+            mat, (off, n) = todo.pop(0) if todo[0][0] != "trees" else (todo.pop(0)[0], (0, 0))
             processed = True
+            if mat == "trees":
+                self._tree_models(key, ch, lite, out, part)
+                continue
             pos, uv, col = self.world.mesh_arrays(off, n)
             if n:
                 ys = pos[:, 1]
@@ -444,6 +456,33 @@ class Streamer:
         self.sph[key] = _sphere(bb[0], bb[1], bb[2], bb[3], y0, y1) if bb is not None and y1 >= y0 else None
         self.mesh_loaded += 1
         return True
+
+    def _tree_models(self, key, ch, lite, out, part):
+        """Runtime trees of one chunk: mat 20 = trunks / limbs / crown lumps, 21 = alpha-cut leaf sprites, 22 = a plain crown blob that
+        only the sun-shadow pass draws (sprites would cast square shadows).  Far (lite) chunks get the cheapest level."""
+        w = self.world
+        tr = w.trees[np.asarray(ch["t"], np.int64)]
+        S = w.chunk
+        own = (np.floor(tr[:, 0] / S) == key[0]) & (np.floor(tr[:, 1] / S) == key[1])      # a tree near an edge is listed by both chunks
+        tr = tr[own]
+        if not len(tr) or gl3d.tree_pack() is None:
+            return
+        rows = np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist()
+        lvl = 1 if lite else (2 if self.detail < 1 else 3)
+        sol, crd = treegen.place(rows, lvl)
+        parts = {20: sol, 21: crd}
+        if not lite:
+            parts[22] = treegen.place(rows, 1)[0]
+        for mat, arr in parts.items():
+            if arr is None:
+                continue
+            pos, uv, col = arr
+            if w.broken or getattr(w, "broken_extra", None):
+                pos = w.hide_broken(pos, ch.get("bb"))
+            part[2], part[3] = min(part[2], float(pos[:, 1].min())), max(part[3], float(pos[:, 1].max()))
+            m = gl3d.tree_model(pos, uv, col)
+            if m is not None:
+                out[mat] = m
 
     def _drop_part(self, key):
         part = self._part.pop(key, None)

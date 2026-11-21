@@ -93,6 +93,7 @@ void main(){
 """
 
 
+WIND_SWAY = 0.22                        # metres the very top of a tree sways in the breeze (leaves shimmer in proportion); 0 = still
 DETAIL_MATS = (17, 18, 19)                 # tools/build_world.py "glaz", MAT_KIT2, MAT_KIT3: pieces on walls and roofs
 
 
@@ -792,10 +793,13 @@ class Renderer:
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:
+                gl3d.tree_wind(t, WIND_SWAY)
                 decals, detail = [], []
                 gl_ = _gl()
                 for key, e in self._visible_meshes(st, fr, rect):
                     for mat, m in e[0].items():
+                        if mat == 22:
+                            continue                         # crown blob for the sun-shadow pass only
                         if mat == 6:
                             decals.append(m)                 # graffiti: after every wall, without writing depth
                         elif mat in DETAIL_MATS and "polyoffset" in gl_:
