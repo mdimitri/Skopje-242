@@ -2924,8 +2924,6 @@ def main():
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
     stage("leisure", data=("map_pois.json",))
-    if False:
-        pass
     phase("leisure")
     sites = []
     try:                                                        # round 13: bushes, playgrounds, pitches, school yards
