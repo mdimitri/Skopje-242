@@ -4,10 +4,39 @@ import math, random, sys
 import numpy as np
 from PIL import Image, ImageDraw
 
+def leaf_tex(n=128, leaves=34, seed=1, size=(.09, .17)):
+    """Procedural alpha leaf-cluster sprite: (lightness 0..255, alpha 0/255). Tinted by the card's colour at draw time."""
+    r = random.Random(seed); L = Image.new("L", (n, n), 0); A = Image.new("L", (n, n), 0); dl, da = ImageDraw.Draw(L), ImageDraw.Draw(A)
+    tw = [(n*.5, n*.98), (n*.5+r.uniform(-.1, .1)*n, n*.55), (n*.5+r.uniform(-.2, .2)*n, n*.15)]
+    dl.line(tw, fill=70, width=2); da.line(tw, fill=255, width=2)
+    for _ in range(leaves):
+        t = r.random(); cx = n*.5+(tw[2][0]-n*.5)*t*r.uniform(0, 1.6)+r.uniform(-.3, .3)*n*(1-.4*t); cy = n*(.95-.85*t)+r.uniform(-.05, .05)*n
+        ln = r.uniform(*size)*n; wd = ln*r.uniform(.4, .6); a = r.uniform(0, 6.28); ca, sa = math.cos(a), math.sin(a)
+        poly = [(cx+ca*ln*x-sa*wd*y, cy+sa*ln*x+ca*wd*y) for x, y in ((-1, 0), (-.3, .9), (.6, .8), (1, 0), (.6, -.8), (-.3, -.9))]
+        dl.polygon(poly, fill=int(r.uniform(120, 255))); da.polygon(poly, fill=255)
+    return np.array(L, np.uint8), np.array(A, np.uint8)
+_TEX = {}
+def tex(seed):
+    if seed not in _TEX: _TEX[seed] = leaf_tex(seed=seed)
+    return _TEX[seed]
+
+def card(m, c, right, up, t, col):
+    """One alpha-tested leaf-cluster quad = 2 triangles"""
+    c, right, up = np.array(c, float), np.array(right, float), np.array(up, float)
+    q = [c-right, c+right, c+right+up*2, c-right+up*2]
+    m.card.append((q, t, col)); m.ncard += 2
+
+def cards_at(m, c, size, n, col, rnd, seedtex, flat=False):
+    for i in range(n):
+        a = math.pi*i/n+rnd.uniform(-.3, .3); tilt = rnd.uniform(-.5, .5)
+        right = np.array([math.cos(a), 0, math.sin(a)])*size*.5; up = np.array([math.sin(a)*tilt*.5, 1, -math.cos(a)*tilt*.5]); up = up/np.linalg.norm(up)*size*.5
+        if flat: up = np.array([0, 0, 0.]) + np.array([-math.sin(a), 0, math.cos(a)])*size*.5
+        card(m, np.array(c)-up*(0 if flat else 1)*1.0, right, up, seedtex, jit(col, rnd, .1))
+
 class M:
-    def __init__(s): s.t = []          # (p0,p1,p2,rgb) lit later
+    def __init__(s): s.t = []; s.card = []; s.ncard = 0          # (p0,p1,p2,rgb) lit later
     def tri(s, a, b, c, col): s.t.append((np.array(a, float), np.array(b, float), np.array(c, float), col))
-    def n(s): return len(s.t)
+    def n(s): return len(s.t)+s.ncard
 
 def cyl(m, p0, p1, r0, r1, n, col):
     p0, p1 = np.array(p0, float), np.array(p1, float); d = p1 - p0; d /= np.linalg.norm(d) + 1e-9
@@ -114,7 +143,7 @@ def params(species, seed):
 
 FALL = {0: None, 1: dict(t=.45, drop=0.0), 2: dict(t=.95, drop=0.0), 3: dict(t=1.0, drop=.3)}   # summer, early, full, late fall
 FALLCOLS = [(196,120,40),(210,170,50),(170,70,40),(184,140,44),(150,60,36)]
-def tree(species, lvl, seed=7, season=0):
+def tree(species, lvl, seed=7, season=0, cards=False):
     p = params(species, seed)
     ever = p["kind"] in ("conifer", "column") and species != "poplar"
     f = FALL[season] if not ever else None
@@ -166,7 +195,21 @@ def tree(species, lvl, seed=7, season=0):
     else:                                                    # broadleaf: lime, oak, birch, acacia, stone pine
         th = H*p["tf"]; cr = R; ch = cr*p["ry"]*p["aspect"]
         cx, cz = lx+ax*.3, lz+az*.3; cy = th+ch*.85
-        if lvl == 1:
+        if cards and lvl >= 3:
+            ts = rnd.randint(1, 3)
+            if lvl == 3:
+                cyl(m, (0,0,0), (lx, th+.8, lz), .24, .1, ns, bark)
+                blob(m, (cx, cy, cz), cr*.7, ch*.55, cr*.7, 0, mix(col, (30, 50, 25), .35), rnd)       # dark inner core so the sprites don't show daylight
+                for i in range(p["nl"]*3):
+                    a = rnd.uniform(0, 6.28); d = cr*rnd.uniform(.35, 1.0)*p["spr"]**.2; y = cy+rnd.uniform(-.7, .8)*ch
+                    cards_at(m, (cx+math.cos(a)*d, y, cz+math.sin(a)*d), cr*.75, 2, col, rnd, ts)
+            else:
+                branches(m, (0,0,0), (lx*.05, 1, lz*.05), th*.75+.4, .26, 2, rnd, bark, col, 8, -1, 0, p["spr"]*.95, 3 if p["nl"] < 6 else 4)
+                blob(m, (cx, cy, cz), cr*.6, ch*.45, cr*.6, 0, mix(col, (30, 50, 25), .35), rnd)
+                for i in range(p["nl"]*5):
+                    a = rnd.uniform(0, 6.28); d = cr*rnd.uniform(.2, 1.05)*p["spr"]**.2; y = cy+rnd.uniform(-.8, .9)*ch
+                    cards_at(m, (cx+math.cos(a)*d, y, cz+math.sin(a)*d), cr*.6, 2, col, rnd, ts)
+        elif lvl == 1:
             cyl(m, (0,0,0), (lx, th, lz), .17, .12, ns, bark); blob(m, (cx, cy, cz), cr, ch, cr, 0, col, rnd)
         elif lvl == 2:
             cyl(m, (0,0,0), (lx, th+.8, lz), .22, .1, ns, bark); blob(m, (cx, cy, cz), cr, ch, cr, 1, col, rnd, .1)
@@ -207,6 +250,20 @@ def render(m, W=360, Hh=520, yaw=.6, ymax=15.0):
         z = w0*A[2]+w1*B[2]+w2*C[2]; sub = zb[y0:y1+1, x0:x1+1]
         ok = ins & (z < sub); sub[ok] = z[ok]
         img[y0:y1+1, x0:x1+1][ok] = [min(255, int(v*sh)) for v in col]
+    for q, ts, col in sorted(m.card, key=lambda e: -np.mean([P(v)[2] for v in e[0]])):
+        Lt, At = tex(ts); n = Lt.shape[0]; Q = [P(v) for v in q]
+        for tri_, uv in (((0, 1, 2), ((0, 1), (1, 1), (1, 0))), ((0, 2, 3), ((0, 1), (1, 0), (0, 0)))):
+            A, B, C = (Q[i] for i in tri_); (ua, va), (ub, vb), (uc, vc) = uv
+            x0, x1 = int(max(0, min(A[0], B[0], C[0]))), int(min(W-1, max(A[0], B[0], C[0])+1)); y0, y1 = int(max(0, min(A[1], B[1], C[1]))), int(min(Hh-1, max(A[1], B[1], C[1])+1))
+            if x1 < x0 or y1 < y0: continue
+            xs, ys = np.meshgrid(np.arange(x0, x1+1)+.5, np.arange(y0, y1+1)+.5); d = (B[1]-C[1])*(A[0]-C[0]) + (C[0]-B[0])*(A[1]-C[1])
+            if abs(d) < 1e-9: continue
+            w0 = ((B[1]-C[1])*(xs-C[0]) + (C[0]-B[0])*(ys-C[1]))/d; w1 = ((C[1]-A[1])*(xs-C[0]) + (A[0]-C[0])*(ys-C[1]))/d; w2 = 1-w0-w1
+            ins = (w0 >= 0) & (w1 >= 0) & (w2 >= 0); z = w0*A[2]+w1*B[2]+w2*C[2]
+            u = np.clip((w0*ua+w1*ub+w2*uc)*(n-1), 0, n-1).astype(int); v = np.clip((w0*va+w1*vb+w2*vc)*(n-1), 0, n-1).astype(int)
+            al = At[v, u] > 128; ok = ins & al & (z < zb[y0:y1+1, x0:x1+1]+1.5)
+            lt = Lt[v, u]/255.0*.9+.25; sub = zb[y0:y1+1, x0:x1+1]; sub[ok] = np.minimum(sub[ok], z[ok])
+            for ch_ in range(3): img[y0:y1+1, x0:x1+1, ch_][ok] = np.clip(col[ch_]*lt[ok]*.95, 0, 255).astype(np.uint8)
     return Image.fromarray(img)
 
 if __name__ == "__main__":
@@ -220,6 +277,11 @@ if __name__ == "__main__":
             dr.text((6, r*H+H//2), s_, fill=(0, 0, 0))
             for l in range(1, 5):
                 m = tree(s_, l); print(s_, l, "tris", m.n()); sheet.paste(render(m, W, H, ymax=16), (110+(l-1)*W, r*H))
+    elif mode == "cards":                                   # per row: lumps L3, cards L3, lumps L4, cards L4
+        sp_ = ["lime", "oak", "birch", "acacia"]; sheet = Image.new("RGB", (W*4+110, H*len(sp_)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
+        for r, s_ in enumerate(sp_):
+            for q, (l, c) in enumerate(((3, False), (3, True), (4, False), (4, True))):
+                m = tree(s_, l, 3, 0, c); sheet.paste(render(m, W, H, ymax=16), (110+q*W, r*H)); dr.text((112+q*W, r*H+4), f"{s_} L{l} {'cards' if c else 'lumps'} {m.n()} tris", fill=(0, 0, 0)); print(s_, l, c, m.n())
     elif mode == "fall":                                     # rows = species, columns = summer / early / full / late fall (L3)
         sheet = Image.new("RGB", (W*4+110, H*len(names)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
         for r, s_ in enumerate(names):
