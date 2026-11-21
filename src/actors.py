@@ -297,6 +297,7 @@ def tow(b):
     b.tra = (hx - math.cos(th) * La, hy - math.sin(th) * La)
 
 
+STEER_TWITCH_CUT = 0.35                                                    # player-driven vehicles: steering response rate is this much slower (less twitchy)
 CLUTCH_FLARE, CLUTCH_BITE, CLUTCH_SETTLE = 0.2, 0.24, 0.62               # clutch launch: revs flare (s), then the clutch bites (s); main.engine_pitch plays the same timing
 
 
@@ -331,7 +332,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         p.signal_turn(0, dt)
     response = HERO["drv"] if p.player_car else 1.0
     if p.player_car and p.ctl is None:
-        response *= 0.8
+        response *= 0.8 * (1.0 - STEER_TWITCH_CUT)
     p.steer += (steer_in - p.steer) * min(1.0, (9.0 if steer_in else 14.0) * dt * response * (0.7 if p.kind == vehicles.BTR else 1.0))
     maxang = STEER / (1.0 + abs(vf) / (8.0 if L_ < 6 else 13.0))
     if artic:
