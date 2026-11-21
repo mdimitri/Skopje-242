@@ -25,6 +25,11 @@ if not exist "%PY%" (
     pause
     exit /b 1
 )
+REM One-time: "Skopje 242 Traffic Lab" shortcut with the game icon here and on the desktop (delete it to have it made again)
+set "PSH=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PSH%" set "PSH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PSH%" set "PSH=powershell"
+if not exist "Skopje 242 Traffic Lab.lnk" "%PSH%" -NoProfile -ExecutionPolicy Bypass -File "tools\shortcut.ps1" -Name "Skopje 242 Traffic Lab" -Bat "trafficSimulator.bat" -Style 1 >nul 2>&1
 if not exist "data\cache\world\manifest.json" (
     echo The world is not built yet: start the game once with run.bat so it builds data\cache\world.
     pause
