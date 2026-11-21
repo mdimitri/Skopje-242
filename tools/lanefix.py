@@ -103,7 +103,6 @@ def _copy_profile(edges, dst, src, same_way):
     d["w"], d["lanes"] = s["w"], s.get("lanes", 0)
     dl = s.get("directional_lanes")
     d["directional_lanes"] = (dl if same_way else dl[::-1]) if dl else None
-    d["turn"] = ("", "")
 
 
 def harmonize(edges, short=300.0):
@@ -136,6 +135,43 @@ def harmonize(edges, short=300.0):
                                 _copy_profile(edges, i, src[0], fwd[k + q] == fwd[src[1]])
                             moved += len(run)
                 k = j + 1
+        changed += moved
+        if not moved:
+            break
+    return changed + _level_steps(edges)
+
+
+def _level_steps(edges, max_step=3.6, max_run=400.0):
+    """What is left are real lane-count steps between long stretches.  A boulevard still does not lose or gain a lane
+    for no visible reason, so a stretch that is one lane narrower than the stretch next to it (same road class)
+    takes the wider layout.  Bigger drops stay and taper."""
+    changed = 0
+    for _ in range(6):
+        moved = 0
+        for ch in chains(edges, through_pairs(edges)):
+            fwd = _oriented(edges, ch)
+            k = 0
+            runs = []
+            while k < len(ch):
+                j = k
+                while j + 1 < len(ch) and abs(edges[ch[j + 1]]["w"] - edges[ch[k]]["w"]) < 0.5 \
+                        and edges[ch[j + 1]]["cls"] == edges[ch[k]]["cls"]:
+                    j += 1
+                runs.append((k, j))
+                k = j + 1
+            for r, (k, j) in enumerate(runs):
+                best = None
+                for nb in (r - 1, r + 1):
+                    if 0 <= nb < len(runs):
+                        q = runs[nb][1] if nb < r else runs[nb][0]
+                        dw = edges[ch[q]]["w"] - edges[ch[k]]["w"]
+                        if 0.5 < dw <= max_step and edges[ch[q]]["cls"].replace("_link", "") == edges[ch[k]]["cls"].replace("_link", "") \
+                                and (best is None or dw > best[0]):
+                            best = (dw, q)
+                if best and sum(edges[ch[i]]["len"] for i in range(k, j + 1)) <= max_run:
+                    for i in range(k, j + 1):
+                        _copy_profile(edges, ch[i], ch[best[1]], fwd[i] == fwd[best[1]])
+                    moved += j - k + 1
         changed += moved
         if not moved:
             break

@@ -10,6 +10,7 @@ import os
 
 import numpy as np
 
+import lanefix
 import par
 from progress import Bar
 from roadwidth import half_width, has_sidewalk, lane_bounds, lane_turns, lane_count as lanes_per_way
@@ -1346,7 +1347,16 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                 prev = cur
     # lane markings
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
-        _markings(out, cov, i, e, AP, AF, AH, y + 0.025)
+        ext, free = None, []
+        thru = getattr(X, "thru", ())
+        if (i, 0) in thru or (i, 1) in thru:
+            b0, b1 = (0 if (i, 0) in thru else a0), (len(RP) - 1 if (i, 1) in thru else a1)
+            ext = (RP[b0:b1 + 1], RF[b0:b1 + 1], RH[b0:b1 + 1])
+            for end_, q_ in ((0, 0), (1, len(RP) - 1)):
+                nd_ = e["a"] if end_ == 0 else e["b"]
+                if (i, end_) in thru and nd_ in plates:
+                    free.append((RP[q_][0], RP[q_][1], (plates[nd_][1] + 1.5) ** 2))
+        _markings(out, cov, i, e, AP, AF, AH, y + 0.025, ext, free)
     if deck is not None:                                   # girders + piers under the deck
         _slab(out, slab_pf[0], slab_pf[1], hw + bsw, y, inner, hide=lambda x_, y_: cov.covered(x_, y_, i, True))
         if do_piers:
@@ -1390,6 +1400,13 @@ def _prepare(edges, joints, plates, decks, T):
                 d2 = _away(B, e2)
                 if d1[0] * d2[0] + d1[1] * d2[1] < -0.94:
                     X.ptaper[(k1, e1)] = B["w"] / 2
+    X.thru = set()                                         # carriageway ends whose lane lines run on across the junction to the
+    tp = lanefix.through_pairs(edges)                      # same layout on the far side (a boulevard keeps its lanes through a crossing)
+    for (k1, nd), k2 in tp.items():
+        A, B = edges[k1], edges[k2]
+        if nd in plates and A["ow"] == B["ow"] and abs(A["w"] - B["w"]) < 0.5 \
+                and lanes_per_way(A) == lanes_per_way(B) and lanes_per_way(A, -1) == lanes_per_way(B, -1):
+            X.thru.add((k1, 0 if A["a"] == nd else 1))
     X.bpart, X.bbias = {}, {}
     dn = {}                                                # every carriageway at a deck's ends (a side road joining at the
     for k_, e_ in enumerate(edges):                        # bridge foot too): the deck's pavement stops where its asphalt starts
@@ -1614,7 +1631,7 @@ def _piers(pout, piers, deck, T):
         s += 22.0
 
 
-def _line(out, cov, me, e, P, y, width, col, dashed, rank):
+def _line(out, cov, me, e, P, y, width, col, dashed, rank, free=()):
     """Paint along an offset path, continuously or with 3 m dashes and 6 m gaps."""
     cum = _cum(P)
     total = cum[-1]
@@ -1634,10 +1651,11 @@ def _line(out, cov, me, e, P, y, width, col, dashed, rank):
         for k in range(1, n + 1):
             q = _at(P, cum, s0 + (s1 - s0) * k / n)
             mx, my = (prev[0] + q[0]) * 0.5, (prev[1] + q[1]) * 0.5
-            if cov.in_core(mx, my) or cov.in_core(q[0], q[1]):
+            if (cov.in_core(mx, my) or cov.in_core(q[0], q[1])) and not any(
+                    (mx - fx) ** 2 + (my - fy) ** 2 < fr and (q[0] - fx) ** 2 + (q[1] - fy) ** 2 < fr for fx, fy, fr in free):
                 prev = q
                 continue
-            if cov.near_junction(mx, my) and (cov.covered(mx, my, me, e["bridge"], rank) or cov.covered(q[0], q[1], me, e["bridge"], rank)):
+            if not free and cov.near_junction(mx, my) and (cov.covered(mx, my, me, e["bridge"], rank) or cov.covered(q[0], q[1], me, e["bridge"], rank)):
                 prev = q
                 continue
             dx, dy = q[0] - prev[0], q[1] - prev[1]
@@ -1647,11 +1665,14 @@ def _line(out, cov, me, e, P, y, width, col, dashed, rank):
             prev = q
 
 
-def _markings(out, cov, i, e, pts, fr, half_widths, y):
+def _markings(out, cov, i, e, pts, fr, half_widths, y, ext=None, free=()):
     w, rk = e["w"], rank_of(e["cls"])
     white = (236, 234, 224)
 
     def line(fraction, inset, width, dashed):
+        if dashed and ext is not None:                      # dashed lane lines go on through the junction
+            _line(out, cov, i, e, _offset_v(ext[0], ext[1], ext[2], fraction, inset), y, width, white, True, rk, free)
+            return
         path = _offset_v(pts, fr, half_widths, fraction, inset)
         _line(out, cov, i, e, path, y, width, white, dashed, rk)
 
