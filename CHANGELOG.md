@@ -2,6 +2,16 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Traffic lab (trafficSimulator.bat)
+
+- New `trafficSimulator.bat` opens a full-screen 2D traffic lab on the built world. It runs the game's own simulation (AI cars, buses, ambulances and fire engines, trains and level crossings, pedestrians, traffic lights) and only measures it, so the lab always matches the current game. Collision boxes and the overlap test are the game's own (`actors.parts`, `actors._sat`).
+- Map: zoom, pan, colour layers (road class, live speed / limit, density, standing heat, conflicts, junction level of service, lanes), overlays and street names. Tabs: Live charts (time series, fundamental diagram, speed histogram, LOS mix, worst junctions, event log), Inspect (vehicle, road, junction with its own signal plan), Edit (close roads, obstacles, ambulance calls, car fires, breakdowns, study rectangle, scheduled incidents), Layers, Batch, Explore, Report, Scenario and nine settings tabs.
+- Settings are the game's own constants (`Traffic.WAIT`, `signals.GREEN`, `trains.CLOSE`, `transit.MAX_BUSES` ...), read from the game at start and applied live. Every other numeric `Traffic` constant appears on the Advanced tab by itself.
+- Study rectangle of any size, up to the whole map: it is cut into tiles of at most 700 m (the game simulates around the player), and every tile x seed runs on its own core.
+- Batches: variants, sweeps and presets x seeds in parallel processes (same seed, same run), with an HTML report on efficiency, safety and speed. The report has 95 % confidence intervals, Welch t-tests against the baseline, HCM level of service per junction, queues, heatmaps, a fundamental diagram and a per-tile table.
+- Explore: random and evolutionary search over chosen constants and rule switches on all cores. The best candidates are re-tested on fresh seeds against the game's settings, then shown in a leaderboard.
+- Apply to game: the lab writes `traffic_tuning.json`, which the game and its traffic worker load at start through `src/traffic_tuning.py`, the same code the lab runs. Closures and junction changes are stored by coordinates, so they survive a world rebuild. Delete the file to return to the defaults.
+
 ## Runtime trees
 
 - Trees are no longer baked into the world file (world format v78): it keeps only each tree's position, radius and kind, and `src/treegen.py` makes the meshes when a chunk streams in. The synthetic demo city has 127,000 trees: about 180 MB of baked tree meshes become a 2 MB list (the real map, roughly 500,000 trees, saves around 0.7 GB).

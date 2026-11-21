@@ -88,14 +88,15 @@ def _set(c, vals):
 def _serve(conn, path, seed):
     try:
         import world as world_mod
-        import signals
         import stations
         w = world_mod.World(path, lean=True)              # the road graph and ground heights only: less memory
+        import traffic_tuning
+        traffic_tuning.startup(w, lambda _s: None)         # the same traffic lab tuning as the game
         sim = _Sim(w, seed)
         tr = actors.Traffic(w, sim.rng, 0)
         tr.sim = sim
         sim.traffic = tr
-        tr.signals = signals.Signals(w)
+        tr.signals = traffic_tuning.signals_for(w)
         tr.stn = stations.Stations(sim)
         conn.send(("ready", os.getpid()))
     except Exception:  # noqa: BLE001

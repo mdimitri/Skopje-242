@@ -1,0 +1,15 @@
+{
+ "name": "Chair - busy 4-lane knot",
+ "note": "The Chair junction cluster with short links, a known jam spot in the audits",
+ "area": [
+  1170,
+  -2145,
+  1770,
+  -1545
+ ],
+ "closures": [],
+ "obstacles": [],
+ "junctions": [],
+ "incidents": [],
+ "settings": {}
+}

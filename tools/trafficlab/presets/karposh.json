@@ -1,0 +1,15 @@
+{
+ "name": "Karposh",
+ "note": "Karposh neighbourhood grid",
+ "area": [
+  -2432,
+  -143,
+  -1832,
+  457
+ ],
+ "closures": [],
+ "obstacles": [],
+ "junctions": [],
+ "incidents": [],
+ "settings": {}
+}

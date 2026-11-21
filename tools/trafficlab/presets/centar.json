@@ -1,0 +1,15 @@
+{
+ "name": "Centar - Macedonia Square",
+ "note": "City centre around the Stone Bridge, Partizanski / Kliment Ohridski boulevards",
+ "area": [
+  -114,
+  32,
+  486,
+  632
+ ],
+ "closures": [],
+ "obstacles": [],
+ "junctions": [],
+ "incidents": [],
+ "settings": {}
+}

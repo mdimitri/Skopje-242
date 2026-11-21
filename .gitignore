@@ -18,3 +18,7 @@ Photogrametry/
 _photogram/
 photogram_atlas*.png
 photo_atlas*.png
+
+# traffic lab output (scenarios, batches, explore runs) and the tuning it writes for this PC
+/trafficlab/
+/traffic_tuning.json

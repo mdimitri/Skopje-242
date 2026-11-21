@@ -1,0 +1,15 @@
+{
+ "name": "Aerodrom - residential T",
+ "note": "Unsignalised residential T in Aerodrom where narrow-street standoffs were seen",
+ "area": [
+  2690,
+  1145,
+  3290,
+  1745
+ ],
+ "closures": [],
+ "obstacles": [],
+ "junctions": [],
+ "incidents": [],
+ "settings": {}
+}

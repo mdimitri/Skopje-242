@@ -1,0 +1,38 @@
+{
+ "name": "Centar - rush hour with incidents",
+ "note": "8 am peak, a car fire on Partizanski and a breakdown",
+ "area": [
+  -114,
+  32,
+  486,
+  632
+ ],
+ "closures": [],
+ "obstacles": [],
+ "junctions": [],
+ "incidents": [
+  [
+   30,
+   "fire",
+   120,
+   280
+  ],
+  [
+   90,
+   "breakdown",
+   250,
+   400
+  ],
+  [
+   150,
+   "amb",
+   200,
+   330
+  ]
+ ],
+ "settings": {
+  "hour": 8.0,
+  "cars": 180,
+  "peds": 90
+ }
+}

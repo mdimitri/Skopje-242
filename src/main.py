@@ -213,7 +213,6 @@ import smog   # noqa: E402
 import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import mall as mall_mod   # noqa: E402
-import signals   # noqa: E402
 import escride  # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers, draw_gate_markers   # noqa: E402
 from render import LOD_PPM, TILT, Renderer, gait_cycle   # noqa: E402
@@ -745,6 +744,8 @@ def main():
 
     rng = random.Random(a.seed)
     loader.tick(0.92, "simulation")
+    import traffic_tuning
+    traffic_tuning.startup(world, log)                    # traffic_tuning.json from the traffic lab, if there is one
     try:
         sim = load_while_drawing(lambda: Sim(world, rng, a.cars, a.peds))
     except Exception as e:  # noqa: BLE001 - an old built world the new code cannot use: rebuild it instead of crashing
@@ -764,7 +765,7 @@ def main():
     sim.clock.hour = (a.hour if a.test or "--hour" in sys.argv else cfg["hour"]) % 24.0
     streamer.clock = sim.clock
     sim.auto_respawn = bool(a.test)
-    lights = signals.Signals(world)
+    lights = traffic_tuning.signals_for(world)
     sim.traffic.signals = sim.lights = lights
     import trafficproc
     sim.tproc = trafficproc.start(sim, world, report=log)  # AI traffic on its own core: the worker loads the world meanwhile
