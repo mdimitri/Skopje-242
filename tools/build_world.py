@@ -2128,14 +2128,14 @@ def main():
         T = terrain_mod.flat(HX, HY)
         real_terrain = False
 
+    def cells(pts):
+        return [((x + HX) / CELL, (y + HY) / CELL) for x, y in pts]
+
     stage("map", data=("elements", "terrain.npy"))
     surf = Image.new("L", (NCX, NCY), 0)       # 0 ground, 1 water, 2 bridge, 3 road
     occ = Image.new("L", (NCX, NCY), 0)       # buildings + roads
     bld = Image.new("L", (NCX, NCY), 0)       # buildings only
     sd, od, bd = ImageDraw.Draw(surf), ImageDraw.Draw(occ), ImageDraw.Draw(bld)
-
-    def cells(pts):
-        return [((x + HX) / CELL, (y + HY) / CELL) for x, y in pts]
 
     mesh = MeshAcc()
 
@@ -2383,6 +2383,7 @@ def main():
     frac(1.0, "quays")
     del lakes, ld
 
+    stage("bmesh")
     # ---- building meshes, now that the ground under them is known ------------------------------
     import roads3d as _r3
     roads3d_SW = _r3.SW_W
@@ -2923,6 +2924,8 @@ def main():
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
     stage("leisure", data=("map_pois.json",))
+    if False:
+        pass
     phase("leisure")
     sites = []
     try:                                                        # round 13: bushes, playgrounds, pitches, school yards

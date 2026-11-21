@@ -2,13 +2,18 @@
 statements); every stage has a fingerprint and its results are cached, so a launch re-runs only the stages from the first
 changed one on.
 
-fingerprint(stage) = hash(previous stage's fingerprint, the stage's code, the helper functions / constants / tool modules
-that code uses (found by name), the data files it reads)    -> a change ripples to every later stage, never to an earlier one.
+fingerprint(stage) = hash(the stage's code, the helper functions / constants / tool modules that code uses (found by name),
+the data files it reads).  A stage is reused when its fingerprint is unchanged AND the digest of its input (everything the
+stages before it left behind: variables + geometry) is the same as when it was cached.  So an edit re-runs that stage, and a
+later stage only when the edit really changed what reaches it ("early cutoff"): a roads edit that leaves the buildings' inputs
+untouched does not rebuild the buildings.
 Cache (<world>.stages/): <stage>.state.pkl = the variables the stage changed, <stage>.mesh.pkl = the geometry it emitted,
-stages.json = fingerprints.  The final write of the world (stage "write") always runs, from the cached mesh layers.
+stages.json = fingerprint + input / output digest of every stage.  The final write of the world (stage "write") always runs,
+from the cached mesh layers.
 
-Edit a stage's code, or a tool module it imports, and only that stage and the ones after it run again (comment / layout
-edits do not count: code is hashed through ast.unparse).  Bump build_world.VERSION to force a full rebuild.
+Comment / layout edits do not count (code is hashed through ast.unparse).  build_world.VERSION is NOT part of the
+fingerprints (it is the game's compatibility number: a bump alone only re-writes the world from the cache); to force a rebuild
+set SK242_REBUILD_FROM=<stage name> (that stage and everything after it).
 """
 import ast
 import glob
@@ -26,7 +31,7 @@ from progress import frac, phase
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-FORMAT = 2                                    # layout of the cache itself
+FORMAT = 3                                    # layout of the cache itself
 # module-level lists the tool modules fill while building; later code reads them, so they travel with the snapshots
 MODSTATE = (("furniture", "SIGNALS"), ("furniture", "STOPS"), ("construction", "LOTS"))
 SOURCE = os.path.join(HERE, "build_world.py")
@@ -100,7 +105,7 @@ class _Code:
 
     def module(self, name, seen):
         """Fingerprint parts of a local tool module (tools/ or src/) and, recursively, the local modules it imports."""
-        if name in seen:
+        if name in seen or name == "build_world":          # build_world itself: its used defs are hashed by name already
             return []
         seen.add(name)
         for d in ("tools", "src"):
@@ -169,7 +174,7 @@ def _stat_key(src, path, version):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     files = sorted(glob.glob(os.path.join(root, "tools", "*.py")) + glob.glob(os.path.join(root, "src", "*.py"))
                    + [os.path.join(src, f) for f in (os.listdir(src) if os.path.isdir(src) else ())])
-    out = [FORMAT, str(version), os.path.abspath(path), os.path.abspath(src)]
+    out = [FORMAT, os.path.abspath(path), os.path.abspath(src)]
     for f in files:
         try:
             st = os.stat(f)
@@ -211,11 +216,10 @@ def _fingerprints(src, path=SOURCE, version=None):
     tree, prelude, hoisted, stages = layout(path)
     code = _Code(tree, hoisted)
     extras = {n for _, kw, _ in stages for n in kw.get("data", ()) if n.endswith(".json")}
-    prev, out = _md5("fmt", FORMAT, version), []
+    out = []
     for name, kw, stmts in stages:
         parts = code.of(stmts + (prelude if not out else []), kw.get("mods", ())) + _data_parts(kw.get("data", ()), src, extras)
-        prev = _md5(prev, name, *parts)
-        out.append((name, prev))
+        out.append((name, _md5("fmt", FORMAT, name, *parts)))
     return out
 
 
@@ -240,15 +244,14 @@ def is_stale(world, src, version=None):
 
 
 def stale_stages(world, src, version=None):
-    """Names of the stages that would run again (for the log)."""
+    """Names of the stages whose own code / data changed (for the log; later ones run only if their input changes too)."""
     version = version or world_version()
     try:
         have = json.load(open(os.path.join(world, "manifest.json"))).get("stages") or {}
     except Exception:  # noqa: BLE001
         have = {}
     fps = [(n, fp) for n, fp in fingerprints(src, version=version) if n != "write"]
-    first = next((i for i, (n, fp) in enumerate(fps) if have.get(n) != fp), len(fps))
-    return [n for n, _ in fps[first:]]
+    return [n for n, fp in fps if have.get(n) != fp]
 
 
 # ------------------------------------------------------------------------------------------------ the cache
@@ -274,6 +277,20 @@ class _Ticker:
         return memoryview(b).nbytes
 
 
+class _CanonPickler(pickle.Pickler):
+    """Pickles sets in sorted order, so the digest of a set does not depend on its (hash-dependent) iteration order: the same
+    data digests the same after a reload."""
+
+    def reducer_override(self, obj):
+        if type(obj) in (set, frozenset):
+            try:
+                items = sorted(obj)
+            except TypeError:
+                items = sorted(obj, key=repr)
+            return type(obj), (items,)
+        return NotImplemented
+
+
 class _State:
     """Digest of every picklable variable, so a stage's changes (also in-place ones) can be found."""
 
@@ -294,7 +311,7 @@ class _State:
             t = _Ticker(lo + (hi - lo) * done / tot, lo + (hi - lo) * (done + w) / tot, w, sub="checking what changed")
             done += w
             try:
-                pickle.dump(v, t, protocol=pickle.HIGHEST_PROTOCOL)
+                _CanonPickler(t, protocol=pickle.HIGHEST_PROTOCOL).dump(v)
             except Exception:  # noqa: BLE001 - e.g. an ImageDraw: the build re-creates those (rebind)
                 self.unpicklable.add(n)
                 continue
@@ -318,6 +335,7 @@ def run(argv=None):
     tree, prelude, hoisted, stages = layout()
     mod = sys.modules.get("build_world") or sys.modules["__main__"]
     ns = dict(vars(mod))
+    modnames = set(ns)                                    # module-level constants / defs: covered by the code fingerprints
     ns["__name__"] = "build_world_staged"
 
     def go(nodes):
@@ -338,56 +356,73 @@ def run(argv=None):
             stored = {}
     except Exception:  # noqa: BLE001
         stored = {}
-    have = stored.get("fps", {})
+    have = stored.get("stages", {})
     state = _State()
     state.diff(ns)                                        # baseline: whatever the prelude made needs no snapshot
-
-    first = len(fps) - 1                                  # "write" is last and always runs
-    for i, (n, fp) in enumerate(fps[:-1]):
-        ok = have.get(n) == fp and all(os.path.exists(os.path.join(cache, n + e)) for e in (".state.pkl", ".mesh.pkl"))
-        if not ok:
-            first = i
-            break
-    for n, _ in fps[first:-1]:                            # everything from the first stale stage on is going away
-        for e in (".state.pkl", ".mesh.pkl"):
-            try:
-                os.remove(os.path.join(cache, n + e))
-            except OSError:
-                pass
+    modbase = {k: v for k, v in state.known.items() if k in modnames}
+    force = os.environ.get("SK242_REBUILD_FROM")
+    forced = names.index(force) if force in names else len(names)
     os.makedirs(cache, exist_ok=True)
-    keep = {n: fp for n, fp in fps[:first]}
+    keep = {}
 
     def save_index():
         with open(os.path.join(cache, "stages.json"), "w") as f:
-            json.dump({"format": FORMAT, "fps": keep}, f)
+            json.dump({"format": FORMAT, "stages": keep}, f)
 
-    save_index()
-    print(f"[stages] reusing {first} of {len(fps) - 1}: {', '.join(names[:first]) or 'nothing'}; running: {', '.join(names[first:-1]) or 'nothing'}")
+    def digest(layer=None):
+        """Digest of everything the stages so far left behind: the variables, plus the geometry (when given)."""
+        h = hashlib.md5()
+        for k in sorted(state.known):
+            if k in modbase and state.known[k] == modbase[k]:
+                continue                                  # a module constant nobody rebound (e.g. VERSION)
+            h.update(k.encode() + b"=" + state.known[k].encode() + b";")
+        for k in sorted(layer or (), key=str):
+            h.update(repr(k).encode())
+            for arr in layer[k]:
+                h.update(arr.tobytes() if hasattr(arr, "tobytes") else bytes(arr))
+        return h.hexdigest()
 
+    cur = digest()                                        # input of the first stage
     layers = []                                           # mesh layers in stage order: dicts (chunk, material) -> (pos, uv, col)
-    if first:
-        phase("loading saved stages")
-    for i in range(first):                                # restore the cached stages
-        n = names[i]
-        frac(i / first, n)
-        d = pickle.load(open(os.path.join(cache, n + ".state.pkl"), "rb"))
-        ns.update(d["vars"])
-        for k, m in d["imports"].items():                 # "import roads3d" inside a stage that is not run again
-            if k not in ns:
-                ns[k] = importlib.import_module(m)
-        for g in d["gone"]:
-            ns.pop(g, None)
-        for (m, attr), v in d["mods"].items():
-            setattr(importlib.import_module(m), attr, v)
-        layers.append(pickle.load(open(os.path.join(cache, n + ".mesh.pkl"), "rb")))
-        print(f"[stages] {n}: reused")
-    if first:
-        state.diff(ns)
-        if "rebind" in ns:
+    reused, ran, did = [], [], False
+    for i, (n, fp) in enumerate(fps[:-1]):
+        rec = have.get(n, {})
+        files = [os.path.join(cache, n + e) for e in (".state.pkl", ".mesh.pkl")]
+        ok = i < forced and rec.get("fp") == fp and rec.get("in") == cur and all(os.path.exists(f) for f in files)
+        if ok:                                            # same code, same input: restore the cached result
+            phase("loading saved stages")
+            frac(i / max(1, len(fps) - 1), n)
+            d = pickle.load(open(files[0], "rb"))
+            ns.update(d["vars"])
+            for k, m in d["imports"].items():             # "import roads3d" inside a stage that is not run again
+                if k not in ns:
+                    ns[k] = importlib.import_module(m)
+            for g in d["gone"]:
+                ns.pop(g, None)
+                state.known.pop(g, None)
+            for (m, attr), v in d["mods"].items():
+                setattr(importlib.import_module(m), attr, v)
+            state.known.update(d["digests"])
+            state.size.update(d["sizes"])
+            layers.append(pickle.load(open(files[1], "rb")))
+            keep[n] = rec
+            cur = rec["out"]
+            reused.append(n)
+            did = True
+            print(f"[stages] {n}: reused")
+            continue
+        print(f"[stages] {n}: " + ("forced" if i >= forced else "code or data changed" if rec.get("fp") != fp else "input changed"
+                                     if rec.get("in") != cur else "cache files missing"))
+        for f in files:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        keep.pop(n, None)
+        save_index()
+        if did and "rebind" in ns:
             ns["rebind"](ns)
-
-    for i in range(first, len(fps) - 1):
-        n, fp = fps[i]
+        ran.append(n)
         _, kw, stmts = stages[i]
         t0 = time.time()
         ns["mesh"] = ns["MeshAcc"]()
@@ -411,13 +446,19 @@ def run(argv=None):
             if m in sys.modules:
                 mods[(m, attr)] = getattr(sys.modules[m], attr, None)
         imports = {k: v.__name__ for k, v in ns.items() if isinstance(v, types.ModuleType) and not k.startswith("__")}
-        _dump({"vars": changed, "gone": gone, "mods": mods, "imports": imports}, os.path.join(cache, n + ".state.pkl"),
-              0.5, 0.7, sum(state.size.get(k, 1) for k in changed))
-        _dump(layer, os.path.join(cache, n + ".mesh.pkl"), 0.7, 1.0, sum(a.nbytes for t_ in layer.values() for a in t_ if hasattr(a, "nbytes")))
+        _dump({"vars": changed, "gone": gone, "mods": mods, "imports": imports,
+               "digests": {k: state.known[k] for k in changed}, "sizes": {k: state.size.get(k, 1) for k in changed}},
+              files[0], 0.5, 0.7, sum(state.size.get(k, 1) for k in changed))
+        _dump(layer, files[1], 0.7, 1.0, sum(a.nbytes for t_ in layer.values() for a in t_ if hasattr(a, "nbytes")))
         layers.append(layer)
-        keep[n] = fp
+        out = digest(layer)
+        keep[n] = {"fp": fp, "in": cur, "out": out}
+        cur = out
         save_index()
         print(f"[stages] {n}: ran {t1 - t0:.1f}s, cached in {time.time() - t1:.1f}s ({', '.join(sorted(changed)) or 'no changes'})")
+    print(f"[stages] reused {len(reused)} of {len(fps) - 1}: {', '.join(reused) or 'nothing'}; ran: {', '.join(ran) or 'nothing'}")
+    if did and "rebind" in ns:
+        ns["rebind"](ns)
 
     # the write stage: the merged geometry of every layer, then the code of the stage itself
     merged = ns["MeshAcc"]()
