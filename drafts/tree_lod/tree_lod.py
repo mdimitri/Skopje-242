@@ -102,6 +102,9 @@ def tree(species, lvl, seed=7):
         elif lvl == 3:
             for k in range(4): blob(m, (0, 3.5+k*2.4, 0), 1.5-abs(k-1.5)*.2, 2.0, 1.5-abs(k-1.5)*.2, 1, col, rnd, .18)
         elif lvl == 4:
+            for k in range(8):                              # side branches with a small leaf lump on each
+                a = k*2.4; y = 3.0+k*1.2; e = (math.cos(a)*1.3, y+.9, math.sin(a)*1.3)
+                cyl(m, (0, y, 0), e, .06, .03, 5, BARK); blob(m, e, .55, .65, .55, 0, col, rnd, .2)
             for k in range(7): blob(m, (rnd.uniform(-.2, .2), 3.2+k*1.35, rnd.uniform(-.2, .2)), 1.45-abs(k-3)*.12, 1.5, 1.45-abs(k-3)*.12, 1, col, rnd, .22)
         else:
             for k in range(14):
@@ -121,7 +124,7 @@ def tree(species, lvl, seed=7):
                 a = k*1.26; blob(m, (math.cos(a)*cr*.5, th+cr*.55+rnd.uniform(-.3, .5), math.sin(a)*cr*.5), cr*.62, cr*.55, cr*.62, 1, col, rnd, .2)
             blob(m, (0, th+cr*.9, 0), cr*.65, cr*.55, cr*.65, 1, col, rnd, .2)
         elif lvl == 4:
-            branches(m, (0,0,0), (0,1,0), th+.6, .24, 1, rnd, bark, col, 8, 1, cr*.5, 1.05, 4)
+            branches(m, (0,0,0), (0,1,0), th+.5, .25, 2, rnd, bark, col, 8, 1, cr*.36, 1.0, 3)
         else:
             branches(m, (0,0,0), (0,1,0), th+.5, .26, 3, rnd, bark, col, 8, 1, cr*.3, 1.0, 3)
             for i in range(26):
