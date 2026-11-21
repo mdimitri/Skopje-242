@@ -23,6 +23,11 @@ from . import OUT, batch, core, params
 
 DEFAULT_KEYS = ("aggro", "speed_factor", "wait_scale", "squeeze_v", "lane_v", "lane_hold", "plan_m", "appr", "claim_lead",
                 "cycle", "green", "yellow", "clear", "wave")
+def default_keys():
+    """The usual driver / junction / signal constants plus every rule switch found in the game (Traffic.CREEP ...)."""
+    return list(DEFAULT_KEYS) + [p.key for p in params.all_params() if p.tab == "Advanced" and p.kind == "bool"]
+
+
 SLIM = ("score_efficiency", "score_safety", "score_speed", "speed_kmh", "throughput_h", "delay_s_km", "stuck4_share", "jams",
         "collisions", "near_misses", "redruns", "gridlock_s")
 
@@ -50,7 +55,7 @@ def _sample(p, rng, informed, around=None, sigma=0.25):
 class Explorer:
     def __init__(self, spec, progress=None, cancel=None):
         self.spec = spec
-        self.keys = [k for k in (spec.get("keys") or DEFAULT_KEYS) if k in params.BY_KEY]
+        self.keys = [k for k in (spec.get("keys") or default_keys()) if k in params.BY_KEY]
         self.w = spec.get("weights") or [0.4, 0.4, 0.2]
         self.rng = random.Random(int(spec.get("seed0", 1)) * 31 + 7)
         self.progress = progress or (lambda *a: None)

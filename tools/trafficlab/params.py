@@ -100,7 +100,7 @@ BY_KEY = {p.key: p for p in LIST}
 
 
 def discover():
-    """Numeric class constants of actors.Traffic not covered above: the Advanced tab."""
+    """Numeric constants and on/off rule switches of actors.Traffic not covered above: the Advanced tab."""
     import actors
     known = {p.target for p in LIST if p.target}
     out = []
@@ -108,7 +108,11 @@ def discover():
         v = vars(actors.Traffic)[name]
         if not name.isupper() or f"actors.Traffic.{name}" in known:
             continue
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
+        if isinstance(v, bool):                  # a rule switch (Traffic.CREEP ...): on / off, comparable in batches and explore
+            out.append(P("adv_" + name, "Advanced", f"Traffic.{name} (rule on/off)", v, help=f"actors.Traffic.{name}: a rule "
+                         "switch found in the game code", target=f"actors.Traffic.{name}"))
+            continue
+        if not isinstance(v, (int, float)):
             continue
         lo, hi = (0.0, max(1.0, abs(v) * 4)) if v >= 0 else (v * 4, 0.0)
         step = 1 if isinstance(v, int) else (0.01 if abs(v) < 1 else 0.05 if abs(v) < 10 else 0.5)
@@ -152,7 +156,8 @@ def tuning(settings, scenario=None):
          "signals_on": bool(settings.get("signals_on", True)), "preempt": bool(settings.get("preempt", True))}
     for p in all_params():
         v = settings.get(p.key, p.default)
-        if p.kind != "bool" and isinstance(v, (int, float)) and isinstance(p.default, (int, float)) and math.isclose(v, p.default):
+        if v == p.default or (p.kind != "bool" and isinstance(v, (int, float)) and isinstance(p.default, (int, float))
+                              and math.isclose(v, p.default)):
             continue
         if p.how in ("set", "scale") and p.target and not p.target.startswith("sim."):
             t["constants"][p.target] = {"scale": v} if p.how == "scale" else {"set": v}

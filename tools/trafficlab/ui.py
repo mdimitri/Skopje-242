@@ -129,7 +129,7 @@ class UI:
         self.report = None                          # (summary, out_dir)
         self.kpi, self.kpi_t = {}, 0.0
         self.ex = None                              # explore.Explorer while / after it runs
-        self.ex_keys = set(explore.DEFAULT_KEYS)
+        self.ex_keys = set(explore.default_keys())
         self.ex_opt = {"population": 16, "generations": 6, "elite": 4, "seeds": 2, "validate_seeds": 6, "finalists": 5,
                        "w_eff": 0.4, "w_safe": 0.4, "w_speed": 0.2, "informed": True}
         self.mouse_used = False
@@ -1412,8 +1412,8 @@ class UI:
                 for ln in font.wrap("Batch failed: " + bs["error"], 12, w):
                     self.text(ln, x, y, 12, BAD)
                     y += 16
-        for ln in font.wrap("Every run starts the game's simulation from scratch in its own process with seed = first seed + k; the "
-                            "same seed and settings give the same run. The study area, closures, obstacles, junction changes and "
+        for ln in font.wrap("Every run starts the game's simulation from scratch in its own process with seed = first seed + k (the game also orders some "
+                            "cars by memory address, so a repeat differs slightly: that is what the seeds and intervals are for). The study area, closures, obstacles, junction changes and "
                             "scheduled incidents of the current scenario apply to every variant.", 12, w):
             self.text(ln, x, y, 12, MUT)
             y += 16

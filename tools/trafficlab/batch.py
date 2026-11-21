@@ -1,5 +1,6 @@
 """Seeded stochastic batches: every variant x every seed is one run of LabSim in a fresh worker process (fresh
-interpreter, PYTHONHASHSEED=0: a run with the same seed and settings gives the same numbers), then statistics per
+interpreter, PYTHONHASHSEED=0, the same random streams for the same seed; repeats still differ a little because the game
+iterates some sets of cars in memory-address order), then statistics per
 variant (mean, 95 % confidence interval) and a Welch t-test of every variant against the first one (the baseline).
 
 Spec (JSON, also what the UI's Batch tab builds):
@@ -275,8 +276,8 @@ def merge_tiles(results):
 
 def pool_map(jobs, n, on_result, cancel=None):
     """Runs jobs (see _job) on n fresh worker processes (one process per run: PYTHONHASHSEED=0 and nothing left over
-    from an earlier run, so a seed always gives the same run).  on_result(r) is called here as runs finish."""
-    os.environ["PYTHONHASHSEED"] = "0"                        # set iteration order in the game code: same seed, same run
+    from an earlier run).  on_result(r) is called here as runs finish."""
+    os.environ["PYTHONHASHSEED"] = "0"                        # string-keyed sets iterate in the same order in every run
     ctx = mp.get_context("spawn")
     with ctx.Pool(n, maxtasksperchild=1) as pool:
         for r in pool.imap_unordered(_job, jobs):
