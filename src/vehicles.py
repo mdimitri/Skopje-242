@@ -1,3 +1,4 @@
+import math
 """Vehicle and pedestrian catalogue: names, sizes, collision circles, spawn weights. Pure data (sim + renderer)."""
 
 # per style: (y0 body bottom, belt, roof) defaults
@@ -437,4 +438,22 @@ for _i in (6, 49, 50, 51, 55, 57, 30, 34, *HEAVY):
 for _i in (7, 14, 19, 41, 44, 0, 17):
     _HORN[_i] = "horn_small"
 HORN_SOUND = [_HORN.get(i, "horn") for i in range(N)]
+# Bigger vehicle, louder and deeper engine and horn.  Tweak these numbers; the vehicle length (DIMS) drives everything.
+SND_REF_LEN = 4.4          # m: a normal car plays at its old level
+SND_DB_PER_DOUBLING = 5.0  # loudness change per doubling of length (3 dB = clearly louder)
+SND_DB_MIN, SND_DB_MAX = -9.0, 3.0   # bikes/scooters at most 9 dB quieter, semis/buses at most 3 dB louder than a car (headroom, no clipping)
+SND_PITCH_PER_DOUBLING = -0.10       # pitch factor change per doubling of length (bigger = deeper), clamped to 0.85..1.25
+
+
+def sound_gain(kind):
+    """Linear volume factor for a vehicle's engine and horn by its size."""
+    db = SND_DB_PER_DOUBLING * math.log2(max(0.5, DIMS[kind][0]) / SND_REF_LEN)
+    return 10.0 ** (max(SND_DB_MIN, min(SND_DB_MAX, db)) / 20.0)
+
+
+def sound_pitch(kind):
+    """Pitch factor for a vehicle's engine and horn by its size (bikes higher, buses and semis deeper)."""
+    return max(0.85, min(1.25, 2.0 ** (SND_PITCH_PER_DOUBLING * math.log2(max(0.5, DIMS[kind][0]) / SND_REF_LEN))))
+
+
 SIREN_SOUND = {47: "siren_police", 48: "siren_amb", 49: "siren_fire", MARITSA: "siren_police"}

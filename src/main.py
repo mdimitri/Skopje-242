@@ -1259,7 +1259,8 @@ def main():
                     aud.at("crash_glass", d["x"], d["y"], 0.6)
                 aud.at("crash" if d["impact"] > 6 else "crash_light", d["x"], d["y"], min(1.0, d["impact"] / 14.0), 1.0 + rng.uniform(-0.1, 0.1))
             elif kind == "horn":
-                aud.at(vehicles.HORN_SOUND[d["body"].kind], d["body"].x, d["body"].y, 0.6, 1.0 + (d["body"].kind % 3) * 0.04, maxd=160.0)
+                k_ = d["body"].kind
+                aud.at(vehicles.HORN_SOUND[k_], d["body"].x, d["body"].y, 0.6 * vehicles.sound_gain(k_), (1.0 + (k_ % 3) * 0.04) * vehicles.sound_pitch(k_), maxd=160.0)
             elif kind == "explode":
                 if near(d["body"].x, d["body"].y, 90):
                     aud.at("crowd_panic", d["body"].x, d["body"].y, 0.5, 1.0, "ambient", 140.0, 20.0)
@@ -1690,7 +1691,7 @@ def main():
 
     ENG_LAYERS = engine_synth.LAYERS
 
-    def engine_layers(pre, prof, vol, st, pan, seed, alt=None, mix=0.0):
+    def engine_layers(pre, prof, vol, st, pan, seed, alt=None, mix=0.0, size=1.0):
         """Two recordings per engine, a low-rev and a high-rev one, crossfaded (equal power) as the revs climb; the high one is
         pitched down so both agree where they meet.  Every other engine is silenced; a damaged light car blends in a lower, heavier
         "alt" engine (mix 0..1) so it sounds more like a truck."""
@@ -1699,7 +1700,7 @@ def main():
             j_ += 1
         w = max(0.0, min(1.0, (st - ENG_LAYERS[j_][1]) / (ENG_LAYERS[j_ + 1][1] - ENG_LAYERS[j_][1])))
         wt = {ENG_LAYERS[j_][0]: math.cos(w * 1.5708), ENG_LAYERS[j_ + 1][0]: math.sin(w * 1.5708)}
-        vol = min(1.0, vol * (0.95 + 0.4 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8))     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
+        vol = min(1.0, vol * (0.95 + 0.4 * min(1.6, max(0.0, st - 0.75) / 2.55) ** 0.8)) * size     # idle +50%, top revs a bit louder, smooth in between, never past full scale                        # louder as the revs climb
         for nm in ENG_KINDS:
             v_, p_ = (vol * (1.0 - mix), st) if nm == prof else ((vol * mix, st * 0.85) if nm == alt else (0.0, 1.0))
             if nm == "engine_ev":
@@ -1752,7 +1753,7 @@ def main():
             prof = vehicles.ENGINE_SOUND[c.kind]
             thr_ = abs(inp_last.get("throttle", 0))
             hf_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))
-            engine_layers("", prof, (0.65 + 0.3 * thr_ + 0.1 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6))
+            engine_layers("", prof, (0.65 + 0.3 * thr_ + 0.1 * fr) * (1.0 + 1.6 * hf_), engine_pitch(c, prof, fr, thr_) * vehicles.sound_pitch(c.kind) * (1.0 + 0.04 * math.sin(time.time() * 31) * hf_), 0.5, car_seed(c), "engine_truck" if prof in LIGHT_ENGINES else None, min(0.8, max(0.0, hf_ - 0.1) / 0.6), vehicles.sound_gain(c.kind))
             dmg_ = max(0.0, min(1.0, (70.0 - c.health) / 70.0))      # 0 healthy .. 1 about to blow
             aud.loop("engine_misfire", 1.3 * max(0.0, dmg_ - 0.1) ** 0.8, 0.9 + 0.2 * fr, "engine", 0.5, 0)       # rough chugging from the first damage
             aud.loop("engine_knock", 1.3 * max(0.0, dmg_ - 0.4) * 1.7, 0.85 + 0.3 * fr, "engine", 0.5, 0)          # heavy clunking when it is bad
@@ -1778,7 +1779,7 @@ def main():
             eng_prevv.clear()
             eng_prevv[id(near_c)] = near_c.v
             thr_ai = 0.6 if near_c.v > v0_ + 0.005 or (near_c.v > 0.5 and near_c.v >= v0_) else 0.0          # on the gas while it speeds up or holds speed
-            engine_layers("ai_", prof_, (0.65 + 0.3 * thr_ai + 0.1 * fr_) * (1.0 - nd / 45.0) ** 1.5, engine_pitch(near_c, prof_, fr_, thr_ai) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6))
+            engine_layers("ai_", prof_, (0.65 + 0.3 * thr_ai + 0.1 * fr_) * (1.0 - nd / 45.0) ** 1.5, engine_pitch(near_c, prof_, fr_, thr_ai) * vehicles.sound_pitch(near_c.kind) * doppler(near_c, fx_, fy_), pan_of(near_c.x, fx_, nd), car_seed(near_c), "engine_truck" if prof_ in LIGHT_ENGINES else None, min(0.8, max(0.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0 - 0.1) / 0.6), vehicles.sound_gain(near_c.kind))
         else:
             engine_layers("ai_", None, 0.0, 1.0, 0.5, 0)
         dn_ = max(0.0, min(1.0, (70.0 - getattr(near_c, "health", 100.0)) / 70.0)) if near_c is not None else 0.0      # (traffic cars have no health)
