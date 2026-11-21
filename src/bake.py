@@ -218,69 +218,109 @@ def _paint_quays(world, ox, oy, span, res=0.5):
     rl.unload_texture(tex)
 
 
-def bake_chunk(world, cx, cy, rt, decals=()):
+def bake_steps(world, cx, cy, rt, decals=()):
     """Ground only: land use, water, roads, markings, building footprints, decals.
-    Buildings / trees / lamps are real 3D meshes (see Streamer)."""
+    Buildings / trees / lamps are real 3D meshes (see Streamer).
+    A generator: each next() paints one stage into rt, so the Streamer can spread one bake over several frames."""
     S, M = world.chunk, world.margin
     ox, oy = cx * S - M, cy * S - M
     ch = world.chunks.get((cx, cy))
-    rl.begin_texture_mode(rt)
-    rl.clear_background(rl.Color(*GROUND, 255))
-    rl.begin_mode_2d(rl.Camera2D(rl.Vector2(0, 0), rl.Vector2(ox, oy), 0.0, PPM))
-    try:
+    span = S + 2 * M
+    rng = random.Random(cx * 7919 + cy * 104729)
+
+    def stages():
         if ch is not None:
-            rng = random.Random(cx * 7919 + cy * 104729)
-            span = S + 2 * M
-            for _ in range(46):          # ground variation: soft blotches
-                c = rng.choice(((190, 184, 168, 20), (212, 208, 194, 20), (178, 182, 156, 18)))
-                disc(ox + rng.uniform(0, span), oy + rng.uniform(0, span), rng.uniform(4, 14), c, 8)
+            def blotches():
+                for _ in range(46):          # ground variation: soft blotches
+                    c = rng.choice(((190, 184, 168, 20), (212, 208, 194, 20), (178, 182, 156, 18)))
+                    disc(ox + rng.uniform(0, span), oy + rng.uniform(0, span), rng.uniform(4, 14), c, 8)
+            yield blotches
             A = world.areas
-            for ai, ks in ch["a"]:
-                a = A[ai]
-                fill_tris(a["v"], a["tri"], world.area_style[a["kind"]][1], 0, 0, ks)
-            for ai, _ks in ch["a"]:        # grass tufts
-                a = A[ai]
-                if a["kind"] in ("park", "grass", "wood", "scrub", "cemetery"):
-                    x0, y0, x1, y1 = a["bb"]
-                    if x1 > ox and x0 < ox + span and y1 > oy and y0 < oy + span:
-                        col = world.area_style[a["kind"]][1]
-                        for _ in range(14):
-                            disc(rng.uniform(max(x0, ox), min(x1, ox + span)), rng.uniform(max(y0, oy), min(y1, oy + span)),
-                                 rng.uniform(.8, 2.2), (col[0] - 14, col[1] - 10, col[2] - 14, 70), 6)
-            for wi, k in ch["wl"]:
-                w = world.wlines[wi]
-                (x1, y1), (x2, y2) = w["pts"][k], w["pts"][k + 1]
-                seg(x1, y1, x2, y2, w["w"] / 2, (86, 146, 198))
-                disc(x1, y1, w["w"] / 2, (86, 146, 198), 8)
-            _paint_quays(world, ox, oy, span)
-            for ri, k in ch["rail"]:
-                pts = world.rails[ri]["pts"]
-                (x1, y1), (x2, y2) = pts[k], pts[k + 1]
-                seg(x1, y1, x2, y2, 1.5, (150, 140, 128))
-                seg(x1, y1, x2, y2, 0.12, (80, 80, 86))
+
+            def areas():
+                for ai, ks in ch["a"]:
+                    a = A[ai]
+                    fill_tris(a["v"], a["tri"], world.area_style[a["kind"]][1], 0, 0, ks)
+            yield areas
+
+            def tufts():
+                for ai, _ks in ch["a"]:        # grass tufts
+                    a = A[ai]
+                    if a["kind"] in ("park", "grass", "wood", "scrub", "cemetery"):
+                        x0, y0, x1, y1 = a["bb"]
+                        if x1 > ox and x0 < ox + span and y1 > oy and y0 < oy + span:
+                            col = world.area_style[a["kind"]][1]
+                            for _ in range(14):
+                                disc(rng.uniform(max(x0, ox), min(x1, ox + span)), rng.uniform(max(y0, oy), min(y1, oy + span)),
+                                     rng.uniform(.8, 2.2), (col[0] - 14, col[1] - 10, col[2] - 14, 70), 6)
+            yield tufts
+
+            def water_rail():
+                for wi, k in ch["wl"]:
+                    w = world.wlines[wi]
+                    (x1, y1), (x2, y2) = w["pts"][k], w["pts"][k + 1]
+                    seg(x1, y1, x2, y2, w["w"] / 2, (86, 146, 198))
+                    disc(x1, y1, w["w"] / 2, (86, 146, 198), 8)
+            yield water_rail
+            yield lambda: _paint_quays(world, ox, oy, span)
+
+            def rails():
+                for ri, k in ch["rail"]:
+                    pts = world.rails[ri]["pts"]
+                    (x1, y1), (x2, y2) = pts[k], pts[k + 1]
+                    seg(x1, y1, x2, y2, 1.5, (150, 140, 128))
+                    seg(x1, y1, x2, y2, 0.12, (80, 80, 86))
+            yield rails
             ground = [it for it in ch["r"] if not world.roads[it[0]]["bridge"]]
             bridges = [it for it in ch["r"] if world.roads[it[0]]["bridge"]]
-            for ri, k in bridges:                    # soft deck shadow on the water below
-                rd_ = world.roads[ri]
-                (bx1, by1), (bx2, by2) = rd_["pts"][k], rd_["pts"][k + 1]
-                seg(bx1 + 1.5, by1 + 1.8, bx2 + 1.5, by2 + 1.8, rd_["w"] / 2 + 1.0, (12, 34, 62, 70))
+
+            def deck_shadow():
+                for ri, k in bridges:                    # soft deck shadow on the water below
+                    rd_ = world.roads[ri]
+                    (bx1, by1), (bx2, by2) = rd_["pts"][k], rd_["pts"][k + 1]
+                    seg(bx1 + 1.5, by1 + 1.8, bx2 + 1.5, by2 + 1.8, rd_["w"] / 2 + 1.0, (12, 34, 62, 70))
+            yield deck_shadow
             if not getattr(world, "roads3d", False):          # otherwise the roads are real 3D meshes
-                for gi, grp in enumerate((ground, bridges)):
+                for grp in (ground, bridges):
                     for mode in ("side", "case", "fill", "mark"):
-                        _road_pass(world, grp, mode)
+                        yield lambda grp=grp, mode=mode: _road_pass(world, grp, mode)
                 xws = getattr(world, "xwalks", ())
-                for i in ch.get("x", ()):         # zebra crossings + stop lines
-                    _crosswalk(xws[i])
+
+                def zebras():
+                    for i in ch.get("x", ()):         # zebra crossings + stop lines
+                        _crosswalk(xws[i])
+                yield zebras
             B = world.buildings
-            for i in ch["b"]:                 # ground contact (shadows are real-time, see sunshadow.py)
-                b = B[i]
-                fill_tris(b["v"], b["tri"], (120, 116, 112, 255))
+
+            def footprints():
+                for i in ch["b"]:                 # ground contact (shadows are real-time, see sunshadow.py)
+                    b = B[i]
+                    fill_tris(b["v"], b["tri"], (120, 116, 112, 255))
+            yield footprints
         if not getattr(world, "roads3d", False):
-            for d in decals:
-                draw_decal(d)
-    finally:
-        rl.end_mode_2d()
-        rl.end_texture_mode()
+            def decal_pass():
+                for d in decals:
+                    draw_decal(d)
+            yield decal_pass
+
+    rl.begin_texture_mode(rt)
+    rl.clear_background(rl.Color(*GROUND, 255))
+    rl.end_texture_mode()
+    yield
+    for stage in stages():
+        rl.begin_texture_mode(rt)
+        rl.begin_mode_2d(rl.Camera2D(rl.Vector2(0, 0), rl.Vector2(ox, oy), 0.0, PPM))
+        try:
+            stage()
+        finally:
+            rl.end_mode_2d()
+            rl.end_texture_mode()
+        yield
+
+
+def bake_chunk(world, cx, cy, rt, decals=()):
+    for _ in bake_steps(world, cx, cy, rt, decals):
+        pass
 
 
 def draw_decal(d):
@@ -331,6 +371,7 @@ class Streamer:
         self.gsph = {}
         self.size = int((world.chunk + 2 * world.margin) * PPM)
         self.pool = []
+        self._baking = None   # [key, render texture, bake_steps generator, ms so far]: the ground bake in progress
         self.decals = {}      # key -> history list (replayed on rebake)
         self.pending = {}     # key -> new decals to draw this frame
         self.errors = 0
@@ -385,17 +426,38 @@ class Streamer:
         return m
 
     # ---- ground textures
-    def _bake(self, key):
+    def _abandon_bake(self):
+        if self._baking is not None:
+            self.pool.append(self._baking[1])                  # half-painted: the next bake clears it again
+            self._baking = None
+
+    def _bake(self, key, deadline):
+        """Paints one chunk's ground texture stage by stage; True when finished, False when the frame's time is up (call again)."""
+        if self._baking is not None and self._baking[0] != key:
+            self._abandon_bake()
+        if self._baking is None:
+            rt = self.pool.pop() if self.pool else rl.load_render_texture(self.size, self.size)
+            self._baking = [key, rt, bake_steps(self.world, key[0], key[1], rt, self.decals.setdefault(key, [])), 0.0]
+        bk = self._baking
         t0 = time.perf_counter()
-        rt = self.pool.pop() if self.pool else rl.load_render_texture(self.size, self.size)
-        bake_chunk(self.world, key[0], key[1], rt, self.decals.get(key, ()))
+        try:
+            while True:
+                next(bk[2])
+                if time.perf_counter() >= deadline:
+                    bk[3] += (time.perf_counter() - t0) * 1000
+                    return False
+        except StopIteration:
+            pass
+        rt = bk[1]
+        self._baking = None
         rl.gen_texture_mipmaps(rt.texture)
         rl.set_texture_filter(rt.texture, rl.TEXTURE_FILTER_TRILINEAR)
         rl.set_texture_wrap(rt.texture, rl.TEXTURE_WRAP_CLAMP)
         old = self.ground.get(key)
         self.ground[key] = [rt, self.frame, self._ground_model(key, rt)]
         self.baked += 1
-        self.bake_ms = (time.perf_counter() - t0) * 1000
+        self.bake_ms = bk[3] + (time.perf_counter() - t0) * 1000
+        return True
 
     def _load_meshes(self, key, lite=False, deadline=None):
         """Uploads a chunk's meshes one material at a time; past `deadline` (perf_counter) it stops and the next call
@@ -583,8 +645,8 @@ class Streamer:
             if n and (time.perf_counter() - t0) * 1000 > budget_ms:
                 break
             try:
-                if need_g:
-                    self._bake(key)
+                if need_g and not self._bake(key, t0 + budget_ms / 1000.0):
+                    break                                        # unfinished: carries on next frame
                 if need_m:
                     if need_g and (time.perf_counter() - t0) * 1000 > budget_ms:       # the bake alone used the frame's budget: meshes next frame
                         break
@@ -593,8 +655,12 @@ class Streamer:
             except Exception as e:  # noqa: BLE001 - never let one chunk kill the game
                 self.errors += 1
                 self.bad.add(key)
+                if self._baking is not None and self._baking[0] == key:
+                    self._abandon_bake()
                 print(f"[stream] chunk {key} failed: {e}")
             n += 1
+        if self._baking is not None and self._baking[0] not in wanted:
+            self._abandon_bake()                                 # walked away from a half-painted chunk
         for key in [k for k in self._part if k not in wanted]:
             self._drop_part(key)                                 # walked away from a half-loaded chunk
         self._evict()
