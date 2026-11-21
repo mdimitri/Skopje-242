@@ -42,6 +42,35 @@ def log(msg):
         pass
 
 
+_FW_DONE = False
+
+
+def ensure_firewall():
+    """Windows: make sure inbound UDP is allowed for this program on private AND public networks.
+    Checks the rule without admin rights; if missing, asks once through the normal UAC prompt to add it."""
+    global _FW_DONE
+    if _FW_DONE or os.name != "nt":
+        return
+    _FW_DONE = True
+    import subprocess
+    import sys
+    name = "Skopje-242 multiplayer"
+    try:
+        r = subprocess.run(["netsh", "advfirewall", "firewall", "show", "rule", "name=" + name, "verbose"],
+                           capture_output=True, text=True, timeout=10, creationflags=0x08000000)
+        exe = os.path.abspath(sys.executable).lower()
+        if exe in r.stdout.lower() and "any" in r.stdout.lower().split("profiles:")[-1][:40]:
+            log("firewall: rule already present")
+            return
+        args = ('advfirewall firewall delete rule name="%s" & netsh advfirewall firewall add rule name="%s" dir=in action=allow '
+                'protocol=UDP program="%s" profile=any' % (name, name, sys.executable))
+        import ctypes
+        rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", '/c netsh ' + args, None, 0)
+        log("firewall: asked Windows to allow %s (public + private), result %s" % (sys.executable, rc))
+    except Exception as e:      # noqa: BLE001 - never block multiplayer on this
+        log("firewall: check failed: %r" % e)
+
+
 class Peer:
     __slots__ = ("addr", "out", "q", "expect", "ooo", "last_rx", "last_tx", "up", "rtt", "unrel_seq", "rx_unrel", "rx_unrel_mask")
     __slots__ += ("ping_sent", "ping_seq", "ping_at", "ping_ms")

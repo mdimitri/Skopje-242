@@ -41,6 +41,7 @@ class Session:
     # ------------------------------------------------------------------ host
     def host(self, internet=True):
         self.role, self.state = "host", "lobby"
+        threading.Thread(target=net.ensure_firewall, daemon=True).start()
         try:
             self.net = net.Net(net.PORT, accept=True)
         except OSError:
@@ -97,6 +98,7 @@ class Session:
     def join(self, game):
         """game = entry of games(); direct (LAN / typed address) or through the internet notice board."""
         self.role, self.state, self.error = "guest", "connecting", ""
+        threading.Thread(target=net.ensure_firewall, daemon=True).start()
         self.net = net.Net(0)
         addr = (game["addr"][0], int(game["addr"][1]))
         self._target = addr
