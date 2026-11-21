@@ -2441,6 +2441,8 @@ class Traffic:
             return
         if c.lcd > 0 or len(ls) < 2:
             return
+        if c.e in self.internal_links or (c.s < self.LANE_HOLD and e["a" if c.d == 1 else "b"] in self.junctions):
+            return                                                # a lane is kept right through a junction (no weaving inside the box)
         t = c.turn
         if abs(t) < self.TURN_LANE and c.nx2 is not None:
             distance = self.w.edges[c.nxt[0]]["len"]
@@ -2465,6 +2467,8 @@ class Traffic:
         c.lcd = 1.0
 
     LANE_V = 1.3                     # m/s sideways while changing lane
+    LANE_HOLD = 14.0                 # m after a junction in which no new lane change starts
+    CLAIM_LEAD = 1.4                 # s of extra look-ahead for asking for the junction: the car with priority is let in before it has to brake
 
     def _mapped_lane(self, previous, lane, move, angle, following=0.0):
         ei, direction = move
@@ -3362,7 +3366,7 @@ class Traffic:
             node, _, _ = me
             rem = self.w.edges[c.e]["len"] - c.s
             line = self._yield_line(c, node)
-            if c in self.exit_claims or c in self.narrow_wait or not line - 0.2 <= rem <= line + max(5.0, c.v * c.v / 7.0 + 2.0) \
+            if c in self.exit_claims or c in self.narrow_wait or not line - 0.2 <= rem <= line + max(5.0, c.v * c.v / 7.0 + 2.0 + self.CLAIM_LEAD * c.v) \
                     or c.rev > 0 or c.turnaround:
                 continue
             if isinstance(c.blk, Car) and (c.blk.e, c.blk.d) == (c.e, c.d):
@@ -3890,7 +3894,7 @@ class Traffic:
             rem = e["len"] - c.s
             node = e["b"] if c.d == 1 else e["a"]
             if (c.e not in self.internal_links and node in self.junctions
-                    and rem < max(self.APPR, self._yield_line(c, node) + c.v * c.v / 7.0 + 6.0)):
+                    and rem < max(self.APPR, self._yield_line(c, node) + c.v * c.v / 7.0 + 6.0 + self.CLAIM_LEAD * c.v)):
                 lit = sg is not None and (c.e, 1 if c.d == 1 else 0) in sg.by_edge
                 if lit and sg.stop_for(c.e, 1 if c.d == 1 else 0):
                     continue                                  # waiting at red: no claim on the junction
@@ -3981,7 +3985,8 @@ class Traffic:
                 turn_speed = 5.7 if t < 0.9 else 4.4 if t < 1.6 else 3.0
                 if vehicles.LARGE[c.kind]:
                     turn_speed = min(turn_speed, 3.8)
-                vcorner = (min(next_speed, 12.0) if end_node in self.junctions else next_speed) if t < 0.35 else min(next_speed, turn_speed)
+                through = 15.0 if c in self.exit_claims else 12.0           # straight on with the way granted: momentum is kept
+                vcorner = (min(next_speed, through) if end_node in self.junctions else next_speed) if t < 0.35 else min(next_speed, turn_speed)
             uturn = c.nxt is not None and abs(c.turn) > self.UTURN
             vlim = min(vmax, brake_speed(L - c.s - (8.0 if uturn else 1.5), 3.5, vcorner))
             stop = self._pullout_stop(c, e)

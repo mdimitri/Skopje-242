@@ -205,6 +205,22 @@ class TrafficRecoveryTest(unittest.TestCase):
         self.step(tr, 8)
         self.assertIn(c.e, (1, 5))
 
+    def test_no_lane_change_starts_inside_a_junction(self):
+        edges = [road(0, 1, (-60, 0), (0, 0), 14, ow=True, lanes=2),
+                 road(1, 2, (0, 0), (120, 0), 14, ow=True, lanes=2),
+                 road(2, 3, (120, 0), (120, 60), ow=True, lanes=1)]
+        tr = setup(*edges)
+        tr.junctions[1] = 8.0
+        tr.ph, tr.hash = {}, {}
+        c = approach(tr, 1, 4.0, (2, 1))
+        c.lidx, c.lcd = 0, 0.0
+        tr._set_lane(c, edges[1])
+        tr._lane_for_turn(c, edges[1], 116.0, 0.05)
+        self.assertEqual(c.lidx, 0)                            # just out of the box: it stays in its lane
+        c.s, c.lcd = 40.0, 0.0
+        tr._lane_for_turn(c, edges[1], 80.0, 0.05)
+        self.assertEqual(c.lidx, 1)                            # further on it moves over for the right turn
+
     def test_dead_end_uturn_starts_before_node_from_leftmost_lane(self):
         e = road(0, 1, (0, 0), (100, 0), 12, lanes=4)
         tr = setup(e)
