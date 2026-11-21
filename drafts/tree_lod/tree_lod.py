@@ -4,6 +4,35 @@ import math, random, sys
 import numpy as np
 from PIL import Image, ImageDraw
 
+def unit(v): v = np.array(v, float); return v/(np.linalg.norm(v)+1e-9)
+
+def anchor_cards(m, base, d, size, col, rnd, kind, n=2, shade=1.0):
+    """Sprites rooted at a branch tip: the twig at the card's bottom edge starts exactly on the branch, the cluster grows along d."""
+    d = unit(d); ref = np.array([0, 1., 0]) if abs(d[1]) < .9 else np.array([1., 0, 0]); r1 = unit(np.cross(d, ref)); r2 = unit(np.cross(d, r1))
+    a0 = rnd.uniform(0, 3.14)
+    for i in range(n):
+        a = a0+math.pi*i/n; right = (r1*math.cos(a)+r2*math.sin(a))*size*.55*rnd.uniform(.85, 1.15)
+        dd = unit(d+rnd.uniform(-.25, .25)*r1+rnd.uniform(-.25, .25)*r2)
+        card(m, base, right, dd*size*.5*rnd.uniform(.9, 1.15), (kind, rnd.randint(0, 3)), tuple(int(c*shade) for c in jit(col, rnd, .1)))
+
+def crown_tree(m, top, cr, ch, nl, spr, lvl, rnd, bark, col, kind, droop=0.0, low=False):
+    """Limbs fan out of the trunk top, split twice; every tip (and some mid-limb points) carries a rooted sprite cluster."""
+    ns = 4; depth = 1 if lvl == 3 else 2; top = np.array(top, float)
+    def limb(p, d, ln, r, dp):
+        e = p+d*ln; cyl(m, p, e, r, r*.6, ns, bark)
+        if dp == 0:
+            f = (np.linalg.norm((e-top)*[1, 1.6, 1])/(cr*1.1+1e-9)); anchor_cards(m, e, d+np.array([0, droop, 0]), cr*.55, col, rnd, kind, 2 if lvl == 3 else 3, .75+.3*min(1, f)); return
+        if dp == 1 and lvl == 4:                            # mid-limb sprites on the last-but-one segments
+            anchor_cards(m, p+(e-p)*.7, unit(d+np.array([0, .3, 0])+np.array([rnd.uniform(-.6, .6), 0, rnd.uniform(-.6, .6)])), cr*.4, col, rnd, kind, 2, .7)
+        for k in range(2 if dp <= 1 else 3):
+            a = rnd.uniform(0, 6.28); t = rnd.uniform(.5, .95)
+            nd = unit(d*math.cos(t)+np.array([math.cos(a), 0, math.sin(a)])*math.sin(t)+np.array([0, .15, 0]))
+            limb(e, nd, ln*rnd.uniform(.62, .78), r*.62, dp-1)
+    for i in range(nl):
+        a = 6.28*i/nl+rnd.uniform(-.3, .3); el = rnd.uniform(.6, 1.1) if not low else rnd.uniform(.2, .5)
+        d = unit([math.cos(a)*math.cos(el)*spr*1.2, math.sin(el)+.2, math.sin(a)*math.cos(el)*spr*1.2])
+        limb(top, d, cr*(.62 if not low else .7), .13, depth)
+
 LEAFKIND = {"willow": "narrow"}
 def _leaf_pts(kind, ln, wd, r):
     """Outline of one leaf, base at (0,0) pointing +x, as polygon points."""
@@ -26,7 +55,7 @@ def leaf_tex(kind, variant, n=192):
     def rot(pts, ox, oy, a): ca, sa = math.cos(a), math.sin(a); return [(ox+ca*x-sa*y, oy+sa*x+ca*y) for x, y in pts]
     def twig(x0, y0, ang, ln, lvl):                        # recursive twig; leaves sit on the tips and along it
         x1, y1 = x0+math.cos(ang)*ln, y0+math.sin(ang)*ln
-        dl.line([(x0, y0), (x1, y1)], fill=55, width=max(2, int(5-lvl*1.6))); da.line([(x0, y0), (x1, y1)], fill=255, width=max(2, int(5-lvl*1.6)))
+        dl.line([(x0, y0), (x1, y1)], fill=60, width=max(3, int(8-lvl*2.6))); da.line([(x0, y0), (x1, y1)], fill=255, width=max(3, int(8-lvl*2.6)))
         return x1, y1
     sz = {"palmate": (.2, .2), "palmcomp": (.22, .2), "round": (.14, .13), "ovate": (.17, .15), "lobed": (.2, .13), "serrate": (.11, .09), "narrow": (.26, .05), "pinnate": (.07, .05), "needles": (.2, .012)}[kind]
     dens = r.randint(26, 42) if kind not in ("pinnate", "needles", "palmate", "palmcomp") else r.randint(7, 12)
@@ -183,7 +212,7 @@ SPECIES = {   # Skopje / Balkan street, park, riverside and hill trees
  "judas":    dict(kind="broad", bark=(72,56,48), pal=[(86,130,70),(94,138,74)], h=(5,8), rad=(2.4,3.4), ry=.8, tf=.3, lumps=(4,6), spread=(.9,1.2), fall=[(220,190,70),(200,150,60)], leaf="round"),
  "mulberry": dict(kind="broad", bark=(98,84,70), pal=[(100,144,60),(110,152,64)], h=(6,10), rad=(3,4.2), ry=.85, tf=.3, lumps=(5,7), spread=(.8,1.1), fall=[(220,200,70)], leaf="round"),
  "birch":    dict(kind="broad", bark=(228,228,220), pal=[(96,150,64),(110,160,70)], h=(8,12), rad=(2.4,3.3), ry=.9, tf=.38, lumps=(4,6), spread=(.7,1.0), fall=[(220,190,60)], leaf="serrate"),
- "willow":   dict(kind="weep", bark=(86,72,54), pal=[(120,150,70),(132,158,76)], h=(7,11), rad=(3.4,4.6), tf=.3, fall=[(200,180,70)]),
+ "willow":   dict(kind="weep", bark=(86,72,54), pal=[(120,150,70),(132,158,76)], h=(9,13), rad=(3.2,4.2), tf=.42, fall=[(200,180,70)]),
  "oldpine":  dict(kind="broad", bark=(110,76,52), pal=[(58,104,56),(66,112,58)], h=(9,14), rad=(3.5,4.8), ry=.28, tf=.68, lumps=(5,7), spread=(1.0,1.4), leaf="needles"),
  "dead":     dict(kind="dead", bark=(80,66,54), h=(5,9), rad=(1.6,2.6), tf=.5),
 }
@@ -245,6 +274,15 @@ def tree(species, lvl, seed=7, season=0, cards=True):
     elif k == "weep":
         th = H*p["tf"]; cyl(m, (0,0,0), (lx, th, lz), .3, .16, ns, bark)
         if lvl == 1: blob(m, (lx, th+R*.45, lz), R, R*.9, R, 0, col, rnd)
+        elif cards and lvl >= 3:
+            top = np.array((lx, th, lz)); cyl(m, (0,0,0), top, .3, .16, ns, bark)
+            for i in range(8 if lvl == 3 else 10):            # limbs arch up and out, then curtains of narrow-leaf sprites hang from them
+                a = 6.28*i/(8 if lvl == 3 else 10)+rnd.uniform(-.2, .2); d = unit([math.cos(a)*.9, 1.0, math.sin(a)*.9]); e = top+d*R*.8; e2 = e+unit([math.cos(a), .15, math.sin(a)])*R*.55
+                cyl(m, top, e, .14, .09, ns, bark); cyl(m, e, e2, .09, .05, ns, bark)
+                for q in range(2 if lvl == 3 else 3):
+                    f = (q+1)/(2 if lvl == 3 else 3); pt = e+(e2-e)*f; anchor_cards(m, pt, (math.cos(a)*.15, -1, math.sin(a)*.15), R*1.1, col, rnd, "narrow", 2, .7+.3*f)
+        elif lvl == 2:
+            blob(m, (lx, th+R*.85, lz), R*.85, R*.5, R*.85, 1, col, rnd, .15)
         else:
             nb = (0, 4, 6, 9)[lvl-1]
             blob(m, (lx, th+R*.85, lz), R*.85, R*.5, R*.85, 1, col, rnd, .15)
@@ -266,19 +304,8 @@ def tree(species, lvl, seed=7, season=0, cards=True):
         th = H*p["tf"]; cr = R; ch = cr*p["ry"]*p["aspect"]
         cx, cz = lx+ax*.3, lz+az*.3; cy = th+ch*.85
         if cards and lvl >= 3:
-            ts = p.get('leaf', 'ovate')
-            if lvl == 3:
-                cyl(m, (0,0,0), (lx, th+.8, lz), .24, .1, ns, bark)
-                blob(m, (cx, cy, cz), cr*.7, ch*.55, cr*.7, 0, mix(col, (30, 50, 25), .35), rnd)       # dark inner core so the sprites don't show daylight
-                for i in range(p["nl"]*3):
-                    a = rnd.uniform(0, 6.28); d = cr*rnd.uniform(.35, 1.0)*p["spr"]**.2; y = cy+rnd.uniform(-.7, .8)*ch
-                    cards_at(m, (cx+math.cos(a)*d, y, cz+math.sin(a)*d), cr*.75, 2, col, rnd, ts)
-            else:
-                branches(m, (0,0,0), (lx*.05, 1, lz*.05), th*.75+.4, .26, 2, rnd, bark, col, 8, -1, 0, p["spr"]*.95, 3 if p["nl"] < 6 else 4)
-                blob(m, (cx, cy, cz), cr*.6, ch*.45, cr*.6, 0, mix(col, (30, 50, 25), .35), rnd)
-                for i in range(p["nl"]*5):
-                    a = rnd.uniform(0, 6.28); d = cr*rnd.uniform(.2, 1.05)*p["spr"]**.2; y = cy+rnd.uniform(-.8, .9)*ch
-                    cards_at(m, (cx+math.cos(a)*d, y, cz+math.sin(a)*d), cr*.6, 2, col, rnd, ts)
+            top = (lx, th+.5, lz); cyl(m, (0,0,0), top, .25, .13, ns, bark)
+            crown_tree(m, top, cr, ch, p["nl"], p["spr"], lvl, rnd, bark, col, p.get('leaf', 'ovate'), low=(species == "oldpine"))
         elif lvl == 1:
             cyl(m, (0,0,0), (lx, th, lz), .17, .12, ns, bark); blob(m, (cx, cy, cz), cr, ch, cr, 0, col, rnd)
         elif lvl == 2:
