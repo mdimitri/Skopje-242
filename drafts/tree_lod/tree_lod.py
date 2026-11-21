@@ -32,7 +32,11 @@ def ico(sub):
         F = nf
     return V, F
 
+SEA = {"on": False}
 def blob(m, c, rx, ry, rz, sub, col, rnd, noise=0.0, flat=0.0):
+    if SEA["on"]:                                            # fall: each lump drifts toward its own autumn colour, late fall drops lumps
+        if rnd.random() < SEA["drop"]: return
+        col = jit(mix(col, rnd.choice(SEA["cols"]), SEA["t"]*rnd.uniform(.6, 1.0)), rnd, .06)
     V, F = ico(sub)
     P = []
     for v in V:
@@ -108,8 +112,17 @@ def params(species, seed):
     p["dr"] = u(sp["droop"]) if "droop" in sp else 0; p["seed"] = r.randint(0, 99999)
     return p
 
-def tree(species, lvl, seed=7):
-    p = params(species, seed); rnd = random.Random(p["seed"]); m = M(); k = p["kind"]
+FALL = {0: None, 1: dict(t=.45, drop=0.0), 2: dict(t=.95, drop=0.0), 3: dict(t=1.0, drop=.3)}   # summer, early, full, late fall
+FALLCOLS = [(196,120,40),(210,170,50),(170,70,40),(184,140,44),(150,60,36)]
+def tree(species, lvl, seed=7, season=0):
+    p = params(species, seed)
+    ever = p["kind"] in ("conifer", "column") and species != "poplar"
+    f = FALL[season] if not ever else None
+    SEA.update(on=bool(f))
+    if f:
+        r0 = random.Random(seed*31+5); base = r0.choice(FALLCOLS)
+        SEA.update(f, cols=[base, mix(base, r0.choice(FALLCOLS), .5), r0.choice(FALLCOLS)])
+    rnd = random.Random(p["seed"]); m = M(); k = p["kind"]
     H, R, col, bark = p["H"], p["R"], p["col"], p["bark"]; lx, lz = p["lean"]; ax, az = p["asym"]
     ns = (4, 6, 8, 8)[lvl-1]
     if k == "conifer":
@@ -207,6 +220,11 @@ if __name__ == "__main__":
             dr.text((6, r*H+H//2), s_, fill=(0, 0, 0))
             for l in range(1, 5):
                 m = tree(s_, l); print(s_, l, "tris", m.n()); sheet.paste(render(m, W, H, ymax=16), (110+(l-1)*W, r*H))
+    elif mode == "fall":                                     # rows = species, columns = summer / early / full / late fall (L3)
+        sheet = Image.new("RGB", (W*4+110, H*len(names)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
+        for r, s_ in enumerate(names):
+            dr.text((6, r*H+H//2), s_, fill=(0, 0, 0))
+            for q in range(4): sheet.paste(render(tree(s_, 3, 3, q), W, H, ymax=16, yaw=.6), (110+q*W, r*H))
     else:                                                    # variety: 6 seeds of each species at L3
         lvl = int(mode)
         sheet = Image.new("RGB", (W*6+110, H*len(names)), (206, 206, 206)); dr = ImageDraw.Draw(sheet)
