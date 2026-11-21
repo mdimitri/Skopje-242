@@ -549,7 +549,11 @@ class Renderer:
             rl.set_texture_filter(texture, rl.TEXTURE_FILTER_BILINEAR)
         rl.rl_disable_depth_mask()
         rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+        eye = cam.position
         for center, size in glows:
+            # Keep the glow readable from the top / far camera: grow with distance (about 0.05 m per metre, capped).
+            dist = math.sqrt((eye.x - center.x) ** 2 + (eye.y - center.y) ** 2 + (eye.z - center.z) ** 2)
+            size *= min(6.0, max(1.0, dist * 0.05))
             rl.draw_billboard_pro(cam, texture, rl.Rectangle(0, 0, texture.width, texture.height), center,
                                   cam.up, rl.Vector2(size, size), rl.Vector2(size * 0.5, size * 0.5), 0.0, WHITE)
         rl.end_blend_mode()
