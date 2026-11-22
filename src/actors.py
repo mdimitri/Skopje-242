@@ -244,6 +244,16 @@ def turn_radius_factor(speed, kind=None):
     return base * 0.75 * (0.9 if kind is not None and vehicles.STYLE[kind] == "bus" else 1.0)
 
 
+def pivot_x(kind):
+    """x of the point a vehicle turns about (m, front +): its driven rear axle as the model is really drawn (the middle of
+    axles 3-4 for the БТР-80, whose front pair steers); a semi's rear tandem."""
+    if kind == vehicles.SEMI:
+        return vehicles.SEMI_REAR
+    if kind == vehicles.ARTIC_BUS:
+        return vehicles.ARTIC_MIDDLE_AXLE
+    return axles(kind)[1]
+
+
 def articulated_steer_limit(speed):
     return 0.90 / (1.0 + (abs(speed) / 7.5) ** 2)
 
@@ -347,7 +357,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
         p.h += om * dt
     # the car turns about its rear axle (the front wheels steer): its middle, a little ahead of that, moves sideways into
     # the turn as it yaws -- without this it pivoted about its middle and the tail swung out as if the rear wheels steered
-    rear = vehicles.SEMI_REAR if semi else vehicles.ARTIC_MIDDLE_AXLE if artic else -L_ * (0.31 if L_ < 11 else 0.33)
+    rear = pivot_x(p.kind)
     vk = 0.0 if handbrake else -om * rear
     fx, fy = math.cos(p.h), math.sin(p.h)
     rx, ry = -fy, fx
@@ -4391,7 +4401,7 @@ class Traffic:
                 want = max(-lock, min(lock, math.atan2(2.0 * wb * gain * math.sin(max(-1.5708, min(1.5708, err))), la)))
                 steering = c.str + (want - c.str) * min(1.0, dt * (9.0 if c.man > 0 else 5.0))
                 heading = c.h + c.v * math.tan(steering) / (wb * radius_factor) * dt
-                arm = -vehicles.ARTIC_MIDDLE_AXLE / wb if c.kind == vehicles.ARTIC_BUS else 0.52
+                arm = -pivot_x(c.kind) / wb               # the car's centre slips sideways by this much of the steer: its distance ahead of the rear axle
                 slip = math.atan(arm * math.tan(steering))
                 x = c.x + math.cos(heading + slip) * c.v * dt
                 y = c.y + math.sin(heading + slip) * c.v * dt
