@@ -601,7 +601,16 @@ def main():
     ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
     ap.add_argument("--foot", action="store_true", help="start on foot (with --start: at the nearest footpath)")
     ap.add_argument("--deck", action="store_true", help="with --start: stand on the bridge deck if there is one")
+    _inv = [x for x in sys.argv[1:] if x.lower().startswith("skopje242:")]       # invite link clicked: skopje242://join/...
+    for x in _inv:
+        sys.argv.remove(x)
+    if _inv:
+        menu_mod.MP["invite"] = _inv[0]
     a = ap.parse_args()
+    try:
+        lobby_mod.register_invite_links()
+    except Exception:  # noqa: BLE001 - optional convenience
+        pass
     cfg = settings_mod.Settings()
     W, H = (int(v) for v in a.size.lower().split("x")) if a.size else settings_mod.RESOLUTIONS[cfg["resolution"]]
 

@@ -808,6 +808,8 @@ def title_menu(aud=None, music=None, cfg=None):
             if photoview.run(aud, music, cfg=cfg) == "changed" and WORLD["built"] and _confirm_rebuild():
                 return "rebuild"
             t_open = time.time()
+        if MP.get("invite") and WORLD["built"]:          # started from an invite link: straight to the lobby
+            sel, go = [k for k, _ in TITLE_ITEMS].index("multi"), True
         if go:
             k = TITLE_ITEMS[sel][0]
             if aud is not None:
@@ -828,7 +830,7 @@ def title_menu(aud=None, music=None, cfg=None):
             elif k == "multi":
                 import lobby
                 import mpprofile as profile
-                MP["session"] = lobby.run(profile.Profile(), aud, music, cfg)
+                MP["session"] = lobby.run(profile.Profile(), aud, music, cfg, invite=MP.pop("invite", None))
                 if MP["session"]:
                     return "multi"
                 t_open = time.time()

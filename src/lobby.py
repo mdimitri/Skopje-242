@@ -23,7 +23,7 @@ L = {"title": "МУЛТИПЛЕЈЕР", "name": "Твоето корисничк
      "say": "Напиши порака и Enter...", "spawn": "Почетна локација", "ff": "Пријателски оган", "on": "ВКЛ", "off": "ИСКЛ",
      "start": "ПОЧНИ", "wait": "Домаќинот ќе ја почне играта", "connecting": "Се поврзува...", "rename": "Смени име",
      "stats": "Игри %d · Убиства %d · Смрти %d", "color": "Боја", "join": "Приклучи се", "full": "полна", "offline": "интернет: нема врска",
-     "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copy_long": "Копирај долг код (без интернет-табла)", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
+     "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copy_long": "Копирај долг код", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
      "code_hint": "Залепи го кодот од домаќинот (Ctrl+V) или внеси IP:порта, па Enter", "paste": "Залепи", "code_wait": "кодот се прави (се бара јавна адреса)…",
      "mute": "Тивко", "unmute": "Звук", "mic": "Микрофон", "gain": "Засил.", "vmode": "Глас", "talk": "Држи за зборување"}
 GREEN = rl.Color(90, 220, 110, 255)
@@ -526,12 +526,16 @@ def _room(prof, ses, music, cfg=None, aud=None):
                 font.draw_text(font.fit("или долг код: " + code, sz // 2, max(40, W - 360 - wx)), wx, by + sz * .7, sz // 2, DIM)
             else:
                 font.draw_text(code or L["code_wait"], 360, by + sz * .6, sz * 4 // 5 if code else sz * 3 // 5, GOLD if code else DIM, bold=True)
-            bw2 = (W - 720) // 2
+            bw2 = (W - 740) // 3
             if (word or code) and font.button(L["copied"] if time.time() - copied < 3 else L["copy"], 360, by + sz * 1.8, bw2, sz * 1.3, sz * 3 // 5):
                 rl.set_clipboard_text(word or code)
                 copied = time.time()
             if word and code and font.button(L["copy_long"], 370 + bw2, by + sz * 1.8, bw2, sz * 1.3, sz * 3 // 5):
                 rl.set_clipboard_text(code)
+                copied = time.time()
+            link = invite_link(word, code)
+            if link and font.button("Копирај линк", 380 + 2 * bw2, by + sz * 1.8, bw2, sz * 1.3, sz * 3 // 5):
+                rl.set_clipboard_text(link + "  (ако линкот не се отвора: код " + (word.upper() if word else code) + ")")
                 copied = time.time()
         leave = font.button(L["back"], W - 290, by, 250, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE)
         rl.end_drawing()
@@ -539,7 +543,48 @@ def _room(prof, ses, music, cfg=None, aud=None):
             return False
 
 
-def run(prof, aud=None, music=None, cfg=None):
+def invite_link(word, code):
+    """skopje242://join/<word slug>  (or skopje242://code/<long code> when there is no short word)."""
+    if word and joinwords.slug(word):
+        return "skopje242://join/%s" % joinwords.slug(word)
+    return "skopje242://code/%s" % code if code else ""
+
+
+def parse_invite(url):
+    """-> ("word", slug) | ("code", text) | (None, reason)"""
+    import urllib.parse
+    t = urllib.parse.unquote(str(url or "")).strip().strip("\"'")
+    low = t.lower()
+    if not low.startswith("skopje242:"):
+        return None, "не е линк за Skopje 242"
+    rest = t.split(":", 1)[1].lstrip("/")
+    kind, _, val = rest.partition("/")
+    val = val.strip("/ ")
+    if kind.lower() == "join" and joinwords.slug(val):
+        return "word", joinwords.slug(val)
+    if kind.lower() == "code" and val:
+        return "code", val
+    return None, "линкот е оштетен (%s)" % rest[:40]
+
+
+def register_invite_links():
+    """Windows: make skopje242:// links open this game (per user, no admin). Safe to call every start."""
+    import os
+    import sys
+    if os.name != "nt":
+        return
+    import winreg
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bat = os.path.join(root, "run.bat")
+    cmd = '"%s" "%%1"' % bat if os.path.exists(bat) else '"%s" "%s" "%%1"' % (sys.executable, os.path.join(root, "src", "main.py"))
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\skopje242") as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:Skopje 242")
+        winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\skopje242\shell\open\command") as k:
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cmd)
+
+
+def run(prof, aud=None, music=None, cfg=None, invite=None):
     present.off()
     if not prof.name and not _ask_name(prof, music):
         return None
@@ -547,6 +592,21 @@ def run(prof, aud=None, music=None, cfg=None):
     vc.start()
     ses = mp.Session(prof)
     ses.voice = vc
+    if invite:                                         # opened from an invite link: find the host and join right away
+        kind, val = parse_invite(invite)
+        g, why = None, val if kind is None else ""
+        ses.browse()
+        if kind == "word":
+            g, why = _find_word(ses, val, val, music)
+        elif kind == "code":
+            try:
+                g = mp.parse_code(val)
+            except ValueError as e:
+                why = str(e)
+        if g:
+            ses.join(g)
+        elif why and why != "back":
+            _show_error("Линк за покана: " + why, music)
     try:
         while True:
             go = _browser(prof, ses, music)
