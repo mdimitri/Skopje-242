@@ -270,7 +270,8 @@ class Game:
             if p is not None:
                 pl.append({"pid": pid, "name": p["name"], "color": mp.COLORS[p["color"] % 4], "x": r["x"], "y": r["y"], "h": r["h"],
                            "hp": r["hp"], "foot": bool(r["flags"] & 1),
-                           "talk": self.ses.voice is not None and self.ses.voice.speaking(pid)})
+                           "talk": self.ses.voice is not None and self.ses.voice.speaking(pid),
+                           "lik": r.get("lik", 0), "lvl": self.ses.voice.level_of(pid) if self.ses.voice is not None else 0.0})
         me = self.ses.players.get(self.pid, {"color": 0})
         near = [q for q in pl if q["hp"] > 0]
         if near:
@@ -278,7 +279,10 @@ class Game:
             s.respawn_hint = (q["x"], q["y"])
         else:
             s.respawn_hint = None
-        s.mp_view = {"players": pl, "me_color": mp.COLORS[me["color"] % 4],
+        v = self.ses.voice
+        mine = {"pid": -1, "name": me.get("name", ""), "color": mp.COLORS[me["color"] % 4], "lik": getattr(s, "lik", 0),
+                "talk": bool(v is not None and v.talking), "lvl": float(v.level) if v is not None else 0.0}
+        s.mp_view = {"players": pl, "me": mine, "me_color": mp.COLORS[me["color"] % 4],
                      "team": int(s.money) + sum(r.get("money", 0) for r in self.remote.values()),
                      "network": None if self.over else (self.net_rates, NET_RATE_WINDOW, self.net_ping)}
 

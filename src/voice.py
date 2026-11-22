@@ -712,6 +712,11 @@ class Voice:
         with self.lock:
             return {str(p): [j.recv, j.loss_pct(), j.late, int(j.jit), j.bad] for p, j in self.jit.items() if p != MONITOR}
 
+    def level_of(self, pid):
+        """Recent loudness (peak 0..1) of what player pid is saying; for the face windows."""
+        j = self.jit.get(pid)
+        return j.level if j is not None else 0.0
+
     def speaking(self, pid, now=None):
         now = time.monotonic() if now is None else now
         j = self.jit.get(pid)

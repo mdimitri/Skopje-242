@@ -12,6 +12,7 @@ import poster
 import present
 import settings as S
 import voice as voice_mod
+import faces as faces_mod
 
 # ---- themes: comic-book UI (slanted tabs/buttons, offset shadows, halftone dots), 10 palettes chosen in Контроли > Дебаг
 def _c(*v):
@@ -297,6 +298,8 @@ def _rows(in_game, slots=(), settings_only=False, cfg_now=None):
         (5, Row("slider", "Засилување на микрофонот", "voice_gain", lo=0.0, hi=4.0, fmt=pct)),
         (5, Row("slider", "Праг за глас (автоматски)", "voice_vad", lo=0.002, hi=0.12, fmt=lambda v: "%.3f" % v, note="колку гласно мора да зборуваш за да се праќа")),
         (5, Row("slider", "Јачина на гласовите на другите", "voice_vol", lo=0.0, hi=2.0, fmt=pct)),
+        (5, Row("toggle", "Лица на играчите (мултиплејер)", "faces_on", note="мали анимирани лица на левиот раб: гледаат наоколу, а кога зборуваат ја следат насоката на гласот")),
+        (5, Row("choice", "Големина на лицата", "faces_size", faces_mod.SIZE_NAMES)),
         (5, Row("choice", "Квалитет на гласот", "voice_quality", voice_mod.QUALITY, note="автоматски: се спушта при загуби/џитер/висок пинг, се враќа по 10 s добра врска")),
         *_voice_peer_rows(cfg_now),
         (6, H("Дебаг")),

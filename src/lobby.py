@@ -42,13 +42,13 @@ def ptt_held(cfg, typing=False):
     return rl.is_mouse_button_down(rl.MOUSE_BUTTON_MIDDLE)
 
 
-def draw_voice_hud(ses, W, H):
+def draw_voice_hud(ses, W, H, x0=20):
     """In game: who is talking right now, and my microphone when it does not work."""
     v = getattr(ses, "voice", None) if ses is not None else None
     if v is None:
         return
     sz = max(16, H // 50)
-    x, y = 20, H // 3
+    x, y = x0, H // 3
     if v.talking:
         font.draw_text("● " + ses.players.get(ses.pid, {}).get("name", ""), x, y, sz, GREEN, bold=True)
         y += sz * 1.3

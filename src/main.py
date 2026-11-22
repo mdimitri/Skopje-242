@@ -215,6 +215,7 @@ import poi as poi_mod   # noqa: E402
 import selfie as selfie_mod   # noqa: E402
 import mall as mall_mod   # noqa: E402
 import escride  # noqa: E402
+import faces   # noqa: E402
 from hud import Hud, build_labels, draw_labels, draw_players, draw_waypoint, draw_escape_markers, draw_gate_markers   # noqa: E402
 from render import LOD_PPM, TILT, Renderer, gait_cycle   # noqa: E402
 from ui import Loader, fatal_screen, retry_screen   # noqa: E402
@@ -2398,7 +2399,8 @@ def main():
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)
             if mpg is not None:
-                guard.run("voicehud", lobby_mod.draw_voice_hud, mpg.ses, sw, sh)
+                guard.run("faces", faces.draw, sim, cam, sw, sh, cfg, dt)
+                guard.run("voicehud", lobby_mod.draw_voice_hud, mpg.ses, sw, sh, 20 + faces.reserve(cfg, 1 + len(sim.mp_view["players"]) if sim.mp_view else 0))
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)
             guard.run("gate pins", draw_gate_markers, sim, cam, sw, sh, poi_mod.REACH)
