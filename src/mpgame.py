@@ -77,6 +77,14 @@ def _signal_side(bits):
     return -1 if bits & 64 else 1 if bits & 128 else 0
 
 
+def _myhp(s):
+    return s.car.health if s.mode == "car" and s.car is not None else s.walker.health
+
+
+def _myh(s):
+    return s.car.h if s.mode == "car" and s.car is not None else s.walker.h
+
+
 class Game:
     def __init__(self, sim, session):
         self.sim, self.ses = sim, session
@@ -271,7 +279,8 @@ class Game:
                 pl.append({"pid": pid, "name": p["name"], "color": mp.COLORS[p["color"] % 4], "x": r["x"], "y": r["y"], "h": r["h"],
                            "hp": r["hp"], "foot": bool(r["flags"] & 1),
                            "talk": self.ses.voice is not None and self.ses.voice.speaking(pid),
-                           "lik": r.get("lik", 0), "lvl": self.ses.voice.level_of(pid) if self.ses.voice is not None else 0.0})
+                           "lik": r.get("lik", 0), "vx": r.get("vx", 0.0), "vy": r.get("vy", 0.0), "atk": r.get("atk", 0), "money": r.get("money", 0),
+                           "dead": bool(r["flags"] & 2), "wi": r.get("wi", 0), "lvl": self.ses.voice.level_of(pid) if self.ses.voice is not None else 0.0})
         me = self.ses.players.get(self.pid, {"color": 0})
         near = [q for q in pl if q["hp"] > 0]
         if near:
@@ -281,6 +290,8 @@ class Game:
             s.respawn_hint = None
         v = self.ses.voice
         mine = {"pid": -1, "name": me.get("name", ""), "color": mp.COLORS[me["color"] % 4], "lik": getattr(s, "lik", 0),
+                "hp": _myhp(s), "foot": s.mode != "car", "h": _myh(s), "vx": s.focus()[2], "vy": s.focus()[3], "x": s.focus()[0], "y": s.focus()[1],
+                "atk": 1 if (s.mode != "car" and s.walker.atk_t > 0) else 0, "money": int(s.money), "dead": s.mode != "car" and s.walker.health <= 0,
                 "talk": bool(v is not None and v.talking), "lvl": float(v.level) if v is not None else 0.0}
         s.mp_view = {"players": pl, "me": mine, "me_color": mp.COLORS[me["color"] % 4],
                      "team": int(s.money) + sum(r.get("money", 0) for r in self.remote.values()),

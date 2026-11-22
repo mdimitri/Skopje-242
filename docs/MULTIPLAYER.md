@@ -64,3 +64,5 @@ symmetric NAT), same (same router as the previous player). Joins use the short w
 
 ## Face windows (src/faces.py)
 One animated face per player on the left edge (idle look-around + blink; talking: jaw follows voice loudness, head bobs and turns toward the speaker on screen). Faces are cropped once per hero from assets/likovi into 128 px textures (FACE table = hand-estimated crops). Settings: faces_on, faces_size. Test: xvfb-run python3 tools/shot_faces.py <prefix>.
+
+**Update (mesh heads):** faces now render the real character head mesh (src/facerig.py: sculpt(index,2) head+hair+neck, CPU deform of jaw/smile/eyes/pupils/brows/whole head, mouth decal+teeth+tongue) into a 2x render texture per face at 24 Hz (12 Hz when slow). Moods in faces._Face.update: idle quirks (yawn, wink, tongue, ...), talk, fast/crazy driving, hard brake, crash, fight/punch/hit, cash, scared, dead. Setting faces_mesh=False uses the caricature crop. The radio button in the HUD shows only while driving.
