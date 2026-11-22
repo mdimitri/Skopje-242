@@ -36,6 +36,7 @@ class Job:
         self.work_t = 0.0
         self.spray_t = 0.0
         self.said = False
+        self.cand = None                 # start nodes still to try, one route search per frame (None = not searched yet)
         self.queue = []                  # more emergencies on the same screen, served one by one before the crew drive off
         self.done = 0
         self.age = 0.0
@@ -305,15 +306,20 @@ class Services:
         sim = self.sim
         self._graph()
         fx, fy, _, _ = sim.focus()
-        candidates = []
-        for node, eta in self._to(dest_x, dest_y).items():
-            if node not in self._nodes:
-                continue
-            x, y = self._nodes[node]
-            distance = math.hypot(x - dest_x, y - dest_y)
-            if distance > 35.0 and math.hypot(x - fx, y - fy) > 65.0:
-                candidates.append((not 70.0 < distance < 150.0, eta, x, y))
-        for _, _, x, y in heapq.nsmallest(12, candidates):
+        if j.cand is None:                                    # frame 1: the one broad search; the route searches follow one per frame
+            candidates = []
+            for node, eta in self._to(dest_x, dest_y).items():
+                if node not in self._nodes:
+                    continue
+                x, y = self._nodes[node]
+                distance = math.hypot(x - dest_x, y - dest_y)
+                if distance > 35.0 and math.hypot(x - fx, y - fy) > 65.0:
+                    candidates.append((not 70.0 < distance < 150.0, eta, x, y))
+            j.cand = heapq.nsmallest(12, candidates)
+            return None
+        if not j.cand:
+            return False
+        for _, _, x, y in [j.cand.pop(0)]:
             path = self.route(x, y, dest_x, dest_y)
             if len(path) < 2:
                 continue
@@ -328,7 +334,7 @@ class Services:
                 continue
             break
         else:
-            return False
+            return None if j.cand else False                  # this start failed: the next one is tried next frame
         b.empty = False
         b.service = True
         b.siren = self.rng.random() < 0.35                    # lights always, the siren only on some calls (less noise)
@@ -401,7 +407,10 @@ class Services:
         if j.state == "wait":
             j.t -= dt
             if j.t <= 0:
-                if not self._spawn_vehicle(j, AMBULANCE if j.kind == "amb" else FIRE_ENGINE, j.x, j.y):
+                ok = self._spawn_vehicle(j, AMBULANCE if j.kind == "amb" else FIRE_ENGINE, j.x, j.y)
+                if ok is None:                                   # still searching: one step per frame
+                    return
+                if not ok:
                     self.jobs.remove(j)
                     return
                 j.state = "drive"

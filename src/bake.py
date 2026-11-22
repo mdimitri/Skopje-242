@@ -175,9 +175,11 @@ def _paint_quays(world, ox, oy, span, res=0.5):
     cut = w.quay_cut_v(X, Y)
     if not (cut < -0.05).any():
         return
+    yield                                                  # the numpy phases are 5-10 ms each on a big chunk: one per call, so the bake can stop between them
     H = w.th_v(X, Y, quay=cut).astype(np.float64)
     gy, gx = np.gradient(H, res)
     slope = np.hypot(gx, gy)
+    yield
     fx, fy = (X + w.hx) / st, (Y + w.hy) / st
     tx, ty = np.floor(fx / T).astype(np.int64), np.floor(fy / T).astype(np.int64)
     ok = (tx >= 0) & (ty >= 0) & (tx < w.qntx) & (ty < w.qnty)
@@ -196,6 +198,7 @@ def _paint_quays(world, ox, oy, span, res=0.5):
                    (w.qcls[k, iy + 1, ix], (1 - u) * v), (w.qcls[k, iy + 1, ix + 1], u * v)):
         wg += wt * (cc == 4)
         wh += wt * ((cc == 1) | (cc == 2) | (cc == 5))
+    yield
     t_ = np.clip((slope - 0.12) / 0.2, 0.0, 1.0)
     alpha = np.where(m & (cut < -0.05), t_ * t_ * (3 - 2 * t_), 0.0)
     g = np.clip(wg / np.maximum(wg + wh, 1e-6) * 1.6 - 0.3, 0.0, 1.0)
@@ -209,6 +212,7 @@ def _paint_quays(world, ox, oy, span, res=0.5):
     rgba[..., 3] = (alpha * 255).astype(np.uint8)
     if not rgba[..., 3].any():
         return
+    yield
     rgba = np.ascontiguousarray(rgba)
     img = rl.Image(gl3d.ffi.from_buffer(rgba), N, N, 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
     tex = rl.load_texture_from_image(img)
@@ -262,7 +266,9 @@ def bake_steps(world, cx, cy, rt, decals=()):
                     seg(x1, y1, x2, y2, w["w"] / 2, (86, 146, 198))
                     disc(x1, y1, w["w"] / 2, (86, 146, 198), 8)
             yield water_rail
-            yield lambda: _paint_quays(world, ox, oy, span)
+            quay = _paint_quays(world, ox, oy, span)
+            for _ in range(5):                               # up to 5 phases, one per stage (an exhausted generator does nothing)
+                yield lambda: next(quay, None)
 
             def rails():
                 for ri, k in ch["rail"]:
