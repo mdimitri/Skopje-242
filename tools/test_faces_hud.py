@@ -53,4 +53,7 @@ for dof in (False, True):
     faces._state.clear()
     for i in range(30):
         frame(dof, 3, i in (1, 5, 29))
+oks = [h.ok for h in faces._heads.values() if h]
+print("head probes ok:", oks)
+bad += (not oks) or (not all(oks))
 print("RESULT", "FAIL" if bad else "PASS"); sys.exit(1 if bad else 0)

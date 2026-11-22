@@ -63,6 +63,9 @@ def rotz(a):
 class Head:
     """Rest geometry for one hero + the deformation / rendering."""
 
+    ok = None                                                # None: not probed yet, True: the render target holds a head, False: it stayed empty
+    _probes = 0
+
     def __init__(self, hero_i, size):
         index = ca.DESIGNS[100 + hero_i]
         parts = ca.sculpt(index, 2)
@@ -214,6 +217,9 @@ class Head:
             mesh = self.model.meshes[0]
             rl.update_mesh_buffer(mesh, 0, ffi.cast("void *", ffi.from_buffer(self._pos)), self._pos.nbytes, 0)
             rl.update_mesh_buffer(mesh, 3, ffi.cast("void *", ffi.from_buffer(self._col)), self._col.nbytes, 0)
+        rl.rl_set_texture(0)                                   # the frame may open with other passes' GL state left over (the heads render before begin_drawing now)
+        rl.end_shader_mode(); rl.end_blend_mode(); rl.end_scissor_mode()
+        rl.rl_enable_depth_test(); rl.rl_enable_depth_mask(); rl.rl_enable_color_blend()
         rl.begin_texture_mode(self.rt)
         rl.clear_background(bg)
         rl.begin_mode_3d(self.cam)
@@ -223,6 +229,27 @@ class Head:
         rl.rl_enable_backface_culling()
         rl.end_mode_3d()
         rl.end_texture_mode()
+        if self.ok is not True and self._probes < 4:           # evidence in logs/game.log, and the picture fallback when the target stays empty
+            self._probes += 1
+            try:
+                import os
+                img = rl.load_image_from_texture(self.rt.texture)
+                n = img.width
+                st = max(1, n // 12)
+                cols = {(c.r // 8, c.g // 8, c.b // 8) for c in (rl.get_image_color(img, x, y) for x in range(4, n, st) for y in range(4, n, st))}
+                rl.unload_image(img)
+                good = len(cols) > 6
+                if good:
+                    self.ok = True
+                elif self._probes >= 4:
+                    self.ok = False
+                if good or self.ok is False or self._probes == 1:
+                    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
+                    with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                        fh.write("[faces] head target id %d tex %d %dpx render #%d: %d distinct colours -> %s\n" % (
+                            self.rt.id, self.rt.texture.id, n, self._probes, len(cols), "ok" if good else ("EMPTY, using the picture fallback" if self.ok is False else "empty so far")))
+            except Exception:                                 # noqa: BLE001
+                self.ok = True
 
     def project(self, pt, e):
         """Window position (0..1, 0..1) of a head-space point under the current head turn (for 2D overlays on the eyes)."""

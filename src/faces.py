@@ -381,6 +381,8 @@ def _props(f, head, x, y, S, color):
 def _draw(f, i, x, y, S, color, name, me, ctx):
     spk = f.sp > .3
     head = _head(i, S) if ctx["mesh"] else False
+    if head and head.ok is False:                      # the head target stayed empty on this GPU: the picture fallback
+        head = False
     if ctx["phase"] != "pre":
         rl.draw_rectangle(x - 3, y - 3, S + 6, S + 6, rl.Color(10, 10, 14, 190))
     if head:

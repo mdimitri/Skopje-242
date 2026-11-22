@@ -40,9 +40,14 @@ def stun_addr(sock, timeout=1.5, servers=None):
                                 return socket.inet_ntoa(ip), port
                             i += 4 + ((ln + 3) & ~3)
             except (OSError, socket.timeout):
+                if sock.fileno() == -1:                 # closed under us: asking again is pointless
+                    return None
                 continue
     finally:
-        sock.settimeout(old)
+        try:
+            sock.settimeout(old)
+        except OSError:                                 # the socket was closed meanwhile (WinError 10038): nothing to restore
+            pass
     return None
 
 
