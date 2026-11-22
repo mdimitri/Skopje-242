@@ -281,3 +281,47 @@ def selftest(out):
     except OSError:
         row("Порта UDP %d" % mpnet.PORT, None, "зафатена (друга игра отворена?): домаќинот ќе земе друга порта, сѐ уште работи")
     out.append(None)        # done
+
+
+class Board:
+    """Two MQTT connections to different public brokers at once: if one broker dies or throttles, the notice board,
+    the short codes and the relay keep working on the other. Same interface as Mqtt; duplicates are fine upstream
+    (listings/notices are idempotent, relayed packets are de-duplicated in mpnet)."""
+
+    def __init__(self, subs, on_msg, brokers=None):
+        b = list(brokers or BROKERS)
+        self.links = [Mqtt(list(subs), on_msg, b)]
+        if len(b) > 1:
+            self.links.append(Mqtt(list(subs), on_msg, b[1:] + b[:1]))
+        self._raw = None
+
+    @property
+    def connected(self):
+        c = [m.connected for m in self.links if m.connected]
+        return " + ".join(dict.fromkeys(c)) if c else ""
+
+    @property
+    def on_raw(self):
+        return self._raw
+
+    @on_raw.setter
+    def on_raw(self, f):
+        self._raw = f
+        for m in self.links:
+            m.on_raw = f
+
+    def publish(self, topic, obj):
+        for m in self.links:
+            m.publish(topic, obj)
+
+    def publish_raw(self, topic, data):
+        for m in self.links:
+            m.publish_raw(topic, data)
+
+    def subscribe(self, sub):
+        for m in self.links:
+            m.subscribe(sub)
+
+    def close(self):
+        for m in self.links:
+            m.close()

@@ -45,7 +45,9 @@ class Session:
         self._adv = self._adv2 = 0.0
         self._busy = False
         self._spraying = set()
-        self.blips = []                       # "join" / "leave" for the UI to chime (lobby and game)
+        self.blips = []
+        self._ghosts = {}                     # host: uid -> (pid, player, time gone) for rejoining in game
+        self._rec = None                      # guest: {"at", "stage", "old"} while recovering a dead link                       # "join" / "leave" for the UI to chime (lobby and game)
         self.word = ""                        # host: short code „шмекер 42“ (published on the notice board)
         self.code_hits = {}                   # guest: slug -> host info heard on code/<slug>
         self._bd = []                         # guest: birthday-punch sockets
@@ -70,7 +72,7 @@ class Session:
         if internet:
             self._busy = True
             threading.Thread(target=self._host_net, daemon=True).start()
-            self.mqtt = discovery.Mqtt(["join/" + self.gid, "join/r%d" % self.net.rid], self._on_mqtt)
+            self.mqtt = discovery.Board(["join/" + self.gid, "join/r%d" % self.net.rid], self._on_mqtt)
             self.net.use_relay(self.mqtt)                # guests whose UDP cannot get through come in over the notice board
             self._new_word()
         self.ready = True
@@ -140,7 +142,7 @@ class Session:
         if self.lan is None:
             self.lan = discovery.Lan()
         if self.mqtt is None:
-            self.mqtt = discovery.Mqtt(["games/#"], self._on_game)
+            self.mqtt = discovery.Board(["games/#"], self._on_game)
 
     def lookup(self, code_slug):
         """Guest: ask the notice board for the host that uses this short code; answers land in code_hits."""
@@ -176,7 +178,7 @@ class Session:
         self.net.probe_rtt = True
         relay_only = not game.get("addr") and game.get("rid")        # host has no UDP to the internet at all (strict Wi-Fi)
         addr = ("mqtt", int(game["rid"])) if relay_only else (game["addr"][0], int(game["addr"][1]))
-        self._target = addr
+        self._target = self._orig = addr
         self._t0 = time.monotonic()
         self._notice = 0.0
         self._mine = None
@@ -315,9 +317,7 @@ class Session:
             self.start_info = {"spawn": self.cfg["spawn"], "ff": self.cfg["ff"], "seed": random.randrange(1 << 30)}
             self.state = "playing"
             self.net.broadcast_rel(dict(self.start_info, t="start"))
-            if self.mqtt and not any(isinstance(p["addr"], tuple) and p["addr"][0] == "mqtt" for p in self.players.values()):
-                self.mqtt.close()
-                self.mqtt = None
+            # the notice board stays open in game: a guest whose UDP dies switches to the relay or rejoins through it
 
     def leave(self):
         if self.voice is not None and self.state == "playing":
@@ -388,6 +388,17 @@ class Session:
             if old == getattr(self, "_target", None):
                 self._target = new
         for kind, addr, obj in evs:
+            if kind == "up" and self.role == "guest" and self._rec is not None and addr in self._rec["ways"]:
+                net.log("guest: %s:%s answers, asking to be taken back" % addr)
+                for w in self._rec["ways"] + [self._rec.get("old")]:
+                    if w and w != addr:
+                        self.net.drop_peer(w)
+                self._rec["ways"] = [addr]
+                self._target = addr
+                self.route = "реле преку MQTT (%s)" % self.mqtt.connected if addr[0] == "mqtt" else "%s:%s" % addr
+                self.relayed = addr[0] == "mqtt"
+                self.net.send_rel(addr, {"t": "rebind", "uid": self.prof.uid, "name": self.prof.name, "ver": VER})
+                continue
             if kind == "up" and self.role == "guest" and addr == getattr(self, "_also", None) and addr != self._target \
                     and self.state == "connecting":
                 net.log("guest: the host answered on its LAN address %s:%d (same network)" % addr)
@@ -401,6 +412,8 @@ class Session:
                 self._msg(addr, obj)
             elif kind == "voice":
                 self._voice_in(addr, obj)
+        if self.role == "guest" and self.net is not None:
+            self._recover_tick(now)
         self._voice_out(now)
         return evs
 
@@ -523,6 +536,72 @@ class Session:
             s.close()
         self._bd = []
 
+    # ------------------------------------------------------------------ guest: keep the game alive when the line breaks
+    def _recover_start(self, now, stage):
+        """stage 'relay': UDP silent 3 s -> knock through the MQTT relay. 'rejoin': the link is gone -> try every way
+        (old UDP address, LAN address, relay) for 30 s, then give up with the reason."""
+        g = getattr(self, "_game", None) or {}
+        if self._rec is not None and stage == "relay":
+            return False
+        ways = []
+        if stage == "rejoin":
+            ways.append(self._orig)
+            if g.get("laddr"):
+                ways.append((g["laddr"], int(g.get("port") or net.PORT)))
+        if g.get("rid") and self.net.relay is None and self.mqtt is not None:
+            self.net.use_relay(self.mqtt)
+        if g.get("rid") and self.mqtt is not None and self.mqtt.connected:
+            ways.append(("mqtt", int(g["rid"])))
+        ways = [w for w in dict.fromkeys(ways) if w and w != (self._target if stage == "relay" else None)]
+        if not ways:
+            return False
+        net.log("guest: link to the host %s (%s): trying %s" % ("silent 3 s" if stage == "relay" else "lost", self.route,
+                                                               ", ".join("%s:%s" % w for w in ways)))
+        old = self._target
+        if stage == "rejoin":                                # fresh port + relay id: the host must not mix old and new packet counters
+            import socket
+            try:
+                ns = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                ns.bind(("0.0.0.0", 0))
+                ns.setblocking(False)
+                self.net.sock.close()
+                self.net.sock, self.net.port = ns, ns.getsockname()[1]
+            except OSError as e:
+                net.log("guest: new socket failed: %r" % e)
+            self.net.peers.clear()
+            self.net.rid = int.from_bytes(os.urandom(4), "big") & 0x7FFFFFFF
+            if self.net.relay is not None:
+                self.net.relay.subscribe("r/%d" % self.net.rid)
+        if self._rec is None:
+            self._rec = {"at": now, "stage": stage, "ways": ways}
+        else:
+            self._rec.update(stage=stage, ways=ways)
+        for w in ways:
+            self.net.drop_peer(w)
+            self.net.add_peer(w)
+            self.net.hello(w)
+        if stage == "relay" and old in self.net.peers:
+            self._rec["old"] = old
+        self.route_note = "се поврзува повторно…"
+        return True
+
+    def _recover_tick(self, now):
+        r = self._rec
+        if r is None:
+            if self.role == "guest" and self.state in ("lobby", "playing"):
+                p = self.net.peers.get(self._target)
+                if p is not None and p.up and now - p.last_rx > 3 and self._target[0] != "mqtt":
+                    self._recover_start(now, "relay")
+            return
+        for w in r["ways"]:
+            p = self.net.peers.get(w)
+            if p is not None and not p.up:
+                self.net.hello(w)
+        if now - r["at"] > 30:
+            self._rec = None
+            self.state, self.error = "closed", "Врската се прекина: домаќинот не се јавува 30 s ни директно ни преку реле"
+            net.log("guest: recovery failed after 30 s")
+
     def _why_failed(self):
         """Technical reason for a join that got no answer."""
         if self._game.get("lan"):
@@ -539,6 +618,34 @@ class Session:
                 " и ".join(sym), net.PORT)
         return "Нема врска: домаќинот не одговори 15 s (NAT/фајервол на рутерот го блокира UDP)"
 
+    def _comeback(self, addr, m):
+        """Host: a known player (same uid) arrives from a new address - switched to the relay, changed Wi-Fi, or rejoined
+        after a drop. Give back the same pid / colour / name; the game state follows from its next packets."""
+        uid = str(m.get("uid", ""))[:12]
+        if not uid or m.get("ver", VER) != VER:
+            return False
+        old = next((k for k, p in self.players.items() if p["uid"] == uid and k), None)
+        if old is not None:
+            prev = self.players[old]["addr"]
+            if prev != addr:
+                self.players[old]["addr"] = addr
+                if prev is not None:
+                    self.net.drop_peer(prev)                  # silently: this is not a leave
+            pid = old
+        else:
+            g = self._ghosts.pop(uid, None)
+            if g is None or time.monotonic() - g[2] > 90 or len(self.players) >= MAX_PLAYERS or g[0] in self.players:
+                return False
+            pid = g[0]
+            self.players[pid] = dict(g[1], addr=addr)
+            self.blips.append("join")
+        net.log("host: player %d (%s) is back from %s:%s (%s)" % (pid, self.players[pid]["name"], addr[0], addr[1], m.get("t")))
+        self.net.send_rel(addr, {"t": "welcome", "pid": pid, "back": 1})
+        if self.state == "playing" and self.start_info:
+            self.net.send_rel(addr, dict(self.start_info, t="start"))
+        self._roster()
+        return True
+
     def _pid_of(self, addr):
         for k, p in self.players.items():
             if p["addr"] == addr:
@@ -547,11 +654,17 @@ class Session:
 
     def _gone(self, addr):
         if self.role == "guest":
+            if addr != self._target:
+                return
+            if self.state in ("lobby", "playing") and self._recover_start(time.monotonic(), "rejoin"):
+                return
             self.state, self.error = "closed", self.error or "Врската се прекина"
             net.log("guest: connection lost: host silent for %.0f s or closed" % net.TIMEOUT)
         else:
             pid = self._pid_of(addr)
             if pid is not None:
+                if self.state == "playing":               # kept 90 s: the same player (uid) may come back after a Wi-Fi drop
+                    self._ghosts[self.players[pid]["uid"]] = (pid, dict(self.players[pid]), time.monotonic())
                 del self.players[pid]
                 self.blips.append("leave")
                 self.vstats.pop(pid, None)
@@ -563,7 +676,9 @@ class Session:
         t = m.get("t") if isinstance(m, dict) else None
         if self.role == "host":
             pid = self._pid_of(addr)
-            if t == "join" and pid is None and self.state == "lobby":
+            if t in ("rebind", "join") and pid is None and self._comeback(addr, m):
+                pass
+            elif t == "join" and pid is None and self.state == "lobby":
                 net.log("host: join request from %s:%d name %r ver %r" % (addr + (m.get("name"), m.get("ver"))))
                 if m.get("ver") != VER:
                     self.net.send_rel(addr, {"t": "deny", "why": "ver"})
@@ -587,7 +702,12 @@ class Session:
                     self.net.drop_peer(addr)
                     self._gone(addr)
         else:
-            if t == "welcome":
+            if t == "welcome" and m.get("back") and self._rec is not None:
+                net.log("guest: the host took me back as player %s over %s" % (m.get("pid"), self.route))
+                self.pid, self._rec = int(m["pid"]), None
+                if self.state == "connecting":
+                    self.state = "lobby"
+            elif t == "welcome":
                 self.pid, self.state = int(m["pid"]), "lobby"
                 g = self._game
                 try:                                      # remember it for one-click quick join next time
@@ -607,7 +727,8 @@ class Session:
             elif t == "chat":
                 self.chat = (self.chat + [(int(m["p"]), str(m["m"])[:120])])[-60:]
             elif t == "start":
-                self.start_info = {"spawn": m["spawn"], "ff": m["ff"], "seed": m["seed"]}
+                if self.state != "playing":
+                    self.start_info = {"spawn": m["spawn"], "ff": m["ff"], "seed": m["seed"]}
                 self.state = "playing"
             elif t == "vsa" and isinstance(m.get("s"), dict):
                 now = time.monotonic()

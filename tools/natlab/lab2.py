@@ -20,7 +20,7 @@ def nat(n, wan, kind):
     ns(n, "iptables -A FORWARD -i %s -m state --state NEW -j DROP" % wan)
     ns(n, "iptables -A INPUT -i %s -m state --state NEW -j DROP" % wan)
 
-def main(profiles, talk=8):
+def main(profiles, talk=8, events=()):
     names = ["inet"]
     clean = lambda: [subprocess.run("ip netns del %s" % n, shell=True, stderr=subprocess.DEVNULL) for n in os.popen("ip netns list").read().split() if n.startswith(("lab_",))]
     clean()
@@ -75,7 +75,21 @@ def main(profiles, talk=8):
         procs.append(subprocess.Popen("ip netns exec %s env WORD=1 NPL=%d PNAME=P%d python3 %s/peer.py %s 203.0.113.1 %s" % (pc, n, i, D, role, talk),
                                       shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
         time.sleep(3 if i == 0 else 0.5)
-    outs = [p.communicate(timeout=240)[0] for p in procs]
+    import threading
+    def disturb():                       # ("udp", i, t) block UDP for player i's network at t s; ("down", i, t, d) cut it all for d s
+        t0 = time.time()
+        for ev in sorted(events, key=lambda e: e[2]):
+            time.sleep(max(0, ev[2] - (time.time() - t0)))
+            r = net_of[ev[1]]
+            if ev[0] == "udp":
+                ns(r, "iptables -I FORWARD -p udp -j DROP"); print("[lab] UDP blocked for P%d" % ev[1], flush=True)
+            else:
+                ns(r, "iptables -I FORWARD -j DROP"); print("[lab] P%d offline for %d s" % (ev[1], ev[3]), flush=True)
+                time.sleep(ev[3]); ns(r, "iptables -D FORWARD -j DROP"); print("[lab] P%d back online" % ev[1], flush=True)
+    threading.Thread(target=disturb, daemon=True).start()
+    outs = [p.communicate(timeout=300)[0] for p in procs]
+    for i, o in enumerate(outs):
+        open("/tmp/lab2_P%d.out" % i, "w").write(o)
     srv.kill()
     clean()
     res = []
@@ -87,8 +101,15 @@ def main(profiles, talk=8):
     return res
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.replace(".", "").isdigit()]
-    for i, r in enumerate(main(args)):
+    args = [a for a in sys.argv[1:] if not a.replace(".", "").isdigit() and "@" not in a]
+    evs = []
+    for a in sys.argv[1:]:
+        if a.startswith("udp@"):                          # udp@1:40  -> block UDP for P1 at 40 s
+            i, t = a[4:].split(":"); evs.append(("udp", int(i), float(t)))
+        elif a.startswith("down@"):                       # down@1:40:12 -> P1 offline at 40 s for 12 s
+            i, t, d = a[5:].split(":"); evs.append(("down", int(i), float(t), float(d)))
+    talk = next((float(a) for a in sys.argv[1:] if a.replace(".", "").isdigit()), 30 if evs else 8)
+    for i, r in enumerate(main(args, talk, evs)):
         if "crash" in r:
             print("P%d %-6s CRASH %s" % (i, args[i], r["crash"])); continue
         print("P%d %-6s %-8s NAT %-9s route %-40s err %r" % (i, args[i], r["state"], r["nat"], r.get("route", ""), r["error"]))

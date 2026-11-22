@@ -108,6 +108,7 @@ class Net:
         self.relay = None             # discovery.Mqtt: fallback path when UDP hole punching fails (symmetric NAT both sides)
         self.rid = int.from_bytes(os.urandom(4), "big") & 0x7FFFFFFF      # my relay address = ("mqtt", rid)
         self._rin = collections.deque(maxlen=2000)
+        self._rseen = {}
 
     def use_relay(self, mqtt):
         """Packets to ("mqtt", rid) addresses go through the MQTT notice board; packets for me arrive on r/<my rid>."""
@@ -117,6 +118,12 @@ class Net:
 
     def _relay_rx(self, topic, body):
         if len(body) > 4:
+            h, now = hash(body), time.monotonic()  # the same packet arrives once per broker (discovery.Board): keep one
+            if now - self._rseen.get(h, -9) < 0.5:   # (identical keep-alives are >= 1 s apart, so a short window is safe)
+                return
+            self._rseen[h] = now
+            if len(self._rseen) > 4000:
+                self._rseen = {k: t for k, t in self._rseen.items() if now - t < 0.5}
             self._rin.append((body[4:], ("mqtt", int.from_bytes(body[:4], "big"))))
 
     def start_heartbeat(self):

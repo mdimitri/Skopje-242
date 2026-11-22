@@ -6,7 +6,7 @@ import numpy as np
 import discovery, mp, mpprofile as profile, voice
 role, srv, talk = sys.argv[1], sys.argv[2], float(sys.argv[3])
 discovery.STUN[:] = [(srv, 3478), (srv[:-1] + "2", 3478)]
-discovery.BROKERS[:] = [(srv, 1883)]
+discovery.BROKERS[:] = [(srv, 1883), (srv[:-1] + "2", 1883)]     # two boards, like the real game
 p = profile.Profile("/nonexistent/p.json"); p.name = os.environ.get("PNAME") or ("Мартин" if role == "host" else "Ана")
 p.uid = (p.name + "uid000000")[:12]
 NPL = int(os.environ.get("NPL", "2"))
@@ -82,7 +82,8 @@ for pid, pl in ses.players.items():
     if pid != ses.pid:
         h_, t_ = ses.voice_report(pid)
         voices[pl["name"]] = "%d frames, %s" % (v.jit[pid].recv if pid in v.jit else 0, h_)
-print(json.dumps({"voices": voices, "route": ses.route, "role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
+dbg = {str(k): {"recv": j.recv, "seen": j.seen, "age": round(time.monotonic() - j.last_rx, 1), "late": j.late} for k, j in v.jit.items()}
+print(json.dumps({"dbg": dbg, "bad": v.bad_rx, "badwhy": v.bad_why, "tx": v.tx_packets, "voices": voices, "route": ses.route, "role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
                   "voice_rx_frames": j.recv if j else 0, "loss": j.loss_pct() if j else None, "jitter_ms": int(j.jit) if j else None,
                   "fec_fixed": j.fixed if j else 0, "tier": voice.TIERS[v.tier][0], "why": v.link, "hear": hear, "them": them,
                   "tx_packets": v.tx_packets, "nat": ses.nat, "error": ses.error}, ensure_ascii=False))
