@@ -11,6 +11,7 @@ from crosswalks import begin_frame, crosses_wall, over_budget, walk_path
 from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, brake_speed, corridor_entry, fastest_route,
                      follow_speed, movement_lanes, turn_angle, turn_indicator, turn_lanes)
 import escride
+from laneassist import LaneAssist
 import peds_lines
 import talk
 import trains
@@ -64,7 +65,6 @@ class Body:
         self.wheel = 0.0             # front-wheel angle drawn (rad)
         self.indicator = 0          # -1 left, +1 right
         self.indicator_t = 0.0
-        self.turn_input_t = 0.0
         self.trh = None              # articulated vehicle's rear heading (None: straight behind its front section)
         self.tra = None              # semi: where the trailer's axle group is (x, y)
         self.kind, self.color = kind, color
@@ -334,12 +334,7 @@ def drive(p, throttle, steer_in, handbrake, dt, world):
     fx, fy = math.cos(p.h), math.sin(p.h)
     old_vf = p.vx * fx + p.vy * fy
     vf = old_vf
-    if p.player_car and p.ctl is None:
-        turning = (vf > 0.55 or (vf >= -0.25 and throttle > 0.15)) and abs(steer_in) >= 0.35
-        p.turn_input_t = p.turn_input_t + dt if turning else 0.0
-        p.signal_turn((1 if steer_in > 0.0 else -1) if p.turn_input_t >= 0.08 else 0, dt)
-    else:
-        p.signal_turn(0, dt)
+    p.signal_turn(0, dt)                               # the car you drive never blinks (only AI traffic uses indicators)
     response = HERO["drv"] if p.player_car else 1.0
     if p.player_car and p.ctl is None:
         response *= 0.8 * (1.0 - STEER_TWITCH_CUT)
@@ -4536,6 +4531,7 @@ class Sim:
         self.services = services.Services(self)
         self.trains = trains.Trains(world)
         self.dens_traffic = self.dens_peds = 1.0
+        self.lane_assist, self.lane_assist_on = LaneAssist(), True
         self.parked = {}
         self.gone = set()
         self.stats = {"peds": 0, "burek": 0, "stolen": 0, "deaths": 0, "boom": 0, "ajvar": 0}
@@ -5436,7 +5432,9 @@ class Sim:
                     thr = 0.0
                 else:
                     thr = inp["throttle"] if c.fuel > 0 or inp["throttle"] < 0 else 0.0     # empty tank: it only rolls
-                    drive(c, thr, inp["steer"], inp["handbrake"], sdt, w)
+                    assist = self.lane_assist.steer(c, w, self.traffic, inp["steer"], inp["throttle"], inp["handbrake"],
+                                                    self.lane_assist_on, sdt) if c.ctl is None else 0.0
+                    drive(c, thr, inp["steer"] + assist, inp["handbrake"], sdt, w)
                 if thr > 0:
                     was = c.fuel
                     c.fuel = max(0.0, c.fuel - math.hypot(c.vx, c.vy) * sdt * (0.6 + 0.4 * thr) / (FUEL_KM * 1000.0 * vehicles.FUEL_MULT.get(c.kind, 1.0)))

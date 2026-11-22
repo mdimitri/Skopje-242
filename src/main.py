@@ -845,6 +845,7 @@ def main():
         spk.set_colour(c["voice_colour"])
         spk.set_speed(settings_mod.SPEECH_SPEEDS[c["speech_speed"] % len(settings_mod.SPEECH_SPEEDS)])
         sim.aggro, sim.lang = c["aggro"], c["lang"]
+        sim.lane_assist_on = c["lane_assist"]
         sim.speech_freq = settings_mod.SPEECH_FREQ[c["speech_freq"] % len(settings_mod.SPEECH_FREQ)]
         if getattr(sim, "places", None) is not None:
             sim.places.lang = c["lang"]
