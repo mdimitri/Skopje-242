@@ -22,6 +22,11 @@ for _ in range(400):
     if g.state == "lobby": break
 assert g.state == "lobby"
 host.set_cfg(ff=True)
+host.set_ready(True); g.set_ready(True)
+for _ in range(200):
+    host.update(); g.update(); time.sleep(0.005)
+    if host.all_ready(): break
+assert host.all_ready()
 host.start()
 for _ in range(200):
     host.update(); g.update(); time.sleep(0.005)
@@ -241,6 +246,33 @@ for t in ("take", "claim", "dmg", "kill"):
 hg._route = _route
 print("8 host passes on:", sent); assert sent == [(2, "take"), (2, "claim"), (2, "dmg"), (2, "kill")]
 print("bytes: host tx %d rx %d" % (host.net.bytes_tx, host.net.bytes_rx))
+# ---- 8b. a third player joins the RUNNING game: he gets start data, the stolen parked cars and the props broken so far
+w0 = hs.w
+e0 = next(e for e in w0.points_near(hs.focus()[0], hs.focus()[1], 150) if e[0] is not None) if hasattr(w0, "points_near") else None
+if e0 is not None:
+    w0.mp_out = []
+    w0.break_point(e0)
+    w0.mp_out = []
+hs.gone.add(4242); hg._gone_seen.add(4242)
+gp3, gs3 = mk("Доцна", "g3", 3)
+g3 = mp.Session(gp3); g3.join({"addr": ["127.0.0.1", host.net.port], "lan": True})
+for _ in range(600):
+    host.update(); g3.update(); time.sleep(0.005)
+    if g3.state == "playing": break
+assert g3.state == "playing" and g3.start_info == host.start_info and host.late == [2], (g3.state, host.late)
+gg3 = mpgame.Game(gs3, g3)
+mpgame.spawn(gs3, world, g3)
+for _ in range(120):
+    hg.update(dt); gg3.update(dt); time.sleep(0.005)
+assert 4242 in gs3.gone, "late joiner did not get the stolen-car list"
+if e0 is not None:
+    assert any(b[0] == e0[0] and b[1] == e0[1] for b in gs3.w.broken), "late joiner did not get the broken props"
+print("8b late join: state %s, gone synced, broken props synced %s" % (g3.state, e0 is not None))
+g3.leave()
+for _ in range(200):
+    hg.update(dt); gg.update(dt); time.sleep(0.005)
+    if len(g.players) == 2: break
+assert len(g.players) == 2, g.players
 # ---- 9. the host leaves: the guest carries on alone with real traffic, nothing frozen
 assert gs.client
 nc = len(gs.traffic.cars)

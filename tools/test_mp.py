@@ -23,12 +23,62 @@ assert g[3].state == "closed" and g[3].error == "Игрот е полн", (g[3].
 g[0].send_chat("Ајде кај Кале"); g[1].set_color(0); g[1].set_color(1)
 h.set_cfg(spawn=3, ff=True); pump([h] + g, 0.6)
 assert all(s.chat and s.chat[-1][1] == "Ајде кај Кале" for s in [h] + g[:3])
-assert g[1].cfg == {"spawn": 3, "ff": True}
+assert g[1].cfg == {"spawn": 3, "ff": True, "lock": False}
 cols = [p["color"] for p in h.players.values()]; assert len(set(cols)) == 4, cols
+# ready flow: START does nothing until every player (host included) is ready; flags sync to all; joining / settings reset them
+pump([h] + g, 0.4)
+assert not h.all_ready() and len(h.waiting()) == 4
+h.set_ready(True); g[0].set_ready(True); g[1].set_ready(True); pump([h] + g, 0.6)
+assert all(sorted(k for k, p in s.players.items() if p["ready"]) == [0, 1, 2] for s in [h] + g[:3]), [s.players for s in g[:3]]
+assert h.waiting() == ["Кико"]
+h.start(); pump([h] + g, 0.4)
+assert h.state == "lobby" and all(s.state == "lobby" for s in g[:3]), "start must wait for the last player"
+g[2].set_ready(True); pump([h] + g, 0.6)
+assert h.all_ready() and g[0].all_ready()
+h.set_cfg(ff=True); pump([h] + g, 0.4)                       # same value: no reset
+assert h.all_ready()
+h.set_cfg(spawn=2); pump([h] + g, 0.4)                       # a changed setting: everybody confirms again
+assert not any(p["ready"] for s in [h] + g[:3] for p in s.players.values())
+h.set_cfg(spawn=3)
+for s in [h] + g[:3]: s.set_ready(True)
+pump([h] + g, 0.6)
+# a player leaving while ready: the others stay ready, the start still works
+g2x = g[2]; g2x.leave(); pump([h] + g, 0.8, lambda: len(h.players) == 3)
+assert len(h.players) == 3 and h.all_ready(), h.players
+# somebody joins: all flags reset (the newcomer is not ready either)
+gn = mp.Session(prof("Нов", "gnew")); gn.join({"addr": ["127.0.0.1", h.net.port], "lan": True})
+pump([h] + g[:2] + [gn], 3, lambda: gn.state == "lobby")
+assert gn.state == "lobby" and not h.all_ready() and len(h.waiting()) == 4, h.players
+g = [g[0], g[1], gn]
+for s in [h] + g: s.set_ready(True)
+pump([h] + g, 0.8)
+assert h.all_ready() and all(s.all_ready() for s in g)
 h.start(); pump([h] + g, 0.8)
 assert all(s.state == "playing" and s.start_info["spawn"] == 3 and s.start_info["ff"] for s in g[:3])
 assert len({s.start_info["seed"] for s in g[:3]}) == 1
 print("OK lobby: 4 players, deny-full, unique names, chat, colours, cfg, start")
+
+# late join: the room stays advertised while the game runs; a newcomer gets welcome + start; a locked room denies
+beacons = []
+h.lan.beacon = lambda info: beacons.append(info)
+h._adv = 0; pump([h] + g, 2.6)
+assert beacons and beacons[-1]["st"] == "playing" and beacons[-1]["lock"] is False, beacons[-1:]
+g[1].leave(); pump([h] + g, 1, lambda: len(h.players) == 3)
+assert len(h.players) == 3
+h.set_lock(True); pump([h] + g, 0.4)
+assert g[0].cfg["lock"] is True
+gl = mp.Session(prof("Доцна", "glate")); gl.join({"addr": ["127.0.0.1", h.net.port], "lan": True})
+pump([h] + g + [gl], 2.5, lambda: gl.state == "closed")
+assert gl.state == "closed" and gl.error == "Собата е заклучена", (gl.state, gl.error)
+h._adv = 0; pump([h] + g, 0.3); h._adv = 0; pump([h] + g, 2.6)
+assert beacons[-1]["lock"] is True
+h.set_lock(False)
+gl = mp.Session(prof("Доцна", "glate")); gl.join({"addr": ["127.0.0.1", h.net.port], "lan": True})
+pump([h] + g + [gl], 3, lambda: gl.state == "playing")
+assert gl.state == "playing" and gl.start_info == h.start_info and len(h.players) == 4 and h.late == [max(h.players)], (gl.state, h.late)
+assert sorted(gl.players) == sorted(h.players)
+print("OK ready flow (sync, reset on join/settings, leave while ready), lock, beacon during game, late join")
+
 
 # same-router join: the host advertises its LAN address; a guest with the same public IP must use it, not the public one
 import discovery

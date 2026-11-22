@@ -223,6 +223,8 @@ class Game:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
                         self._drop_remote(pid)
+        while self.host and ses.late:                               # somebody joined the running game: give him what is already broken / taken
+            self._late_sync(ses.late.pop())
         if ses.migrated != self._mig:                               # the host left mid-game and somebody took over: re-sync
             self._mig = ses.migrated
             for pid in list(self.remote):
@@ -362,6 +364,30 @@ class Game:
                 self._route(b.drop_pid, {"t": "claim", "to": b.drop_pid})
                 b.drop_pid = None
 
+    def _late_sync(self, pid):
+        """Host: a player joined after the start. He gets the stolen parked cars (gone) and the broken props so far, in chunks."""
+        a = self.ses.players.get(pid, {}).get("addr")
+        if a is None:
+            return
+        s = self.sim
+        gone = sorted(i for i in s.gone if isinstance(i, int))
+        brk = [[b[0], b[1]] for b in s.w.broken]
+        for k in range(0, len(gone), 150):
+            self.ses.net.send_rel(a, {"t": "late", "g": gone[k:k + 150]})
+        for k in range(0, len(brk), 80):
+            self.ses.net.send_rel(a, {"t": "late", "b": brk[k:k + 80]})
+
+    def _apply_late(self, m):
+        s = self.sim
+        for i in m.get("g", ())[:150]:
+            if isinstance(i, int):
+                s.gone.add(i)
+                self._gone_seen.add(i)
+                s.bodies = [b for b in s.bodies if not (b.parked_idx == i and b.empty and b is not s.car)]
+        for xy in m.get("b", ())[:80]:
+            if isinstance(xy, list) and len(xy) == 2:
+                self._apply_brk({"x": xy[0], "y": xy[1]})
+
     def _props(self, s):
         """Trees, posts and street furniture I knocked over are broken on every other PC as well."""
         out = s.w.mp_out
@@ -456,6 +482,8 @@ class Game:
             self._bcast({"t": "undrop", "p": self.pid})
         elif t == "brk":
             self._apply_brk(m)
+        elif t == "late" and not self.host:
+            self._apply_late(m)
         elif t == "cwreck" and m.get("to") == self.pid:
             self._apply_car_wreck(m)
         elif t == "phit" and m.get("to") == self.pid:

@@ -25,7 +25,11 @@ def pump(n=1, cond=None):
         if cond and cond(): return True
     return False
 assert pump(600, lambda: all(g.state == "lobby" for g in guests))
-host.set_cfg(ff=True); host.start()
+host.set_cfg(ff=True)
+host.set_ready(True)
+for g_ in guests: g_.set_ready(True)
+assert pump(400, lambda: host.all_ready())
+host.start()
 assert pump(400, lambda: all(g.state == "playing" for g in guests))
 games = [mpgame.Game(s, e) for s, e in zip(sims, ses)]
 for s, e in zip(sims, ses):

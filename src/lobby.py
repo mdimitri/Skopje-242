@@ -25,6 +25,8 @@ L = {"title": "МУЛТИПЛЕЈЕР", "name": "Твоето корисничк
      "stats": "Игри %d · Убиства %d · Смрти %d", "color": "Боја", "join": "Приклучи се", "full": "полна", "offline": "интернет: нема врска",
      "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copy_long": "Копирај долг код", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
      "code_hint": "Залепи го кодот од домаќинот (Ctrl+V) или внеси IP:порта, па Enter", "paste": "Залепи", "code_wait": "кодот се прави (се бара јавна адреса)…",
+     "ready": "Спремен", "notready": "Не е спремен", "unready": "Откажи", "readybtn": "СПРЕМЕН", "waitfor": "Чека: %s",
+     "lock": "Заклучи собата", "unlock": "Отклучи собата", "locked": "заклучена", "running": "игра во тек", "ingame": "во игра",
      "mute": "Тивко", "unmute": "Звук", "mic": "Микрофон", "gain": "Засил.", "vmode": "Глас", "talk": "Држи за зборување"}
 GREEN = rl.Color(90, 220, 110, 255)
 RED = rl.Color(255, 120, 140, 255)
@@ -141,8 +143,8 @@ def _browser(prof, ses, music):
                 font.draw_text(L["offline"], x0 + pw - font.measure_text(L["offline"], sz * 4 // 5) - 10, y0 + H * 0.5 - sz * 1.6, sz * 4 // 5, DIM)
             for i, g in enumerate(games[:8]):
                 ry = y0 + 12 + i * sz * 2.1
-                full = g.get("n", 0) >= g.get("max", 4)
-                font.draw_text("%s%s   %d/%d" % (g.get("name", "?"), "  [LAN]" if g.get("lan") else "", g.get("n", 0), g.get("max", 4)),
+                full = g.get("n", 0) >= g.get("max", 4) or bool(g.get("lock"))
+                font.draw_text("%s%s   %d/%d" % (g.get("name", "?"), ("  [LAN]" if g.get("lan") else "") + ("  [%s]" % L["locked"] if g.get("lock") else "") + ("  [%s]" % L["running"] if g.get("st") == "playing" else ""), g.get("n", 0), g.get("max", 4)),
                                x0 + 20, ry + sz * 0.3, sz, DIM if full else rl.WHITE, bold=True)
                 a = g.get("addr") or ["?", 0]
                 font.draw_text("%s:%s · %s · v%s" % (a[0], a[1], "LAN" if g.get("lan") else "интернет", g.get("ver", "?")),
@@ -396,8 +398,19 @@ def _room(prof, ses, music, cfg=None, aud=None):
         font.draw_text(L["players"], 55, top + 8, sz, GOLD, bold=True)
         for i, (pid, p) in enumerate(sorted(ses.players.items())):
             y = top + 12 + sz * 1.6 * (i + 1)
-            rl.draw_circle(70, int(y + sz / 2), sz // 2, rl.Color(*mp.COLORS[p["color"] % 4], 255))
-            font.draw_text(p["name"] + ("  (домаќин)" if pid == 0 else ""), 95, y, sz, rl.WHITE, bold=(pid == ses.pid))
+            rdy = bool(p.get("ready"))
+            bxs = int(sz * 1.0)
+            rl.draw_rectangle(52, int(y + sz * .05), bxs, bxs, rl.Color(30, 90, 45, 255) if rdy else rl.Color(40, 42, 56, 255))
+            rl.draw_rectangle_lines(52, int(y + sz * .05), bxs, bxs, GREEN if rdy else DIM)
+            if rdy:                                                  # drawn check mark (the font has no ✓)
+                ck = [(52 + bxs * .2, y + sz * .55), (52 + bxs * .42, y + sz * .8), (52 + bxs * .82, y + sz * .25)]
+                for (x1, y1), (x2, y2) in ((ck[0], ck[1]), (ck[1], ck[2])):
+                    rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), max(2, sz // 7), GREEN)
+            cx_ = 52 + bxs + sz * .9
+            rl.draw_circle(int(cx_), int(y + sz / 2), sz // 2, rl.Color(*mp.COLORS[p["color"] % 4], 255))
+            nx_ = int(cx_ + sz * .8)
+            font.draw_text(p["name"] + ("  (домаќин)" if pid == 0 else ""), nx_, y - sz * .12, sz, GREEN if rdy else rl.WHITE, bold=(pid == ses.pid))
+            font.draw_text(L["ready"] if rdy else L["notready"], nx_, y + sz * .82, max(11, sz * 2 // 5), GREEN if rdy else RED)
             if v is None:
                 continue
             bx = 40 + pw - sz * 9.5
@@ -448,6 +461,9 @@ def _room(prof, ses, music, cfg=None, aud=None):
             rl.draw_circle(int(cx), int(cy), int(sz * 0.55), rl.Color(*mp.COLORS[c], 255 if c not in taken else 70))
             if hot and c not in taken and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
                 ses.set_color(c)
+        me_rdy = bool(ses.players.get(ses.pid, {}).get("ready"))
+        if font.button(L["unready"] if me_rdy else L["readybtn"], 40 + pw - sz * 9.5, top + ph - sz * 2.1, sz * 9, sz * 1.8, sz * 4 // 5):
+            ses.set_ready(not me_rdy)
         # settings
         sx = W // 2 + 10
         _panel(sx, top, W - sx - 40, ph)
@@ -456,6 +472,9 @@ def _room(prof, ses, music, cfg=None, aud=None):
         font.draw_text(PLACES[sp], sx + 15, top + 12 + sz * 1.7, sz * 6 // 5, rl.WHITE, bold=True)
         font.draw_text("%s: %s" % (L["ff"], L["on"] if ses.cfg["ff"] else L["off"]), sx + 15, top + 12 + sz * 3.6, sz, rl.WHITE, bold=True)
         if host:
+            lk = bool(ses.cfg.get("lock"))
+            if font.button(L["unlock"] if lk else L["lock"], W - 40 - sz * 10.5, top + 6, sz * 10, sz * 1.4, sz * 3 // 5):
+                ses.set_lock(not lk)
             bw = sz * 2.2
             if font.button("<", sx + 15, top + 12 + sz * 5.2, bw, sz * 1.8, sz):
                 ses.set_cfg(spawn=(sp - 1) % len(PLACES))
@@ -514,7 +533,10 @@ def _room(prof, ses, music, cfg=None, aud=None):
             chat = ""
         by = H - H // 7 + 10
         if host and font.button(L["start"], 40, by, 300, sz * 2.4, sz):
-            ses.start()
+            ses.start()                                          # only works when everybody is ready
+        wt = ses.waiting()
+        if wt and ses.players:
+            font.draw_text(font.fit(L["waitfor"] % ", ".join(wt), sz * 3 // 5, W - 340), 40, cy0 + ch + 4, sz * 3 // 5, RED)
         if host:                                                 # join code to share privately
             ready = not ses._busy and ses.net is not None
             code = mp.make_code(ses._info()) if ready else ""

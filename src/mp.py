@@ -29,7 +29,7 @@ class Session:
         self.error = ""
         self.pid = 0
         self.players = {}                     # pid -> {"name","color","uid","addr"}
-        self.cfg = {"spawn": 0, "ff": False}
+        self.cfg = {"spawn": 0, "ff": False, "lock": False}
         self.chat = []                        # (pid or -1, text)
         self.gid = prof.uid
         self.start_info = None
@@ -61,6 +61,7 @@ class Session:
         self._vst_at = 0.0
         self.migrated = 0                     # bumped when the host changed under a running game (mpgame re-syncs)
         self._rids = {}                       # guest: pid -> relay id of the other guests (to reach a new host)
+        self.late = []                        # host: pids that joined a running game (mpgame sends them the world state)
         self._mesh = {}                       # guest: other guest's addr -> pid (direct voice links, host relay as fallback)
 
     # ------------------------------------------------------------------ host
@@ -110,12 +111,12 @@ class Session:
             a = (str(obj["addr"][0]), int(obj["addr"][1]))
         except (KeyError, TypeError, ValueError, IndexError):
             return
-        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("rev") and a[0] not in self._spraying \
+        if self.state in ("lobby", "playing") and len(self.players) < MAX_PLAYERS and obj.get("rev") and a[0] not in self._spraying \
                 and self.nat in ("symmetric", "multi-ip"):
             threading.Thread(target=self._rev_punch, args=(a,), daemon=True).start()
-        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("bday") and a[0] not in self._spraying:
+        if self.state in ("lobby", "playing") and len(self.players) < MAX_PLAYERS and obj.get("bday") and a[0] not in self._spraying:
             threading.Thread(target=self._spray, args=(a,), daemon=True).start()
-        if self.state == "lobby" and len(self.players) < MAX_PLAYERS:
+        if self.state in ("lobby", "playing") and len(self.players) < MAX_PLAYERS:
             if a not in self._punch:
                 net.log("host: join notice from %s:%d, punching" % a)
             self._punch[a] = time.monotonic() + 30
@@ -130,7 +131,7 @@ class Session:
         near = [p for d in range(1, 300) for p in (a[1] + d, a[1] - d) if 1024 <= p < 65536]
         try:
             for i in range(2000):
-                if self.net is None or self.state != "lobby":
+                if self.net is None or self.state not in ("lobby", "playing"):
                     break
                 port = near[i] if i < len(near) else rnd.randrange(1024, 65536)
                 self.net._raw((a[0], port), net.HELLO, 0)
@@ -158,7 +159,7 @@ class Session:
         net.log("host: we are behind symmetric NAT, guest %s:%d is not: reverse punching with %d ports" % (a + (len(socks),)))
         hello, t0, last = net.HDR.pack(net.MAGIC, net.HELLO, 0), time.monotonic(), 0.0
         hit = None
-        while hit is None and time.monotonic() - t0 < 12 and self.net is not None and self.state == "lobby":
+        while hit is None and time.monotonic() - t0 < 12 and self.net is not None and self.state in ("lobby", "playing"):
             if time.monotonic() - last > 0.3:
                 last = time.monotonic()
                 for s in socks:
@@ -188,7 +189,7 @@ class Session:
     def _info(self):
         return {"id": self.gid, "name": self.players[0]["name"], "n": len(self.players), "max": MAX_PLAYERS, "ver": VER,
                 "port": self.net.port, "laddr": _lan_ip(), "addr": list(self.pub) if self.pub else None, "st": self.state, "nat": self.nat,
-                "rid": self.net.rid if self.mqtt else None, "word": self.word}
+                "rid": self.net.rid if self.mqtt else None, "word": self.word, "lock": bool(self.cfg.get("lock"))}
 
     # ------------------------------------------------------------------ guest
     def browse(self):
@@ -325,7 +326,7 @@ class Session:
     def _me(self, pid):
         used = {p["color"] for p in self.players.values()}
         col = next((i for i in range(len(COLORS)) if i not in used), 0)
-        return {"name": self.prof.name, "color": col, "uid": self.prof.uid, "addr": None}
+        return {"name": self.prof.name, "color": col, "uid": self.prof.uid, "addr": None, "ready": False}
 
     def send_chat(self, text):
         text = text.strip()[:120]
@@ -342,8 +343,40 @@ class Session:
 
     def set_cfg(self, **kw):
         if self.role == "host" and self.state == "lobby":
+            if any(self.cfg.get(k) != v for k, v in kw.items()):
+                self._unready()                           # settings changed: everybody has to confirm again
             self.cfg.update(kw)
             self._roster()
+
+    def set_lock(self, on):
+        """Host: closed room = nobody new gets in (lobby or game); players who were in and dropped may still come back."""
+        if self.role == "host" and self.state in ("lobby", "playing"):
+            self.cfg["lock"] = bool(on)
+            self._roster()
+
+    def _unready(self):
+        for p in self.players.values():
+            p["ready"] = False
+
+    def set_ready(self, on):
+        if self.state != "lobby":
+            return
+        if self.role == "host":
+            self._ready(0, on)
+        elif self.net and self.net.peers:
+            self.net.send_rel(self._target, {"t": "ready", "r": bool(on)})
+
+    def _ready(self, pid, on):
+        if pid in self.players and self.state == "lobby" and self.players[pid].get("ready") != bool(on):
+            self.players[pid]["ready"] = bool(on)
+            self._roster()
+
+    def waiting(self):
+        """Names of the players who have not pressed Спремен yet."""
+        return [p["name"] for _, p in sorted(self.players.items()) if not p.get("ready")]
+
+    def all_ready(self):
+        return bool(self.players) and not self.waiting()
 
     def set_color(self, c):
         if self.role == "host":
@@ -376,10 +409,11 @@ class Session:
 
     def _roster(self):
         self.net.broadcast_rel({"t": "roster", "pl": {str(k): [p["name"], p["color"], p["uid"]] for k, p in self.players.items()},
-                                "cfg": self.cfg})
+                                "cfg": self.cfg,
+                                "rd": [k for k, p in self.players.items() if p.get("ready")]})
 
     def start(self):
-        if self.role == "host" and self.state == "lobby":
+        if self.role == "host" and self.state == "lobby" and self.all_ready():
             self.start_info = {"spawn": self.cfg["spawn"], "ff": self.cfg["ff"], "seed": random.randrange(1 << 30)}
             self.state = "playing"
             self.net.broadcast_rel(dict(self.start_info, t="start"))
@@ -404,7 +438,7 @@ class Session:
         if not self.net or self._busy:
             return []
         now = time.monotonic()
-        if self.role == "host" and self.state == "lobby":
+        if self.role == "host" and self.state in ("lobby", "playing"):     # advertised for the whole lobby AND the running game
             if now - self._adv > 2 and self.lan:
                 self._adv = now
                 self.lan.beacon(self._info())
@@ -840,6 +874,10 @@ class Session:
         self._roster()
         return True
 
+    def _ghosts_pids(self):
+        now = time.monotonic()
+        return {g[0] for g in self._ghosts.values() if now - g[2] <= 90}
+
     def _pid_of(self, addr):
         for k, p in self.players.items():
             if p["addr"] == addr:
@@ -876,23 +914,33 @@ class Session:
             pid = self._pid_of(addr)
             if t in ("rebind", "join") and pid is None and self._comeback(addr, m):
                 pass
-            elif t == "join" and pid is None and self.state == "lobby":
-                net.log("host: join request from %s:%d name %r ver %r" % (addr + (m.get("name"), m.get("ver"))))
+            elif t == "join" and pid is None and self.state in ("lobby", "playing"):
+                net.log("host: join request from %s:%d name %r ver %r (%s)" % (addr + (m.get("name"), m.get("ver"), self.state)))
                 if m.get("ver") != VER:
                     self.net.send_rel(addr, {"t": "deny", "why": "ver"})
+                elif self.cfg.get("lock"):
+                    self.net.send_rel(addr, {"t": "deny", "why": "lock"})
                 elif len(self.players) >= MAX_PLAYERS:
                     self.net.send_rel(addr, {"t": "deny", "why": "full"})
                 else:
                     new = max(self.players) + 1
+                    while new in self._ghosts_pids():
+                        new += 1                                # a pid kept for a player who may still come back
                     self.blips.append("join")
+                    self._unready()                             # somebody new: everybody confirms again
                     self.players[new] = dict(self._me(new), name=_name(m.get("name"), self.players), uid=str(m.get("uid", ""))[:12], addr=addr)
                     self.net.send_rel(addr, {"t": "welcome", "pid": new})
+                    if self.state == "playing":                 # joined a running game: same start data, then mpgame sends the world state
+                        self.net.send_rel(addr, dict(self.start_info, t="start"))
+                        self.late.append(new)
                     self._roster()
             elif pid is not None:
                 if t == "chat":
                     self._chat(pid, str(m.get("m", ""))[:120])
                 elif t == "color" and isinstance(m.get("c"), int):
                     self._color(pid, m["c"])
+                elif t == "ready":
+                    self._ready(pid, m.get("r") is True)
                 elif t == "vst":
                     self.vstats[pid] = {"mic": str(m.get("mic", ""))[:8], "rx": m.get("rx") if isinstance(m.get("rx"), dict) else {},
                                         "op": m.get("op") is True, "at": time.monotonic(),
@@ -919,11 +967,14 @@ class Session:
                 net.log("guest: welcome, I am player %d" % self.pid)
             elif t == "deny":
                 net.log("guest: host denied the join: %s" % m.get("why"))
-                self.state, self.error = "closed", {"full": "Игрот е полн", "ver": "Друга верзија на играта"}.get(m.get("why"), "Одбиено")
+                self.state, self.error = "closed", {"full": "Игрот е полн", "ver": "Друга верзија на играта", "lock": "Собата е заклучена"}.get(m.get("why"), "Одбиено")
             elif t == "roster":
                 self._roster_seen({int(k) for k in m["pl"]})
                 self.players = {int(k): {"name": v[0], "color": v[1], "uid": v[2], "addr": None} for k, v in m["pl"].items()}
                 self.cfg = m.get("cfg", self.cfg)
+                rd = {int(k) for k in m.get("rd", ()) if str(k).isdigit()}
+                for k, p in self.players.items():
+                    p["ready"] = k in rd
             elif t == "chat":
                 self.chat = (self.chat + [(int(m["p"]), str(m["m"])[:120])])[-60:]
             elif t == "start":

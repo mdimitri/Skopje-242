@@ -40,6 +40,9 @@ if role == "host":
     for _ in range(50): step()
     ses.send_chat("здраво од домаќинот")
     for _ in range(50): step()
+    ses.set_ready(True)
+    t2 = time.time()
+    while time.time() - t2 < 25 and not ses.all_ready(): step()      # guests press Спремен below, then the host may start
     ses.start()
 else:
     ses.browse()
@@ -70,6 +73,7 @@ else:
     log.append("state %s err %r route %r" % (ses.state, ses.error, ses.route))
     for _ in range(50): step()
     ses.send_chat("здраво од гостинот")
+    ses.set_ready(True)
     while time.time() - t0 < 90 and ses.state == "lobby": step()
 t1 = time.time()
 while time.time() - t1 < talk: step(feed=True)
