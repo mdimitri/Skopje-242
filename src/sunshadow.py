@@ -16,6 +16,7 @@ NOON = 13.0                         # solar noon in game (local summer) time
 MIN_ELEV = math.radians(7.0)        # shadows never get longer than ~8x the height; the sun is faded out below this
 SIZE = 2048                         # shadow map resolution
 HALF = 150.0                        # the map covers 300 m x 300 m of ground around the camera
+JOB_FRAMES = 8                      # a new map is painted over this many frames, then swapped in
 RECENTER = 40.0                     # redraw when the camera has moved this far from the centre of the map
 SUN_STEP = 0.004                    # redraw when the sun direction changed by this much (about 0.25 degrees)
 BIAS_M = 0.35                       # depth bias in metres
@@ -84,9 +85,13 @@ class SunShadow:
         self.center = None
         self.L = None
         self.loaded = -1
+        self.job = None
         self.strength = 0.0
         try:
             self.rt = rl.load_render_texture(SIZE, SIZE)
+            self.rt2 = rl.load_render_texture(SIZE, SIZE)          # the map being painted over several frames
+            rl.set_texture_filter(self.rt2.texture, rl.TEXTURE_FILTER_POINT)
+            rl.set_texture_wrap(self.rt2.texture, rl.TEXTURE_WRAP_CLAMP)
             rl.set_texture_filter(self.rt.texture, rl.TEXTURE_FILTER_POINT)
             rl.set_texture_wrap(self.rt.texture, rl.TEXTURE_WRAP_CLAMP)
             sh = rl.load_shader_from_memory(DEPTH_VS, DEPTH_FS)
@@ -118,12 +123,18 @@ class SunShadow:
                 self.loaded = self.st.mesh_loaded
             else:
                 redraw = True
+        job = self.job
+        if job is not None:                                # a map is being painted over several frames: it replaces the old one when finished
+            if np.abs(L - job["L"]).max() > 4 * SUN_STEP or math.hypot(cx - job["c"][0], cz - job["c"][1]) > HALF * 0.6:
+                self.job = job = None                      # the sun or the camera ran away from it: start again below
+            else:
+                self._step_job(k)
+                return
         if not redraw:
             if abs(k - self.strength) > 0.01:                # the strength fades slowly at dawn and dusk
                 self.strength = k
                 gl3d.set_sun(self.L, k, self.vp, 1.0 / SIZE, self.bias)
             return
-        self.L, self.center, self.loaded, self.strength = L, (cx, cz), self.st.mesh_loaded, k
         w = self.world
         gy = float(w.ground_y(cx, cz))
         pts = np.array([(cx + sx * HALF, gy + dy, cz + sz * HALF) for sx in (-1, 1) for sz in (-1, 1) for dy in (-30.0, 120.0)])
@@ -131,29 +142,54 @@ class SunShadow:
         q = (V[:3, :3] @ pts.T).T + V[:3, 3]
         near, far = -q[:, 2].max() - 250.0, -q[:, 2].min() + 5.0         # 250 m more towards the sun: tall blocks outside the map still cast in
         P = _ortho(q[:, 0].min(), q[:, 0].max(), q[:, 1].min(), q[:, 1].max(), near, far)
-        self.vp, self.bias = P @ V, BIAS_M / (far - near)
-        self._draw_depth(_mat(V), _mat(P), cx, cz)
-        gl3d.set_sun(L, k, self.vp, 1.0 / SIZE, self.bias)
-
-    def _draw_depth(self, view, proj, cx, cz):
         pad = HALF + 170.0
+        todo = []
+        for key, (models, _last) in list(self.st.meshes.items()):
+            ch = w.chunks.get(key)
+            bb = ch["bb"] if ch else None
+            if bb is None or bb[2] < cx - pad or bb[0] > cx + pad or bb[3] < cz - pad or bb[1] > cz + pad:
+                continue
+            todo.extend(m.meshes[0] for mat, m in models.items() if mat not in SKIP_MATS)
+        if self.center is None:                            # the first map: all at once, the screen has nothing to show before it
+            self.L, self.center, self.loaded, self.strength = L, (cx, cz), self.st.mesh_loaded, k
+            self.vp, self.bias = P @ V, BIAS_M / (far - near)
+            self._draw_depth(self.rt, _mat(V), _mat(P), todo, True)
+            gl3d.set_sun(L, k, self.vp, 1.0 / SIZE, self.bias)
+            return
+        self.job = {"L": L, "c": (cx, cz), "loaded": self.st.mesh_loaded, "V": _mat(V), "P": _mat(P), "todo": todo, "i": 0,
+                    "vp": P @ V, "bias": BIAS_M / (far - near)}
+        self._step_job(k)
+
+    def _step_job(self, k):
+        """Paints the next share of the pending map into the spare target (JOB_FRAMES frames in all); copies it over the live map when done."""
+        job = self.job
+        todo, i = job["todo"], job["i"]
+        j = min(len(todo), i + max(8, -(-len(todo) // JOB_FRAMES)))      # an even share per frame (issue time is tiny, the GPU work is what counts)
+        self._draw_depth(self.rt2, job["V"], job["P"], todo[i:j], i == 0)
+        job["i"] = j
+        if j < len(todo):
+            return
+        self.job = None
+        rl.begin_texture_mode(self.rt)                       # the models hold the live map's texture: copy the finished one into it
+        rl.draw_texture_rec(self.rt2.texture, rl.Rectangle(0, 0, SIZE, -SIZE), rl.Vector2(0, 0), rl.WHITE)
+        rl.end_texture_mode()
+        self.L, self.center, self.loaded, self.strength = job["L"], job["c"], job["loaded"], k
+        self.vp, self.bias = job["vp"], job["bias"]
+        gl3d.set_sun(self.L, k, self.vp, 1.0 / SIZE, self.bias)
+
+    def _draw_depth(self, rt, view, proj, meshes, clear):
         ident = rl.matrix_identity()
-        rl.begin_texture_mode(self.rt)
-        rl.clear_background(rl.Color(255, 0, 0, 255))              # far plane = depth 1
+        rl.begin_texture_mode(rt)
+        if clear:
+            rl.clear_background(rl.Color(255, 0, 0, 255))          # far plane = depth 1
         rl.begin_mode_3d(self.cam)
         try:
             rl.rl_set_matrix_projection(proj)
             rl.rl_set_matrix_modelview(view)
             rl.rl_disable_backface_culling()
             rl.rl_enable_depth_test()
-            for key, (models, _last) in list(self.st.meshes.items()):
-                ch = self.world.chunks.get(key)
-                bb = ch["bb"] if ch else None
-                if bb is None or bb[2] < cx - pad or bb[0] > cx + pad or bb[3] < cz - pad or bb[1] > cz + pad:
-                    continue
-                for mat, m in models.items():
-                    if mat not in SKIP_MATS:
-                        rl.draw_mesh(m.meshes[0], self.mat, ident)
+            for m in meshes:
+                rl.draw_mesh(m, self.mat, ident)
             rl.rl_draw_render_batch_active()
         finally:
             rl.end_mode_3d()

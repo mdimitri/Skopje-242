@@ -117,7 +117,7 @@ class Selfie:
         self.th_ = getattr(self, "th_", hd) + d * min(1.0, 3.0 * dt)
         h = self.th_
         self.yaw = h
-        az = o.az
+        az = o.az if o.az is not None else world.ground_y(o.x, o.y)
         P = (o.x - math.cos(h) * 7.0, az + 2.7, o.y - math.sin(h) * 7.0)      # 4.4 m headroom: well under the ceiling
         T = (o.x + math.cos(h) * 3.0, az + 1.0, o.y + math.sin(h) * 3.0)
         p, t = cam.position, cam.target
