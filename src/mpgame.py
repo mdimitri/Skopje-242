@@ -42,6 +42,9 @@ POSES = [None, "spray", "work", "cpr"]
 MAX_PKT = 1000
 
 
+PED_HIT_MODES = ("ko", "dead", "air", "flee", "fight")
+
+
 def _wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
@@ -131,7 +134,16 @@ class Game:
         wi = WLIST.index(wk.weapon) if wk.weapon in WLIST else 0
         fl = 1 | (2 if wk.health <= 0 else 0) | (4 if wk.speed > 6.0 else 0) | (8 if wk.moving else 0)
         return PLAYER.pack(self.pid, fl, 0, 0, wk.x, wk.y, wk.h, wk.vx, wk.vy, wk.az if wk.az is not None else 0.0, wk.anim,
-                           _clampb(wk.health), wi, (wk.atk_kind + 1) if wk.atk_t > 0 else 0, _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
+                           _clampb(wk.health), wi, self._atk_byte(wk), _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
+
+    @staticmethod
+    def _atk_byte(wk):
+        """0 idle; 1 + kind for a punch / kick; 64 + 0..7 for the frames of a bat / chain swing."""
+        if wk.atk_t <= 0:
+            return 0
+        if wk.weapon in actors.SWINGERS and wk.ammo > 0:
+            return 64 + min(7, int((1.0 - wk.atk_t / actors.SWING_T) * 8))
+        return wk.atk_kind + 1
 
     # ------------------------------------------------------------------ host: build snapshots
     def _wid(self, obj):
@@ -414,6 +426,8 @@ class Game:
                 s.bodies.remove(self.drop_body)
             self.drop_body = None
             self._bcast({"t": "undrop", "p": self.pid})
+        elif t == "phit" and m.get("to") == self.pid:
+            self._apply_ped_hit(m)
         elif t == "take" and m.get("to") == self.pid:
             c = self.byid.get(m.get("i"))
             if c is not None and c in s.traffic.cars:
@@ -430,6 +444,41 @@ class Game:
                 self.kills += 1
                 self.ses.prof.add(kills=1)
                 self.sim.ev("pvp_kill", victim=m.get("v"))
+
+    def _report_ped(self, wid, e, p):
+        """Follower: whatever this PC's player did to a puppet pedestrian (punch, bullet, blast) goes to the authority, which owns the real one."""
+        au = self.auth.get(self.pid, self.pid)
+        d, m = 40.0 - p.hp, p.mode
+        if au == self.pid or e["obj"] is not p or "mode" not in e:
+            return
+        if d > 0.01 or (m != e["mode"] and m in PED_HIT_MODES):
+            self._route(au, {"t": "phit", "to": au, "i": wid, "d": round(max(d, 0.0), 1), "m": m,
+                             "vx": round(p.vx, 1), "vy": round(p.vy, 1)})
+
+    def _apply_ped_hit(self, m):
+        """Authority: a follower hurt one of my pedestrians."""
+        s = self.sim
+        p = self.byid.get(m.get("i"))
+        try:
+            d, vx, vy, mode = float(m["d"]), float(m["vx"]), float(m["vy"]), str(m["m"])
+        except (KeyError, TypeError, ValueError):
+            return
+        if p is None or p not in s.peds.list or p.mode in ("dead", "air", "ko") or not 0 <= d <= 400:
+            return                                                   # late or duplicate report: ignore
+        p.hp -= d
+        p.vx, p.vy = max(-12.0, min(12.0, vx)), max(-12.0, min(12.0, vy))
+        if mode == "ko" or (mode == "dead" and p.hp > 0):
+            p.hp = min(p.hp, 0.0)
+            s._knock_out(p)
+        elif mode == "dead" or p.hp <= 0:
+            p.mode, p.t = "dead", actors.clear_secs(s)
+            s.stats["peds"] += 1
+            s.ev("ped_shot", x=p.x, y=p.y)
+        elif mode == "air":
+            p.mode, p.t, p.hy, p.hv = "air", actors.clear_secs(s), 0.2, 6.0
+        elif mode in ("flee", "fight") and p.mode in ("walk", "flee", "rage"):
+            p.mode, p.t = mode, 4.0
+        s.ev("hit", x=p.x, y=p.y, kick=True)
 
     def take_hit(self, frm, kind, amt):
         """Somebody hit me. Each player owns his own health: the attacker only reports."""
@@ -723,7 +772,12 @@ class Game:
                     if r["body"] in s.bodies:
                         s.bodies.remove(r["body"])
                     r["body"] = None
-                frame = 2 if fl & 2 else (r["atk"] - 1 if r["atk"] else (None if fl & 8 else 12))
+                a = r["atk"]
+                frame = 2 if fl & 2 else ((60 + (a - 64) % 8 if a >= 64 else a - 1) if a else (None if fl & 8 else 12))
+                wn = WLIST[r["wi"] % len(WLIST)]
+                if a and not r.get("atk_prev") and not fl & 2 and (wn == "fist" or wn in actors.MELEE):   # a swing just started: this PC hears it too
+                    s.ev("kick" if a == 6 else "punch" if wn == "fist" else "swing", x=r["x"], y=r["y"], hit=False, weapon=wn)
+                r["atk_prev"] = a
                 s.remote_foot[pid] = dict(x=r["x"], y=r["y"], z=r["z"], h=r["h"], lik=r["lik"], anim=r["aux"], frame=frame,
                                           run=bool(fl & 4), weapon=WLIST[r["wi"] % len(WLIST)], pid=pid)
             else:
@@ -773,13 +827,16 @@ class Game:
         plist.clear()
         for wid in [i for i, e in self.peds.items() if self.now - e["seen"] > PUPPET_TIMEOUT]:
             del self.peds[wid]
-        for e in self.peds.values():
+        for wid, e in self.peds.items():
             t = e["t"]
             p = e["obj"]
             if p is None:
                 p = e["obj"] = actors.Ped()
                 p.say_t = 1e9                                           # puppets never speak: the host decides that
+            self._report_ped(wid, e, p)
             p.mode = MODES[t[1] % len(MODES)]
+            e["mode"] = p.mode
+            p.hp, p.vx, p.vy = 40.0, 0.0, 0.0
             p.arch, p.shirt, p.skin, p.pose = t[2], t[3], t[4], POSES[t[5] % len(POSES)]
             p.vault, p.vault_up = (1.0 if t[6] & 1 else 0.0), bool(t[6] & 2)
             p.traffic_run = bool(t[6] & 8)

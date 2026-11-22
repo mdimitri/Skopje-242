@@ -125,6 +125,32 @@ for _ in range(40):
 frames(10)
 print("5c kill   : host health %.0f, host deaths %d, guest kills %d" % (hw.health, hg.deaths, gg.kills))
 assert hw.health <= 0 and hg.deaths == 1 and gg.kills == 1
+# ---- 5d. actions are seen by the other player: punch frames, and a follower's punch on a pedestrian reaches the authority
+hw.health = 100.0; hs.walker.cause = None; gw.weapon = "fist"; frames(10)
+seen = {"host_sees_guest": set(), "guest_sees_host": set()}
+face(); gw.atk_cd = 0; gs.attack()
+hw.h = math.atan2(gw.y - hw.y, gw.x - hw.x); hw.atk_cd = 0; hs.attack()
+for _ in range(14):
+    frames(1)
+    if 1 in hs.remote_foot: seen["host_sees_guest"].add(hs.remote_foot[1]["frame"])
+    if 0 in gs.remote_foot: seen["guest_sees_host"].add(gs.remote_foot[0]["frame"])
+print("5d punch frames seen:", seen)
+assert seen["host_sees_guest"] & {4, 5} and seen["guest_sees_host"] & {4, 5}
+frames(20)
+puppet = next(p for p in gs.peds.list if p.mode == "walk")
+wid = next(i for i, e in gg.peds.items() if e["obj"] is puppet)
+real = hg.byid[wid]
+gw.x, gw.y = puppet.x - 1.0, puppet.y; gw.lx, gw.ly = gw.x, gw.y
+hit = False
+for _ in range(8):
+    puppet = gg.peds[wid]["obj"]
+    gw.h = math.atan2(puppet.y - gw.y, puppet.x - gw.x); gw.x, gw.y = puppet.x - 1.0, puppet.y; gw.atk_cd = 0; gs.attack(); frames(4)
+    if real.hp < 40.0 or real.mode in ("ko", "dead", "flee", "fight"):
+        hit = True; break
+print("5e follower punched a pedestrian -> authority's ped hp %.0f mode %s" % (real.hp, real.mode)); assert hit
+hg._rel({"t": "phit", "to": 0, "i": 65001, "d": 5, "m": "ko", "vx": 0, "vy": 0}, addr=("127.0.0.1", 1))   # a report for a ped that is gone: ignored
+hg._rel({"t": "phit", "to": 0, "i": wid, "d": "x", "m": "ko"}, addr=("127.0.0.1", 1))                       # garbage: ignored
+frames(5)
 # ---- 6. shared things: parked cars taken, dropped cars, stealing a traffic car as a follower, riding the host's bus
 import actors, vehicles
 hw.health = 100.0; hs.walker.cause = None; frames(5)
