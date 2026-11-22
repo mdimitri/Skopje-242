@@ -32,12 +32,12 @@ def crown_tree(m, top, cr, ch, nl, spr, lvl, rnd, bark, col, kind, droop=0.0, lo
         fo = np.linalg.norm((e-top)*[1, 1.4, 1])/(cr*1.1+1e-9)
         if not bare:
             for f in ((.25, .5, .75) if dp >= 1 else (.4, .7)):    # sprites along the limb, pointing outward-up at random angles, so the mid crown is leafy too
-                if rnd.random() < .7:
+                if rnd.random() < .92:
                     side = unit(d+np.array([rnd.uniform(-.8, .8), rnd.uniform(-.3, .5), rnd.uniform(-.8, .8)]))
-                    cl(p+(e-p)*f, f, side, cr*rnd.uniform(.22, .38), .62+.3*min(1, fo), 1 if lvl == 3 else 2)
+                    cl(p+(e-p)*f, f, side, cr*rnd.uniform(.26, .44), .62+.3*min(1, fo), 2 if lvl == 3 else 3)
         if dp == 0:
-            if not bare and rnd.random() > .1:              # a few tips are left bare / broken
-                cl(e, 1, d+np.array([0, droop, 0]), cr*.48, .75+.3*min(1, fo), 2 if lvl == 3 else 3)
+            if not bare and rnd.random() > .04:             # a few tips are left bare / broken
+                cl(e, 1, d+np.array([0, droop, 0]), cr*.56, .75+.3*min(1, fo), 3 if lvl == 3 else 4)
             return
         for k in range(2 if dp <= 1 else 3):
             a = rnd.uniform(0, 6.28); t = rnd.uniform(.35, 1.1)
@@ -47,8 +47,8 @@ def crown_tree(m, top, cr, ch, nl, spr, lvl, rnd, bark, col, kind, droop=0.0, lo
         a = 6.28*i/nl+rnd.uniform(-.5, .5); el = rnd.uniform(.35, 1.2) if not low else rnd.uniform(.1, .5)
         d = unit([math.cos(a)*math.cos(el)*spr*1.2, math.sin(el)+.15, math.sin(a)*math.cos(el)*spr*1.2]+bias*bias_k)
         limb(top, d, cr*rnd.uniform(.4, .72)*(1.0 if not low else 1.15), .13, depth, rnd.random() < .03)
-    for i in range(rnd.randint(2, 3)):                      # leafy shoots straight off the upper trunk
-        cl(top+np.array([rnd.uniform(-.4, .4), rnd.uniform(-.6, .9), rnd.uniform(-.4, .4)]), 0, unit([rnd.uniform(-1, 1), rnd.uniform(.2, .9), rnd.uniform(-1, 1)]), cr*.45, .6, 2)
+    for i in range(rnd.randint(4, 6)):                      # leafy shoots straight off the upper trunk
+        cl(top+np.array([rnd.uniform(-.4, .4), rnd.uniform(-.6, .9), rnd.uniform(-.4, .4)]), 0, unit([rnd.uniform(-1, 1), rnd.uniform(.2, .9), rnd.uniform(-1, 1)]), cr*.5, .6, 3)
 
 LEAFKIND = {"willow": "narrow"}
 def _leaf_pts(kind, ln, wd, r):
@@ -416,6 +416,13 @@ def pick(x, y, r, kind):
     return sp, rr.randrange(VARIANTS), rr.uniform(0, 6.2832), rr.uniform(.85, 1.15) * min(1.6, max(.7, r / 2.8)), rr.uniform(.9, 1.1)
 
 
+def leaf_col(x, y, r, kind):
+    """A leaf colour of the tree at (x, y) (for the leaves a crash shakes off it)."""
+    sp = pick(x, y, r, kind)[0]
+    pal = SPECIES[sp].get("pal") or GREENS
+    return random.choice(pal)
+
+
 def place(trees, lvl):
     """Mesh of all `trees` ((x, y, r, kind) rows, y = ground height from the caller as the 5th item) at detail `lvl`:
     (solid arrays, card arrays), concatenated in world coordinates."""
@@ -423,10 +430,13 @@ def place(trees, lvl):
     for t in trees:
         x, z, r, kind = t[0], t[1], t[2], t[3]; gy = t[4] if len(t) > 4 else 0.0
         sp, v, yaw, sc, tint = pick(x, z, r, kind)
-        sol, crd = tree_mesh(sp, lvl, v)
+        if len(t) > 5 and t[5]:                              # stripped by a crash: the bare limbs of the detailed mesh, no leaves
+            sol, crd = tree_mesh(sp, max(lvl, 3), v)[0], None
+        else:
+            sol, crd = tree_mesh(sp, lvl, v)
         ca, sa = math.cos(yaw), math.sin(yaw)
         for arrs, out in ((sol, S), (crd, C)):
-            if not len(arrs[0]):
+            if arrs is None or not len(arrs[0]):
                 continue
             p = arrs[0] * sc
             q = np.empty_like(p); q[:, 0] = p[:, 0]*ca - p[:, 2]*sa + x; q[:, 2] = p[:, 0]*sa + p[:, 2]*ca + z; q[:, 1] = p[:, 1] + gy

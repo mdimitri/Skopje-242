@@ -993,6 +993,16 @@ class Renderer:
             if self._in(x, y, rect):
                 rl.draw_sphere(V3(x, self.w.ground_y(x, y) + z + 0.11, y), 0.11, rl.Color(240, 240, 236, 255))
 
+    def _fall_model(self, sp, v, lvl):
+        """[solid, leaves] models of one tree species / variant for the trees that lie or tip over (made once)."""
+        if not hasattr(self, "fall_models"):
+            self.fall_models = {}
+        e = self.fall_models.get((sp, v, lvl))
+        if e is None:
+            import treegen
+            e = self.fall_models[(sp, v, lvl)] = [gl3d.tree_model(*a) if len(a[0]) else None for a in treegen.tree_mesh(sp, lvl, v)]
+        return e
+
     def _actors(self, rect, sim, t):
         cam = self._cam
         w = self.w
@@ -1036,6 +1046,24 @@ class Renderer:
                     m = self.wreck_models[key] = gl3d.object_detail(gl3d.wreck_model(bk, seed), family, seed)
                 if m is not None:
                     rl.draw_model_ex(m, V3(bx, w.ground_y(bx, bz), bz), UP, float(seed % 360), ONE, WHITE)
+        fl = getattr(w, "fallen", None)
+        if fl and gl3d.tree_pack() is not None:                   # trees knocked over: they tip about their foot, then lie there
+            now_ = time.monotonic()
+            for fx_, fy_, sp_, v_, yaw_, sc_, dx_, dz_, t0_ in fl:
+                if not self._in(fx_, fy_, rect, 8.0):
+                    continue
+                age = min(1.0, (now_ - t0_) / 1.5)
+                ang = 82.0 * age * age
+                ms = self._fall_model(sp_, v_, 4 if len(fl) < 12 else 3)
+                M_ = rl.matrix_multiply(rl.matrix_scale(sc_, sc_, sc_), rl.matrix_rotate_y(-yaw_))
+                M_ = rl.matrix_multiply(M_, rl.matrix_rotate(V3(dz_, 0, -dx_), math.radians(ang)))
+                M_ = rl.matrix_multiply(M_, rl.matrix_translate(fx_, w.ground_y(fx_, fy_) + 0.9 * sc_ * age * age, fy_))
+                for m_ in ms:
+                    if m_ is not None:
+                        old_t = _keep(m_.transform)
+                        m_.transform = M_
+                        rl.draw_model(m_, V3(0, 0, 0), 1.0, WHITE)
+                        m_.transform = old_t[0]
         for hx_, hy_, hz_, roof_ in getattr(sim, "helipads", ()):  # hospital helipads: grey disc with a white ring and H
             if self._in(hx_, hy_, rect):
                 if roof_ is not None:                             # roof pad: a steel deck on posts, clear of the roof surface

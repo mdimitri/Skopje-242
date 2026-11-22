@@ -1301,8 +1301,12 @@ def main():
                     particles.debris(d["x"], d["y"], c, int(min(10, imp)))
                 if b.player_car and sim.mode == "car":
                     shake = max(shake, min(imp * 0.12, 1.8))
+                if d["kind"] == "tree_shed":                       # first hit: the tree loses its leaves, they fly off all round
+                    streamer.tree_changed(d["x"], d["y"])
+                    particles.leaf_burst(d["x"], d["y"], world.tree_leaf_col(d["x"], d["y"]))
+                    aud.at("tree_break", d["x"], d["y"], 0.3, 1.3)
                 if d["kind"] in ("break", "break_tree"):           # knocked it over: hide the mesh, throw bits
-                    streamer.reload_near(d["x"], d["y"])
+                    (streamer.tree_changed if d["kind"] == "break_tree" else streamer.reload_near)(d["x"], d["y"])
                     particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "break_tree" else (150, 150, 156), 12, 0.6)
                     if d["kind"] == "break_tree":
                         particles.leaves(d["x"], d["y"], 24)
@@ -1363,7 +1367,7 @@ def main():
                 _snd = ("knuckles_hit" if d["hit"] else "swing") if _w == "knuckles" else (("chain_hit" if d["hit"] else "chain_swing") if _w == "chain" else ("bat_hit" if d["hit"] else "swing"))
                 aud.at(_snd, d["x"], d["y"], 0.5 if d["hit"] else 0.2)
             elif kind == "prop_break":                              # a punched / blasted prop: hide its mesh, throw bits
-                streamer.reload_near(d["x"], d["y"])
+                (streamer.tree_changed if d["kind"] == "tree" else streamer.reload_near)(d["x"], d["y"])
                 big = d["kind"] in ("post", "tree")
                 particles.debris(d["x"], d["y"], (120, 96, 70) if d["kind"] == "tree" else (150, 150, 156), 14 if big else 8, 0.6)
                 if d["kind"] == "tree":

@@ -56,6 +56,14 @@ class Particles:
     def leaves(self, x, z, n=8):
         self.emit("l", x, z, 3.0, 0, 0, 1.0, n, 0.22, 1.3, (84, 140, 60), 3.5, 1.0, -2.2)
 
+    def leaf_burst(self, x, z, col, n=60, y=4.0):
+        """A tree shaken hard: leaves fly off its crown in every direction and flutter down."""
+        r, e = self.rng, self.emit
+        for _ in range(n):
+            a, sp = r.uniform(0, 6.2832), r.uniform(1.5, 7.0)
+            c = tuple(max(0, min(255, int(v * r.uniform(.8, 1.15)))) for v in col)
+            e("l", x, z, y + r.uniform(-1.5, 2.5), math.cos(a) * sp, math.sin(a) * sp, r.uniform(0.5, 4.0), 1, 0.24, r.uniform(1.6, 2.8), c, 0.4, 1.0, -2.2)
+
     def explosion(self, x, z, big=1.0):
         e = self.emit
         e("b", x, z, 1.2, 0, 0, 0.0, 1, 16.0 * big, 0.18, (255, 245, 210), 0.0, 40.0)             # white-hot flash

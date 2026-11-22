@@ -3041,8 +3041,7 @@ def wreck_model(kind, seed):
     """What is left of a broken tree / post / prop: a charred stump, a bent pole lying down, a crumpled heap."""
     rg = random.Random(seed)
     if kind == "tree":
-        return _boxes_model([(0, 0, 0, 0.5, 0.9, 0.5, (52, 40, 30)), (0.1, 0.9, 0.05, 0.3, 0.4, 0.25, (36, 30, 26)),
-                             (1.6, 0.0, 0.5, 2.8, 0.34, 0.34, (66, 50, 36)), (3.6, 0.0, 0.7, 1.2, 0.5, 0.9, (46, 70, 38))])
+        return _boxes_model([(0, 0, 0, 0.5, 0.9, 0.5, (52, 40, 30)), (0.1, 0.9, 0.05, 0.3, 0.4, 0.25, (36, 30, 26))])   # the stump: the felled tree itself lies beside it (render, w.fallen)
     if kind == "post":
         return _boxes_model([(0, 0, 0, 0.3, 0.5, 0.3, (88, 88, 92)), (1.9, 0.0, 0.1, 3.6, 0.14, 0.14, (110, 110, 116)),
                              (3.8, 0.0, 0.1, 0.6, 0.16, 0.3, (80, 80, 84))])

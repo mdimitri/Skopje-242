@@ -201,6 +201,7 @@ class World:
         self.pgrid = pg
         self.trees = ta                                                  # (x, y, radius, kind): half a million Python tuples become one 15 MB block
         self.broken, self.broken_ver = [], 0
+        self.tree_state, self.fallen = {}, []                            # (x, y) -> (1 stripped | 2 felled, time); trees lying down: see break_point
         P(1.0, "collision ready")
 
     GROUND_Y = (0.0, 0.07, 0.16, 0.0)
@@ -674,7 +675,29 @@ class World:
                     out.extend(e)
         return out
 
-    def break_point(self, e):
+    def tree_info(self, x, y):
+        """(radius, kind) of the tree row at (x, y) in self.trees (its look is picked from them, see treegen.pick)."""
+        i = np.nonzero((self.trees[:, 0] == x) & (self.trees[:, 1] == y))[0]
+        return (float(self.trees[i[0], 2]), int(self.trees[i[0], 3])) if len(i) else (3.0, 0)
+
+    def tree_hit(self, e, impact, nx, ny):
+        """A car runs into a tree (impact in m/s): the first real hit strips its leaves ("shed"), a later hard one fells it ("fall")."""
+        k, now = (e[0], e[1]), time.monotonic()
+        st = self.tree_state.get(k)
+        if st is None:
+            if impact > 2.5:
+                self.tree_state[k] = (1, now)
+                return "shed"
+        elif st[0] == 1 and impact > 6.0 and now - st[1] > 0.8:
+            return "fall"
+        return None
+
+    def tree_leaf_col(self, x, y):
+        import treegen
+        r, kind = self.tree_info(x, y)
+        return treegen.leaf_col(x, y, r, kind)
+
+    def break_point(self, e, fall=None):
         """A car knocked this tree / post / prop over: it stops colliding and its mesh triangles are hidden."""
         cg = self.cg
         cell = self.pgrid.get((int(e[0] // cg), int(e[1] // cg)))
@@ -688,6 +711,16 @@ class World:
         if hx:
             g0 = self.ground_y(e[0], e[1])
             self.broken_extra.append((e[0], e[1], hx[0], g0 + hx[1], g0 + hx[2]) + ((e[0] + hx[3], e[1] + hx[4]) if len(hx) > 3 else ()))
+        if tree:
+            now = time.monotonic()
+            self.tree_state[(e[0], e[1])] = (2, now)
+            import treegen
+            r, kind = self.tree_info(e[0], e[1])
+            sp, v, yaw, sc, _tint = treegen.pick(e[0], e[1], r, kind)
+            if fall is None:
+                a = (int(e[0] * 13 + e[1] * 7) % 628) / 100.0
+                fall = (math.cos(a), math.sin(a))
+            self.fallen.append((e[0], e[1], sp, v, yaw, sc, fall[0], fall[1], now))
         self.broken_ver += 1
 
     def hide_broken(self, pos, bb):

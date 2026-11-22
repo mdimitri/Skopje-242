@@ -792,8 +792,14 @@ def collide_static(p, world):
                 vn = p.vx * nx + p.vy * ny
                 tree = tr >= 0.45 and hi - lo > 4.0
                 light = hi - lo < 3.5                              # benches, bins, junk: knocked over by any real touch
-                if -vn > (9.0 if tree else 1.2 if light else 2.5) and hasattr(world, "break_point"):   # everything breaks, the car pays
-                    world.break_point((tx, ty, tr, lo, hi))
+                stage = world.tree_hit((tx, ty, tr, lo, hi), -vn, nx, ny) if tree and vn < 0 and hasattr(world, "tree_hit") else None   # 1st hit strips the leaves, a later hard one fells the tree
+                if stage == "shed":
+                    events.append(("tree_shed", -vn, tx, ty, nx, ny))
+                if (stage == "fall" if tree and hasattr(world, "tree_hit") else -vn > (9.0 if tree else 1.2 if light else 2.5)) and hasattr(world, "break_point"):   # everything breaks, the car pays
+                    if tree:
+                        world.break_point((tx, ty, tr, lo, hi), (-nx, -ny))
+                    else:
+                        world.break_point((tx, ty, tr, lo, hi))
                     p.x -= nx * pen
                     p.y -= ny * pen
                     k = 0.55 if tree else (0.95 if light else 0.8 if tr > 0.3 else 0.88)

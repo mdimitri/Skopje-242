@@ -357,6 +357,7 @@ class Streamer:
         self.lite_keys = set()
         self.tree_lvl = {}                       # key -> detail level of the tree meshes now loaded for the chunk (src/treegen.py)
         self.focus = None                        # (x, y) the avatar: chunks pick their tree level by distance from it (main.py sets it every frame)
+        self._tree_dirty = set()                 # chunks whose trees changed (shed / felled): their tree meshes are redone in place
         self._tj = {}                            # key -> unfinished tree job (see _tree_models)
         self._lite_run = {}                      # key -> consecutive updates spent in the far ring (hysteresis for downgrades)
         self.stale = set()                       # chunks whose meshes are redone (a prop broke) while the old ones keep drawing
@@ -545,14 +546,18 @@ class Streamer:
             if not len(tr) or gl3d.tree_pack() is None:
                 self._tj.pop(key, None)
                 return True
-            job = self._tj[key] = {"lvl": lvl, "rows": np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist(), "i": 0, "p": {20: [], 21: [], 22: []}}
+            rows = np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist()
+            ts = getattr(w, "tree_state", None)
+            if ts:                                           # felled trees are gone (they lie as models of their own), shed ones are bare
+                rows = [r + [ts.get((r[0], r[1]), (0,))[0] == 1] for r in rows if ts.get((r[0], r[1]), (0,))[0] != 2]
+            job = self._tj[key] = {"lvl": lvl, "rows": rows, "i": 0, "p": {20: [], 21: [], 22: []}}
         rows, acc = job["rows"], job["p"]
         while True:                                              # at least one slice per call, so a starved chunk still gets there
             i0 = job["i"]
             sl = rows[i0:i0 + TREE_SLICE]
             job["i"] = i0 + len(sl)
             sol, crd = treegen.place(sl, lvl)
-            got = {20: sol, 21: crd, 22: treegen.place(sl, 1)[0] if lvl > TREE_FAR else None}
+            got = {20: sol, 21: crd, 22: treegen.place([r for r in sl if len(r) < 6 or not r[5]], 1)[0] if lvl > TREE_FAR else None}
             for mat, arr in got.items():
                 if arr is not None:
                     acc[mat].append(arr)
@@ -566,8 +571,6 @@ class Streamer:
             if not lst:
                 continue
             pos, uv, col = (np.concatenate([a[k] for a in lst]) for k in range(3))
-            if w.broken or getattr(w, "broken_extra", None):
-                pos = w.hide_broken(pos, ch.get("bb"))
             part[2], part[3] = min(part[2], float(pos[:, 1].min())), max(part[3], float(pos[:, 1].max()))
             m = gl3d.tree_model(pos, uv, col)
             if m is not None:
@@ -649,6 +652,15 @@ class Streamer:
                 self.stale.add(key)                              # old meshes stay on screen until the new ones are complete (freeing them made the chunk blink out)
                 self._drop_part(key)
 
+    def tree_changed(self, x, y):
+        """A tree at (x, y) was stripped or felled: redo the tree meshes of its chunk (the rest of the chunk stays)."""
+        if getattr(self.world, "version", 0) < TREES_FROM:
+            return self.reload_near(x, y)
+        S = self.world.chunk
+        key = (int(x // S), int(y // S))
+        self._tj.pop(key, None)
+        self._tree_dirty.add(key)
+
     def get_meshes(self, key):
         e = self.meshes.get(key)
         if e:
@@ -672,11 +684,13 @@ class Streamer:
             if key in self.meshes and key not in self._part and self.tree_lvl.get(key) is not None:
                 want = self._tree_want(key, key in lite)
                 run = self._lite_run[key] = self._lite_run.get(key, 0) + 1 if want < self.tree_lvl[key] else 0
-                if self.tree_lvl[key] != want and (want > self.tree_lvl[key] or run >= TREE_DOWN_AFTER) and not need_m:
+                dirty = key in self._tree_dirty
+                if (dirty or (self.tree_lvl[key] != want and (want > self.tree_lvl[key] or run >= TREE_DOWN_AFTER))) and not need_m:
                     if n and (time.perf_counter() - t0) * 1000 > budget_ms:
                         break
-                    if not self._retree(key, want, t0 + budget_ms / 1000.0):      # approaching: sprites at once; receding: blobs after a while
+                    if not self._retree(key, self.tree_lvl[key] if dirty else want, t0 + budget_ms / 1000.0):      # approaching: sprites at once; receding: blobs after a while
                         break                                    # unfinished: carries on next frame
+                    self._tree_dirty.discard(key)
                     n += 1
             if not (need_g or need_m):
                 continue
