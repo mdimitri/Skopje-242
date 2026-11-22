@@ -46,3 +46,8 @@ The host's room shows `S242-XXXX-...` (Копирај код copies it). It pack
 case, spaces, dashes and Cyrillic look-alike letters do not matter; a wrong/short code says why. A plain `ip:port`
 also works. Joining by code uses the same ladder (plus knocking on the LAN address at the same time). The lab runs it
 with `CODE=1 tools/natlab/lab.sh ...`.
+
+Short code: the host also gets a slang word + number („ШМЕКЕР 42“, src/joinwords.py, ~190 words from the slang bible)
+and publishes its info on `code/<slug>` of the notice board every 4 s (another game with the same word -> new word).
+The guest types it in Внеси код in Cyrillic or Latin; it needs the notice board, the long S242 code does not.
+Lab: `WORD=1 tools/natlab/lab.sh ...`.

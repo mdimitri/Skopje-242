@@ -10,6 +10,7 @@ import time
 import zlib
 
 import discovery
+import joinwords
 import mpnet as net
 
 VER = 1
@@ -44,6 +45,8 @@ class Session:
         self._adv = self._adv2 = 0.0
         self._busy = False
         self._spraying = False
+        self.word = ""                        # host: short code „шмекер 42“ (published on the notice board)
+        self.code_hits = {}                   # guest: slug -> host info heard on code/<slug>
         self._bd = []                         # guest: birthday-punch sockets
         self.nat = None                       # cone | symmetric | multi-ip | None (not measured)
         self.host_nat = None                  # guest: the host's NAT type from its notice-board entry
@@ -68,6 +71,7 @@ class Session:
             threading.Thread(target=self._host_net, daemon=True).start()
             self.mqtt = discovery.Mqtt(["join/" + self.gid, "join/r%d" % self.net.rid], self._on_mqtt)
             self.net.use_relay(self.mqtt)                # guests whose UDP cannot get through come in over the notice board
+            self._new_word()
         self.ready = True
 
     def _host_net(self):
@@ -81,7 +85,17 @@ class Session:
         net.log("host: UDP port %d, public address %s, ver %d" % (self.net.port, self.pub, VER))
         self._busy = False
 
+    def _new_word(self):
+        rng = random.Random(self.prof.uid + str(time.time()))
+        self.word = joinwords.pick(rng)
+        self.mqtt.subscribe("code/" + joinwords.slug(self.word))
+
     def _on_mqtt(self, topic, obj):
+        if topic.startswith("code/"):                       # somebody else hosting with the same word: take another
+            if isinstance(obj, dict) and obj.get("id") not in (None, self.gid) and self.state == "lobby":
+                net.log("host: code %r is taken by another game, picking a new one" % self.word)
+                self._new_word()
+            return
         try:
             a = (str(obj["addr"][0]), int(obj["addr"][1]))
         except (KeyError, TypeError, ValueError, IndexError):
@@ -126,7 +140,20 @@ class Session:
         if self.mqtt is None:
             self.mqtt = discovery.Mqtt(["games/#"], self._on_game)
 
+    def lookup(self, code_slug):
+        """Guest: ask the notice board for the host that uses this short code; answers land in code_hits."""
+        self.browse()
+        self.code_hits.pop(code_slug, None)
+        self.mqtt.subscribe("code/" + code_slug)
+
     def _on_game(self, topic, obj):
+        if topic.startswith("code/"):
+            if isinstance(obj, dict) and (obj.get("addr") or obj.get("laddr")):
+                g = dict(obj, seen=time.monotonic(), code=True)
+                if not g.get("addr"):
+                    g["addr"], g["lan"] = [g["laddr"], g.get("port", net.PORT)], True
+                self.code_hits[topic[5:]] = g
+            return
         if isinstance(obj, dict) and obj.get("id") and obj.get("addr") and obj.get("ver") == VER:
             self.found[obj["id"]] = dict(obj, seen=time.monotonic())
 
@@ -292,6 +319,8 @@ class Session:
             if now - self._adv2 > 4 and self.mqtt and self.pub:
                 self._adv2 = now
                 self.mqtt.publish("games/" + self.gid, self._info())
+                if self.word:
+                    self.mqtt.publish("code/" + joinwords.slug(self.word), self._info())
         for a, until in list(self._punch.items()):
             p = self.net.peers.get(a)
             if now > until or (p and p.up):

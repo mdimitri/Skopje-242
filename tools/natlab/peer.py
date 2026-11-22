@@ -1,5 +1,6 @@
 """NAT lab player: peer.py host|guest <internet server ip> <seconds of talk> -> JSON result on stdout (last line)."""
 import json, os, sys, time
+sl = None
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 import numpy as np
 import discovery, mp, mpprofile as profile, voice
@@ -31,6 +32,8 @@ if role == "host":
         step()
         if not wrote and not ses._busy:
             open("/tmp/natlab_code", "w").write(mp.make_code(ses._info())); wrote = True
+        if ses.word and ses.mqtt and ses.mqtt.connected and not os.path.exists("/tmp/natlab_word"):
+            open("/tmp/natlab_word", "w").write(ses.word)
     log.append("pub %s, players %d" % (ses.pub, len(ses.players)))
     for _ in range(50): step()
     ses.send_chat("здраво од домаќинот")
@@ -41,7 +44,17 @@ else:
     g = None
     while time.time() - t0 < 30 and not g:
         step()
-        if os.environ.get("CODE"):                 # join with the code the host "sent over WhatsApp"
+        if os.environ.get("WORD"):                 # join with the short word code read out on the phone
+            if os.path.exists("/tmp/natlab_word") and not log:
+                w = open("/tmp/natlab_word").read()
+                log.append("word " + w)
+                import joinwords
+                sl = joinwords.slug(w.upper().replace(" ", "-"))
+                ses.lookup(sl)
+            if log:
+                g = ses.code_hits.get(sl)
+                ses.found.clear()
+        elif os.environ.get("CODE"):                 # join with the code the host "sent over WhatsApp"
             if os.path.exists("/tmp/natlab_code"):
                 code = open("/tmp/natlab_code").read()
                 log.append("code " + code)

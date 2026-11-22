@@ -63,3 +63,7 @@ g3.join(mp.parse_code(mp.make_code(dict(h3._info(), addr=None, laddr="127.0.0.1"
 pump([h3, g3], 3, lambda: g3.state == "lobby")
 assert g3.state == "lobby", (g3.state, g3.error)
 print("OK join codes: round trip, sloppy input, reasons for bad codes, LAN-only code joins")
+import joinwords
+assert len(joinwords.WORDS) >= 180 and len({joinwords.slug(w + "1") for w in joinwords.WORDS}) == len(joinwords.WORDS)
+assert joinwords.slug("ШМЕКЕР 42") == joinwords.slug("shmeker-42") == "shmeker42" and joinwords.slug("S242-05AG") is None
+print("OK short word codes: %d words, Cyrillic/Latin typing match" % len(joinwords.WORDS))

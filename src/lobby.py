@@ -12,6 +12,7 @@ import places
 import mpprofile as profile
 import present
 import voice
+import joinwords
 
 GOLD = rl.Color(240, 200, 60, 255)
 PINK = rl.Color(226, 32, 104, 255)
@@ -22,7 +23,7 @@ L = {"title": "МУЛТИПЛЕЈЕР", "name": "Твоето корисничк
      "say": "Напиши порака и Enter...", "spawn": "Почетна локација", "ff": "Пријателски оган", "on": "ВКЛ", "off": "ИСКЛ",
      "start": "ПОЧНИ", "wait": "Домаќинот ќе ја почне играта", "connecting": "Се поврзува...", "rename": "Смени име",
      "stats": "Игри %d · Убиства %d · Смрти %d", "color": "Боја", "join": "Приклучи се", "full": "полна", "offline": "интернет: нема врска",
-     "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
+     "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copy_long": "Копирај долг код (без интернет-табла)", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
      "code_hint": "Залепи го кодот од домаќинот (Ctrl+V) или внеси IP:порта, па Enter", "paste": "Залепи", "code_wait": "кодот се прави (се бара јавна адреса)…",
      "mute": "Тивко", "unmute": "Звук", "mic": "Микрофон", "gain": "Засил.", "vmode": "Глас", "talk": "Држи за зборување"}
 GREEN = rl.Color(90, 220, 110, 255)
@@ -198,7 +199,11 @@ def _enter_code(ses, music):
         font.draw_text(font.fit(buf, sz, 800) + ("_" if int(time.time() * 2) % 2 else ""), W // 2 - 405, H // 3 + sz // 2, sz, rl.WHITE)
         font.draw_text(L["code_hint"], W // 2 - 420, H // 3 + sz * 2.4, sz * 3 // 4, DIM)
         ok_code = None
-        if buf.strip():
+        word = joinwords.slug(buf)
+        if word:
+            err = ""
+            font.draw_text("✓ краток код: Enter за да се најде домаќинот", W // 2 - 420, H // 3 + sz * 3.6, sz * 4 // 5, GREEN, bold=True)
+        elif buf.strip():
             try:
                 ok_code = mp.parse_code(buf)
                 err = ""
@@ -218,8 +223,67 @@ def _enter_code(ses, music):
             buf = (buf + _clip())[:120]
         if bk or rl.is_key_pressed(rl.KEY_ESCAPE):
             return None
-        if (go or rl.is_key_pressed(rl.KEY_ENTER)) and ok_code:
+        if (go or rl.is_key_pressed(rl.KEY_ENTER)) and word:
+            g, why = _find_word(ses, word, buf.strip(), music)
+            if g:
+                return g
+            err, buf = why, buf
+            if why == "back":
+                err = ""
+            else:
+                _show_error(why, music)
+        elif (go or rl.is_key_pressed(rl.KEY_ENTER)) and ok_code:
             return ok_code
+
+
+def _find_word(ses, word, shown, music):
+    """Wait for the host with this short code on the notice board. -> (game, "") or (None, reason)."""
+    ses.lookup(word)
+    t0 = time.time()
+    while True:
+        if rl.window_should_close():
+            return None, "back"
+        if music:
+            music.update()
+        ses.update()
+        g = ses.code_hits.get(word)
+        if g:
+            if g.get("ver") != mp.VER:
+                return None, "Домаќинот со „%s“ има друга верзија на играта (v%s, ти v%d): ажурирајте ја" % (shown, g.get("ver"), mp.VER)
+            return g, ""
+        el = time.time() - t0
+        if el > 3 and not (ses.mqtt and ses.mqtt.connected):
+            return None, "Интернет-таблата (MQTT) не е достапна: краткиот код не може да се најде. Побарај го долгиот код S242-… од домаќинот"
+        if el > 12:
+            return None, "Нема игра со кодот „%s“: провери го зборот и бројот; домаќинот мора да е во собата (не во игра)" % shown
+        W, H = _frame(L["title"])
+        sz = max(22, H // 32)
+        font.draw_text("Се бара „%s“ ... %d s" % (shown, el), W // 2 - 420, H // 3, sz, GOLD, bold=True)
+        bk = font.button(L["back"], W // 2 - 420, H // 3 + sz * 3, 260, sz * 2, sz)
+        rl.end_drawing()
+        if bk or rl.is_key_pressed(rl.KEY_ESCAPE):
+            return None, "back"
+
+
+def _show_error(why, music):
+    t0 = time.time()
+    while time.time() - t0 < 30 and not rl.window_should_close():
+        if music:
+            music.update()
+        W, H = _frame(L["title"])
+        sz = max(20, H // 36)
+        words, line, y = why.split(" "), "", H // 3
+        for w in words:                                  # wrap
+            if font.measure_text(line + " " + w, sz) > W - 160:
+                font.draw_text(line, 80, y, sz, RED, bold=True)
+                line, y = w, y + sz * 1.4
+            else:
+                line = (line + " " + w).strip()
+        font.draw_text(line, 80, y, sz, RED, bold=True)
+        ok = font.button("OK", 80, y + sz * 2.5, 260, sz * 2, sz)
+        rl.end_drawing()
+        if ok or rl.is_key_pressed(rl.KEY_ENTER) or rl.is_key_pressed(rl.KEY_ESCAPE):
+            return
 
 
 def _clip():
@@ -382,9 +446,19 @@ def _room(prof, ses, music, cfg=None):
         if host:                                                 # join code to share privately
             ready = not ses._busy and ses.net is not None
             code = mp.make_code(ses._info()) if ready else ""
-            font.draw_text(L["code_t"], 360, by - sz * .1, sz * 3 // 5, DIM)
-            font.draw_text(code or L["code_wait"], 360, by + sz * .7, sz * 4 // 5 if code else sz * 3 // 5, GOLD if code else DIM, bold=True)
-            if code and font.button(L["copied"] if time.time() - copied < 3 else L["copy"], 360, by + sz * 1.7, W - 700, sz * 1.3, sz * 3 // 5):
+            word = ses.word if ses.mqtt and ses.mqtt.connected else ""
+            font.draw_text(L["code_t"], 360, by - sz * .2, sz * 3 // 5, DIM)
+            if word:
+                font.draw_text(word.upper(), 360, by + sz * .4, sz * 6 // 5, GOLD, bold=True)
+                wx = 380 + font.measure_text(word.upper(), sz * 6 // 5, True)
+                font.draw_text(font.fit("или долг код: " + code, sz // 2, max(40, W - 360 - wx)), wx, by + sz * .7, sz // 2, DIM)
+            else:
+                font.draw_text(code or L["code_wait"], 360, by + sz * .6, sz * 4 // 5 if code else sz * 3 // 5, GOLD if code else DIM, bold=True)
+            bw2 = (W - 720) // 2
+            if (word or code) and font.button(L["copied"] if time.time() - copied < 3 else L["copy"], 360, by + sz * 1.8, bw2, sz * 1.3, sz * 3 // 5):
+                rl.set_clipboard_text(word or code)
+                copied = time.time()
+            if word and code and font.button(L["copy_long"], 370 + bw2, by + sz * 1.8, bw2, sz * 1.3, sz * 3 // 5):
                 rl.set_clipboard_text(code)
                 copied = time.time()
         leave = font.button(L["back"], W - 290, by, 250, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE)

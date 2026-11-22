@@ -4,7 +4,7 @@
 set -e
 NAT=${1:-cone}; WIFI=${2:-none}; TALK=${3:-8}
 D=$(cd "$(dirname "$0")" && pwd)
-rm -f /tmp/natlab_code
+rm -f /tmp/natlab_code /tmp/natlab_word
 for n in inet r1 r2 pc1 pc2; do ip netns del $n 2>/dev/null || true; done
 for n in inet r1 r2 pc1 pc2; do ip netns add $n; ip -n $n link set lo up; done
 ip -n inet link add br0 type bridge; ip -n inet addr add 203.0.113.1/24 dev br0; ip -n inet addr add 203.0.113.2/24 dev br0; ip -n inet link set br0 up
@@ -34,7 +34,7 @@ sleep 1
 ip netns exec pc1 python3 "$D/peer.py" host 203.0.113.1 $TALK > /tmp/natlab_host.out 2>&1 &
 H=$!
 sleep 3
-ip netns exec pc2 env CODE=$CODE python3 "$D/peer.py" guest 203.0.113.1 $TALK > /tmp/natlab_guest.out 2>&1 || true
+ip netns exec pc2 env CODE=$CODE WORD=$WORD python3 "$D/peer.py" guest 203.0.113.1 $TALK > /tmp/natlab_guest.out 2>&1 || true
 wait $H || true
 kill $SRV 2>/dev/null || true
 tail -1 /tmp/natlab_host.out; tail -1 /tmp/natlab_guest.out
