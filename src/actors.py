@@ -2226,6 +2226,13 @@ class Traffic:
                     arms[node] = arms.get(node, 0) + 1
                     half_widths[node] = max(half_widths.get(node, 0.0), e["w"] / 2)
         self.junctions = {node: half_widths[node] for node, count in arms.items() if count >= 3}
+        self._clear_cache = {}
+        self._node_edges = {}
+        for ei_, e_ in enumerate(world.edges):
+            if not e_["drive"]:
+                continue
+            self._node_edges.setdefault(e_["a"], []).append(ei_)
+            self._node_edges.setdefault(e_["b"], []).append(ei_)
         signal_nodes = {signal[0] for signal in getattr(world, "signals", ()) if signal[0] in self.junctions}
         components = {node: node for node in signal_nodes}
 
@@ -2655,6 +2662,8 @@ class Traffic:
 
     SQUEEZE_V = 3.0
     CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
+    CLEAR_LINE = False                             # OFF: made blocking worse in the lab; a car waiting at a junction stops far enough back that its body is clear of the other roads' lanes (shallow slip-road merges)
+    YIELD_BACKOFF = False                          # a waiting car that blocks a priority car from another road backs off to let it pass
     DODGE = True                                   # a car held up by a standing car that is itself waiting (not a queue) takes a free neighbouring lane at once
 
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2, heading=None, include_cars=True):
@@ -3325,7 +3334,61 @@ class Traffic:
             stopd = self.signals.stopd.get((c.e, int(c.d == 1)))
             if stopd is not None:
                 line = max(line, min(self.w.edges[c.e]["len"], stopd + vehicles.HALF_L[c.kind] + SIGNAL_STOP_BUFFER))
+        if self.CLEAR_LINE:
+            key = (c.e, c.d, vehicles.HALF_W[c.kind], round(line, 1))
+            hit = self._clear_cache.get(key)
+            if hit is None:
+                hit = self._clear_cache[key] = self._clear_line(c, node, line)
+            line = hit
         return line
+
+    def _clear_line(self, c, node, line):
+        """Move the waiting point back along the own road until the car's body is clear of every other road meeting at
+        the node (a slip road merging at a shallow angle runs inside the boulevard's right lane for many metres)."""
+        w = self.w
+        e = w.edges[c.e]
+        others = []
+        for ei in self._node_edges.get(node, ()):
+            o = w.edges[ei]
+            if ei == c.e or o["cls"] in ("footway", "path", "cycleway", "pedestrian", "steps"):
+                continue
+            if c.nxt is not None and ei == c.nxt[0]:
+                continue
+            pts = o["pts"] if o["b"] == node else o["pts"][::-1]      # towards the node
+            near, acc = [], 0.0
+            for i in range(len(pts) - 1, 0, -1):
+                near.append(pts[i])
+                acc += math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+                if acc > 60.0:
+                    break
+            near.append(pts[max(0, i - 1)])
+            others.append((near, o["w"] * 0.5))
+        if not others:
+            return line
+        hw = vehicles.HALF_W[c.kind] + 0.2
+        best = line
+        d = line
+        top = min(e["len"] * 0.7, line + 25.0)
+        while d <= top:
+            s = e["len"] - d if c.d == 1 else d
+            px, py = w.edge_point(e, s)[:2]
+            ok = True
+            for near, half in others:
+                for k in range(len(near) - 1):
+                    ax, ay = near[k]
+                    bx, by = near[k + 1]
+                    dx, dy = bx - ax, by - ay
+                    l2 = dx * dx + dy * dy or 1.0
+                    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
+                    if (px - ax - dx * t) ** 2 + (py - ay - dy * t) ** 2 < (half + hw) ** 2 * 0.64:
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok:
+                return d
+            d += 1.5
+        return best
 
     def _exit_clearance(self, c):
         incoming, outgoing = self.w.edges[c.e], self.w.edges[c.nxt[0]]
@@ -3578,6 +3641,15 @@ class Traffic:
     def _coordinate_jams(self, on_edge):
         """Use the shared traffic snapshot to free a usable lane or assign one driver to make room."""
         reversing = [(c.x, c.y) for c in self.cars if c.rev > 0 or c.turnaround]
+        if self.YIELD_BACKOFF:
+            for c in self.cars:                       # a priority car held up by a waiting car from another road: the waiter backs off
+                lead = c.blk
+                if (isinstance(lead, Car) and (lead.e, lead.d) != (c.e, c.d) and c.v < 0.6 and lead.v < 0.2
+                        and lead.stuck >= 3.0 and lead.blk is None and lead.rev <= 0 and not lead.turnaround
+                        and lead.cool <= 0 and lead.stn is None and lead.kind not in (vehicles.SEMI, vehicles.ARTIC_BUS)
+                        and not any((x - lead.x) ** 2 + (y - lead.y) ** 2 < 28.0 ** 2 for x, y in reversing)):
+                    if self._retreat_in_box(lead) if lead in self.exit_claims else self._request_reverse(lead, lead.lane):
+                        reversing.append((lead.x, lead.y))
         for c in self.cars:
             if c.stuck < 3.0 or c.v >= 0.35 or c.rev or c.turnaround or c.stn is not None or c.cool > 0:
                 continue
