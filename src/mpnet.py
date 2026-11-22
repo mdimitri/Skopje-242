@@ -7,8 +7,11 @@ Packet = MAGIC(4) kind(1) seq(4) payload.
 Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("voice", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
 """
 import collections
+import hashlib
+import hmac
 import json
 import os
+import zlib
 import socket
 import struct
 import threading
@@ -25,6 +28,22 @@ RESEND = 0.12               # s before an unacked REL packet is sent again
 TIMEOUT = 8.0               # s of silence before a peer is dropped
 KEEPALIVE = 1.0
 PING_PERIOD, PING_FRESH = 1.0, 3.0
+
+
+# Packet signing: Diffie-Hellman (RFC 3526 group 14) in the first HELLOs, then every packet carries a 6-byte HMAC tag.
+# Strangers on the public relay topics or spoofing UDP cannot inject packets once a link is signed.
+_P = int("FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DD"
+         "EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"
+         "EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"
+         "83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"
+         "E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA0510"
+         "15728E5A8AACAA68FFFFFFFFFFFFFFFF", 16)
+SIGNED = 0x80                 # kind bit: packet ends with a tag
+TAG = 6
+
+
+def _tag(key, data):
+    return hmac.new(key, data, hashlib.sha256).digest()[:TAG]
 
 
 _LOGF = None
@@ -75,7 +94,7 @@ def ensure_firewall():
 
 class Peer:
     __slots__ = ("addr", "out", "q", "expect", "ooo", "last_rx", "last_tx", "up", "rtt", "unrel_seq", "rx_unrel", "rx_unrel_mask")
-    __slots__ += ("ping_sent", "ping_seq", "ping_at", "ping_ms")
+    __slots__ += ("ping_sent", "ping_seq", "ping_at", "ping_ms", "key", "their_ok", "signed_rx")
 
     def __init__(self, addr, now):
         self.addr, self.out, self.q = addr, 1, {}      # q: seq -> [packet, first_sent, last_sent]
@@ -85,6 +104,7 @@ class Peer:
         self.rx_unrel_mask = 1
         self.ping_sent, self.ping_seq = now - PING_PERIOD, None
         self.ping_at, self.ping_ms = -float("inf"), 0.0
+        self.key, self.their_ok, self.signed_rx = None, False, False     # signing state (see _tag)
 
 
 class Net:
@@ -109,6 +129,12 @@ class Net:
         self.rid = int.from_bytes(os.urandom(4), "big") & 0x7FFFFFFF      # my relay address = ("mqtt", rid)
         self._rin = collections.deque(maxlen=2000)
         self._rseen = {}
+        self._rout = {}                          # relay batches: addr -> [packets], one MQTT message per frame and peer
+        self.relay_msgs = self.relay_bytes = self.relay_bad = 0
+        self._rflush = 0.0
+        self._dh = int.from_bytes(os.urandom(32), "big")
+        self._dhpub = pow(2, self._dh, _P).to_bytes(256, "big")
+        self.forged = 0                          # packets dropped for a missing / wrong tag
 
     def use_relay(self, mqtt):
         """Packets to ("mqtt", rid) addresses go through the MQTT notice board; packets for me arrive on r/<my rid>."""
@@ -117,14 +143,25 @@ class Net:
         mqtt.subscribe("r/%d" % self.rid)
 
     def _relay_rx(self, topic, body):
-        if len(body) > 4:
+        if len(body) > 5:
             h, now = hash(body), time.monotonic()  # the same packet arrives once per broker (discovery.Board): keep one
             if now - self._rseen.get(h, -9) < 0.5:   # (identical keep-alives are >= 1 s apart, so a short window is safe)
                 return
             self._rseen[h] = now
             if len(self._rseen) > 4000:
                 self._rseen = {k: t for k, t in self._rseen.items() if now - t < 0.5}
-            self._rin.append((body[4:], ("mqtt", int.from_bytes(body[:4], "big"))))
+            src = ("mqtt", int.from_bytes(body[:4], "big"))
+            data = body[5:]
+            try:
+                if body[4] & 1:
+                    data = zlib.decompress(data)
+                i = 0
+                while i + 2 <= len(data):                # a batch: [len u16][packet] ...
+                    n = int.from_bytes(data[i:i + 2], "big")
+                    self._rin.append((data[i + 2:i + 2 + n], src))
+                    i += 2 + n
+            except (zlib.error, IndexError):
+                self.relay_bad += 1
 
     def start_heartbeat(self):
         """Keep established game connections alive while the window thread is blocked."""
@@ -139,6 +176,7 @@ class Net:
             for addr, p in list(self.peers.items()):
                 if p.up and now - p.last_tx >= KEEPALIVE:
                     self.hello(addr)
+            self.flush_relay(True)
 
     def stop_heartbeat(self):
         if self._heartbeat is not None:
@@ -161,16 +199,21 @@ class Net:
 
     # ---- sending
     def _raw(self, addr, kind, seq, payload=b""):
+        p = self.peers.get(addr)
+        if p is not None and kind == HELLO and not (p.their_ok and p.signed_rx):
+            payload = b"DH" + bytes((p.key is not None,)) + self._dhpub      # until both sides proved the key
         pkt = HDR.pack(MAGIC, kind, seq) + payload
+        if p is not None and p.key is not None and p.their_ok:
+            pkt = HDR.pack(MAGIC, kind | SIGNED, seq) + payload
+            pkt += _tag(p.key, pkt)
         self._send_packet(addr, pkt)
         return pkt
 
     def _send_packet(self, addr, pkt):
         if addr[0] == "mqtt":
             if self.relay is not None:
-                self.relay.publish_raw("r/%d" % addr[1], self.rid.to_bytes(4, "big") + pkt)
                 with self._tx_lock:
-                    self.bytes_tx += len(pkt) + 30
+                    self._rout.setdefault(addr, []).append(pkt)
             return
         try:
             sent = self.sock.sendto(pkt, addr)
@@ -178,6 +221,26 @@ class Net:
             return
         with self._tx_lock:
             self.bytes_tx += sent
+
+    def flush_relay(self, force=False):
+        """Send the queued relay packets: one message per peer, zlib-compressed when that is smaller (cuts the message
+        rate the free brokers see from ~60/s to the frame rate, and the bytes by about a half on game snapshots)."""
+        now = time.monotonic()
+        if not self._rout or (not force and now - self._rflush < 0.03 and sum(map(len, self._rout.values())) < 12):
+            return                                   # at most ~33 messages/s per peer: the free brokers stay happy
+        self._rflush = now
+        with self._tx_lock:
+            out, self._rout = self._rout, {}
+        for addr, pkts in out.items():
+            raw = b"".join(len(p).to_bytes(2, "big") + p for p in pkts)
+            z = zlib.compress(raw, 1)
+            flag, data = (1, z) if len(z) < len(raw) else (0, raw)
+            if self.relay is not None:
+                self.relay.publish_raw("r/%d" % addr[1], self.rid.to_bytes(4, "big") + bytes((flag,)) + data)
+            with self._tx_lock:
+                self.bytes_tx += len(data) + 40
+                self.relay_msgs += 1
+                self.relay_bytes += len(data) + 40
 
     def ping_ms(self, now, addresses=None):
         peers = self.peers.values() if addresses is None else (self.peers[a] for a in addresses if a in self.peers)
@@ -192,7 +255,7 @@ class Net:
             raise ValueError("reliable message too large")
         now = time.monotonic()
         pkt = self._raw(addr, REL, p.out, data)
-        p.q[p.out] = [pkt, now, now]
+        p.q[p.out] = [data, now, now]              # payload: resends are built again (signed once the link is)
         p.out += 1
         p.last_tx = now
 
@@ -223,6 +286,7 @@ class Net:
 
     # ---- receiving / timers
     def poll(self):
+        self.flush_relay()
         ev, now = [], time.monotonic()
         for _ in range(512):
             if self._rin:
@@ -257,6 +321,23 @@ class Net:
                 else:
                     p = self.add_peer(addr)
                     log("host: HELLO from new address %s:%d" % addr)
+            if kind & SIGNED:
+                if p.key is None or len(pkt) < HDR.size + TAG or not hmac.compare_digest(_tag(p.key, pkt[:-TAG]), pkt[-TAG:]):
+                    self.forged += 1
+                    continue
+                pkt, kind, p.signed_rx = pkt[:-TAG], kind & 0x7F, True
+            elif p.signed_rx:                      # this link is signed: an unsigned packet is somebody else's
+                self.forged += 1
+                continue
+            if kind == HELLO and pkt[HDR.size:HDR.size + 2] == b"DH" and len(pkt) == HDR.size + 3 + 256:
+                if p.key is None:
+                    their = int.from_bytes(pkt[HDR.size + 3:], "big")
+                    if 1 < their < _P - 1:
+                        p.key = hashlib.sha256(pow(their, self._dh, _P).to_bytes(256, "big")).digest()
+                        self._raw(addr, HELLO, 0)          # tell them at once that we have their key
+                if pkt[HDR.size + 2] and p.key is not None:
+                    p.their_ok = True
+                pkt = pkt[:HDR.size]
             p.last_rx = now
             if not p.up:
                 p.up = True
@@ -305,7 +386,7 @@ class Net:
                 continue
             for seq, e in p.q.items():
                 if now - e[2] > RESEND:
-                    self._send_packet(a, e[0])
+                    self._raw(a, REL, seq, e[0])
                     e[2] = now
             probe_wait = PING_PERIOD if p.ping_seq is None else PING_FRESH
             if self.probe_rtt and p.up and now - p.ping_sent >= probe_wait:
@@ -314,6 +395,7 @@ class Net:
             if now - p.last_tx > KEEPALIVE and (not p.up or self._heartbeat is None):
                 self._raw(a, HELLO, 0)
                 p.last_tx = now
+        self.flush_relay()
         return ev
 
     def close(self):

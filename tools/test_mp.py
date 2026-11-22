@@ -67,3 +67,21 @@ import joinwords
 assert len(joinwords.WORDS) >= 180 and len({joinwords.slug(w + "1") for w in joinwords.WORDS}) == len(joinwords.WORDS)
 assert joinwords.slug("ШМЕКЕР 42") == joinwords.slug("shmeker-42") == "shmeker42" and joinwords.slug("S242-05AG") is None
 print("OK short word codes: %d words, Cyrillic/Latin typing match" % len(joinwords.WORDS))
+
+# packet signing: after the handshake every link is signed; a forged packet from the same address is dropped
+import mpnet
+hs = mp.Session(prof("Сиг", "hs")); hs.host(internet=False)
+gs = mp.Session(prof("Гост", "gs")); gs.join({"addr": ["127.0.0.1", hs.net.port], "lan": True})
+pump([hs, gs], 3, lambda: gs.state == "lobby")
+pump([hs, gs], 1.5)
+pa = gs.net.peers[gs._target]; ph = next(iter(hs.net.peers.values()))
+assert pa.key and pa.key == ph.key and pa.signed_rx and ph.signed_rx, (pa.key, ph.key, pa.signed_rx, ph.signed_rx)
+spoof = __import__("socket").socket(__import__("socket").AF_INET, __import__("socket").SOCK_DGRAM)
+gs.send_chat("прав"); pump([hs, gs], .5)
+f0 = hs.net.forged
+fake = mpnet.HDR.pack(mpnet.MAGIC, mpnet.REL, 999, ) + b'{"t":"chat","m":"lazno"}'
+hs.net.sock.sendto(fake, ("127.0.0.1", hs.net.port))      # unsigned packet "from" a known peer address is not possible to fake here,
+gs.net.sock.sendto(fake, ("127.0.0.1", hs.net.port))      # so send it from the guest's own socket: same address, no tag
+pump([hs, gs], .5)
+assert hs.net.forged > f0 and all(c[1] != "lazno" for c in hs.chat) and any(c[1] == "прав" for c in hs.chat), (hs.net.forged, hs.chat)
+print("OK signing: DH handshake, every packet tagged, unsigned packet on a signed link dropped")

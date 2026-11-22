@@ -2196,6 +2196,8 @@ def main():
                 mpg.ses.voice.ptt = lobby_mod.ptt_held(cfg)
             guard.run("mp", mpg.update, dt)
             guard.run("mp chime", mpg.ses.chime, aud)
+            if mpg.ses.net is not None:
+                guard.run("mp flush", mpg.ses.net.flush_relay)      # this frame's relayed packets go out now, not next frame
         guard.run("events", handle_events)
         guard.run("effects", effects, dt)
         guard.run("exhaust", exhaust, dt)

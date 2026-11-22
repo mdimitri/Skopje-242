@@ -73,6 +73,7 @@ else:
     while time.time() - t0 < 90 and ses.state == "lobby": step()
 t1 = time.time()
 while time.time() - t1 < talk: step(feed=True)
+ses.info()
 for _ in range(150): step()                      # let the 2 s reports and the quality decision settle
 other = 1 if role == "host" else 0
 hear, them = ses.voice_report(other)

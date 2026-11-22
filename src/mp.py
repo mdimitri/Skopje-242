@@ -254,6 +254,18 @@ class Session:
             pm = n.ping_ms(now, [self._target])
             out.append(("Пинг", ("%d ms" % pm) if pm is not None else "се мери…"))
         out.append(("Сообраќај", "↓ %.1f  ↑ %.1f kB/s" % self._rate))
+        if n.relay_msgs:
+            if not hasattr(self, "_rl_at"):
+                self._rl_at, self._rl_m, self._rl_b = now, n.relay_msgs, n.relay_bytes
+            if now - self._rl_at >= 2:
+                dt = now - self._rl_at
+                self._rl = ((n.relay_msgs - self._rl_m) / dt, (n.relay_bytes - self._rl_b) / 1000 / dt)
+                self._rl_at, self._rl_m, self._rl_b = now, n.relay_msgs, n.relay_bytes
+            rm, rb = getattr(self, "_rl", (0, 0))
+            relayed = [a for a in n.peers if a[0] == "mqtt" and n.peers[a].up]
+            pm = n.ping_ms(now, relayed) if relayed else None
+            warn = " · ТАБЛАТА ДОЦНИ (%d ms): можно ограничување, играјте директно ако може" % pm if pm and pm > 600 else ""
+            out.append(("Реле", "%.0f пораки/s · %.1f kB/s%s" % (rm, rb, warn)))
         return out
 
     def _me(self, pid):
