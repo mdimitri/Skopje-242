@@ -26,7 +26,11 @@ def step(feed=False, k=[0]):
     time.sleep(0.01)
 if role == "host":
     ses.host(internet=True)
-    while time.time() - t0 < 40 and len(ses.players) < 2: step()
+    wrote = False
+    while time.time() - t0 < 40 and len(ses.players) < 2:
+        step()
+        if not wrote and not ses._busy:
+            open("/tmp/natlab_code", "w").write(mp.make_code(ses._info())); wrote = True
     log.append("pub %s, players %d" % (ses.pub, len(ses.players)))
     for _ in range(50): step()
     ses.send_chat("здраво од домаќинот")
@@ -36,7 +40,15 @@ else:
     ses.browse()
     g = None
     while time.time() - t0 < 30 and not g:
-        step(); g = next(iter(ses.games().values()), None)
+        step()
+        if os.environ.get("CODE"):                 # join with the code the host "sent over WhatsApp"
+            if os.path.exists("/tmp/natlab_code"):
+                code = open("/tmp/natlab_code").read()
+                log.append("code " + code)
+                g = mp.parse_code(code.lower().replace("-", " "))
+                ses.found.clear()
+        else:
+            g = next(iter(ses.games().values()), None)
     log.append("found %s" % (g and {k: g[k] for k in ("name", "addr", "laddr")}))
     if g: ses.join(g)
     while time.time() - t0 < 50 and ses.state == "connecting": step()

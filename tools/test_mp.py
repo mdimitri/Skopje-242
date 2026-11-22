@@ -42,3 +42,24 @@ g2.join({"id": "h9", "name": "x", "addr": ["9.9.9.9", 5], "laddr": "127.0.0.1", 
 pump([h2, g2], 3, lambda: g2.state == "lobby")
 assert g2.state == "lobby", (g2.state, g2.error)
 print("OK same-router join through the LAN address")
+
+# join codes (shared over WhatsApp): round trip, sloppy typing / Cyrillic look-alikes, typos and truncation give reasons
+c = mp.make_code({"addr": ["85.12.3.4", 24242], "laddr": "192.168.1.10", "port": 24242, "rid": 123456789, "nat": "cone"})
+g0 = mp.parse_code(c)
+assert g0["addr"] == ["85.12.3.4", 24242] and g0["rid"] == 123456789 and g0["laddr"] == "192.168.1.10" and g0["id"] == "r123456789"
+assert mp.parse_code("  " + c.lower().replace("-", " ").replace("0", "о") + "\n") == g0
+for bad, why in ((c[:-2], "знаци"), (c[:-1] + ("Z" if c[-1] != "Z" else "Y"), "погрешен"), (c + "!", "непознат")):
+    try:
+        mp.parse_code(bad); raise AssertionError(bad)
+    except ValueError as e:
+        assert why in str(e), e
+assert mp.parse_code("10.0.0.5:24242")["addr"] == ["10.0.0.5", 24242]
+gl = mp.parse_code(mp.make_code({"addr": None, "laddr": "192.168.1.10", "port": 24242, "rid": 5, "nat": None}))
+assert gl.get("lan") and gl["addr"] == ["192.168.1.10", 24242]
+# join a real host by its code over loopback
+h3 = mp.Session(prof("Код", "hc")); h3.host(internet=False)
+g3 = mp.Session(prof("Гост", "gc"))
+g3.join(mp.parse_code(mp.make_code(dict(h3._info(), addr=None, laddr="127.0.0.1"))))
+pump([h3, g3], 3, lambda: g3.state == "lobby")
+assert g3.state == "lobby", (g3.state, g3.error)
+print("OK join codes: round trip, sloppy input, reasons for bad codes, LAN-only code joins")

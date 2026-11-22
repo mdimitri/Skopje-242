@@ -4,8 +4,10 @@ The host owns the world; guests send inputs and render what the host sends (adde
 """
 import os
 import random
+import struct
 import threading
 import time
+import zlib
 
 import discovery
 import mpnet as net
@@ -58,12 +60,13 @@ class Session:
         except OSError:
             self.net = net.Net(0, accept=True)
         self.net.probe_rtt = True
+        self.net.rid = zlib.crc32(self.prof.uid.encode()) & 0x7FFFFFFF     # stable: a join code stays valid after a restart
         self.pid, self.players = 0, {0: self._me(0)}
         self.lan = discovery.Lan()
         if internet:
             self._busy = True
             threading.Thread(target=self._host_net, daemon=True).start()
-            self.mqtt = discovery.Mqtt(["join/" + self.gid], self._on_mqtt)
+            self.mqtt = discovery.Mqtt(["join/" + self.gid, "join/r%d" % self.net.rid], self._on_mqtt)
             self.net.use_relay(self.mqtt)                # guests whose UDP cannot get through come in over the notice board
         self.ready = True
 
@@ -156,6 +159,10 @@ class Session:
         self.relayed = False
         if self.mqtt is not None and not game.get("lan") and game.get("rid"):
             self.net.use_relay(self.mqtt)
+        if game.get("code") and game.get("laddr") and not game.get("lan"):
+            la = (game["laddr"], int(game.get("port") or addr[1]))       # maybe the same Wi-Fi: knock on the LAN address too
+            self.net.add_peer(la)
+            self._also = la
         if game.get("lan") or self.mqtt is None:
             self.net.add_peer(addr)
         else:
@@ -302,6 +309,9 @@ class Session:
                 net.log("guest: no direct UDP after %.0f s (NAT %s / host %s): switching to the MQTT relay" % (
                     now - self._t0, self.nat, self._game.get("nat")))
                 self.net.drop_peer(self._target)
+                if getattr(self, "_also", None):
+                    self.net.drop_peer(self._also)
+                    self._also = None
                 self._target = ("mqtt", int(rid))
                 self.net.add_peer(self._target)
                 self.route = "реле преку MQTT (%s)" % self.mqtt.connected
@@ -312,6 +322,8 @@ class Session:
                     self._target + (bool(self._mine),)))
             elif self.net.peers.get(self._target) is not None:
                 self.net.hello(self._target, b"")
+            if getattr(self, "_also", None) in self.net.peers:
+                self.net.hello(self._also, b"")
                 if self._mine and self.mqtt and self._notice and now - self._notice > 2:      # a single notice can be lost: repeat it
                     self._notice = now
                     self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine)})
@@ -321,6 +333,10 @@ class Session:
             if old == getattr(self, "_target", None):
                 self._target = new
         for kind, addr, obj in evs:
+            if kind == "up" and self.role == "guest" and addr == getattr(self, "_also", None) and self.state == "connecting":
+                net.log("guest: the host answered on its LAN address %s:%d (same network)" % addr)
+                self.net.drop_peer(self._target)
+                self._target, self._also, self.route = addr, None, "LAN (код)"
             if kind == "up" and self.role == "guest" and addr == self._target:
                 self.net.send_rel(addr, {"t": "join", "name": self.prof.name, "uid": self.prof.uid, "ver": VER})
             elif kind == "gone":
@@ -535,6 +551,72 @@ class Session:
                         self.vstats[int(k)] = {"mic": str(x.get("mic", ""))[:8], "rx": x.get("rx") if isinstance(x.get("rx"), dict) else {}, "at": now}
             elif t == "closed":
                 self.state, self.error = "closed", "Домаќинот ја затвори играта"
+
+
+# ------------------------------------------------------------------ join code (shared privately, e.g. over WhatsApp)
+_B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"                 # Crockford: no I L O U
+_LOOK = {"O": "0", "I": "1", "L": "1", "U": "V",           # typed by hand, or with a Cyrillic keyboard layout
+         "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "К": "K", "М": "M", "О": "0", "Р": "P", "Т": "T", "Х": "X",
+         "Ѕ": "S", "Ј": "J", "З": "3", "Б": "6"}
+_NATS = [None, "cone", "symmetric", "multi-ip"]
+_CODE = struct.Struct("!B4sH4sHIB")                      # version, public ip, port, LAN ip, port, relay id, NAT type
+
+
+def make_code(info):
+    """Host's _info() -> 'S242-XXXX-XXXX-...' (35 chars). Carries every way in: public address, LAN address, relay id."""
+    import socket
+    pub = info.get("addr") or ["0.0.0.0", 0]
+    raw = _CODE.pack(VER, socket.inet_aton(pub[0]), int(pub[1]), socket.inet_aton(info.get("laddr") or "0.0.0.0"),
+                     int(info.get("port", 0)), int(info.get("rid") or 0), _NATS.index(info.get("nat")) if info.get("nat") in _NATS else 0)
+    raw += struct.pack("!H", zlib.crc32(raw) & 0xFFFF)
+    n, bits, out = int.from_bytes(raw, "big"), len(raw) * 8, ""
+    for i in range((bits + 4) // 5):
+        out = _B32[n & 31] + out
+        n >>= 5
+    return "S242-" + "-".join(out[i:i + 4] for i in range(0, len(out), 4))
+
+
+def parse_code(text):
+    """Join code (any case, spaces, dashes, look-alike letters) or a plain 'ip:port' -> game dict for join().
+    Raises ValueError with the reason shown to the player."""
+    import socket
+    t = (text or "").strip()
+    if ":" in t and t.replace(".", "").replace(":", "").isdigit():       # typed address, e.g. 85.12.3.4:24242
+        ip, port = t.rsplit(":", 1)
+        try:
+            socket.inet_aton(ip)
+            return {"addr": [ip, int(port)], "port": int(port), "name": ip, "code": True}
+        except (OSError, ValueError):
+            raise ValueError("адресата не е IP:порта")
+    t = "".join(_LOOK.get(c, c) for c in t.upper())
+    if t.startswith("S242"):
+        t = t[4:]
+    t = "".join(c for c in t if c not in " -_.,\t\n")
+    bad = [c for c in t if c not in _B32]
+    if bad:
+        raise ValueError("кодот има непознат знак „%s“" % bad[0])
+    need = ((_CODE.size + 2) * 8 + 4) // 5
+    if len(t) != need:
+        raise ValueError("кодот има %d знаци наместо %d (копирај го целиот)" % (len(t), need))
+    n = 0
+    for c in t:
+        n = n * 32 + _B32.index(c)
+    raw = n.to_bytes(_CODE.size + 2, "big") if n < 1 << ((_CODE.size + 2) * 8) else b""
+    if len(raw) != _CODE.size + 2 or struct.unpack("!H", raw[-2:])[0] != zlib.crc32(raw[:-2]) & 0xFFFF:
+        raise ValueError("кодот не е точен (некој знак е погрешен)")
+    ver, pip, pport, lip, lport, rid, nat = _CODE.unpack(raw[:-2])
+    if ver != VER:
+        raise ValueError("кодот е од друга верзија на играта (v%d, ти имаш v%d)" % (ver, VER))
+    pub, lan = socket.inet_ntoa(pip), socket.inet_ntoa(lip)
+    g = {"id": "r%d" % rid, "rid": rid or None, "nat": _NATS[nat] if nat < len(_NATS) else None, "ver": ver,
+         "laddr": lan if lan != "0.0.0.0" else None, "port": lport, "name": "код", "code": True}
+    if pub != "0.0.0.0" and pport:
+        g["addr"] = [pub, pport]
+    elif g["laddr"]:
+        g["addr"], g["lan"] = [lan, lport], True                 # host had no internet address: LAN only
+    else:
+        raise ValueError("кодот нема адреса (домаќинот нема ни интернет ни LAN)")
+    return g
 
 
 def _lan_ip():

@@ -22,6 +22,8 @@ L = {"title": "МУЛТИПЛЕЈЕР", "name": "Твоето корисничк
      "say": "Напиши порака и Enter...", "spawn": "Почетна локација", "ff": "Пријателски оган", "on": "ВКЛ", "off": "ИСКЛ",
      "start": "ПОЧНИ", "wait": "Домаќинот ќе ја почне играта", "connecting": "Се поврзува...", "rename": "Смени име",
      "stats": "Игри %d · Убиства %d · Смрти %d", "color": "Боја", "join": "Приклучи се", "full": "полна", "offline": "интернет: нема врска",
+     "code": "Внеси код", "code_t": "Код за поврзување", "copy": "Копирај код", "copied": "Копирано! Испрати го (WhatsApp, Viber...)",
+     "code_hint": "Залепи го кодот од домаќинот (Ctrl+V) или внеси IP:порта, па Enter", "paste": "Залепи", "code_wait": "кодот се прави (се бара јавна адреса)…",
      "mute": "Тивко", "unmute": "Звук", "mic": "Микрофон", "gain": "Засил.", "vmode": "Глас", "talk": "Држи за зборување"}
 GREEN = rl.Color(90, 220, 110, 255)
 RED = rl.Color(255, 120, 140, 255)
@@ -153,9 +155,17 @@ def _browser(prof, ses, music):
             out = "host"
         if font.button(L["rename"], 400, by, 250, sz * 2.4, sz):
             out = "rename"
+        if ses.state != "connecting" and font.button(L["code"], 670, by, 300, sz * 2.4, sz):
+            out = "code"
         if font.button(L["back"], W - 290, by, 250, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE):
             out = None
         rl.end_drawing()
+        if out == "code":
+            g = _enter_code(ses, music)
+            if g:
+                ses.error = ""
+                ses.join(g)
+            continue
         if out is not False:
             return out
         if ses.state == "closed" and ses.net:        # a failed join: tidy up, stay on this screen, keep the message
@@ -163,6 +173,62 @@ def _browser(prof, ses, music):
             ses.net.close()
             ses.net, ses.state = None, "idle"
             ses.error = err
+
+
+def _enter_code(ses, music):
+    """Text box for a join code shared privately; -> game dict, or None. The reason a code is wrong shows as you type."""
+    buf, err = "", ""
+    while True:
+        if rl.window_should_close():
+            return None
+        if music:
+            music.update()
+        ses.update()
+        ctrl = rl.is_key_down(rl.KEY_LEFT_CONTROL) or rl.is_key_down(rl.KEY_RIGHT_CONTROL)
+        if ctrl and rl.is_key_pressed(rl.KEY_V):
+            buf = (buf + _clip())[:120]
+            while rl.get_char_pressed():
+                pass
+        else:
+            buf = _text_input(buf, 120)
+        W, H = _frame(L["title"])
+        sz = max(22, H // 32)
+        font.draw_text(L["code"], W // 2 - 420, H // 3 - sz * 2, sz, rl.WHITE, bold=True)
+        _panel(W // 2 - 420, H // 3, 840, sz * 2)
+        font.draw_text(font.fit(buf, sz, 800) + ("_" if int(time.time() * 2) % 2 else ""), W // 2 - 405, H // 3 + sz // 2, sz, rl.WHITE)
+        font.draw_text(L["code_hint"], W // 2 - 420, H // 3 + sz * 2.4, sz * 3 // 4, DIM)
+        ok_code = None
+        if buf.strip():
+            try:
+                ok_code = mp.parse_code(buf)
+                err = ""
+            except ValueError as e:
+                err = str(e)
+        if err:
+            font.draw_text(err, W // 2 - 420, H // 3 + sz * 3.6, sz * 4 // 5, RED, bold=True)
+        elif ok_code:
+            a = ok_code["addr"]
+            font.draw_text("✓ %s:%s%s" % (a[0], a[1], "  · реле" if ok_code.get("rid") else ""), W // 2 - 420, H // 3 + sz * 3.6, sz * 4 // 5, GREEN, bold=True)
+        y = H // 3 + sz * 5.2
+        paste = font.button(L["paste"], W // 2 - 420, y, 260, sz * 2, sz)
+        go = font.button(L["join"], W // 2 - 140, y, 260, sz * 2, sz)
+        bk = font.button(L["back"], W // 2 + 160, y, 260, sz * 2, sz)
+        rl.end_drawing()
+        if paste:
+            buf = (buf + _clip())[:120]
+        if bk or rl.is_key_pressed(rl.KEY_ESCAPE):
+            return None
+        if (go or rl.is_key_pressed(rl.KEY_ENTER)) and ok_code:
+            return ok_code
+
+
+def _clip():
+    try:
+        t = rl.get_clipboard_text()
+        t = t.decode("utf-8", "replace") if isinstance(t, bytes) else (t or "")
+        return t.strip().replace("\r", " ").replace("\n", " ")
+    except Exception:      # noqa: BLE001 - no clipboard
+        return ""
 
 
 def _voice_cfg(cfg, v):
@@ -175,7 +241,7 @@ def _voice_cfg(cfg, v):
 
 def _room(prof, ses, music, cfg=None):
     """-> True when the game starts."""
-    chat = ""
+    chat, copied = "", 0.0
     while True:
         if rl.window_should_close():
             return False
@@ -313,6 +379,14 @@ def _room(prof, ses, music, cfg=None):
         by = H - H // 7 + 10
         if host and font.button(L["start"], 40, by, 300, sz * 2.4, sz):
             ses.start()
+        if host:                                                 # join code to share privately
+            ready = not ses._busy and ses.net is not None
+            code = mp.make_code(ses._info()) if ready else ""
+            font.draw_text(L["code_t"], 360, by - sz * .1, sz * 3 // 5, DIM)
+            font.draw_text(code or L["code_wait"], 360, by + sz * .7, sz * 4 // 5 if code else sz * 3 // 5, GOLD if code else DIM, bold=True)
+            if code and font.button(L["copied"] if time.time() - copied < 3 else L["copy"], 360, by + sz * 1.7, W - 700, sz * 1.3, sz * 3 // 5):
+                rl.set_clipboard_text(code)
+                copied = time.time()
         leave = font.button(L["back"], W - 290, by, 250, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE)
         rl.end_drawing()
         if leave:

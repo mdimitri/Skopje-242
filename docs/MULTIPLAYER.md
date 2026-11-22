@@ -38,3 +38,11 @@ with two STUN servers and shown in the lobby; a failed join names the technical 
 `sudo tools/natlab/lab.sh <cone|mixed|symmetric> <loss per router or none> <talk s>` builds two home networks
 (both 192.168.1.0/24) behind Linux NAT routers on a fake internet with its own STUN + MQTT (tools/natlab/servers.py)
 and runs a host and a guest (tools/natlab/peer.py) through join, chat, start and two-way voice. Needs root + iproute2.
+
+## Join code
+
+The host's room shows `S242-XXXX-...` (Копирај код copies it). It packs version, public ip:port, LAN ip:port, relay id
+(stable per player: crc32 of the profile uid) and NAT type, with a 16-bit checksum. The guest pastes it under Внеси код:
+case, spaces, dashes and Cyrillic look-alike letters do not matter; a wrong/short code says why. A plain `ip:port`
+also works. Joining by code uses the same ladder (plus knocking on the LAN address at the same time). The lab runs it
+with `CODE=1 tools/natlab/lab.sh ...`.
