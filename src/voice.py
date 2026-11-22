@@ -26,7 +26,8 @@ F_NARROW = 2                     # frames are 8 kHz (160 samples, 85 B): half th
 F_FEC = 4                        # the previous packet's frames ride along again: one lost packet in a row is rebuilt
 NARROW_BYTES = FRAME // 2 // BLOCK + FRAME // 4
 # adaptive quality: (label, narrow, frames per packet, fec)
-TIERS = [("16 kHz, 68 kbit/s", False, 2, False), ("8 kHz, 36 kbit/s", True, 2, False), ("8 kHz + FEC, 60 kbit/s", True, 3, True)]
+TIERS = [("16 kHz, 68 kbit/s", False, 2, False), ("8 kHz, 36 kbit/s", True, 2, False), ("8 kHz + FEC, 60 kbit/s", True, 3, True),
+         ("8 kHz преку реле, 34 kbit/s", True, 4, False)]       # relay (TCP): no loss to protect from, fewer messages
 QUALITY = ["Автоматски (според врската)", "Високо (16 kHz)", "Ниско (8 kHz)", "Ниско + заштита од загуби"]
 CODEC = 1
 _MU = 4.0
@@ -98,6 +99,7 @@ class Jitter:
         self.hi = None                    # newest frame seq seen; gaps below it that never arrive = network loss
         self.seen = 0
         self.fixed = 0
+        self.floor = 2                    # minimum playout delay in frames (6 = 120 ms over the TCP relay)
         self.last_rx = 0.0
         self.level = 0.0
         self.wait_from = 0.0
@@ -106,7 +108,7 @@ class Jitter:
         return max(0, 100 * (self.seen - self.recv) // max(1, self.seen))
 
     def target(self):
-        return max(2, min(12, int(math.ceil((2.5 * self.jit + 20) / 20))))
+        return max(self.floor, min(12, int(math.ceil((2.5 * self.jit + 20) / 20))))
 
     def push(self, seq, frames, end, now):
         self.last_rx = now
@@ -141,7 +143,7 @@ class Jitter:
         """Frames rebuilt from forward error correction: only holes are filled, stats stay those of the network."""
         for i, f in enumerate(frames):
             s = (seq + i) & 0xFFFF
-            if self.next is None or s in self.frames or (self.playing and _d16(s, self.next) < 0) or _d16(s, self.hi) > 0:
+            if self.next is None or s in self.frames or _d16(s, self.next) < 0 or _d16(s, self.hi) > 0:
                 continue
             self.frames[s] = f
             self.fixed += 1
@@ -155,6 +157,9 @@ class Jitter:
             else:
                 return None
         f = self.frames.pop(self.next, None)
+        if f is None and self.frames:                  # anything stuck behind the play head can never play: drop it
+            for k in [k for k in self.frames if _d16(k, self.next) < 0]:
+                del self.frames[k]
         self.next = (self.next + 1) & 0xFFFF
         if f is not None:
             self.miss, self.last = 0, f
@@ -229,6 +234,7 @@ class Voice:
         self._was_tx = False
         self._prev = None                # (narrow, encoded frames, seq that follows them): FEC copy for the next packet
         self.tier = 0
+        self.relayed = False
         self._good_since = 0.0
         self.link = ""                   # why this quality was chosen
         self._zero = 0                   # consecutive all-zero mic frames
@@ -451,6 +457,7 @@ class Voice:
             j = self.jit.get(pid)
             if j is None:
                 j = self.jit[pid] = Jitter()
+            j.floor = 6 if self.relayed else 2
             j.push(seq, frames, bool(flags & F_END), now)
             if prev:
                 j.fill((seq - k) & 0xFFFF, prev)
@@ -459,6 +466,9 @@ class Voice:
     def adapt(self, loss, jitter, rtt, now):
         """Pick the quality from how the other players receive me (worst listener): drop at once, climb one step after 10 s good."""
         q = int(self.cfg.get("voice_quality", 0))
+        if self.relayed:
+            self.tier, self.link = 3, "врската оди преку реле (MQTT)"
+            return
         if q:
             self.tier, self.link = {1: 0, 2: 1, 3: 2}[q], "рачно поставено"
             return

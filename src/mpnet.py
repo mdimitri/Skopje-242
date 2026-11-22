@@ -6,6 +6,7 @@ Packet = MAGIC(4) kind(1) seq(4) payload.
   PING/PONG measure the gameplay round trip without entering the reliable queue.
 Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("voice", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
 """
+import collections
 import json
 import os
 import socket
@@ -104,6 +105,19 @@ class Net:
         self._tx_lock = threading.Lock()
         self._heartbeat_stop = threading.Event()
         self._heartbeat = None
+        self.relay = None             # discovery.Mqtt: fallback path when UDP hole punching fails (symmetric NAT both sides)
+        self.rid = int.from_bytes(os.urandom(4), "big") & 0x7FFFFFFF      # my relay address = ("mqtt", rid)
+        self._rin = collections.deque(maxlen=2000)
+
+    def use_relay(self, mqtt):
+        """Packets to ("mqtt", rid) addresses go through the MQTT notice board; packets for me arrive on r/<my rid>."""
+        self.relay = mqtt
+        mqtt.on_raw = self._relay_rx
+        mqtt.subscribe("r/%d" % self.rid)
+
+    def _relay_rx(self, topic, body):
+        if len(body) > 4:
+            self._rin.append((body[4:], ("mqtt", int.from_bytes(body[:4], "big"))))
 
     def start_heartbeat(self):
         """Keep established game connections alive while the window thread is blocked."""
@@ -145,6 +159,12 @@ class Net:
         return pkt
 
     def _send_packet(self, addr, pkt):
+        if addr[0] == "mqtt":
+            if self.relay is not None:
+                self.relay.publish_raw("r/%d" % addr[1], self.rid.to_bytes(4, "big") + pkt)
+                with self._tx_lock:
+                    self.bytes_tx += len(pkt) + 30
+            return
         try:
             sent = self.sock.sendto(pkt, addr)
         except OSError:
@@ -198,12 +218,15 @@ class Net:
     def poll(self):
         ev, now = [], time.monotonic()
         for _ in range(512):
-            try:
-                pkt, addr = self.sock.recvfrom(2048)
-            except (BlockingIOError, InterruptedError):
-                break
-            except OSError:           # e.g. ICMP unreachable on Windows
-                continue
+            if self._rin:
+                pkt, addr = self._rin.popleft()
+            else:
+                try:
+                    pkt, addr = self.sock.recvfrom(2048)
+                except (BlockingIOError, InterruptedError):
+                    break
+                except OSError:           # e.g. ICMP unreachable on Windows
+                    continue
             self.bytes_rx += len(pkt)
             if len(pkt) < HDR.size:
                 continue

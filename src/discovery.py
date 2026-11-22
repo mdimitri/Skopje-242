@@ -18,14 +18,14 @@ TOPIC = "skopje242/v1/"
 VER = 1
 
 
-def stun_addr(sock, timeout=1.5):
+def stun_addr(sock, timeout=1.5, servers=None):
     """Public (ip, port) of this UDP socket as seen from outside (RFC 5389 binding request), or None."""
     tid = os.urandom(12)
     req = struct.pack("!HHI", 0x0001, 0, 0x2112A442) + tid
     old = sock.gettimeout()
     sock.settimeout(timeout)
     try:
-        for host in STUN:
+        for host in (servers or STUN) * 3:              # a lost request (WiFi, busy router) is simply asked again
             try:
                 sock.sendto(req, socket.getaddrinfo(host[0], host[1], socket.AF_INET, socket.SOCK_DGRAM)[0][4])
                 while True:
@@ -46,6 +46,25 @@ def stun_addr(sock, timeout=1.5):
     return None
 
 
+def nat_kind(sock, first):
+    """'symmetric' when a second STUN server sees another public port than the first (hole punching cannot work then),
+    'cone' when it is the same, None when it could not be measured."""
+    if not first:
+        return None
+    answered = set()
+    for host in STUN:
+        try:
+            ip = socket.getaddrinfo(host[0], host[1], socket.AF_INET, socket.SOCK_DGRAM)[0][4][0]
+        except OSError:
+            continue
+        b = stun_addr(sock, 1.0, [host])
+        if b and b != first:
+            return "symmetric" if b[0] == first[0] else "multi-ip"
+        if b:
+            answered.add(ip)
+    return "cone" if len(answered) > 1 else None
+
+
 # ---------------------------------------------------------------------------- minimal MQTT 3.1.1 client
 def _vlen(n):
     out = b""
@@ -63,6 +82,7 @@ class Mqtt:
         self.subs, self.on_msg, self.brokers = subs, on_msg, brokers or BROKERS
         self.sock, self.run, self.lock = None, True, threading.Lock()
         self.connected = ""
+        self.on_raw = None            # callback(topic, bytes) for binary relay topics ("r/...")
         threading.Thread(target=self._loop, daemon=True).start()
 
     def _send(self, b):
@@ -78,6 +98,18 @@ class Mqtt:
         body = struct.pack("!H", len(t)) + t + json.dumps(obj, separators=(",", ":")).encode()
         self._send(b"\x30" + _vlen(len(body)) + body)
 
+    def publish_raw(self, topic, data):
+        t = (TOPIC + topic).encode()
+        body = struct.pack("!H", len(t)) + t + data
+        self._send(b"\x30" + _vlen(len(body)) + body)
+
+    def subscribe(self, sub):
+        """Add a subscription now (if connected) and after every reconnect."""
+        if sub not in self.subs:
+            self.subs = self.subs + [sub]
+        t = (TOPIC + sub).encode()
+        self._send(b"\x82" + _vlen(5 + len(t)) + struct.pack("!HH", len(self.subs), len(t)) + t + b"\x00")
+
     def _loop(self):
         while self.run:
             for host, port in self.brokers:
@@ -85,6 +117,7 @@ class Mqtt:
                     return
                 try:
                     s = socket.create_connection((host, port), timeout=5)
+                    s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)      # relayed game packets: no 40 ms Nagle wait
                     cid = ("s242" + os.urandom(5).hex()).encode()
                     vh = b"\x00\x04MQTT\x04\x02" + struct.pack("!H", 30)
                     pl = struct.pack("!H", len(cid)) + cid
@@ -136,6 +169,11 @@ class Mqtt:
                 typ, body, buf = buf[0] >> 4, buf[i:i + ln], buf[i + ln:]
                 if typ == 3 and len(body) > 2:
                     tl = struct.unpack_from("!H", body)[0]
+                    topic = body[2:2 + tl].decode("utf-8", "replace")[len(TOPIC):]
+                    if topic.startswith("r/"):
+                        if self.on_raw is not None:
+                            self.on_raw(topic, body[2 + tl:])
+                        continue
                     try:
                         self.on_msg(body[2:2 + tl].decode()[len(TOPIC):], json.loads(body[2 + tl:]))
                     except (ValueError, UnicodeDecodeError):

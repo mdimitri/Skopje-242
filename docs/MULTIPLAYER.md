@@ -27,3 +27,14 @@ Tests: `tools/test_net.py`, `test_mqtt.py`, `test_mp.py` (lobby), `test_mpgame.p
 - Per-speaker jitter buffer: playout delay 40-240 ms from the RFC 3550 jitter estimate, concealment repeats the last frame fading, FEC fills holes.
 - Every 2 s each player reports mic state + per-speaker loss/jitter (`vst` -> host -> `vsa`), so the lobby shows both directions ("← Ана" how I hear her, "→ Ана" whether she hears me, "НЕ ПРИМА" when my voice never arrives).
 - Test: `python tools/test_voice.py` (no sound card needed).
+
+## Connection ladder and the NAT lab
+
+Guest join order: direct UDP (LAN / hole punch via the notice board) -> birthday punching when the guest is behind
+symmetric NAT and the host is not (256 guest ports, host sprays HELLO) -> MQTT relay (packets as binary messages on
+`r/<rid>` of the same public broker) when nothing direct works, e.g. symmetric NAT on both sides. NAT type is measured
+with two STUN servers and shown in the lobby; a failed join names the technical reason.
+
+`sudo tools/natlab/lab.sh <cone|mixed|symmetric> <loss per router or none> <talk s>` builds two home networks
+(both 192.168.1.0/24) behind Linux NAT routers on a fake internet with its own STUN + MQTT (tools/natlab/servers.py)
+and runs a host and a guest (tools/natlab/peer.py) through join, chat, start and two-way voice. Needs root + iproute2.

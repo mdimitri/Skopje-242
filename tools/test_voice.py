@@ -67,6 +67,13 @@ for loss in (0.0, 0.1, 0.3):
 j = voice.Jitter(); j.push(0xFFFE, [np.ones(voice.FRAME, np.float32)] * 2, False, 0); j.push(0, [np.ones(voice.FRAME, np.float32)] * 2, True, .04)
 assert sum(j.pop(.1 + k * .02) is not None for k in range(4)) == 4
 print("OK jitter: sequence wrap")
+# a frame stuck behind the play head (old FEC copy) must not keep the buffer "busy" and push the play head ahead of new speech
+j = voice.Jitter(); one = [np.ones(voice.FRAME, np.float32)] * 2
+j.push(10, one, False, 0); j.frames[5] = one[0]
+for k in range(30): j.pop(.1 + k * .02)
+j.push(12, one, True, 1.0)
+assert j.late == 0 and sum(j.pop(1.1 + k * .02) is not None for k in range(4)) == 2, (j.late, j.next)
+print("OK jitter: stale frames dropped, next spurt plays")
 
 # ---- 3 host + 2 guests over loopback, voice relayed by the host
 def prof(name, uid):

@@ -41,6 +41,10 @@ class Session:
         self._punch = {}                      # addr -> give-up time (host answering a join notice)
         self._adv = self._adv2 = 0.0
         self._busy = False
+        self._spraying = False
+        self._bd = []                         # guest: birthday-punch sockets
+        self.nat = None                       # cone | symmetric | multi-ip | None (not measured)
+        self.host_nat = None                  # guest: the host's NAT type from its notice-board entry
         self.voice = None                     # voice.Voice, set by the lobby; packets go through this session
         self.vstats = {}                      # pid -> {"mic": code, "rx": {pid: [recv, lost, late, jitter ms, bad]}, "at": time}
         self._vst_at = 0.0
@@ -60,10 +64,17 @@ class Session:
             self._busy = True
             threading.Thread(target=self._host_net, daemon=True).start()
             self.mqtt = discovery.Mqtt(["join/" + self.gid], self._on_mqtt)
+            self.net.use_relay(self.mqtt)                # guests whose UDP cannot get through come in over the notice board
         self.ready = True
 
     def _host_net(self):
-        self.pub = discovery.stun_addr(self.net.sock)
+        for _ in range(4):
+            self.pub = discovery.stun_addr(self.net.sock)
+            if self.pub or self.state != "lobby":
+                break
+            net.log("host: STUN gave no public address, asking again")
+        self.nat = discovery.nat_kind(self.net.sock, self.pub)
+        net.log("host: NAT type %s" % self.nat)
         net.log("host: UDP port %d, public address %s, ver %d" % (self.net.port, self.pub, VER))
         self._busy = False
 
@@ -72,15 +83,37 @@ class Session:
             a = (str(obj["addr"][0]), int(obj["addr"][1]))
         except (KeyError, TypeError, ValueError, IndexError):
             return
+        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("bday") and not self._spraying:
+            threading.Thread(target=self._spray, args=(a,), daemon=True).start()
         if self.state == "lobby" and len(self.players) < MAX_PLAYERS:
             if a not in self._punch:
                 net.log("host: join notice from %s:%d, punching" % a)
             self._punch[a] = time.monotonic() + 30
             self.net.add_peer(a)
 
+    def _spray(self, a):
+        """Birthday punching for a guest behind symmetric NAT: the guest holds many ports open towards us, we answer
+        HELLO to random ports of its IP (plus ports next to the one STUN saw, for routers that count up)."""
+        self._spraying = True
+        net.log("host: guest %s is behind symmetric NAT: spraying HELLO at its ports" % a[0])
+        rnd = random.Random()
+        near = [p for d in range(1, 300) for p in (a[1] + d, a[1] - d) if 1024 <= p < 65536]
+        try:
+            for i in range(2000):
+                if self.net is None or self.state != "lobby":
+                    break
+                port = near[i] if i < len(near) else rnd.randrange(1024, 65536)
+                self.net._raw((a[0], port), net.HELLO, 0)
+                if i % 50 == 49:
+                    time.sleep(0.02)
+        except (OSError, AttributeError):
+            pass
+        self._spraying = False
+
     def _info(self):
         return {"id": self.gid, "name": self.players[0]["name"], "n": len(self.players), "max": MAX_PLAYERS, "ver": VER,
-                "port": self.net.port, "laddr": _lan_ip(), "addr": list(self.pub) if self.pub else None, "st": self.state}
+                "port": self.net.port, "laddr": _lan_ip(), "addr": list(self.pub) if self.pub else None, "st": self.state, "nat": self.nat,
+                "rid": self.net.rid if self.mqtt else None}
 
     # ------------------------------------------------------------------ guest
     def browse(self):
@@ -120,6 +153,9 @@ class Session:
             "connected to " + self.mqtt.connected if self.mqtt and self.mqtt.connected else "OFFLINE"))
         self.net.follow[addr[0]] = addr
         self.route = "LAN" if game.get("lan") else "интернет"
+        self.relayed = False
+        if self.mqtt is not None and not game.get("lan") and game.get("rid"):
+            self.net.use_relay(self.mqtt)
         if game.get("lan") or self.mqtt is None:
             self.net.add_peer(addr)
         else:
@@ -128,7 +164,9 @@ class Session:
 
     def _guest_net(self, hid, addr):
         mine = discovery.stun_addr(self.net.sock)
+        self.nat = discovery.nat_kind(self.net.sock, mine)
         self._mine, self._hid = mine, hid
+        net.log("guest: NAT type %s" % self.nat)
         net.log("guest: my public address %s%s" % (mine, "" if mine else " (STUN failed: the host cannot be told where to punch)"))
         la = self._game.get("laddr")
         if mine and la and mine[0] == addr[0]:       # same public IP = same router: most routers cannot loop back, use the LAN address
@@ -158,6 +196,7 @@ class Session:
                ("Локална адреса", "%s:%d" % (_lan_ip() or "?", n.port))]
         if host:
             out.append(("Јавна адреса", fmt(self.pub) if self.pub else "се бара…"))
+            out.append(("NAT", {"cone": "обичен (може директно)", "symmetric": "СИМЕТРИЧЕН: гостите од интернет нема да влезат", "multi-ip": "СИМЕТРИЧЕН (повеќе IP)"}.get(self.nat, "не е измерен")))
             out.append(("Интернет-објава", "поврзано (" + self.mqtt.connected + ")" if self.mqtt and self.mqtt.connected else "нема"))
             for pid, p in sorted(self.players.items()):
                 if pid:
@@ -167,6 +206,7 @@ class Session:
             out.append(("Јавна адреса", fmt(self._mine) if getattr(self, "_mine", None) else "?"))
             out.append(("Домаќин", fmt(self._target)))
             out.append(("Врска", self.route or "?"))
+            out.append(("NAT", {"cone": "обичен (може директно)", "symmetric": "СИМЕТРИЧЕН", "multi-ip": "СИМЕТРИЧЕН (повеќе IP)"}.get(self.nat, "не е измерен")))
             pm = n.ping_ms(now, [self._target])
             out.append(("Пинг", ("%d ms" % pm) if pm is not None else "се мери…"))
         out.append(("Сообраќај", "↓ %.1f  ↑ %.1f kB/s" % self._rate))
@@ -215,7 +255,7 @@ class Session:
             self.start_info = {"spawn": self.cfg["spawn"], "ff": self.cfg["ff"], "seed": random.randrange(1 << 30)}
             self.state = "playing"
             self.net.broadcast_rel(dict(self.start_info, t="start"))
-            if self.mqtt:
+            if self.mqtt and not any(isinstance(p["addr"], tuple) and p["addr"][0] == "mqtt" for p in self.players.values()):
                 self.mqtt.close()
                 self.mqtt = None
 
@@ -252,8 +292,22 @@ class Session:
             else:
                 self.net.hello(a)
         if self.role == "guest" and self.state == "connecting":
+            self._birthday(now)
+            rid = self._game.get("rid")
+            sym = "symmetric" in (self.nat, self._game.get("nat")) or "multi-ip" in (self.nat, self._game.get("nat"))
+            if (not self.relayed and rid and self.net.relay is not None and self.mqtt.connected
+                    and now - self._t0 > (8 if self._bd else 2 if sym else 6)):
+                self._bd_close()
+                self.relayed = True                       # direct UDP did not come up: go through the notice board
+                net.log("guest: no direct UDP after %.0f s (NAT %s / host %s): switching to the MQTT relay" % (
+                    now - self._t0, self.nat, self._game.get("nat")))
+                self.net.drop_peer(self._target)
+                self._target = ("mqtt", int(rid))
+                self.net.add_peer(self._target)
+                self.route = "реле преку MQTT (%s)" % self.mqtt.connected
+                self._t0 = now - 2
             if now - self._t0 > 15:
-                self.state, self.error = "closed", "Нема врска"
+                self.state, self.error = "closed", self._why_failed()
                 net.log("guest: no answer from %s:%d in 15 s (notice sent: %s). Host firewall / NAT is the usual cause" % (
                     self._target + (bool(self._mine),)))
             elif self.net.peers.get(self._target) is not None:
@@ -315,6 +369,8 @@ class Session:
                 r = (st.get("rx") or {}).get(str(self.pid)) if k != self.pid and now - st.get("at", 0) < 7 else None
                 if isinstance(r, list) and len(r) >= 4 and r[0] > 10:
                     loss, jit = max(loss or 0, int(r[1])), max(jit or 0, int(r[3]))
+            v.relayed = getattr(self, "relayed", False) or any(
+                isinstance(p["addr"], tuple) and p["addr"][0] == "mqtt" for p in self.players.values())
             v.adapt(loss, jit, self.net.ping_ms(now), now)
             v.watchdog(now)
             mine = {"mic": v.mic_state(), "rx": v.rx_stats(), "talk": v.talking}
@@ -343,6 +399,73 @@ class Session:
         else:
             theirs += " · те слуша, загуба %d%%, џитер %d ms" % (rx[1], rx[3])
         return v.peer_line(pid), theirs
+
+    def _birthday(self, now):
+        """Guest behind symmetric NAT, host behind a normal one: open 256 ports towards the host; one of them will match
+        a port the host sprays at. The socket that hears the host becomes the game socket."""
+        if self._bd == [] and self.nat in ("symmetric", "multi-ip") and self._game.get("nat") == "cone" and not self.relayed \
+                and self._mine and self.mqtt and self.mqtt.connected and now - self._t0 > 1.5 and not getattr(self, "_bd_done", False):
+            self._bd_done = True
+            import socket
+            for _ in range(256):
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.bind(("0.0.0.0", 0))
+                    s.setblocking(False)
+                    self._bd.append(s)
+                except OSError:
+                    break
+            self._bd_at = 0.0
+            net.log("guest: symmetric NAT, host normal NAT: birthday punching with %d ports" % len(self._bd))
+            self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine), "bday": 1})
+        if not self._bd:
+            return
+        hello = net.HDR.pack(net.MAGIC, net.HELLO, 0)
+        if now - self._bd_at > 0.5:
+            self._bd_at = now
+            for s in self._bd:
+                try:
+                    s.sendto(hello, self._target)
+                except OSError:
+                    pass
+        for s in self._bd:
+            try:
+                pkt, a = s.recvfrom(2048)
+            except OSError:
+                continue
+            if pkt[:4] == net.MAGIC and a[0] == self._target[0]:
+                net.log("guest: birthday punch hit: port %d heard the host from %s:%d" % ((s.getsockname()[1],) + a))
+                self._bd.remove(s)
+                self.net.sock.close()
+                self.net.sock, self.net.port = s, s.getsockname()[1]
+                self.net.drop_peer(self._target)
+                self._target = a
+                self.net.add_peer(a)
+                self.net.hello(a)
+                self.route = "интернет (P2P, пробивање со многу порти)"
+                self._bd_close()
+                return
+
+    def _bd_close(self):
+        for s in self._bd:
+            s.close()
+        self._bd = []
+
+    def _why_failed(self):
+        """Technical reason for a join that got no answer."""
+        if self._game.get("lan"):
+            return "Нема врска: домаќинот не одговара на LAN (фајервол на Windows блокира UDP %d?)" % self._target[1]
+        if self.mqtt is None or not self.mqtt.connected:
+            return "Нема врска: интернет-таблата (MQTT) не е достапна, домаќинот не дозна за тебе"
+        if not self._mine:
+            return "Нема врска: STUN не одговори (UDP кон интернет блокиран?), не знаеме твоја јавна адреса"
+        if self.relayed:
+            return "Нема врска: ни директно ни преку релето (MQTT %s): домаќинот не одговара" % (self.mqtt.connected or "прекинат")
+        sym = [w for w, n in (("ти", self.nat), ("домаќинот", self._game.get("nat"))) if n in ("symmetric", "multi-ip")]
+        if sym:
+            return "Нема врска: симетричен NAT кај %s, директна врска не е можна (port forward UDP %d кај домаќинот, или VPN/ZeroTier)" % (
+                " и ".join(sym), net.PORT)
+        return "Нема врска: домаќинот не одговори 15 s (NAT/фајервол на рутерот го блокира UDP)"
 
     def _pid_of(self, addr):
         for k, p in self.players.items():
