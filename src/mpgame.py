@@ -121,13 +121,15 @@ class Game:
         self.over = False                                 # the session closed under us (handled once in update)
         self.t_ids = 0.0
         self._mig = session.migrated
+        sim.w.mp_out = []                                 # props broken here (world.break_point) go to the others
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
         s = self.sim
         if s.mode == "car" and s.car is not None:
             b = s.car
-            flags = (32 if getattr(s, "riding", None) is not None else 0) | _signal_bits(b.indicator)
+            flags = ((32 if getattr(s, "riding", None) is not None else 0) | _signal_bits(b.indicator)
+                     | (2 if getattr(b, "siren", False) else 0) | (4 if b.honk_t > 1.0 else 0))
             return PLAYER.pack(self.pid, flags, _clampb(b.kind), _clampb(b.color), b.x, b.y, b.h, b.vx, b.vy,
                                b.az if b.az is not None else 0.0, b.wheel, _clampb(b.health), 0, 0, _clampb(getattr(s, "lik", 0)), max(0, int(s.money)))
         wk = s.walker
@@ -250,6 +252,7 @@ class Game:
             self.auth = {pid: pid for pid in ses.players}          # everybody starts on his own
         self._pvp(s)
         self._shared(s)
+        self._props(s)
         self.tick = (self.tick + 1) & 0xFFFFFFFF
         if self.now - self.t_state >= 1.0 / STATE_HZ:
             self.t_state = self.now
@@ -342,6 +345,7 @@ class Game:
             wid = next((i for i, e in self.cars.items() if e["obj"] is c), None)
             au = self.auth.get(self.pid, self.pid)
             if wid is not None and au != self.pid:
+                self.cars[wid]["taken"] = True
                 self._route(au, {"t": "take", "to": au, "i": wid})
         s.mp_taken = []
         lb = getattr(s, "last_exit", None)
@@ -357,6 +361,30 @@ class Game:
             if getattr(b, "drop_pid", None) is not None and not b.remote:
                 self._route(b.drop_pid, {"t": "claim", "to": b.drop_pid})
                 b.drop_pid = None
+
+    def _props(self, s):
+        """Trees, posts and street furniture I knocked over are broken on every other PC as well."""
+        out = s.w.mp_out
+        if out:
+            for x, y in out[:20]:
+                self._bcast({"t": "brk", "x": x, "y": y})
+            del out[:]
+
+    def _apply_brk(self, m):
+        w = self.sim.w
+        try:
+            x, y = float(m["x"]), float(m["y"])
+        except (KeyError, TypeError, ValueError):
+            return
+        for e in w.points_near(x, y, 0.05):
+            if e[0] == x and e[1] == y:
+                keep, w.mp_out = w.mp_out, None                     # do not send it back
+                try:
+                    w.break_point(e)
+                finally:
+                    w.mp_out = keep
+                self.sim.ev("prop_break", x=x, y=y, kind="mid", fly=False)
+                return
 
     def _drop_of(self, pid):
         for b in self.sim.bodies:
@@ -426,6 +454,10 @@ class Game:
                 s.bodies.remove(self.drop_body)
             self.drop_body = None
             self._bcast({"t": "undrop", "p": self.pid})
+        elif t == "brk":
+            self._apply_brk(m)
+        elif t == "cwreck" and m.get("to") == self.pid:
+            self._apply_car_wreck(m)
         elif t == "phit" and m.get("to") == self.pid:
             self._apply_ped_hit(m)
         elif t == "take" and m.get("to") == self.pid:
@@ -454,6 +486,31 @@ class Game:
         if d > 0.01 or (m != e["mode"] and m in PED_HIT_MODES):
             self._route(au, {"t": "phit", "to": au, "i": wid, "d": round(max(d, 0.0), 1), "m": m,
                              "vx": round(p.vx, 1), "vy": round(p.vy, 1)})
+
+    def _report_cars(self, cars):
+        """Follower: a puppet traffic car that this PC wrecked (rammed, shot, blasted) is wrecked on the authority too."""
+        au = self.auth.get(self.pid, self.pid)
+        if au == self.pid:
+            return
+        now = set(map(id, cars))
+        for wid, e in self.cars.items():
+            c = e["obj"]
+            if c is not None and id(c) not in now and not e.get("lost"):
+                e["lost"] = True
+                if not e.get("taken"):
+                    self._route(au, {"t": "cwreck", "to": au, "i": wid})
+
+    def _apply_car_wreck(self, m):
+        s = self.sim
+        c = self.byid.get(m.get("i"))
+        if c is None or c not in s.traffic.cars:
+            return
+        b = s.traffic.make_body(c)
+        s.traffic.cars.remove(c)
+        b.empty = True
+        b.health = min(b.health, 30.0)
+        b.dirty = True
+        s.bodies.append(b)
 
     def _apply_ped_hit(self, m):
         """Authority: a follower hurt one of my pedestrians."""
@@ -775,6 +832,8 @@ class Game:
                 a = r["atk"]
                 frame = 2 if fl & 2 else ((60 + (a - 64) % 8 if a >= 64 else a - 1) if a else (None if fl & 8 else 12))
                 wn = WLIST[r["wi"] % len(WLIST)]
+                if a and not r.get("atk_prev") and not fl & 2 and wn in actors.WEAPONS:           # a shot: the muzzle noise
+                    s.ev("gunfire", x=r["x"], y=r["y"], kind=wn)
                 if a and not r.get("atk_prev") and not fl & 2 and (wn == "fist" or wn in actors.MELEE):   # a swing just started: this PC hears it too
                     s.ev("kick" if a == 6 else "punch" if wn == "fist" else "swing", x=r["x"], y=r["y"], hit=False, weapon=wn)
                 r["atk_prev"] = a
@@ -794,6 +853,10 @@ class Game:
                     s.bodies.append(b)
                 b.x, b.y, b.h, b.vx, b.vy, b.wheel = r["x"], r["y"], r["h"], r["vx"], r["vy"], r["aux"]
                 b.indicator = _signal_side(fl)
+                b.siren = bool(fl & 2)
+                if fl & 4 and not r.get("honk_prev"):                  # he just pressed the horn: this PC hears it
+                    s.ev("horn", body=b)
+                r["honk_prev"] = bool(fl & 4)
                 if b.kind == vehicles.ARTIC_BUS:
                     actors.tow(b)
                 b.az = r["z"] or None
@@ -805,6 +868,7 @@ class Game:
         s = self.sim
         k = min(1.0, dt * 14.0)
         cars = s.traffic.cars
+        self._report_cars(cars)
         cars.clear()
         for wid in [i for i, e in self.cars.items() if self.now - e["seen"] > PUPPET_TIMEOUT]:
             del self.cars[wid]
@@ -819,6 +883,8 @@ class Game:
                 c.kind, c.color = t[1], t[2] & 63
                 c.e, c.lane, c.lidx = 0, 0, 0
                 c.nxt = c.blk = c.arr = c.stn = c.dwell = None
+            if e.get("lost"):
+                continue                                              # wrecked on this PC; waiting for the authority to drop it
             _motion(e, t[3], t[4], t[5], math.cos(t[5]) * t[7], math.sin(t[5]) * t[7], self.now, k)
             c.x, c.y, c.h, c.gz, c.v, c.str, c.pitch, c.roll = e["x"], e["y"], e["h"], t[6], t[7], t[8] / 1000.0, t[9] / 1000.0, t[10] / 1000.0
             c.indicator = _signal_side(t[2])

@@ -715,6 +715,8 @@ class World:
     def break_point(self, e, fall=None):
         """A car knocked this tree / post / prop over: it stops colliding and its mesh triangles are hidden."""
         cg = self.cg
+        if getattr(self, "mp_out", None) is not None:
+            self.mp_out.append((e[0], e[1]))                  # multiplayer: the other players break it too (mpgame)
         cell = self.pgrid.get((int(e[0] // cg), int(e[1] // cg)))
         if cell and e in cell:
             cell.remove(e)

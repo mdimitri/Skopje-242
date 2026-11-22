@@ -151,6 +151,22 @@ print("5e follower punched a pedestrian -> authority's ped hp %.0f mode %s" % (r
 hg._rel({"t": "phit", "to": 0, "i": 65001, "d": 5, "m": "ko", "vx": 0, "vy": 0}, addr=("127.0.0.1", 1))   # a report for a ped that is gone: ignored
 hg._rel({"t": "phit", "to": 0, "i": wid, "d": "x", "m": "ko"}, addr=("127.0.0.1", 1))                       # garbage: ignored
 frames(5)
+# ---- 5f. props, wrecked traffic cars and gun fire cross over to the other PC
+pt = None
+for q in world.points_near(gw.x, gw.y, 60):
+    if q[2] < 0.45 and q in hs.w.pgrid.get((int(q[0] // hs.w.cg), int(q[1] // hs.w.cg)), ()):
+        pt = q; break
+if pt is not None:
+    nb = len(hs.w.broken); gs.chaos.smash(pt, 3.0, 0.0); frames(10)
+    print("5f prop broken by guest -> host world broke %d more" % (len(hs.w.broken) - nb)); assert len(hs.w.broken) == nb + 1 and len(gs.w.broken) >= 1
+c = min((c for c in gs.traffic.cars), key=lambda c: math.hypot(c.x - gw.x, c.y - gw.y))
+wid = next(i for i, e in gg.cars.items() if e["obj"] is c); rc = hg.byid[wid]
+gs.traffic.cars.remove(c); frames(10)          # the guest wrecked it (as collisions / blasts do)
+print("5g puppet car wrecked by guest -> host car dropped from traffic:", rc not in hs.traffic.cars); assert rc not in hs.traffic.cars
+evs = []; hs.ev = lambda k, **kw: evs.append(k)
+gw.weapon = "pistol"; gw.guns["pistol"] = 20; gw.atk_cd = 0; gs.attack(); frames(8)
+print("5h guest's shot heard on host:", "gunfire" in evs); assert "gunfire" in evs
+gw.weapon = "fist"; hs.ev = lambda *a, **k: None
 # ---- 6. shared things: parked cars taken, dropped cars, stealing a traffic car as a follower, riding the host's bus
 import actors, vehicles
 hw.health = 100.0; hs.walker.cause = None; frames(5)
@@ -187,6 +203,7 @@ print("6e bus puppets on guest:", len(pb)); assert len(pb) == 1
 gs.exit_car() if gs.mode == "car" else None
 gw = gs.walker; gw.x, gw.y = pb[0].x + 0.3, pb[0].y + 1.2; gw.lx, gw.ly = gw.x, gw.y
 gs.money = 100
+gs.bodies[:] = [b for b in gs.bodies if b is pb[0] or getattr(b, "puppet", False) or math.hypot(b.x - pb[0].x, b.y - pb[0].y) > 8]   # the car I stole earlier stands about: not what this step boards
 assert gs.try_enter() is True
 frames(40)
 print("6f riding: guest riding puppet bus %s, mode %s; host sees guest drawn: body %s foot %s" % (gs.riding is not None, gs.mode, hg.remote[1].get("body"), 1 in hs.remote_foot))
@@ -198,6 +215,7 @@ assert gs.mode == "foot"
 gw = gs.walker
 gw.x, gw.y = pb[0].x + .3, pb[0].y + 1.2
 gw.lx, gw.ly = gw.x, gw.y
+gs.bodies[:] = [b for b in gs.bodies if b is pb[0] or getattr(b, "puppet", False) or math.hypot(b.x - pb[0].x, b.y - pb[0].y) > 8]
 assert gs.try_enter() is True and gs.riding is not None
 snap = hg._snapshot_for
 hg._snapshot_for = lambda *_: []
