@@ -286,6 +286,15 @@ def _head(i, S):
             h = facerig.Head(i, S * 2)
         except Exception:                          # noqa: BLE001 - no mesh: the caricature fallback is used
             h = False
+            import traceback
+            try:                                   # never silent: a missing mesh looks like "the faces do not show"
+                import os
+                d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                    fh.write("[faces] head mesh %d failed, using the picture fallback:\n%s\n" % (i, traceback.format_exc()))
+            except Exception:                      # noqa: BLE001
+                pass
         _heads[key] = h
     return h
 
@@ -391,11 +400,11 @@ def _draw(f, i, x, y, S, color, name, me, ctx):
     if ctx["phase"] == "pre":
         return
     _props(f, head, x, y, S, color)
-    col = rl.Color(90, 230, 120, 255) if spk else rl.Color(*color, 255)
+    col = rl.Color(*color, 255)                       # always the player's own colour (speaking = thicker + pulsing ring, not another colour)
     rl.draw_rectangle_lines_ex(rl.Rectangle(x - 1, y - 1, S + 2, S + 2), 3 if spk else 2, col)
     if spk:
         pulse = .5 + .5 * math.sin(f.t * 10)
-        rl.draw_rectangle_lines_ex(rl.Rectangle(x - 4, y - 4, S + 8, S + 8), 2, rl.Color(90, 230, 120, int(70 + 110 * pulse)))
+        rl.draw_rectangle_lines_ex(rl.Rectangle(x - 4, y - 4, S + 8, S + 8), 2, rl.Color(*color, int(90 + 150 * pulse)))
     nm = name if len(name) <= 9 else name[:8] + "…"
     sz = max(12, S // 5)
     font.draw_text(nm, x + 1, y + S + 3, sz, rl.Color(0, 0, 0, 170))
