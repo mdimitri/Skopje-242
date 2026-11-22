@@ -127,7 +127,7 @@ Write-Host "[log] python: $py"
 
 # ---------------------------------------------------------------- libraries
 Step 'Libraries'
-$libTest = "import pyray, numpy, PIL, mapbox_earcut"
+$libTest = "import pyray, numpy, PIL, mapbox_earcut, sounddevice, pyogg"   # sounddevice + pyogg = multiplayer voice
 function Pip-Install($pipArgs) {
     # 1) normal  2) upgrade pip + prefer wheels  3) trust the PyPI hosts (TLS-inspecting proxies)  -> each only if the previous failed
     & $py -m pip install --disable-pip-version-check --no-warn-script-location @pipArgs 2>&1 | Out-Host
@@ -202,7 +202,7 @@ Step 'Self-check'
 Write-Host "[log] python: $py"
 & $py -c "import sys; print(sys.version); print(sys.path)" 2>&1 | Out-Host
 & $py -m pip list --disable-pip-version-check 2>&1 | Out-Host
-$chk = & $py -c "import sys; sys.path.insert(0, r'$root\src'); from texts import TXT; import pyray, numpy, PIL, mapbox_earcut; print('imports OK')" 2>&1 | Out-String
+$chk = & $py -c "import sys; sys.path.insert(0, r'$root\src'); from texts import TXT; import pyray, numpy, PIL, mapbox_earcut, sounddevice, pyogg; print('imports OK')" 2>&1 | Out-String
 Write-Host "[log] self-check (exit $LASTEXITCODE): $chk"
 if ($LASTEXITCODE -ne 0) { Fail "Final check failed: the game cannot import its modules with this Python (see above). Delete the .runtime folder and run run.bat again." }
 try { Stop-Transcript | Out-Null } catch {}

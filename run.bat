@@ -21,6 +21,11 @@ set FASTOK=
 if exist ".runtime\python.txt" if exist ".runtime\stamp_req.txt" if exist ".runtime\stamp_setup.ps1" (
     fc /b requirements.txt ".runtime\stamp_req.txt" >nul 2>&1 && fc /b tools\setup.ps1 ".runtime\stamp_setup.ps1" >nul 2>&1 && set FASTOK=1
 )
+REM Even on the fast path, verify the libraries really import (a stale stamp must not hide a missing package); if not, setup installs them.
+if defined FASTOK (
+    set /p PY=<".runtime\python.txt"
+    "%PY%" -c "import pyray, numpy, PIL, mapbox_earcut, sounddevice, pyogg" >nul 2>&1 || (set FASTOK=& echo Missing libraries detected - installing them automatically ...)
+)
 if /I "%~1"=="setup" (set FASTOK=& shift)
 if /I "%~1"=="aivoice" set FASTOK=
 if defined FASTOK if not defined SK_MIN (
