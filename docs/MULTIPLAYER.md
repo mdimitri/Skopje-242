@@ -18,3 +18,12 @@ Tests: `tools/test_net.py`, `test_mqtt.py`, `test_mp.py` (lobby), `test_mpgame.p
 * Names clash: do not rename `mpnet.py` / `mpprofile.py` to `net.py` / `profile.py` (tools/net.py and the stdlib `profile` exist).
 * Verified with two rendered Windows instances over a local relay with delay, jitter and packet loss. Public STUN, MQTT and
   NAT traversal across independent networks need separate verification.
+
+## Voice chat (src/voice.py)
+
+- Capture/playback through `sounddevice` (PortAudio, in requirements.txt; run.bat installs it). Missing module, missing PortAudio, no mic, refused mic (Windows privacy), busy mic, silent mic (all zeros 3 s), dead stream (watchdog reopens it), callback errors: each is shown as a reason in the lobby and the in-game HUD.
+- Wire: mpnet kind `VOICE` (6), unreliable. Star: guests -> host -> other guests; the host stamps the sender pid.
+- Codec BC4: blocks of 32 samples, log scale byte + 4-bit mu-law. Tiers (adaptive): 16 kHz 68 kbit/s; 8 kHz 36 kbit/s; 8 kHz + FEC (previous packet repeated) 60 kbit/s. Quality drops at once on listener loss >=3/8 %, jitter >=60 ms, ping >=250 ms or capture overflows, and climbs one step after 10 s good. Manual override in Поставки → Звук.
+- Per-speaker jitter buffer: playout delay 40-240 ms from the RFC 3550 jitter estimate, concealment repeats the last frame fading, FEC fills holes.
+- Every 2 s each player reports mic state + per-speaker loss/jitter (`vst` -> host -> `vsa`), so the lobby shows both directions ("← Ана" how I hear her, "→ Ана" whether she hears me, "НЕ ПРИМА" when my voice never arrives).
+- Test: `python tools/test_voice.py` (no sound card needed).

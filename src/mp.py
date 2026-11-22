@@ -41,6 +41,9 @@ class Session:
         self._punch = {}                      # addr -> give-up time (host answering a join notice)
         self._adv = self._adv2 = 0.0
         self._busy = False
+        self.voice = None                     # voice.Voice, set by the lobby; packets go through this session
+        self.vstats = {}                      # pid -> {"mic": code, "rx": {pid: [recv, lost, late, jitter ms, bad]}, "at": time}
+        self._vst_at = 0.0
 
     # ------------------------------------------------------------------ host
     def host(self, internet=True):
@@ -217,6 +220,8 @@ class Session:
                 self.mqtt = None
 
     def leave(self):
+        if self.voice is not None and self.state == "playing":
+            self.voice.close()
         if self.net:
             if self.role == "guest" and self.net.peers:
                 self.net.send_rel(self._target, {"t": "bye"})
@@ -268,7 +273,76 @@ class Session:
                 self._gone(addr)
             elif kind == "rel":
                 self._msg(addr, obj)
+            elif kind == "voice":
+                self._voice_in(addr, obj)
+        self._voice_out(now)
         return evs
+
+    # ------------------------------------------------------------------ voice chat (star: guests -> host -> other guests)
+    def _voice_in(self, addr, data):
+        if self.voice is None or len(data) < 1:
+            return
+        if self.role == "host":
+            pid = self._pid_of(addr)
+            if pid is None:
+                return
+            data = bytes((pid,)) + data[1:]              # the host stamps the sender: nobody can speak as somebody else
+            for k, p in self.players.items():
+                if k and k != pid and p["addr"] is not None:
+                    self.net.send_voice(p["addr"], data)
+        else:
+            pid = data[0]
+            if pid == self.pid:
+                return
+        self.voice.receive(pid, data)
+
+    def _voice_out(self, now):
+        v = self.voice
+        if v is None or self.state not in ("lobby", "playing"):
+            return
+        for pkt in v.take_packets():
+            pkt = bytes((self.pid,)) + pkt[1:]
+            if self.role == "host":
+                for k, p in self.players.items():
+                    if k and p["addr"] is not None:
+                        self.net.send_voice(p["addr"], pkt)
+            elif self.net.peers.get(self._target) is not None:
+                self.net.send_voice(self._target, pkt)
+        if now - self._vst_at > 2:
+            self._vst_at = now
+            loss = jit = None                            # how the others hear me -> quality of what I send
+            for k, st in self.vstats.items():
+                r = (st.get("rx") or {}).get(str(self.pid)) if k != self.pid and now - st.get("at", 0) < 7 else None
+                if isinstance(r, list) and len(r) >= 4 and r[0] > 10:
+                    loss, jit = max(loss or 0, int(r[1])), max(jit or 0, int(r[3]))
+            v.adapt(loss, jit, self.net.ping_ms(now), now)
+            v.watchdog(now)
+            mine = {"mic": v.mic_state(), "rx": v.rx_stats(), "talk": v.talking}
+            if self.role == "host":
+                self.vstats[0] = dict(mine, at=now)
+                self.net.broadcast_rel({"t": "vsa", "s": {str(k): {"mic": x["mic"], "rx": x["rx"]} for k, x in self.vstats.items()
+                                                          if k in self.players}})
+            elif self.net.peers.get(self._target) is not None and self.state != "connecting":
+                self.net.send_rel(self._target, dict(mine, t="vst"))
+
+    def voice_report(self, pid):
+        """-> (my side: how I hear pid, their side: mic state + how they hear me) as text for the lobby / pause menu."""
+        v = self.voice
+        if v is None:
+            return "", ""
+        st = self.vstats.get(pid)
+        if st is None:
+            return v.peer_line(pid), "нема извештај (стара верзија на играта или гласот не е вклучен)"
+        import voice as vmod
+        theirs = vmod.MIC_CODES.get(st.get("mic"), str(st.get("mic")))
+        rx = (st.get("rx") or {}).get(str(self.pid))
+        if v.tx_packets == 0:
+            theirs += " · ти уште не си зборувал"
+        elif rx is None:
+            theirs += " · НЕ ПРИМА твој глас (UDP пакетите за глас се губат: фајервол/NAT/рутер)"
+        else:
+            theirs += " · те слуша, загуба %d%%, џитер %d ms" % (rx[1], rx[3])
+        return v.peer_line(pid), theirs
 
     def _pid_of(self, addr):
         for k, p in self.players.items():
@@ -284,6 +358,9 @@ class Session:
             pid = self._pid_of(addr)
             if pid is not None:
                 del self.players[pid]
+                self.vstats.pop(pid, None)
+                if self.voice is not None:
+                    self.voice.forget(pid)
                 if self.state == "lobby":
                     self._roster()
 
@@ -307,6 +384,9 @@ class Session:
                     self._chat(pid, str(m.get("m", ""))[:120])
                 elif t == "color" and isinstance(m.get("c"), int):
                     self._color(pid, m["c"])
+                elif t == "vst":
+                    self.vstats[pid] = {"mic": str(m.get("mic", ""))[:8], "rx": m.get("rx") if isinstance(m.get("rx"), dict) else {},
+                                        "at": time.monotonic()}
                 elif t == "bye":
                     self.net.drop_peer(addr)
                     self._gone(addr)
@@ -325,6 +405,11 @@ class Session:
             elif t == "start":
                 self.start_info = {"spawn": m["spawn"], "ff": m["ff"], "seed": m["seed"]}
                 self.state = "playing"
+            elif t == "vsa" and isinstance(m.get("s"), dict):
+                now = time.monotonic()
+                for k, x in m["s"].items():
+                    if str(k).isdigit() and isinstance(x, dict):
+                        self.vstats[int(k)] = {"mic": str(x.get("mic", ""))[:8], "rx": x.get("rx") if isinstance(x.get("rx"), dict) else {}, "at": now}
             elif t == "closed":
                 self.state, self.error = "closed", "Домаќинот ја затвори играта"
 

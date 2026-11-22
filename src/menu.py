@@ -11,6 +11,7 @@ import characters as C
 import poster
 import present
 import settings as S
+import voice as voice_mod
 
 # ---- themes: comic-book UI (slanted tabs/buttons, offset shadows, halftone dots), 10 palettes chosen in Контроли > Дебаг
 def _c(*v):
@@ -183,7 +184,20 @@ TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", "К�
 _cfg = None
 
 
-def _rows(in_game, slots=(), settings_only=False):
+_MIC = []
+_MIC_NOTE = [""]
+
+
+def _mic_names(cfg):
+    """Capture devices for the Микрофон row; cfg["voice_mic_i"] follows the saved name cfg["voice_mic"]."""
+    _MIC[:] = voice_mod.input_names()
+    _MIC_NOTE[0] = "уредот за снимање" if len(_MIC) > 1 else "нема пронајдено микрофон (или нема модул sounddevice: пушти run.bat setup)"
+    if cfg is not None:
+        cfg["voice_mic_i"] = _MIC.index(cfg["voice_mic"]) if cfg.get("voice_mic") in _MIC else 0
+    return list(_MIC)
+
+
+def _rows(in_game, slots=(), settings_only=False, cfg_now=None):
     """-> list of (tab, Row)."""
     pct = lambda v: f"{int(v * 100)}%"
     xz = lambda v: f"{v:.2f}x".replace(".", ",")
@@ -253,6 +267,15 @@ def _rows(in_game, slots=(), settings_only=False):
         (5, H("Говор")),
         (5, Row("choice", TXT("menu.0025"), "voice", S.VOICES)),
         (5, Row("choice", TXT("menu.0026"), "speech_speed", [f"{v:g}x".replace(".", ",") for v in S.SPEECH_SPEEDS], bar=True)),
+        (5, H("Гласовен разговор (мултиплејер)")),
+        (5, Row("toggle", "Гласовен разговор", "voice_on", note="зборување со другите играчи во собата и во игра")),
+        (5, Row("choice", "Микрофон", "voice_mic_i", _mic_names(cfg_now), note=_MIC_NOTE[0])),
+        (5, Row("choice", "Кога се праќа гласот", "voice_mode", voice_mod.MODES)),
+        (5, Row("choice", "Копче за зборување", "voice_ptt", voice_mod.PTT_KEYS, note="се држи додека зборуваш (во собата, буквата V пишува порака)")),
+        (5, Row("slider", "Засилување на микрофонот", "voice_gain", lo=0.0, hi=4.0, fmt=pct)),
+        (5, Row("slider", "Праг за глас (автоматски)", "voice_vad", lo=0.002, hi=0.12, fmt=lambda v: "%.3f" % v, note="колку гласно мора да зборуваш за да се праќа")),
+        (5, Row("slider", "Јачина на гласовите на другите", "voice_vol", lo=0.0, hi=2.0, fmt=pct)),
+        (5, Row("choice", "Квалитет на гласот", "voice_quality", voice_mod.QUALITY, note="автоматски: се спушта при загуби/џитер/висок пинг, се враќа по 10 s добра врска")),
         (6, H("Дебаг")),
         (6, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (6, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
@@ -782,7 +805,7 @@ def title_menu(aud=None, music=None, cfg=None):
             elif k == "multi":
                 import lobby
                 import mpprofile as profile
-                MP["session"] = lobby.run(profile.Profile(), aud, music)
+                MP["session"] = lobby.run(profile.Profile(), aud, music, cfg)
                 if MP["session"]:
                     return "multi"
                 t_open = time.time()
@@ -850,7 +873,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
     global _cfg
     _cfg = cfg
     set_theme(cfg["theme"])
-    allrows = _rows(in_game, slots, settings_only)
+    allrows = _rows(in_game, slots, settings_only, cfg)
     rows = [r for t, r in allrows if t == tab]
     sel = _first(rows)
     drag = None
@@ -1014,12 +1037,14 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
                 ok = save_fn(n)
                 flash, flash_t = (TXT("menu.0056") % n) if ok else TXT("menu.0057"), time.time()
                 slots = [savegame.summary(i) for i in range(1, savegame.SLOTS + 1)]
-                allrows = _rows(in_game, slots, settings_only)
+                allrows = _rows(in_game, slots, settings_only, cfg)
                 rows = [x for t, x in allrows if t == tab]
         if rl.is_key_pressed(rl.KEY_ESCAPE) and (in_game or settings_only) and frames > 1 and dd_geo is None:   # the Esc that opened the menu must not close it
             cfg.save()
             return "play"
         if changed:
+            if _MIC:
+                cfg["voice_mic"] = _MIC[cfg["voice_mic_i"] % len(_MIC)] if cfg["voice_mic_i"] % len(_MIC) else ""
             set_theme(cfg["theme"])
             apply(cfg)
         # ---- draw (splash style: plum card, pink accents, Oswald condensed)

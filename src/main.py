@@ -185,6 +185,7 @@ import audio as audio_mod   # noqa: E402
 import engine_synth   # noqa: E402
 import radio as radio_mod   # noqa: E402
 import menu as menu_mod   # noqa: E402
+import lobby as lobby_mod   # noqa: E402
 import savegame   # noqa: E402
 import trains   # noqa: E402
 import hero_lines   # noqa: E402
@@ -820,6 +821,9 @@ def main():
     def apply_cfg(c, first=False):
         """Push the menu settings into the running game."""
         aud.master = 0.0 if a.mute else c["vol_master"]
+        _vs = getattr(menu_mod.MP.get("session"), "voice", None)
+        if _vs is not None:
+            _vs.apply(c)
         aud.bus.update({"sfx": c["vol_sfx"], "engine": c["vol_engine"], "traffic": c["vol_engine"] * c.get("vol_traffic", 0.5), "ambient": c["vol_ambient"], "speech": c["vol_speech"]})
         if not first and c["hour"] != hour_set[0]:      # only when the slider moved: any other setting (street view...) used to snap the clock back to the saved hour
             sim.clock.hour = c["hour"]
@@ -2184,6 +2188,8 @@ def main():
         guard.run("mall", gtc.update, sim)
         indoor_ = sim.mode == "foot" and sim.walker is not None and getattr(sim.walker, "indoor", None) is not None
         if mpg is not None:
+            if mpg.ses.voice is not None:
+                mpg.ses.voice.ptt = lobby_mod.ptt_held(cfg)
             guard.run("mp", mpg.update, dt)
         guard.run("events", handle_events)
         guard.run("effects", effects, dt)
@@ -2366,6 +2372,8 @@ def main():
             guard.run("popups", popups.draw, cam, (sim.car.x, sim.car.y) if ch_on and sim.mode == "car" else None)
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)
+            if mpg is not None:
+                guard.run("voicehud", lobby_mod.draw_voice_hud, mpg.ses, sw, sh)
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)
             guard.run("gate pins", draw_gate_markers, sim, cam, sw, sh, poi_mod.REACH)

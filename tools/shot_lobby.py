@@ -28,4 +28,10 @@ g = mp.Session(profile.Profile("/nonexistent/p.json")); g.prof.name = "Ана"; 
 for _ in range(200): h.update(); g.update(); time.sleep(0.005)
 g.send_chat("Ајде на Кале"); h.send_chat("Важи, 10 мин"); h.set_cfg(spawn=2, ff=True)
 for _ in range(60): h.update(); g.update(); time.sleep(0.005)
-lobby._room(prof, h, None)
+import voice
+for x in (h, g):
+    x.voice = voice.Voice({"voice_on": True, "voice_mode": 2}); x.voice.ins = object(); x.voice.mic_name = "USB mic"; x.voice.mic_rate = 16000
+for k in range(100):
+    g.voice.mic_frame((0.2 * __import__("numpy").sin(__import__("numpy").arange(320) * (k % 7 + 1) / 9)).astype("float32"), time.monotonic())
+    h.update(); g.update(); time.sleep(0.02)
+lobby._room(prof, h, None, {"voice_on": True, "voice_mic": "", "voice_gain": 1.0, "voice_mode": 0, "voice_ptt": 0})

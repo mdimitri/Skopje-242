@@ -4,7 +4,7 @@ Packet = MAGIC(4) kind(1) seq(4) payload.
   UNREL  snapshots / inputs (newest wins, dropped if late)    REL  ordered, acked, resent (JSON objects)
   ACK    acknowledges a REL seq                               HELLO  hole-punch / keep-alive / join request
   PING/PONG measure the gameplay round trip without entering the reliable queue.
-Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
+Poll returns events: ("rel", addr, obj) | ("unrel", addr, bytes) | ("voice", addr, bytes) | ("up", addr, None) | ("gone", addr, None)
 """
 import json
 import os
@@ -18,6 +18,7 @@ MAGIC = b"S242"
 HDR = struct.Struct("!4sBI")
 UNREL, REL, ACK, HELLO = 0, 1, 2, 3
 PING, PONG = 4, 5
+VOICE = 6                   # voice chat frames (voice.py): unreliable, never reordered here, the jitter buffer sorts them
 MAX_PAYLOAD = 1100          # stays under typical MTU so no IP fragmentation
 RESEND = 0.12               # s before an unacked REL packet is sent again
 TIMEOUT = 8.0               # s of silence before a peer is dropped
@@ -176,6 +177,13 @@ class Net:
         self._raw(addr, UNREL, p.unrel_seq, data)
         p.last_tx = time.monotonic()
 
+    def send_voice(self, addr, data):
+        p = self.peers.get(addr)
+        if p is None or not p.up or len(data) > MAX_PAYLOAD:
+            return
+        self._raw(addr, VOICE, 0, data)
+        p.last_tx = time.monotonic()
+
     def broadcast_rel(self, obj, skip=None):
         for a in list(self.peers):
             if a != skip and self.peers[a].up:
@@ -246,6 +254,8 @@ class Net:
                 sample = (now - p.ping_sent) * 1000
                 p.ping_ms = p.ping_ms * .6 + sample * .4 if now - p.ping_at < PING_FRESH else sample
                 p.ping_at, p.ping_seq = now, None
+            elif kind == VOICE:
+                ev.append(("voice", addr, body))
             elif kind == UNREL:
                 ahead = (seq - p.rx_unrel) & 0xFFFFFFFF
                 if 0 < ahead < 0x80000000:
