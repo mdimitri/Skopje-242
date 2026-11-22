@@ -4,6 +4,7 @@ The host owns the world; guests send inputs and render what the host sends (adde
 """
 import os
 import random
+import sys
 import struct
 import threading
 import time
@@ -470,10 +471,13 @@ class Session:
                 isinstance(p["addr"], tuple) and p["addr"][0] == "mqtt" for p in self.players.values())
             v.adapt(loss, jit, self.net.ping_ms(now), now)
             v.watchdog(now)
-            mine = {"mic": v.mic_state(), "rx": v.rx_stats(), "talk": v.talking}
+            op = getattr(sys.modules.get("voice"), "OPUS", None) is not None
+            v.use_opus = op and len(self.players) > 1 and all(
+                self.vstats.get(k, {}).get("op") for k in self.players if k != self.pid)
+            mine = {"mic": v.mic_state(), "rx": v.rx_stats(), "talk": v.talking, "op": op}
             if self.role == "host":
                 self.vstats[0] = dict(mine, at=now)
-                self.net.broadcast_rel({"t": "vsa", "s": {str(k): {"mic": x["mic"], "rx": x["rx"]} for k, x in self.vstats.items()
+                self.net.broadcast_rel({"t": "vsa", "s": {str(k): {"mic": x["mic"], "rx": x["rx"], "op": bool(x.get("op"))} for k, x in self.vstats.items()
                                                           if k in self.players}})
             elif self.net.peers.get(self._target) is not None and self.state != "connecting":
                 self.net.send_rel(self._target, dict(mine, t="vst"))
@@ -709,7 +713,7 @@ class Session:
                     self._color(pid, m["c"])
                 elif t == "vst":
                     self.vstats[pid] = {"mic": str(m.get("mic", ""))[:8], "rx": m.get("rx") if isinstance(m.get("rx"), dict) else {},
-                                        "at": time.monotonic()}
+                                        "op": m.get("op") is True, "at": time.monotonic()}
                 elif t == "bye":
                     self.net.drop_peer(addr)
                     self._gone(addr)
@@ -746,7 +750,7 @@ class Session:
                 now = time.monotonic()
                 for k, x in m["s"].items():
                     if str(k).isdigit() and isinstance(x, dict):
-                        self.vstats[int(k)] = {"mic": str(x.get("mic", ""))[:8], "rx": x.get("rx") if isinstance(x.get("rx"), dict) else {}, "at": now}
+                        self.vstats[int(k)] = {"mic": str(x.get("mic", ""))[:8], "rx": x.get("rx") if isinstance(x.get("rx"), dict) else {}, "op": x.get("op") is True, "at": now}
             elif t == "closed":
                 self.state, self.error = "closed", "Домаќинот ја затвори играта"
 

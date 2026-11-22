@@ -79,6 +79,109 @@ def dec_frame(data, narrow):
     return decode(data)
 
 
+# ---------------------------------------------------------------- Opus (optional: libopus through ctypes)
+F_OPUS = 8                       # frames are Opus, each prefixed by its length byte
+OPUS_RATE = [24000, 16000, 12000, 12000]       # bit rate per quality tier
+
+
+class _Opus:
+    """Minimal libopus binding. Windows: opus.dll from the PyOgg wheel (requirements.txt) or next to the game; Linux/mac: libopus.
+    load() -> instance or None; the BC4 codec is the fallback, so nothing breaks without it."""
+
+    def __init__(self, lib):
+        import ctypes as C
+        self.C, self.lib = C, lib
+        lib.opus_encoder_create.restype = C.c_void_p
+        lib.opus_encoder_create.argtypes = [C.c_int32, C.c_int, C.c_int, C.POINTER(C.c_int)]
+        lib.opus_decoder_create.restype = C.c_void_p
+        lib.opus_decoder_create.argtypes = [C.c_int32, C.c_int, C.POINTER(C.c_int)]
+        lib.opus_encode_float.restype = C.c_int32
+        lib.opus_encode_float.argtypes = [C.c_void_p, C.POINTER(C.c_float), C.c_int, C.c_char_p, C.c_int32]
+        lib.opus_decode_float.restype = C.c_int
+        lib.opus_decode_float.argtypes = [C.c_void_p, C.c_char_p, C.c_int32, C.POINTER(C.c_float), C.c_int, C.c_int]
+
+    @staticmethod
+    def load():
+        import ctypes
+        import ctypes.util
+        import os
+        names = []
+        try:
+            import pyogg                                   # noqa: PLC0415 - only for the path of its bundled opus.dll
+            names.append(os.path.join(os.path.dirname(pyogg.__file__), "opus.dll"))
+        except Exception:      # noqa: BLE001
+            pass
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        names += [os.path.join(here, "opus.dll"), ctypes.util.find_library("opus") or "", "libopus.so.0", "libopus.0.dylib", "opus.dll"]
+        for n in names:
+            if not n:
+                continue
+            try:
+                o = _Opus(ctypes.CDLL(n))
+                o.encoder(16000).close()                   # proves the library really works
+                return o
+            except Exception:      # noqa: BLE001
+                continue
+        return None
+
+    def encoder(self, bitrate):
+        return _OpusEnc(self, bitrate)
+
+    def decoder(self):
+        return _OpusDec(self)
+
+
+class _OpusEnc:
+    def __init__(self, o, bitrate):
+        C, err = o.C, o.C.c_int(0)
+        self.o, self.h = o, o.lib.opus_encoder_create(RATE, 1, 2048, C.byref(err))      # 2048 = OPUS_APPLICATION_VOIP
+        if not self.h or err.value:
+            raise OSError("opus_encoder_create %d" % err.value)
+        self.buf = C.create_string_buffer(400)
+        self.rate = None
+        self.set_rate(bitrate)
+
+    def set_rate(self, bitrate):
+        if bitrate != self.rate:
+            self.o.lib.opus_encoder_ctl(self.o.C.c_void_p(self.h), 4002, self.o.C.c_int32(int(bitrate)))     # SET_BITRATE
+            self.rate = bitrate
+
+    def encode(self, f):
+        C = self.o.C
+        x = np.ascontiguousarray(np.clip(np.nan_to_num(f), -1, 1), np.float32)
+        n = self.o.lib.opus_encode_float(self.h, x.ctypes.data_as(C.POINTER(C.c_float)), FRAME, self.buf, 255)
+        if n < 0:
+            raise ValueError("opus encode %d" % n)
+        return self.buf.raw[:n]
+
+    def close(self):
+        if self.h:
+            self.o.lib.opus_encoder_destroy(self.o.C.c_void_p(self.h))
+            self.h = None
+
+
+class _OpusDec:
+    def __init__(self, o):
+        C, err = o.C, o.C.c_int(0)
+        self.o, self.h = o, o.lib.opus_decoder_create(RATE, 1, C.byref(err))
+        if not self.h or err.value:
+            raise OSError("opus_decoder_create %d" % err.value)
+        self.out = np.zeros(FRAME * 6, np.float32)
+
+    def decode(self, data):
+        C = self.o.C
+        n = self.o.lib.opus_decode_float(self.h, data, len(data), self.out.ctypes.data_as(C.POINTER(C.c_float)), FRAME * 6, 0)
+        if n != FRAME:
+            raise ValueError("opus decode gave %d samples" % n)
+        return self.out[:FRAME].copy()
+
+
+try:
+    OPUS = _Opus.load()
+except Exception:      # noqa: BLE001
+    OPUS = None
+
+
 def _d16(a, b):
     """a - b on the 16-bit sequence circle."""
     return ((a - b + 0x8000) & 0xFFFF) - 0x8000
@@ -235,6 +338,10 @@ class Voice:
         self._prev = None                # (narrow, encoded frames, seq that follows them): FEC copy for the next packet
         self.tier = 0
         self.relayed = False
+        self.use_opus = False            # set by the session when every listener can decode Opus
+        self._enc = OPUS.encoder(OPUS_RATE[0]) if OPUS is not None else None
+        self._dec = {}                   # pid -> Opus decoder (stateful, one per speaker)
+        self.opus_err = ""
         self.monitor = False             # mic test: hear yourself through the codec, ~100 ms late
         self._mseq = 0
         self._good_since = 0.0
@@ -399,8 +506,18 @@ class Voice:
         _, narrow, fpp, fec = TIERS[self.tier]
         if self._pending and (len(self._pending) >= fpp or not tx):
             end = not tx
-            body = b"".join(enc_frame(x, narrow) for x in self._pending)
-            flags = (F_END if end else 0) | (F_NARROW if narrow else 0)
+            flags = F_END if end else 0
+            if self.use_opus and self._enc is not None:
+                try:
+                    self._enc.set_rate(OPUS_RATE[self.tier])
+                    body = b"".join(bytes((len(e),)) + e for e in (self._enc.encode(x) for x in self._pending))
+                    flags |= F_OPUS
+                    narrow = "opus"
+                except (ValueError, OSError) as e:          # never lose speech: fall back to BC4 for good
+                    self.use_opus, self._enc, self.opus_err = False, None, str(e)
+            if not flags & F_OPUS:
+                body = b"".join(enc_frame(x, narrow) for x in self._pending)
+                flags |= F_NARROW if narrow else 0
             if fec and self._prev and self._prev[0] == narrow and self._prev[2] == self.seq:
                 flags |= F_FEC
             pkt = VHDR.pack(0, self.seq, len(self._pending), flags) + body + (self._prev[1] if flags & F_FEC else b"")
@@ -449,6 +566,9 @@ class Voice:
         now = time.monotonic() if now is None else now
         try:
             _, seq, n, flags = VHDR.unpack_from(data)
+            if flags & F_OPUS:
+                frames, prev, k = self._opus_frames(pid, data, n, flags)
+                raise _Done()
             narrow = bool(flags & F_NARROW)
             fb = NARROW_BYTES if narrow else FRAME_BYTES
             extra = len(data) - VHDR.size - n * fb
@@ -457,7 +577,9 @@ class Voice:
             frames = [dec_frame(data[VHDR.size + i * fb: VHDR.size + (i + 1) * fb], narrow) for i in range(n)]
             k, o = extra // fb, VHDR.size + n * fb
             prev = [dec_frame(data[o + i * fb: o + (i + 1) * fb], narrow) for i in range(k)]
-        except (struct.error, ValueError) as e:
+        except _Done:
+            pass
+        except (struct.error, ValueError, OSError) as e:
             self.bad_rx += 1
             self.bad_why = str(e)
             with self.lock:
@@ -473,6 +595,26 @@ class Voice:
             if prev:
                 j.fill((seq - k) & 0xFFFF, prev)
         return True
+
+    def _opus_frames(self, pid, data, n, flags):
+        if OPUS is None:
+            raise ValueError("Opus пакет, а Opus не е достапен на овој компјутер")
+        d = self._dec.get(pid)
+        if d is None:
+            d = self._dec[pid] = OPUS.decoder()
+        parts, i = [], VHDR.size
+        while i < len(data):
+            ln = data[i]
+            if ln == 0 or i + 1 + ln > len(data):
+                raise ValueError("Opus рамка %d B на %d/%d" % (ln, i, len(data)))
+            parts.append(data[i + 1:i + 1 + ln])
+            i += 1 + ln
+        if not 1 <= n <= 8 or len(parts) < n or len(parts) - n > 8 or (len(parts) > n and not flags & F_FEC):
+            raise ValueError("%d Opus рамки за %d" % (len(parts), n))
+        frames = [d.decode(x) for x in parts[:n]]
+        k = len(parts) - n
+        prev = [d.decode(x) for x in parts[n:]] if k else []      # (state drift from decoding the copy is inaudible)
+        return frames, prev, k
 
     def adapt(self, loss, jitter, rtt, now):
         """Pick the quality from how the other players receive me (worst listener): drop at once, climb one step after 10 s good."""
@@ -518,11 +660,15 @@ class Voice:
                 self.mic_err = "микрофонот престана да праќа звук (исклучен?): " + self.mic_err
 
     def quality_line(self):
-        return "%s (%s)" % (TIERS[self.tier][0], self.link or "се мери…")
+        if self.use_opus:
+            return "Opus %d kbit/s, 16 kHz (%s)" % (OPUS_RATE[self.tier] // 1000, self.link or "се мери…")
+        why = " · Opus: " + ("нема libopus (BC4 кодек)" if OPUS is None else ("некој од играчите нема Opus" if not self.opus_err else self.opus_err))
+        return "%s (%s)%s" % (TIERS[self.tier][0], self.link or "се мери…", why)
 
     def forget(self, pid):
         with self.lock:
             self.jit.pop(pid, None)
+            self._dec.pop(pid, None)
 
     # ---- diagnostics
     def mic_state(self):
@@ -570,6 +716,10 @@ class Voice:
         now = time.monotonic() if now is None else now
         j = self.jit.get(pid)
         return j is not None and now - j.last_rx < 0.3
+
+
+class _Done(Exception):
+    pass
 
 
 MONITOR = 255                     # pseudo player id of the mic test loopback

@@ -166,4 +166,15 @@ for k in range(4): v.mic_frame(sig[1300:1620], k * .02)
 v.ptt = False; v.mic_frame(sig[1300:1620], 1)
 pk = v.take_packets(); assert len(pk) == 3 and pk[-1][4] & voice.F_END and not pk[0][4] & voice.F_END, [(len(x), x[4]) for x in pk]
 print("OK reasons: no PortAudio, silent mic, off, voice activation gate, push-to-talk + end flag")
+if voice.OPUS is not None:
+    a = voice.Voice({"voice_on": True, "voice_mode": 2}); a.ins = object(); a.use_opus = True
+    b = voice.Voice({"voice_on": True})
+    for k in range(50): a.mic_frame(sig[1300:1300 + voice.FRAME], k * .02)
+    pk = a.take_packets(); assert pk and all(x[4] & voice.F_OPUS for x in pk), [x[4] for x in pk[:3]]
+    for x in pk: b.receive(1, x)
+    assert b.rx_stats().get("1", [0])[0] > 10, b.rx_stats()
+    b.receive(1, pk[0][:6] + b"\xff\x01")                # truncated Opus packet must not crash
+    print("OK Opus round trip", len(pk), "packets")
+else:
+    print("SKIP Opus (libopus not found)")
 print("ALL VOICE TESTS PASSED")

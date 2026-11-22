@@ -3,3 +3,4 @@ numpy
 pillow
 mapbox-earcut
 sounddevice
+PyOgg; sys_platform == "win32"
