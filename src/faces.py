@@ -372,19 +372,24 @@ def _props(f, head, x, y, S, color):
 def _draw(f, i, x, y, S, color, name, me, ctx):
     spk = f.sp > .3
     head = _head(i, S) if ctx["mesh"] else False
-    rl.draw_rectangle(x - 3, y - 3, S + 6, S + 6, rl.Color(10, 10, 14, 190))
+    if ctx["phase"] != "pre":
+        rl.draw_rectangle(x - 3, y - 3, S + 6, S + 6, rl.Color(10, 10, 14, 190))
     if head:
         now = ctx["now"]
-        if now - f.last_draw >= ctx["interval"] or f.last_draw == 0:
+        if ctx["phase"] != "blit" and (now - f.last_draw >= ctx["interval"] or f.last_draw == 0):
             f.last_draw = now - f.phase if f.last_draw == 0 else now
             a = time.perf_counter()
             bg = rl.Color(color[0] // 6 + 22, color[1] // 6 + 24, color[2] // 6 + 30, 255)
             head.render(f.e, bg)
             ctx["spent"] += time.perf_counter() - a
             ctx["n"] += 1
+        if ctx["phase"] == "pre":
+            return
         rl.draw_texture_pro(head.rt.texture, rl.Rectangle(0, 0, head.size, -head.size), rl.Rectangle(x, y, S, S), rl.Vector2(0, 0), 0, rl.WHITE)
     else:
         _sprite(f, i, x, y, S, color, name)
+    if ctx["phase"] == "pre":
+        return
     _props(f, head, x, y, S, color)
     col = rl.Color(90, 230, 120, 255) if spk else rl.Color(*color, 255)
     rl.draw_rectangle_lines_ex(rl.Rectangle(x - 1, y - 1, S + 2, S + 2), 3 if spk else 2, col)
@@ -438,8 +443,10 @@ def _bearing(sim, cam, q, sw, sh):
 _slow = [False]
 
 
-def draw(sim, cam, sw, sh, cfg, dt):
-    """Call once per frame while playing."""
+def draw(sim, cam, sw, sh, cfg, dt, phase=None):
+    """Once per frame while playing.  The heads are rendered into their own targets, and raylib's end_texture_mode unbinds to the window,
+    so that must happen outside the frame's targets: phase "pre" (before begin_drawing) updates and renders, phase "blit" only draws
+    the finished textures; None does both (tools)."""
     mpv = getattr(sim, "mp_view", None)
     if not mpv or not cfg.get("faces_on", True):
         return
@@ -448,7 +455,7 @@ def draw(sim, cam, sw, sh, cfg, dt):
     rows = ([me] if me else []) + list(mpv["players"])
     n = len(characters.LIKOVI)
     x, y = 14, (92 if sim.mode == "car" else 12)
-    ctx = {"now": time.monotonic(), "interval": 1.0 / (SLOW_HZ if _slow[0] else RENDER_HZ), "spent": 0.0, "n": 0, "mesh": cfg.get("faces_mesh", True)}
+    ctx = {"now": time.monotonic(), "interval": 1.0 / (SLOW_HZ if _slow[0] else RENDER_HZ), "spent": 0.0, "n": 0, "mesh": cfg.get("faces_mesh", True), "phase": phase}
     live = set()
     for q in rows:
         key = q.get("pid", -1)
@@ -458,7 +465,8 @@ def draw(sim, cam, sw, sh, cfg, dt):
             f = _state[key] = _Face(key + 2)
         talk = bool(q.get("talk"))
         bearing = _bearing(sim, cam, q, sw, sh) if talk and key != -1 else None
-        f.update(dt, q, bearing)
+        if phase != "blit":
+            f.update(dt, q, bearing)
         _draw(f, q.get("lik", 0) % n, x, y, S, q["color"], q["name"], key == -1, ctx)
         y += S + max(12, S // 5) + 10
     if ctx["n"]:                                       # adaptive: if rendering the heads costs too much, update them less often

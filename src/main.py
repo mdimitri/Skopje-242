@@ -2363,6 +2363,8 @@ def main():
             guard.run("nightprep", night.prepare, cam, rect, ppm, sim, sim.clock.dark, sh, sf_on)
         guard.run("gloss", gl3d.gloss_frame, cam.position, sim.clock.hour, sim.clock.dark, renderer.sun, cfg.get("car_gloss", 1), cfg.get("car_gloss_k", 1.0))
         worst_bake = max(worst_bake, streamer.bake_ms)
+        if mpg is not None:                                     # face heads render into their own targets: outside the frame's target, which end_texture_mode would unbind
+            guard.run("faces", faces.draw, sim, cam, sw, sh, cfg, dt, "pre")
         # ------------------------------------------------ draw
         rl.begin_drawing()
         dof_on = bool(cfg.get("dof")) and sf_on                 # depth of field: the free 3D views only
@@ -2400,7 +2402,7 @@ def main():
             guard.run("gains", gains.draw, cam, (sw - 230, 26))
             guard.run("players", draw_players, sim, cam, sw, sh)
             if mpg is not None:
-                guard.run("faces", faces.draw, sim, cam, sw, sh, cfg, dt)
+                guard.run("faces", faces.draw, sim, cam, sw, sh, cfg, dt, "blit")
                 guard.run("voicehud", lobby_mod.draw_voice_hud, mpg.ses, sw, sh, 20 + faces.reserve(cfg, 1 + len(sim.mp_view["players"]) if sim.mp_view else 0))
             guard.run("waypoint", draw_waypoint, hud, sim, cam, sw, sh)
             guard.run("escapes", draw_escape_markers, sim, cam, sw, sh)

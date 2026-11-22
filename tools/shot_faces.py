@@ -43,8 +43,9 @@ def run(over, frames=80, k=0, shot=False):
         t = i / 60
         r = rows(t, over, k)
         sim.mp_view = {"me": r[0], "players": r[1:]}
+        a = time.perf_counter(); faces.draw(sim, cam, 1280, 720, cfg, 1 / 60, "pre"); cost += time.perf_counter() - a
         rl.begin_drawing(); rl.clear_background(rl.Color(60, 70, 60, 255))
-        a = time.perf_counter(); faces.draw(sim, cam, 1280, 720, cfg, 1 / 60); cost += time.perf_counter() - a
+        a = time.perf_counter(); faces.draw(sim, cam, 1280, 720, cfg, 1 / 60, "blit"); cost += time.perf_counter() - a
         rl.end_drawing()
     rl.rl_draw_render_batch_active()
     img = rl.load_image_from_screen() if shot else None
