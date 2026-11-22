@@ -1032,6 +1032,7 @@ class Renderer:
             self._free_orphans(sim.bodies)
         sh = []
         # pickups
+        pk_glows = []
         for x, z, kind, alive, _t in sim.pickups:
             if not alive or not (rect[0] - 6.0 < x < rect[2] + 6.0 and rect[1] - 6.0 < z < rect[3] + 6.0):
                 continue
@@ -1047,8 +1048,10 @@ class Renderer:
                     m.transform = Mw
                     rl.draw_model(m, V3(0, 0, 0), 1.0, WHITE)
                     m.transform = old_t[0]
+                    pk_glows.append((V3(x, gy0 + 1.0, z), 4.0))        # one soft additive sprite, grows with distance
                 else:
                     rl.draw_model_ex(m, V3(x, gy0 + 0.55 + 0.18 * math.sin(t * 3 + x), z), UP, (t * 90) % 360, V3(1.25, 1.25, 1.25), WHITE)
+        self._indicator_glows(cam, pk_glows)
         # what is left of broken trees / posts / props (stump, bent pole, rubble): they stay, they just stop being solid
         for bx, bz, _r, _hi, bk, seed in w.broken:
             if self._in(bx, bz, rect):

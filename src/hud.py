@@ -621,6 +621,8 @@ class Hud:
                 if pk[3]:
                     qx, qy = to_mm(pk[0], pk[1])
                     if inside(qx, qy):
+                        if pk[2] in WEAPONS:                              # soft halo so weapons stand out
+                            rl.draw_circle_v(rl.Vector2(qx, qy), 7.0, rl.Color(255, 200, 60, 90))
                         rl.draw_circle_v(rl.Vector2(qx, qy), 2.5, rl.Color(255, 200, 40, 255) if pk[2] == "burek" else rl.Color(230, 40, 40, 255))
                         if pk[2] in WEAPONS:                              # weapons carry their first letter
                             font.draw_text(WEAPONS[pk[2]][0][:1], int(qx) + 4, int(qy) - 8, 12, rl.Color(150, 10, 10, 255))
@@ -683,6 +685,7 @@ class Hud:
                     rl.draw_circle(int(qx), int(qy), 3, rl.Color(255, 200, 40, 255))
                 elif pk[3] and pk[2] in WEAPONS:                 # weapons: red dot + first letter (П, У, К, З ...)
                     qx, qy = to_big(pk[0], pk[1])
+                    rl.draw_circle(int(qx), int(qy), 10, rl.Color(255, 200, 60, 90))      # soft halo
                     rl.draw_circle(int(qx), int(qy), 4, rl.Color(220, 30, 30, 255))
                     font.draw_text(WEAPONS[pk[2]][0][:1], int(qx) + 5, int(qy) - 9, 15, rl.Color(150, 10, 10, 255))
             for b in sim.bodies:                                           # medical helicopters

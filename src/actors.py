@@ -4651,7 +4651,7 @@ class Sim:
         wk = self.walker
         return wk.x, wk.y, wk.vx, wk.vy
 
-    WEAPON_PICKUPS = 105
+    WEAPON_PICKUPS = 158                  # was 105; +50%
 
     def _spawn_weapons(self, rng):
         """A fresh set of weapons in random places (called at start and every game morning)."""
