@@ -642,6 +642,13 @@ def main():
     _n = cpusched.game()
     if _n:
         log(f"[cpu] {os.cpu_count()} logical CPUs, {platform.processor() or '?'}; {_n}; window priority {'highest' if window_priority else 'default'}")
+        try:                                                            # which GPU / driver / raylib this log came from
+            gpu = ""
+            if os.name == "nt":
+                gpu = " | ".join(x.strip() for x in subprocess.run(["wmic", "path", "win32_VideoController", "get", "name,driverversion"], capture_output=True, text=True, timeout=8).stdout.splitlines()[1:] if x.strip())
+            log(f"[gpu] {gpu or '?'}; raylib GL version id {rl.rl_get_version()}; framebuffer {rl.get_render_width()}x{rl.get_render_height()}")
+        except Exception:  # noqa: BLE001
+            pass
 
     import photobg
     photobg.ENABLED = bool(cfg["photogram_bg"])

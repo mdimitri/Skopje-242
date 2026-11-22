@@ -396,6 +396,16 @@ def _draw(f, i, x, y, S, color, name, me, ctx):
             ctx["n"] += 1
         if ctx["phase"] == "pre":
             return
+        if not getattr(f, "logged", False):                  # one line per face: what the HUD pass really draws
+            f.logged = True
+            try:
+                import os
+                d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                    fh.write("[faces] draw: mesh texture id %d (%dx%d) head.ok=%s into box x=%d y=%d size=%d colour=%s\n" % (
+                        head.rt.texture.id, head.rt.texture.width, head.rt.texture.height, head.ok, x, y, S, tuple(color)))
+            except Exception:                                # noqa: BLE001
+                pass
         rl.draw_texture_pro(head.rt.texture, rl.Rectangle(0, 0, head.size, -head.size), rl.Rectangle(x, y, S, S), rl.Vector2(0, 0), 0, rl.WHITE)
     else:
         _sprite(f, i, x, y, S, color, name)

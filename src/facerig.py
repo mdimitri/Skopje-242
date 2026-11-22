@@ -228,6 +228,10 @@ class Head:
         rl.rl_draw_render_batch_active()
         rl.rl_enable_backface_culling()
         rl.end_mode_3d()
+        rl.rl_set_blend_factors_separate(0, 1, 1, 0, 0x8006, 0x8006)        # alpha := 1 everywhere, colour untouched: the HUD layer composites with the texture's alpha,
+        rl.begin_blend_mode(rl.BLEND_CUSTOM_SEPARATE)                       # and a head that came out transparent on some GPUs looked like an empty box
+        rl.draw_rectangle(0, 0, self.size, self.size, rl.Color(0, 0, 0, 255))
+        rl.end_blend_mode()
         rl.end_texture_mode()
         if self.ok is not True and self._probes < 4:           # evidence in logs/game.log, and the picture fallback when the target stays empty
             self._probes += 1
@@ -236,7 +240,10 @@ class Head:
                 img = rl.load_image_from_texture(self.rt.texture)
                 n = img.width
                 st = max(1, n // 12)
-                cols = {(c.r // 8, c.g // 8, c.b // 8) for c in (rl.get_image_color(img, x, y) for x in range(4, n, st) for y in range(4, n, st))}
+                px = [rl.get_image_color(img, x, y) for x in range(4, n, st) for y in range(4, n, st)]
+                cols = {(c.r // 8, c.g // 8, c.b // 8) for c in px}
+                if min(c.a for c in px) < 250:                    # transparent pixels: the HUD would show nothing there
+                    cols = set()
                 rl.unload_image(img)
                 good = len(cols) > 6
                 if good:
