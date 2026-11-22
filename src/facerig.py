@@ -2,6 +2,7 @@
 The head is built once per hero (head + hair + neck/shoulders, plus a mouth cavity and a tongue) and then deformed on the CPU with numpy
 (jaw, smile, eyelids/eye size, pupils, brows, tilt/squash of the whole head); ~2-6k vertices, uploaded into one dynamic mesh."""
 import math
+import os
 
 import numpy as np
 import pyray as rl
@@ -223,6 +224,7 @@ class Head:
         rl.rl_enable_depth_test(); rl.rl_enable_depth_mask(); rl.rl_enable_color_blend()
         rl.begin_texture_mode(self.rt)
         rl.clear_background(bg)
+        rl.rl_set_clip_planes(0.02, 20.0)                      # the renderer sets its own (near ~1 m+) every frame: a head 1 m from its camera would be clipped away entirely
         rl.begin_mode_3d(self.cam)
         rl.rl_disable_backface_culling()
         rl.draw_model(self.model, rl.Vector3(0, 0, 0), 1.0, rl.WHITE)
@@ -253,7 +255,7 @@ class Head:
                     self.ok = False
                 if good or self.ok is False or self._probes == 1:
                     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
-                    with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                    with open(os.path.join(d, "game%s.log" % os.environ.get("SK242_LOG_SUFFIX", "")), "a", encoding="utf-8") as fh:
                         fh.write("[faces] head target id %d tex %d %dpx render #%d: %d distinct colours -> %s\n" % (
                             self.rt.id, self.rt.texture.id, n, self._probes, len(cols), "ok" if good else ("EMPTY, using the picture fallback" if self.ok is False else "empty so far")))
             except Exception:                                 # noqa: BLE001

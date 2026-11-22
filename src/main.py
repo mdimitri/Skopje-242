@@ -1,6 +1,7 @@
 """Скопје 242 - top-down 3D driving sandbox built from OpenStreetMap data.  Start via run.bat."""
 import os, sys
 import platform
+import re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # embedded Python (._pth) does not add the script folder
 from texts import TXT  # noqa: E402
 import argparse
@@ -163,7 +164,7 @@ def _early_splash():
 
 _EARLY_CFG = _early_splash()
 
-if _EARLY_CFG is not None and not any(x.split("=")[0] in ("--nomenu", "--size") for x in sys.argv[1:]):
+if _EARLY_CFG is not None and not any(x.split("=")[0] in ("--nomenu", "--size", "--mp-host", "--mp-join") for x in sys.argv[1:]):
     keep_window_alive(False)                        # the update screens poll and consume their own input
     try:
         import menu as _menu
@@ -222,7 +223,11 @@ from ui import Loader, fatal_screen, retry_screen   # noqa: E402
 from world import World, WorldError   # noqa: E402
 
 LOG_DIR = os.path.join(ROOT, "logs")
-LOG_FILE = os.path.join(LOG_DIR, "game.log")
+_SFX = ""
+if "--log-suffix" in sys.argv and sys.argv.index("--log-suffix") + 1 < len(sys.argv):      # developer: one log per instance when several run on one PC
+    _SFX = "_" + re.sub(r"[^\w.-]", "", sys.argv[sys.argv.index("--log-suffix") + 1])
+os.environ["SK242_LOG_SUFFIX"] = _SFX
+LOG_FILE = os.path.join(LOG_DIR, "game%s.log" % _SFX)
 
 
 def log(msg):
@@ -578,6 +583,46 @@ def set_borderless(on):
         rl.toggle_borderless_windowed()
 
 
+def _auto_mp(a):
+    """Developer flags --mp-host / --mp-join: a lobby without menus.  Hosts a LAN/loopback room (starts when --mp-players are in, or after
+    --start-after seconds) or joins HOST[:PORT]; returns the session once it is playing (None on failure/timeout)."""
+    import mp
+    import mpnet
+    import mpprofile
+    pr = mpprofile.Profile("/nonexistent/p.json")
+    pr.name = a.name or ("Host" if a.mp_host else "Guest")
+    ses = mp.Session(pr)
+    if a.mp_host:
+        ses.host(internet=False)
+        log(f"[mp-dev] hosting on UDP port {ses.net.port}")
+    else:
+        host, _, port = a.mp_join.partition(":")
+        ses.join({"addr": [host or "127.0.0.1", int(port or mpnet.PORT)], "lan": True})
+        log(f"[mp-dev] joining {host or '127.0.0.1'}:{port or mpnet.PORT}")
+    if a.color >= 0 and a.mp_host:
+        ses.set_color(a.color)
+    t0, sent = time.monotonic(), False
+    while time.monotonic() - t0 < (a.start_after + 30 if a.mp_host else 90) and not rl.window_should_close():
+        ses.update()
+        if a.color >= 0 and not a.mp_host and ses.state == "lobby" and not sent:
+            ses.set_color(a.color)
+            sent = True
+        if a.mp_host and ses.state == "lobby" and (len(ses.players) >= a.mp_players or time.monotonic() - t0 > a.start_after):
+            time.sleep(0.5)                                  # let the guests see the roster before the start
+            ses.start()
+        if ses.state == "playing":
+            log(f"[mp-dev] playing: {len(ses.players)} players, I am pid {ses.pid}")
+            return ses
+        if ses.state == "closed":
+            break
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(20, 20, 26, 255))
+        font.draw_text(f"dev multiplayer: {ses.state}  players {len(ses.players)}  {ses.error}", 30, 30, 22, rl.WHITE)
+        rl.end_drawing()
+    log(f"[mp-dev] no game: state {ses.state} {ses.error}")
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--world", help="world directory (default data/cache/world)")
@@ -598,6 +643,18 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="re-download the OSM data and rebuild the world")
     ap.add_argument("--rebuild", action="store_true", help="rebuild the world from the downloaded data (the menu's ИЗГРАДИ ГО СВЕТОТ)")
     ap.add_argument("--nomenu", action="store_true", help="skip the start menu")
+    # developer flags for scripted multiplayer tests (all off by default): two windows over loopback, screenshots, quit
+    ap.add_argument("--mp-host", action="store_true", help="dev: host a multiplayer room without menus (LAN/loopback only)")
+    ap.add_argument("--mp-join", default="", metavar="HOST[:PORT]", help="dev: join that host without menus")
+    ap.add_argument("--mp-players", type=int, default=2, help="dev: the host starts when this many players are in the room")
+    ap.add_argument("--start-after", type=float, default=60.0, help="dev: the host starts after this many seconds even if players are missing")
+    ap.add_argument("--hero", type=int, default=-1, help="dev: character index")
+    ap.add_argument("--name", default="", help="dev: player name")
+    ap.add_argument("--color", type=int, default=-1, help="dev: multiplayer colour 0..3")
+    ap.add_argument("--window-pos", default="", metavar="X,Y", help="dev: window position")
+    ap.add_argument("--screenshot-after", default="", metavar="SECONDS:PATH", help="dev: save the composed frame once, SECONDS after the game starts")
+    ap.add_argument("--quit-after", type=float, default=0.0, help="dev: close the game this many seconds after it starts")
+    ap.add_argument("--log-suffix", default="", help="dev: write logs/game_<suffix>.log")
     ap.add_argument("--car", action="store_true", help="start inside the car (default: on foot next to it)")
     ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
     ap.add_argument("--foot", action="store_true", help="start on foot (with --start: at the nearest footpath)")
@@ -608,6 +665,8 @@ def main():
     if _inv:
         menu_mod.MP["invite"] = _inv[0]
     a = ap.parse_args()
+    if a.mp_host or a.mp_join:
+        a.nomenu = True
     try:
         lobby_mod.register_invite_links()
     except Exception:  # noqa: BLE001 - optional convenience
@@ -1002,6 +1061,11 @@ def main():
     loader.finish()
     gc.freeze()                                    # the world is ~half a million long-lived objects: a full collection of them froze the game for ~0.4 s
     res_ = ""
+    if a.window_pos:
+        try:
+            rl.set_window_position(*(int(v) for v in a.window_pos.split(",")))
+        except Exception:  # noqa: BLE001
+            pass
     mpg = None                                             # multiplayer sync (mpgame.Game) when a lobby game was started
     log("[game] ready")
     if a.nomenu and loader.music is not None:
@@ -1038,6 +1102,22 @@ def main():
             if d_:
                 sx, sy = savegame.restore(sim, cfg, d_)
                 apply_cfg(cfg, True)
+    elif a.mp_host or a.mp_join:                           # developer: no menus, straight into a multiplayer room
+        _ms = _auto_mp(a)
+        if a.hero >= 0:
+            cfg["lik"] = a.hero
+        apply_cfg(cfg, True)
+        characters.apply(sim, cfg["lik"])
+        sim.clock.hour = cfg["hour"] % 24.0
+        if _ms is not None and _ms.state == "playing":
+            import atexit
+            import mpgame
+            if sim.tproc is not None:
+                sim.tproc.stop()
+                sim.tproc = None
+            mpg = mpgame.Game(sim, _ms)
+            mpgame.spawn(sim, world, _ms)
+            atexit.register(_ms.leave)
     if (a.walker or (not a.test and not a.car)) and not a.foot and sim.mode == "car" and not res_.startswith("load"):
         sim.exit_car()                                     # new game: you start as a walker standing next to the car
     hud.set_banner(rng.choice(slang.START), 4.0)
@@ -1935,7 +2015,12 @@ def main():
     hitch_t0 = time.perf_counter()
     last_stream = hitch_t0
     win_focus = True
+    _t_run0 = time.monotonic()
+    _shot_at, _, _shot_path = a.screenshot_after.partition(":")
+    _shot_at = float(_shot_at) if _shot_at else 0.0
     while not rl.window_should_close():
+        if a.quit_after and time.monotonic() - _t_run0 > a.quit_after:
+            break
         frame_start = time.perf_counter()
         dt_real = rl.get_frame_time()
         dt = 1 / 60 if a.test else min(dt_real, 0.05)
@@ -2372,6 +2457,8 @@ def main():
         worst_bake = max(worst_bake, streamer.bake_ms)
         if mpg is not None:                                     # face heads render into their own targets: outside the frame's target, which end_texture_mode would unbind
             guard.run("faces", faces.draw, sim, cam, sw, sh, cfg, dt, "pre")
+            if getattr(renderer, "_clip", None):                  # the heads set their own clip planes: give back the world's
+                rl.rl_set_clip_planes(*renderer._clip)
         # ------------------------------------------------ draw
         rl.begin_drawing()
         dof_on = bool(cfg.get("dof")) and sf_on                 # depth of field: the free 3D views only
@@ -2470,6 +2557,15 @@ def main():
             present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
             if mpg is not None:
                 guard.run("faces check", faces.verify, present.dest, present.rt.texture.width, present.rt.texture.height)
+            if _shot_at and _shot_path and time.monotonic() - _t_run0 > _shot_at:     # developer: the composed window frame, once
+                _shot_at = 0.0
+                try:
+                    _im = rl.load_image_from_screen()
+                    rl.export_image(_im, _shot_path)
+                    rl.unload_image(_im)
+                    log(f"[mp-dev] screenshot saved: {_shot_path}")
+                except Exception:  # noqa: BLE001
+                    log("[mp-dev] screenshot failed:\n" + traceback.format_exc())
             if sf_due_:
                 selfie.take(present.rt.texture)         # the world is in the offscreen buffer; the window framebuffer reads black
             t_sw = time.perf_counter()

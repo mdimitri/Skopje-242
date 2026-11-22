@@ -5,6 +5,7 @@ hero's caricature (assets/likovi) is cropped once and used instead (cheap fallba
 Moods: idle (looks around, blinks, random quirks), speaking (jaw follows the loudness, head turns towards the speaker), driving (speed,
 crazy swerving, hard braking, crash), fighting (angry, punch jerks, being hit), low health, dead, cash."""
 import math
+import os
 import random
 import time
 
@@ -292,7 +293,7 @@ def _head(i, S):
                 import os
                 d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
                 os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                with open(os.path.join(d, "game%s.log" % os.environ.get("SK242_LOG_SUFFIX", "")), "a", encoding="utf-8") as fh:
                     fh.write("[faces] head mesh %d failed, using the picture fallback:\n%s\n" % (i, traceback.format_exc()))
             except Exception:                      # noqa: BLE001
                 pass
@@ -403,9 +404,8 @@ def _draw(f, i, x, y, S, color, name, me, ctx):
         if not getattr(f, "logged", False):                  # one line per face: what the HUD pass really draws
             f.logged = True
             try:
-                import os
                 d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+                with open(os.path.join(d, "game%s.log" % os.environ.get("SK242_LOG_SUFFIX", "")), "a", encoding="utf-8") as fh:
                     fh.write("[faces] draw: mesh texture id %d (%dx%d) head.ok=%s into box x=%d y=%d size=%d colour=%s\n" % (
                         head.rt.texture.id, head.rt.texture.width, head.rt.texture.height, head.ok, x, y, S, tuple(color)))
             except Exception:                                # noqa: BLE001
@@ -479,7 +479,7 @@ def _log(msg):
     try:
         import os
         d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+        with open(os.path.join(d, "game%s.log" % os.environ.get("SK242_LOG_SUFFIX", "")), "a", encoding="utf-8") as fh:
             fh.write(msg + "\n")
     except Exception:  # noqa: BLE001
         pass
@@ -531,7 +531,7 @@ def draw(sim, cam, sw, sh, cfg, dt, phase=None):
     me = mpv.get("me")
     rows = ([me] if me else []) + list(mpv["players"])
     n = len(characters.LIKOVI)
-    x, y = 14, (92 if sim.mode == "car" else 12)
+    x, y = 14, (92 if sim.mode == "car" else 54)         # below the top-left buttons (Лик/Мени/Излез, radio)
     ctx = {"now": time.monotonic(), "interval": 1.0 / (SLOW_HZ if _slow[0] else RENDER_HZ), "spent": 0.0, "n": 0, "mesh": cfg.get("faces_mesh", True), "phase": phase}
     live = set()
     for q in rows:

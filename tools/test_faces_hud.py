@@ -38,7 +38,7 @@ def frame(dof, n, check):
     if not check: return
     img = rl.load_image_from_screen(); W_ = img.width
     px = lambda x, y: (lambda c: (c.r, c.g, c.b))(rl.get_image_color(img, x, y))
-    S_ = faces.SIZES[1]; y = 12
+    S_ = faces.SIZES[1]; y = 54
     for j in range(n):
         x = 14
         e = [px(x - 1 + dx, y + S_ // 2) for dx in (0, 1)]
