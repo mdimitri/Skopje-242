@@ -2099,6 +2099,25 @@ class Peds:
 
 
 # ===================================================================== traffic
+def _seg_dist(p, q, r, t):
+    """Smallest distance between segments pq and rt."""
+    def cross(ax, ay, bx, by):
+        return ax * by - ay * bx
+    d1, d2 = (q[0] - p[0], q[1] - p[1]), (t[0] - r[0], t[1] - r[1])
+    den = cross(d1[0], d1[1], d2[0], d2[1])
+    if abs(den) > 1e-9:
+        u = cross(r[0] - p[0], r[1] - p[1], d2[0], d2[1]) / den
+        v = cross(r[0] - p[0], r[1] - p[1], d1[0], d1[1]) / den
+        if 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0:
+            return 0.0
+    def pt(a, b, c_):
+        dx, dy = c_[0] - b[0], c_[1] - b[1]
+        l2 = dx * dx + dy * dy or 1.0
+        k = max(0.0, min(1.0, ((a[0] - b[0]) * dx + (a[1] - b[1]) * dy) / l2))
+        return math.hypot(a[0] - b[0] - dx * k, a[1] - b[1] - dy * k)
+    return min(pt(p, r, t), pt(q, r, t), pt(r, p, q), pt(t, p, q))
+
+
 class Car:
     __slots__ = ("e", "d", "s", "v", "lane", "kind", "color", "pace", "x", "y", "h", "stuck", "ghost", "braking", "gz", "pitch", "roll", "cab", "lidx", "shift", "shift_t", "rev", "cool", "nxt", "avoid", "yld", "str", "turn", "arr", "blk", "rside", "man", "stn", "dwell", "stn_t", "trh", "tra", "lcd", "nx2", "goff", "tgz", "tpitch", "troll", "uid", "goal", "rerouted", "turnaround", "indicator", "indicator_t", "health", "honk_t", "rev_box", "creep")
     def __init__(self):
@@ -2672,6 +2691,9 @@ class Traffic:
     YIELD_BACKOFF = False                          # a waiting car that blocks a priority car from another road backs off to let it pass
     EXIT_ETA = 0.5                                 # s: a waiting car counts exit-lane cars as gone once they will have moved on by the time it arrives (0.5 = only those already clear)
     BRAKE_DECEL = 5.0                              # m/s2: hardest slowing a car applies towards its speed limit
+    LANE_PICK = True                               # a car approaching a junction whose exit lane is occupied moves to a neighbouring lane whose exit is free
+    CLAIM_GEOM = False                             # junction exit claims are shared by movements whose paths do not come within a car's width of each other (not one movement at a time)
+    CLAIM_MARGIN = 1.9                             # m: closest two movement paths may come and still count as compatible
     DODGE = True                                   # a car held up by a standing car that is itself waiting (not a queue) takes a free neighbouring lane at once
 
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2, heading=None, include_cars=True):
@@ -3542,7 +3564,12 @@ class Traffic:
             node, (_, _, heading, _), _ = me
             if any(lane in occupied for lane, _ in slots) or self._give_way(c, rem, me, ready):
                 continue
-            if any(not ((o.e, o.d) == (c.e, c.d) and o.lidx != c.lidx and max(abs(o.turn), abs(c.turn)) < 0.35)
+            if self.CLAIM_GEOM:
+                mine_path = self._claim_path(c, slots)
+                if any(self._paths_conflict(mine_path, self._claim_path(o, self.exit_claims[o][2]))
+                       for o in pending.get(node, ()) if o in self.exit_claims):
+                    continue
+            elif any(not ((o.e, o.d) == (c.e, c.d) and o.lidx != c.lidx and max(abs(o.turn), abs(c.turn)) < 0.35)
                        and not (min(c.turn, o.turn) > -0.5 and math.cos(heading - self._head(self.w.edges[o.e], o.d, True)) < -0.86)
                        for o in pending.get(node, ())):
                 continue
@@ -3561,6 +3588,26 @@ class Traffic:
             self.exit_claims[c] = ((c.e, c.d), node, slots, self.t + 3.0)
             occupied.update(lane for lane, _ in slots)
             pending.setdefault(node, []).append(c)
+
+    def _claim_path(self, c, slots):
+        """Where the car goes through a junction: its position, then the centre of every exit lane it needs."""
+        pts = [(c.x, c.y)]
+        for (edge, direction, idx), end in slots:
+            road = self.w.edges[edge]
+            lane = self.lanes_of(road, direction)[idx]
+            x, y, _ = self._ref(road, direction, min(max(0.0, end - vehicles.HALF_L[c.kind]), road["len"]), lane)
+            pts.append((x, y))
+        return pts
+
+    def _paths_conflict(self, a, b):
+        m = self.CLAIM_MARGIN
+        for i in range(len(a) - 1):
+            for j in range(len(b) - 1):
+                if _seg_dist(a[i], a[i + 1], b[j], b[j + 1]) < m:
+                    return True
+        if len(a) == 1 or len(b) == 1:
+            return any(math.hypot(p[0] - q[0], p[1] - q[1]) < m for p in a for q in b)
+        return False
 
     def _review_turn(self, c, e, node, remaining):
         if c.nxt is None or c.stn is not None or remaining >= 22.0:
@@ -3649,6 +3696,57 @@ class Traffic:
     def _coordinate_jams(self, on_edge):
         """Use the shared traffic snapshot to free a usable lane or assign one driver to make room."""
         reversing = [(c.x, c.y) for c in self.cars if c.rev > 0 or c.turnaround]
+        if self.LANE_PICK:
+            for c in self.cars:
+                if (c.nxt is None or c.rev or c.turnaround or c.stn is not None or c.shift or c.lcd > 0 or c.cool > 0
+                        or c in self.exit_claims or c in self.narrow_wait or c.kind in (vehicles.SEMI, vehicles.ARTIC_BUS)
+                        or c.e in self.internal_links):
+                    continue
+                e = self.w.edges[c.e]
+                node = e["b" if c.d == 1 else "a"]
+                rem = e["len"] - c.s if c.d == 1 else c.s
+                if rem < 16.0 or rem > 120.0 or (node in self.junctions and rem < self._entry_line(c, node) + 1.0):
+                    continue
+                lanes = self.lanes_of(e, c.d)
+                if len(lanes) < 2:
+                    continue
+                cars_on = on_edge.get((c.e, c.d), ())
+
+                def ahead(idx):
+                    best = None
+                    for o in cars_on:
+                        if o is not c and o.lidx == idx:
+                            ds = (o.s - c.s) * c.d
+                            if 0.0 < ds < 50.0 and (best is None or ds < best[0]):
+                                best = (ds, o.v)
+                    return best
+                own = ahead(c.lidx)
+                eta = rem / max(c.v, 3.0)
+                exit_blocked = node in self.junctions and self._exit_blocked(c, eta)
+                queued = own is not None and own[1] < 2.0 and own[0] < 45.0
+                if not (exit_blocked or queued):
+                    continue
+                permitted = movement_lanes(self.w, (c.e, c.d), c.nxt, c.turn)
+                old = c.lidx
+                best = None
+                for idx in (old - 1, old + 1):
+                    if not 0 <= idx < len(lanes) or (permitted is not None and idx not in permitted):
+                        continue
+                    other = ahead(idx)
+                    free = 60.0 if other is None else other[0] + (8.0 * other[1] if other[1] > 2.0 else 0.0)
+                    if other is not None and own is not None and free < own[0] + 14.0:
+                        continue
+                    if any(o is not c and o.lidx == idx and -7.0 < (o.s - c.s) * c.d < 0.0 for o in cars_on):
+                        continue
+                    c.lidx = idx
+                    ok = (not (node in self.junctions and self._exit_blocked(c, eta))
+                          and self._lane_room(c, e, lanes[idx], 15.0, behind=7.0))
+                    c.lidx = old
+                    if ok and (best is None or free > best[0]):
+                        best = (free, idx)
+                if best is not None:
+                    c.lidx = best[1]
+                    c.lcd = 2.5
         if self.YIELD_BACKOFF:
             for c in self.cars:                       # a priority car held up by a waiting car from another road: the waiter backs off
                 lead = c.blk
