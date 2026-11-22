@@ -58,6 +58,6 @@ for _ in range(60):
     st.update([key], True, 50.0)
 v2 = tree_verts()
 print("after fall", v2, "fallen", len(w.fallen))
-assert v2 <= v1 and len(w.fallen) == 1
+assert v2 <= v1 and len(w.fallen) == 1 and w.fallen[0][-1] is True
 assert not any(p[0] == tx and p[1] == ty for c in w.pgrid.values() for p in c), "still solid"
 print("OK")

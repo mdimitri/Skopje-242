@@ -713,6 +713,7 @@ class World:
             self.broken_extra.append((e[0], e[1], hx[0], g0 + hx[1], g0 + hx[2]) + ((e[0] + hx[3], e[1] + hx[4]) if len(hx) > 3 else ()))
         if tree:
             now = time.monotonic()
+            bare = self.tree_state.get((e[0], e[1]), (0,))[0] == 1       # stripped by an earlier hit: it falls without leaves
             self.tree_state[(e[0], e[1])] = (2, now)
             import treegen
             r, kind = self.tree_info(e[0], e[1])
@@ -720,7 +721,7 @@ class World:
             if fall is None:
                 a = (int(e[0] * 13 + e[1] * 7) % 628) / 100.0
                 fall = (math.cos(a), math.sin(a))
-            self.fallen.append((e[0], e[1], sp, v, yaw, sc, fall[0], fall[1], now))
+            self.fallen.append((e[0], e[1], sp, v, yaw, sc, fall[0], fall[1], now, bare))
         self.broken_ver += 1
 
     def hide_broken(self, pos, bb):

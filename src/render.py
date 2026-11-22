@@ -1062,7 +1062,7 @@ class Renderer:
         fl = getattr(w, "fallen", None)
         if fl and gl3d.tree_pack() is not None:                   # trees knocked over: they tip about their foot, then lie there
             now_ = time.monotonic()
-            for fx_, fy_, sp_, v_, yaw_, sc_, dx_, dz_, t0_ in fl:
+            for fx_, fy_, sp_, v_, yaw_, sc_, dx_, dz_, t0_, bare_ in fl:
                 if not self._in(fx_, fy_, rect, 8.0):
                     continue
                 age = min(1.0, (now_ - t0_) / 1.5)
@@ -1071,7 +1071,7 @@ class Renderer:
                 M_ = rl.matrix_multiply(rl.matrix_scale(sc_, sc_, sc_), rl.matrix_rotate_y(-yaw_))
                 M_ = rl.matrix_multiply(M_, rl.matrix_rotate(V3(dz_, 0, -dx_), math.radians(ang)))
                 M_ = rl.matrix_multiply(M_, rl.matrix_translate(fx_, w.ground_y(fx_, fy_) + 0.9 * sc_ * age * age, fy_))
-                for m_ in ms:
+                for m_ in (ms[:1] if bare_ else ms):             # a tree stripped by an earlier hit lies bare
                     if m_ is not None:
                         old_t = _keep(m_.transform)
                         m_.transform = M_
