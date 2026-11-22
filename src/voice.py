@@ -235,6 +235,8 @@ class Voice:
         self._prev = None                # (narrow, encoded frames, seq that follows them): FEC copy for the next packet
         self.tier = 0
         self.relayed = False
+        self.monitor = False             # mic test: hear yourself through the codec, ~100 ms late
+        self._mseq = 0
         self._good_since = 0.0
         self.link = ""                   # why this quality was chosen
         self._zero = 0                   # consecutive all-zero mic frames
@@ -382,6 +384,15 @@ class Voice:
                 self._hang = now + 0.35
             tx = now < self._hang
         self.talking = tx
+        if self.monitor:
+            narrow = TIERS[self.tier][1]
+            g = dec_frame(enc_frame(f, narrow), narrow)
+            with self.lock:
+                j = self.jit.setdefault(MONITOR, Jitter())
+                j.push(self._mseq, [g], False, now)
+            self._mseq = (self._mseq + 1) & 0xFFFF
+        elif MONITOR in self.jit:
+            self.forget(MONITOR)
         if tx or self._was_tx:                   # the first silent frame closes the spurt and carries the end flag
             self._pending.append(f)
         self._was_tx = tx
@@ -553,12 +564,15 @@ class Voice:
 
     def rx_stats(self):
         with self.lock:
-            return {str(p): [j.recv, j.loss_pct(), j.late, int(j.jit), j.bad] for p, j in self.jit.items()}
+            return {str(p): [j.recv, j.loss_pct(), j.late, int(j.jit), j.bad] for p, j in self.jit.items() if p != MONITOR}
 
     def speaking(self, pid, now=None):
         now = time.monotonic() if now is None else now
         j = self.jit.get(pid)
         return j is not None and now - j.last_rx < 0.3
+
+
+MONITOR = 255                     # pseudo player id of the mic test loopback
 
 
 def _short(e):

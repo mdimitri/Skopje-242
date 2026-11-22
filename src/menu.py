@@ -184,6 +184,28 @@ TABS = [TXT("menu.0006"), "Градот", "Луѓето", "Графика", "К�
 _cfg = None
 
 
+def _voice_peer_rows(cfg):
+    """In a multiplayer game: a volume slider per other player (0 = muted), same values as the lobby's buttons."""
+    ses = MP.get("session")
+    v = getattr(ses, "voice", None)
+    if v is None or cfg is None or getattr(ses, "state", "") != "playing":
+        return []
+    out = [(5, H("Гласови на играчите"))]
+    for pid, p in sorted(ses.players.items()):
+        if pid != ses.pid:
+            cfg["_vp%d" % pid] = float(v.peer_vol.get(pid, 1.0))
+            out.append((5, Row("slider", "Глас: " + p["name"], "_vp%d" % pid, lo=0.0, hi=2.0,
+                               fmt=lambda x: "ТИВКО" if x < 0.01 else "%d%%" % round(x * 100), note="0 = исклучен (мјут)")))
+    return out
+
+
+def _voice_peer_apply(cfg):
+    v = getattr(MP.get("session"), "voice", None)
+    if v is not None:
+        for k in [k for k in cfg if k.startswith("_vp")]:
+            v.peer_vol[int(k[3:])] = 0.0 if cfg[k] < 0.01 else round(cfg[k], 2)
+
+
 _MIC = []
 _MIC_NOTE = [""]
 
@@ -276,6 +298,7 @@ def _rows(in_game, slots=(), settings_only=False, cfg_now=None):
         (5, Row("slider", "Праг за глас (автоматски)", "voice_vad", lo=0.002, hi=0.12, fmt=lambda v: "%.3f" % v, note="колку гласно мора да зборуваш за да се праќа")),
         (5, Row("slider", "Јачина на гласовите на другите", "voice_vol", lo=0.0, hi=2.0, fmt=pct)),
         (5, Row("choice", "Квалитет на гласот", "voice_quality", voice_mod.QUALITY, note="автоматски: се спушта при загуби/џитер/висок пинг, се враќа по 10 s добра врска")),
+        *_voice_peer_rows(cfg_now),
         (6, H("Дебаг")),
         (6, Row("choice", "Тема на менијата", "theme", THEME_NAMES, note="изглед на менијата (стрип стил), се менува веднаш")),
         (6, Row("toggle", "Гледна точка од улица", "debug_chase", note="камера зад аватарот, ниско на улица")),
@@ -1043,6 +1066,7 @@ def run(cfg, apply, in_game=False, draw_bg=None, aud=None, save_fn=None, music=N
             cfg.save()
             return "play"
         if changed:
+            _voice_peer_apply(cfg)
             if _MIC:
                 cfg["voice_mic"] = _MIC[cfg["voice_mic_i"] % len(_MIC)] if cfg["voice_mic_i"] % len(_MIC) else ""
             set_theme(cfg["theme"])

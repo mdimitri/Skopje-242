@@ -18,6 +18,7 @@ class Profile:
     def __init__(self, path=PATH):
         self.path = path
         self.uid, self.name, self.stats = uuid.uuid4().hex[:12], "", {k: 0 for k in STATS}
+        self.last = {}                    # last joined game: {"name", "word", "code"} for one-click quick join
         try:
             with open(path, "r", encoding="utf-8") as f:
                 d = json.load(f)
@@ -25,13 +26,15 @@ class Profile:
             self.name = clean(d.get("name", ""))
             for k in STATS:
                 self.stats[k] = int(d.get("stats", {}).get(k, 0))
+            if isinstance(d.get("last"), dict):
+                self.last = {k: str(v)[:80] for k, v in d["last"].items() if k in ("name", "word", "code")}
         except Exception:  # noqa: BLE001 - first start or unreadable file
             pass
 
     def save(self):
         try:
             with open(self.path + ".tmp", "w", encoding="utf-8") as f:
-                json.dump({"uid": self.uid, "name": self.name, "stats": self.stats}, f, indent=1, ensure_ascii=False)
+                json.dump({"uid": self.uid, "name": self.name, "stats": self.stats, "last": self.last}, f, indent=1, ensure_ascii=False)
             os.replace(self.path + ".tmp", self.path)
         except Exception:  # noqa: BLE001
             pass

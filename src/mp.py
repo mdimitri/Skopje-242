@@ -45,6 +45,7 @@ class Session:
         self._adv = self._adv2 = 0.0
         self._busy = False
         self._spraying = set()
+        self.blips = []                       # "join" / "leave" for the UI to chime (lobby and game)
         self.word = ""                        # host: short code „шмекер 42“ (published on the notice board)
         self.code_hits = {}                   # guest: slug -> host info heard on code/<slug>
         self._bd = []                         # guest: birthday-punch sockets
@@ -86,7 +87,8 @@ class Session:
         self._busy = False
 
     def _new_word(self):
-        rng = random.Random(self.prof.uid + str(time.time()))
+        self._word_try = getattr(self, "_word_try", -1) + 1          # same word every time you host (friends remember it)
+        rng = random.Random(self.prof.uid + ("" if not self._word_try else str(self._word_try)))
         self.word = joinwords.pick(rng)
         self.mqtt.subscribe("code/" + joinwords.slug(self.word))
 
@@ -130,7 +132,7 @@ class Session:
     def _info(self):
         return {"id": self.gid, "name": self.players[0]["name"], "n": len(self.players), "max": MAX_PLAYERS, "ver": VER,
                 "port": self.net.port, "laddr": _lan_ip(), "addr": list(self.pub) if self.pub else None, "st": self.state, "nat": self.nat,
-                "rid": self.net.rid if self.mqtt else None}
+                "rid": self.net.rid if self.mqtt else None, "word": self.word}
 
     # ------------------------------------------------------------------ guest
     def browse(self):
@@ -285,6 +287,24 @@ class Session:
         if 0 <= c < len(COLORS) and all(p["color"] != c for p in self.players.values()):
             self.players[pid]["color"] = c
             self._roster()
+
+    def chime(self, aud):
+        """Play (and forget) the join / leave sounds; aud = audio.Audio or None."""
+        b, self.blips = self.blips, []
+        if aud is not None:
+            for k in b[-2:]:
+                try:
+                    aud.play("ui_confirm" if k == "join" else "ui_click", 0.8 if k == "join" else 0.6, 1.0 if k == "join" else 0.7)
+                except Exception:      # noqa: BLE001 - a missing sound never breaks the lobby
+                    pass
+
+    def _roster_seen(self, new):
+        old = set(self.players)
+        if self.state in ("lobby", "playing") and old:
+            if set(new) - old:
+                self.blips.append("join")
+            if old - set(new):
+                self.blips.append("leave")
 
     def _roster(self):
         self.net.broadcast_rel({"t": "roster", "pl": {str(k): [p["name"], p["color"], p["uid"]] for k, p in self.players.items()},
@@ -533,11 +553,11 @@ class Session:
             pid = self._pid_of(addr)
             if pid is not None:
                 del self.players[pid]
+                self.blips.append("leave")
                 self.vstats.pop(pid, None)
                 if self.voice is not None:
                     self.voice.forget(pid)
-                if self.state == "lobby":
-                    self._roster()
+                self._roster()                           # also in game: the others drop the name, voice and arrow
 
     def _msg(self, addr, m):
         t = m.get("t") if isinstance(m, dict) else None
@@ -551,6 +571,7 @@ class Session:
                     self.net.send_rel(addr, {"t": "deny", "why": "full"})
                 else:
                     new = max(self.players) + 1
+                    self.blips.append("join")
                     self.players[new] = dict(self._me(new), name=_name(m.get("name"), self.players), uid=str(m.get("uid", ""))[:12], addr=addr)
                     self.net.send_rel(addr, {"t": "welcome", "pid": new})
                     self._roster()
@@ -568,11 +589,19 @@ class Session:
         else:
             if t == "welcome":
                 self.pid, self.state = int(m["pid"]), "lobby"
+                g = self._game
+                try:                                      # remember it for one-click quick join next time
+                    code = make_code(g) if g.get("rid") or g.get("addr") else ""
+                except (OSError, ValueError, TypeError, KeyError, struct.error):
+                    code = ""
+                self.prof.last = {"name": str(g.get("name") or "")[:30], "word": str(g.get("word") or "")[:30], "code": code}
+                self.prof.save()
                 net.log("guest: welcome, I am player %d" % self.pid)
             elif t == "deny":
                 net.log("guest: host denied the join: %s" % m.get("why"))
                 self.state, self.error = "closed", {"full": "Игрот е полн", "ver": "Друга верзија на играта"}.get(m.get("why"), "Одбиено")
             elif t == "roster":
+                self._roster_seen({int(k) for k in m["pl"]})
                 self.players = {int(k): {"name": v[0], "color": v[1], "uid": v[2], "addr": None} for k, v in m["pl"].items()}
                 self.cfg = m.get("cfg", self.cfg)
             elif t == "chat":

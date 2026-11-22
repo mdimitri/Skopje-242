@@ -227,3 +227,57 @@ class Lan:
                     pass
         self.seen = {k: v for k, v in self.seen.items() if now - v[0] < 10}
         return {k: v[1] for k, v in self.seen.items()}
+
+
+# ---------------------------------------------------------------------------- connection test (lobby button)
+def selftest(out):
+    """Fills `out` (a list, read by the UI while this runs in a thread) with (label, ok, detail) rows. ok: True/False/None."""
+    import mpnet
+    def row(label, ok, detail):
+        out.append((label, ok, detail))
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 9))
+        lan = s.getsockname()[0]
+        s.close()
+        row("Мрежа (LAN)", True, "адреса " + lan)
+    except OSError as e:
+        row("Мрежа (LAN)", False, "нема мрежа: %s" % e)
+    try:
+        socket.getaddrinfo(STUN[0][0], STUN[0][1])
+        row("DNS", True, "имињата се преведуваат")
+    except OSError as e:
+        row("DNS", False, "нема интернет или DNS (%s)" % e)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("0.0.0.0", 0))
+        pub = stun_addr(sock)
+        if pub:
+            row("UDP кон интернет", True, "јавна адреса %s:%d" % pub)
+            kind = nat_kind(sock, pub)
+            row("Тип на NAT", kind == "cone" if kind else None,
+                {"cone": "обичен: директна врска (P2P) работи",
+                 "symmetric": "симетричен (јавен Wi-Fi / мобилен): гостите влегуваат преку пробивање или реле; подобро некој од дома да биде домаќин",
+                 "multi-ip": "симетричен со повеќе IP (мобилен оператор): најчесто реле"}.get(kind, "не може да се измери"))
+        else:
+            row("UDP кон интернет", False, "блокиран (строг Wi-Fi/фајервол): играта ќе оди само преку реле, побавно")
+    finally:
+        sock.close()
+    for host, port in BROKERS:
+        t0 = time.monotonic()
+        try:
+            c = socket.create_connection((host, port), timeout=4)
+            c.close()
+            row("Табла " + host, True, "достапна, %d ms" % ((time.monotonic() - t0) * 1000))
+        except OSError as e:
+            row("Табла " + host, False, "недостапна (%s)" % (str(e) or type(e).__name__))
+    if os.name == "nt":
+        row("Windows фајервол", None, "при првата игра Windows прашува: дозволи (јавни и приватни мрежи)")
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.bind(("0.0.0.0", mpnet.PORT))
+        probe.close()
+        row("Порта UDP %d" % mpnet.PORT, True, "слободна (за домаќин)")
+    except OSError:
+        row("Порта UDP %d" % mpnet.PORT, None, "зафатена (друга игра отворена?): домаќинот ќе земе друга порта, сѐ уште работи")
+    out.append(None)        # done

@@ -2195,6 +2195,7 @@ def main():
             if mpg.ses.voice is not None:
                 mpg.ses.voice.ptt = lobby_mod.ptt_held(cfg)
             guard.run("mp", mpg.update, dt)
+            guard.run("mp chime", mpg.ses.chime, aud)
         guard.run("events", handle_events)
         guard.run("effects", effects, dt)
         guard.run("exhaust", exhaust, dt)

@@ -71,7 +71,7 @@ class Settings(dict):
     def save(self):
         try:
             with open(PATH + ".tmp", "w", encoding="utf-8") as f:
-                json.dump({k: v for k, v in self.items() if k not in SESSION_ONLY}, f, indent=1)
+                json.dump({k: v for k, v in self.items() if k not in SESSION_ONLY and not k.startswith("_")}, f, indent=1)
             os.replace(PATH + ".tmp", PATH)
         except Exception:  # noqa: BLE001
             pass

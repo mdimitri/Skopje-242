@@ -152,15 +152,44 @@ def _browser(prof, ses, music):
                     ses.join(g)
         by = H - H // 7
         out = False
-        if font.button(L["host"], 40, by, 340, sz * 2.4, sz):
+        last = getattr(prof, "last", None) or {}
+        if ses.state != "connecting" and (last.get("word") or last.get("code")):     # quick join of the last game
+            lab = "Последна игра: %s %s" % (last.get("name", ""), ("· " + last["word"].upper()) if last.get("word") else "")
+            ly = y0 + H * 0.5 + 10
+            font.draw_text(lab, x0 + 4, ly + sz * .35, sz * 4 // 5, DIM)
+            if font.button("Брзо приклучување", x0 + pw - 330, ly, 330, sz * 1.8, sz * 4 // 5):
+                out = "quick"
+        bw5 = (W - 80 - 4 * 14) / 5
+        bx5 = [40 + i * (bw5 + 14) for i in range(5)]
+        if font.button(L["host"], bx5[0], by, bw5, sz * 2.4, sz):
             out = "host"
-        if font.button(L["rename"], 400, by, 250, sz * 2.4, sz):
+        if font.button(L["rename"], bx5[1], by, bw5, sz * 2.4, sz):
             out = "rename"
-        if ses.state != "connecting" and font.button(L["code"], 670, by, 300, sz * 2.4, sz):
+        if ses.state != "connecting" and font.button(L["code"], bx5[2], by, bw5, sz * 2.4, sz):
             out = "code"
-        if font.button(L["back"], W - 290, by, 250, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE):
+        if ses.state != "connecting" and font.button("Тест на врската", bx5[3], by, bw5, sz * 2.4, sz * 4 // 5):
+            out = "test"
+        if font.button(L["back"], bx5[4], by, bw5, sz * 2.4, sz) or rl.is_key_pressed(rl.KEY_ESCAPE):
             out = None
         rl.end_drawing()
+        if out == "quick":
+            g = None
+            if last.get("word"):
+                g, why = _find_word(ses, joinwords.slug(last["word"]), last["word"], music)
+            if not g and last.get("code"):            # the word is gone (new game, new word): try the long code
+                try:
+                    g = mp.parse_code(last["code"])
+                except ValueError:
+                    g = None
+            if g:
+                ses.error = ""
+                ses.join(g)
+            else:
+                ses.error = "Последната игра не е отворена сега (домаќинот мора да е во собата)"
+            continue
+        if out == "test":
+            _selftest(ses, music)
+            continue
         if out == "code":
             g = _enter_code(ses, music)
             if g:
@@ -286,6 +315,41 @@ def _show_error(why, music):
             return
 
 
+def _selftest(ses, music):
+    """Connection test: network, DNS, UDP/STUN, NAT type, notice boards, port, microphone and speakers, green / red with tips."""
+    import discovery
+    import threading
+    rows = []
+    threading.Thread(target=discovery.selftest, args=(rows,), daemon=True).start()
+    while True:
+        if rl.window_should_close():
+            return
+        if music:
+            music.update()
+        W, H = _frame(L["title"] + " · тест на врската")
+        sz = max(18, H // 42)
+        y = H // 7
+        done = rows and rows[-1] is None
+        v = ses.voice
+        extra = []
+        if v is not None:
+            extra = [("Микрофон", v.ins is not None and v.mic_state() == "ok", v.mic_line()),
+                     ("Звучници", v.outs is not None, v.out_err or "во ред, %d Hz" % v.out_rate)]
+        for r in [r for r in rows if r] + extra:
+            label, ok, detail = r
+            col = GREEN if ok else (RED if ok is False else GOLD)
+            rl.draw_circle(60, int(y + sz / 2), sz // 3, col)
+            font.draw_text(label, 80, y, sz, rl.WHITE, bold=True)
+            font.draw_text(font.fit(detail, sz * 4 // 5, W - 480), 420, y + sz * .1, sz * 4 // 5, col)
+            y += sz * 1.6
+        if not done:
+            font.draw_text("се проверува" + "." * (int(time.time() * 3) % 4), 80, y, sz, DIM)
+        bk = font.button(L["back"], W - 290, H - H // 7, 250, sz * 2.4, sz)
+        rl.end_drawing()
+        if bk or rl.is_key_pressed(rl.KEY_ESCAPE):
+            return
+
+
 def _clip():
     try:
         t = rl.get_clipboard_text()
@@ -303,7 +367,7 @@ def _voice_cfg(cfg, v):
         pass
 
 
-def _room(prof, ses, music, cfg=None):
+def _room(prof, ses, music, cfg=None, aud=None):
     """-> True when the game starts."""
     chat, copied = "", 0.0
     while True:
@@ -312,7 +376,10 @@ def _room(prof, ses, music, cfg=None):
         if music:
             music.update()
         ses.update()
+        ses.chime(aud)
         if ses.state == "playing":
+            if ses.voice is not None:
+                ses.voice.monitor = False
             return True
         if ses.state == "closed":
             return False
@@ -338,6 +405,11 @@ def _room(prof, ses, music, cfg=None):
                 lv = min(1.0, v.level * 3)
                 rl.draw_rectangle(int(bx), int(y + sz * .25), int(sz * 9), int(sz * .5), rl.Color(40, 42, 56, 255))
                 rl.draw_rectangle(int(bx), int(y + sz * .25), int(sz * 9 * lv), int(sz * .5), GREEN if v.talking else DIM)
+                if cfg is not None and cfg.get("voice_mode", 0) == 0:       # voice activation threshold (rms ~ peak / 3)
+                    tx_ = bx + sz * 9 * min(1.0, cfg.get("voice_vad", .02) * 3 * 3)
+                    rl.draw_line(int(tx_), int(y), int(tx_), int(y + sz), GOLD)
+                if font.button("Слушни се" if not v.monitor else "Стоп тест", bx - sz * 5.2, y - sz * .1, sz * 4.8, sz * 1.25, sz * 3 // 5):
+                    v.monitor = not v.monitor
                 continue
             if v.speaking(pid):
                 rl.draw_circle(int(bx - sz * .6), int(y + sz / 2), sz // 3, GREEN)
@@ -485,7 +557,7 @@ def run(prof, aud=None, music=None, cfg=None):
                 return None
             if go == "host":
                 ses.host()
-            if _room(prof, ses, music, cfg):
+            if _room(prof, ses, music, cfg, aud):
                 return ses
             if rl.window_should_close():
                 return None

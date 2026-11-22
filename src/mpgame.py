@@ -256,7 +256,8 @@ class Game:
             p = self.ses.players.get(pid)
             if p is not None:
                 pl.append({"pid": pid, "name": p["name"], "color": mp.COLORS[p["color"] % 4], "x": r["x"], "y": r["y"], "h": r["h"],
-                           "hp": r["hp"], "foot": bool(r["flags"] & 1)})
+                           "hp": r["hp"], "foot": bool(r["flags"] & 1),
+                           "talk": self.ses.voice is not None and self.ses.voice.speaking(pid)})
         me = self.ses.players.get(self.pid, {"color": 0})
         near = [q for q in pl if q["hp"] > 0]
         if near:

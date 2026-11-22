@@ -69,6 +69,13 @@ def draw_players(sim, cam, sw, sh):
             wpx = font.measure_text(q["name"], 20, True)
             rl.draw_rectangle_rounded(rl.Rectangle(sp.x - wpx / 2 - 8, sp.y - 24, wpx + 16, 26), 0.35, 5, rl.Color(10, 10, 14, 170))
             font.draw_text(q["name"], int(sp.x - wpx / 2), int(sp.y - 22), 20, col, bold=True)
+            if q.get("talk"):                                   # voice chat: speaking bubble with pulsing waves
+                bx, by = sp.x + wpx / 2 + 16, sp.y - 11
+                rl.draw_circle(int(bx), int(by), 9, rl.Color(90, 220, 110, 230))
+                ph = (time.monotonic() * 3) % 1
+                for k in (0, 1):
+                    rr = 12 + (k + ph) * 6
+                    rl.draw_circle_lines(int(bx), int(by), rr, rl.Color(90, 220, 110, int(180 * (1 - (k + ph) / 2))))
             continue
         cx, cy = sw / 2, sh / 2
         dx, dy = sp.x - cx, sp.y - cy
