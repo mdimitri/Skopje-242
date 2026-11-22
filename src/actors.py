@@ -2691,6 +2691,7 @@ class Traffic:
     YIELD_BACKOFF = False                          # a waiting car that blocks a priority car from another road backs off to let it pass
     EXIT_ETA = 0.5                                 # s: a waiting car counts exit-lane cars as gone once they will have moved on by the time it arrives (0.5 = only those already clear)
     BRAKE_DECEL = 5.0                              # m/s2: hardest slowing a car applies towards its speed limit
+    EXIT_PATH_ETA = 1.0                            # 0..1: how much of the car's own arrival time the exit-path check lets moving cars cover first (0 = judge by where they are now)
     LANE_PICK = True                               # a car approaching a junction whose exit lane is occupied moves to a neighbouring lane whose exit is free
     CLAIM_GEOM = False                             # junction exit claims are shared by movements whose paths do not come within a car's width of each other (not one movement at a time)
     CLAIM_MARGIN = 1.9                             # m: closest two movement paths may come and still count as compatible
@@ -3545,14 +3546,15 @@ class Traffic:
                 continue
             poses = []
             hl = vehicles.HALF_L[c.kind]
+            arrive = min(3.0, (rem + self.junctions.get(node, 0.0)) / max(c.v, 3.0)) * self.EXIT_PATH_ETA
             for (edge, direction, idx), end in slots:
                 road = self.w.edges[edge]
                 lane = self.lanes_of(road, direction)[idx]
                 front = max(0.0, end - hl)
                 rear = min(hl, front)
-                poses.append((*self._ref(road, direction, rear, lane), 0.0))
+                poses.append((*self._ref(road, direction, rear, lane), arrive))
                 if front - rear > 0.1:
-                    poses.append((*self._ref(road, direction, front, lane), 0.0))
+                    poses.append((*self._ref(road, direction, front, lane), arrive))
             if not self._path_clear(c, poses, reserved_exit=True):
                 blocked.add(c)
                 continue
