@@ -44,7 +44,7 @@ class Session:
         self._punch = {}                      # addr -> give-up time (host answering a join notice)
         self._adv = self._adv2 = 0.0
         self._busy = False
-        self._spraying = False
+        self._spraying = set()
         self.word = ""                        # host: short code „шмекер 42“ (published on the notice board)
         self.code_hits = {}                   # guest: slug -> host info heard on code/<slug>
         self._bd = []                         # guest: birthday-punch sockets
@@ -100,7 +100,7 @@ class Session:
             a = (str(obj["addr"][0]), int(obj["addr"][1]))
         except (KeyError, TypeError, ValueError, IndexError):
             return
-        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("bday") and not self._spraying:
+        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("bday") and a[0] not in self._spraying:
             threading.Thread(target=self._spray, args=(a,), daemon=True).start()
         if self.state == "lobby" and len(self.players) < MAX_PLAYERS:
             if a not in self._punch:
@@ -111,7 +111,7 @@ class Session:
     def _spray(self, a):
         """Birthday punching for a guest behind symmetric NAT: the guest holds many ports open towards us, we answer
         HELLO to random ports of its IP (plus ports next to the one STUN saw, for routers that count up)."""
-        self._spraying = True
+        self._spraying.add(a[0])                            # one spray per guest IP; several guests may spray at once
         net.log("host: guest %s is behind symmetric NAT: spraying HELLO at its ports" % a[0])
         rnd = random.Random()
         near = [p for d in range(1, 300) for p in (a[1] + d, a[1] - d) if 1024 <= p < 65536]
@@ -125,7 +125,7 @@ class Session:
                     time.sleep(0.02)
         except (OSError, AttributeError):
             pass
-        self._spraying = False
+        self._spraying.discard(a[0])
 
     def _info(self):
         return {"id": self.gid, "name": self.players[0]["name"], "n": len(self.players), "max": MAX_PLAYERS, "ver": VER,
@@ -148,13 +148,13 @@ class Session:
 
     def _on_game(self, topic, obj):
         if topic.startswith("code/"):
-            if isinstance(obj, dict) and (obj.get("addr") or obj.get("laddr")):
+            if isinstance(obj, dict) and (obj.get("addr") or obj.get("laddr") or obj.get("rid")):
                 g = dict(obj, seen=time.monotonic(), code=True)
-                if not g.get("addr"):
+                if not g.get("addr") and not g.get("rid"):
                     g["addr"], g["lan"] = [g["laddr"], g.get("port", net.PORT)], True
                 self.code_hits[topic[5:]] = g
             return
-        if isinstance(obj, dict) and obj.get("id") and obj.get("addr") and obj.get("ver") == VER:
+        if isinstance(obj, dict) and obj.get("id") and (obj.get("addr") or obj.get("rid")) and obj.get("ver") == VER:
             self.found[obj["id"]] = dict(obj, seen=time.monotonic())
 
     def games(self):
@@ -172,24 +172,29 @@ class Session:
         threading.Thread(target=net.ensure_firewall, daemon=True).start()
         self.net = net.Net(0)
         self.net.probe_rtt = True
-        addr = (game["addr"][0], int(game["addr"][1]))
+        relay_only = not game.get("addr") and game.get("rid")        # host has no UDP to the internet at all (strict Wi-Fi)
+        addr = ("mqtt", int(game["rid"])) if relay_only else (game["addr"][0], int(game["addr"][1]))
         self._target = addr
         self._t0 = time.monotonic()
         self._notice = 0.0
         self._mine = None
         self._game = game
-        net.log("guest: joining %s (%s) at %s:%d, ver %d, notice board %s" % (
+        net.log("guest: joining %s (%s) at %s:%s, ver %d, notice board %s" % (
             game.get("name"), "LAN" if game.get("lan") else "internet", addr[0], addr[1], VER,
             "connected to " + self.mqtt.connected if self.mqtt and self.mqtt.connected else "OFFLINE"))
         self.net.follow[addr[0]] = addr
         self.route = "LAN" if game.get("lan") else "интернет"
-        self.relayed = False
+        self.relayed = bool(relay_only)
         if self.mqtt is not None and not game.get("lan") and game.get("rid"):
             self.net.use_relay(self.mqtt)
-        if game.get("code") and game.get("laddr") and not game.get("lan"):
-            la = (game["laddr"], int(game.get("port") or addr[1]))       # maybe the same Wi-Fi: knock on the LAN address too
+        if game.get("laddr") and not game.get("lan"):
+            la = (game["laddr"], int(game.get("port") or net.PORT))       # maybe the same Wi-Fi: knock on the LAN address too
             self.net.add_peer(la)
             self._also = la
+        if relay_only:
+            self.route = "реле преку MQTT (домаќинот нема UDP)"
+            self.net.add_peer(addr)
+            return
         if game.get("lan") or self.mqtt is None:
             self.net.add_peer(addr)
         else:
@@ -205,6 +210,7 @@ class Session:
         la = self._game.get("laddr")
         if mine and la and mine[0] == addr[0]:       # same public IP = same router: most routers cannot loop back, use the LAN address
             addr = self._target = (la, int(self._game.get("port", addr[1])))
+            self._also = None
             self.net.follow[addr[0]] = addr
             self.route = "ист рутер (LAN)"
             net.log("guest: host is behind the same router (%s), connecting to its LAN address %s:%d" % (mine[0], addr[0], addr[1]))
@@ -316,7 +322,7 @@ class Session:
             if now - self._adv > 2 and self.lan:
                 self._adv = now
                 self.lan.beacon(self._info())
-            if now - self._adv2 > 4 and self.mqtt and self.pub:
+            if now - self._adv2 > 4 and self.mqtt and (self.pub or not self._busy):     # no STUN answer: still listed, relay only
                 self._adv2 = now
                 self.mqtt.publish("games/" + self.gid, self._info())
                 if self.word:
@@ -362,7 +368,8 @@ class Session:
             if old == getattr(self, "_target", None):
                 self._target = new
         for kind, addr, obj in evs:
-            if kind == "up" and self.role == "guest" and addr == getattr(self, "_also", None) and self.state == "connecting":
+            if kind == "up" and self.role == "guest" and addr == getattr(self, "_also", None) and addr != self._target \
+                    and self.state == "connecting":
                 net.log("guest: the host answered on its LAN address %s:%d (same network)" % addr)
                 self.net.drop_peer(self._target)
                 self._target, self._also, self.route = addr, None, "LAN (код)"
@@ -641,6 +648,8 @@ def parse_code(text):
          "laddr": lan if lan != "0.0.0.0" else None, "port": lport, "name": "код", "code": True}
     if pub != "0.0.0.0" and pport:
         g["addr"] = [pub, pport]
+    elif rid:
+        g["addr"] = None                                         # host has no public UDP: relay (and a LAN knock)
     elif g["laddr"]:
         g["addr"], g["lan"] = [lan, lport], True                 # host had no internet address: LAN only
     else:

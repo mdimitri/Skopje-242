@@ -51,3 +51,7 @@ Short code: the host also gets a slang word + number („ШМЕКЕР 42“, src
 and publishes its info on `code/<slug>` of the notice board every 4 s (another game with the same word -> new word).
 The guest types it in Внеси код in Cyrillic or Latin; it needs the notice board, the long S242 code does not.
 Lab: `WORD=1 tools/natlab/lab.sh ...`.
+
+Lab v2 (2-4 players): `sudo python3 tools/natlab/lab2.py home public 5g strict` - first is the host; profiles home
+(normal NAT), public (symmetric NAT), strict (UDP blocked except DNS: relay only, host too), 5g (hotspot behind carrier
+symmetric NAT), same (same router as the previous player). Joins use the short word code; prints route + voice per pair.

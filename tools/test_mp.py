@@ -55,7 +55,7 @@ for bad, why in ((c[:-2], "знаци"), (c[:-1] + ("Z" if c[-1] != "Z" else "Y"
         assert why in str(e), e
 assert mp.parse_code("10.0.0.5:24242")["addr"] == ["10.0.0.5", 24242]
 gl = mp.parse_code(mp.make_code({"addr": None, "laddr": "192.168.1.10", "port": 24242, "rid": 5, "nat": None}))
-assert gl.get("lan") and gl["addr"] == ["192.168.1.10", 24242]
+assert gl["addr"] is None and gl["rid"] == 5 and gl["laddr"] == "192.168.1.10"
 # join a real host by its code over loopback
 h3 = mp.Session(prof("Код", "hc")); h3.host(internet=False)
 g3 = mp.Session(prof("Гост", "gc"))

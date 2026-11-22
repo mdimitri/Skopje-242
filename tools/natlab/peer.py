@@ -7,12 +7,14 @@ import discovery, mp, mpprofile as profile, voice
 role, srv, talk = sys.argv[1], sys.argv[2], float(sys.argv[3])
 discovery.STUN[:] = [(srv, 3478), (srv[:-1] + "2", 3478)]
 discovery.BROKERS[:] = [(srv, 1883)]
-p = profile.Profile("/nonexistent/p.json"); p.name, p.uid = ("Мартин", "hA") if role == "host" else ("Ана", "gB")
+p = profile.Profile("/nonexistent/p.json"); p.name = os.environ.get("PNAME") or ("Мартин" if role == "host" else "Ана")
+p.uid = (p.name + "uid000000")[:12]
+NPL = int(os.environ.get("NPL", "2"))
 ses = mp.Session(p)
 ses.voice = v = voice.Voice({"voice_on": True, "voice_mode": 0, "voice_vad": 0.02})
 v.ins = object(); v.mic_name = "lab"; v.mic_rate = 16000
 t = np.arange(voice.RATE * 4) / voice.RATE
-sig = (0.3 * np.sin(2 * np.pi * (220 if role == "host" else 330) * t) * (np.sin(2 * np.pi * 0.5 * t) > -0.3)).astype(np.float32)
+sig = (0.3 * np.sin(2 * np.pi * (220 + 37 * (hash(p.name) % 9)) * t) * (np.sin(2 * np.pi * 0.5 * t) > -0.3)).astype(np.float32)
 log, t0 = [], time.time()
 clock = {"mic": time.monotonic(), "out": time.monotonic()}
 def step(feed=False, k=[0]):
@@ -28,7 +30,7 @@ def step(feed=False, k=[0]):
 if role == "host":
     ses.host(internet=True)
     wrote = False
-    while time.time() - t0 < 40 and len(ses.players) < 2:
+    while time.time() - t0 < 60 and len(ses.players) < NPL:
         step()
         if not wrote and not ses._busy:
             open("/tmp/natlab_code", "w").write(mp.make_code(ses._info())); wrote = True
@@ -42,7 +44,7 @@ if role == "host":
 else:
     ses.browse()
     g = None
-    while time.time() - t0 < 30 and not g:
+    while time.time() - t0 < 45 and not g:
         step()
         if os.environ.get("WORD"):                 # join with the short word code read out on the phone
             if os.path.exists("/tmp/natlab_word") and not log:
@@ -64,18 +66,23 @@ else:
             g = next(iter(ses.games().values()), None)
     log.append("found %s" % (g and {k: g[k] for k in ("name", "addr", "laddr")}))
     if g: ses.join(g)
-    while time.time() - t0 < 50 and ses.state == "connecting": step()
+    while time.time() - t0 < 70 and ses.state == "connecting": step()
     log.append("state %s err %r route %r" % (ses.state, ses.error, ses.route))
     for _ in range(50): step()
     ses.send_chat("здраво од гостинот")
-    while time.time() - t0 < 60 and ses.state == "lobby": step()
+    while time.time() - t0 < 90 and ses.state == "lobby": step()
 t1 = time.time()
 while time.time() - t1 < talk: step(feed=True)
 for _ in range(150): step()                      # let the 2 s reports and the quality decision settle
 other = 1 if role == "host" else 0
 hear, them = ses.voice_report(other)
 j = v.jit.get(other)
-print(json.dumps({"role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
+voices = {}
+for pid, pl in ses.players.items():
+    if pid != ses.pid:
+        h_, t_ = ses.voice_report(pid)
+        voices[pl["name"]] = "%d frames, %s" % (v.jit[pid].recv if pid in v.jit else 0, h_)
+print(json.dumps({"voices": voices, "route": ses.route, "role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
                   "voice_rx_frames": j.recv if j else 0, "loss": j.loss_pct() if j else None, "jitter_ms": int(j.jit) if j else None,
                   "fec_fixed": j.fixed if j else 0, "tier": voice.TIERS[v.tier][0], "why": v.link, "hear": hear, "them": them,
                   "tx_packets": v.tx_packets, "nat": ses.nat, "error": ses.error}, ensure_ascii=False))
