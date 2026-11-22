@@ -604,11 +604,15 @@ def _auto_mp(a):
     t0, sent = time.monotonic(), False
     while time.monotonic() - t0 < (a.start_after + 30 if a.mp_host else 90) and not rl.window_should_close():
         ses.update()
-        if a.color >= 0 and not a.mp_host and ses.state == "lobby" and not sent:
-            ses.set_color(a.color)
+        if not a.mp_host and ses.state == "lobby" and not sent:
+            if a.color >= 0:
+                ses.set_color(a.color)
+            ses.set_ready(True)
             sent = True
         if a.mp_host and ses.state == "lobby" and (len(ses.players) >= a.mp_players or time.monotonic() - t0 > a.start_after):
-            time.sleep(0.5)                                  # let the guests see the roster before the start
+            if not ses.players[0].get("ready"):
+                ses.set_ready(True)
+            time.sleep(0.5)                                  # let the guests see the roster and their ready flags before the start
             ses.start()
         if ses.state == "playing":
             log(f"[mp-dev] playing: {len(ses.players)} players, I am pid {ses.pid}")
