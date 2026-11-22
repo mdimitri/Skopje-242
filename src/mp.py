@@ -46,6 +46,8 @@ class Session:
         self._adv = self._adv2 = 0.0
         self._busy = False
         self._spraying = set()
+        self._rev_hits = []                   # host: (socket, guest addr) found by _rev_punch, taken over in update()
+        self._rv = 0.0                        # guest: knock on the host's ports until this time (reverse punch)
         self.blips = []
         self._ghosts = {}                     # host: uid -> (pid, player, time gone) for rejoining in game
         self._rec = None                      # guest: {"at", "stage", "old"} while recovering a dead link                       # "join" / "leave" for the UI to chime (lobby and game)
@@ -57,6 +59,9 @@ class Session:
         self.voice = None                     # voice.Voice, set by the lobby; packets go through this session
         self.vstats = {}                      # pid -> {"mic": code, "rx": {pid: [recv, lost, late, jitter ms, bad]}, "at": time}
         self._vst_at = 0.0
+        self.migrated = 0                     # bumped when the host changed under a running game (mpgame re-syncs)
+        self._rids = {}                       # guest: pid -> relay id of the other guests (to reach a new host)
+        self._mesh = {}                       # guest: other guest's addr -> pid (direct voice links, host relay as fallback)
 
     # ------------------------------------------------------------------ host
     def host(self, internet=True):
@@ -105,6 +110,9 @@ class Session:
             a = (str(obj["addr"][0]), int(obj["addr"][1]))
         except (KeyError, TypeError, ValueError, IndexError):
             return
+        if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("rev") and a[0] not in self._spraying \
+                and self.nat in ("symmetric", "multi-ip"):
+            threading.Thread(target=self._rev_punch, args=(a,), daemon=True).start()
         if self.state == "lobby" and len(self.players) < MAX_PLAYERS and obj.get("bday") and a[0] not in self._spraying:
             threading.Thread(target=self._spray, args=(a,), daemon=True).start()
         if self.state == "lobby" and len(self.players) < MAX_PLAYERS:
@@ -130,6 +138,51 @@ class Session:
                     time.sleep(0.02)
         except (OSError, AttributeError):
             pass
+        self._spraying.discard(a[0])
+
+    def _rev_punch(self, a):
+        """Reverse birthday punching: WE are behind symmetric NAT, the guest behind a normal one. 256 of our ports keep
+        saying HELLO to the guest's one public address (256 NAT mappings towards it); the guest knocks on random ports of
+        our IP. The socket that hears it becomes this guest's own socket (Net.alt)."""
+        import socket
+        self._spraying.add(a[0])
+        socks = []
+        for _ in range(256):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.bind(("0.0.0.0", 0))
+                s.setblocking(False)
+                socks.append(s)
+            except OSError:
+                break
+        net.log("host: we are behind symmetric NAT, guest %s:%d is not: reverse punching with %d ports" % (a + (len(socks),)))
+        hello, t0, last = net.HDR.pack(net.MAGIC, net.HELLO, 0), time.monotonic(), 0.0
+        hit = None
+        while hit is None and time.monotonic() - t0 < 12 and self.net is not None and self.state == "lobby":
+            if time.monotonic() - last > 0.3:
+                last = time.monotonic()
+                for s in socks:
+                    try:
+                        s.sendto(hello, a)
+                    except OSError:
+                        pass
+            for s in socks:
+                try:
+                    pkt, src = s.recvfrom(2048)
+                except OSError:
+                    continue
+                if pkt[:4] == net.MAGIC and src[0] == a[0]:
+                    hit = (s, src)
+                    break
+            time.sleep(0.01)
+        for s in socks:
+            if hit is None or s is not hit[0]:
+                s.close()
+        if hit is not None:
+            net.log("host: reverse punch hit: our port %d hears %s:%d" % ((hit[0].getsockname()[1],) + hit[1]))
+            self._rev_hits.append(hit)
+        else:
+            net.log("host: reverse punch towards %s:%d got nothing in 12 s (the guest goes through the relay)" % a)
         self._spraying.discard(a[0])
 
     def _info(self):
@@ -360,6 +413,15 @@ class Session:
                 self.mqtt.publish("games/" + self.gid, self._info())
                 if self.word:
                     self.mqtt.publish("code/" + joinwords.slug(self.word), self._info())
+        while self._rev_hits:
+            s, a = self._rev_hits.pop()
+            if self.net.peers.get(a) is not None and self.net.peers[a].up:
+                s.close()
+                continue
+            self.net.drop_peer(a)
+            self.net.add_peer(a)
+            self.net.alt[a] = s
+            self._punch[a] = now + 30
         for a, until in list(self._punch.items()):
             p = self.net.peers.get(a)
             if now > until or (p and p.up):
@@ -371,7 +433,7 @@ class Session:
             rid = self._game.get("rid")
             sym = "symmetric" in (self.nat, self._game.get("nat")) or "multi-ip" in (self.nat, self._game.get("nat"))
             if (not self.relayed and rid and self.net.relay is not None and self.mqtt.connected
-                    and now - self._t0 > (8 if self._bd else 2 if sym else 6)):
+                    and now - self._t0 > (8 if self._bd or self._rv else 2 if sym else 6)):
                 self._bd_close()
                 self.relayed = True                       # direct UDP did not come up: go through the notice board
                 net.log("guest: no direct UDP after %.0f s (NAT %s / host %s): switching to the MQTT relay" % (
@@ -400,17 +462,14 @@ class Session:
             del self.net.moved[old]
             if old == getattr(self, "_target", None):
                 self._target = new
+        keep = []
         for kind, addr, obj in evs:
+            if self.role == "guest" and kind in ("rel", "unrel") and addr != self._target:
+                continue                                 # another guest's link carries voice only
+            keep.append((kind, addr, obj))
             if kind == "up" and self.role == "guest" and self._rec is not None and addr in self._rec["ways"]:
                 net.log("guest: %s:%s answers, asking to be taken back" % addr)
-                for w in self._rec["ways"] + [self._rec.get("old")]:
-                    if w and w != addr:
-                        self.net.drop_peer(w)
-                self._rec["ways"] = [addr]
-                self._target = addr
-                self.route = "реле преку MQTT (%s)" % self.mqtt.connected if addr[0] == "mqtt" else "%s:%s" % addr
-                self.relayed = addr[0] == "mqtt"
-                self.net.send_rel(addr, {"t": "rebind", "uid": self.prof.uid, "name": self.prof.name, "ver": VER})
+                self._rebind(addr)
                 continue
             if kind == "up" and self.role == "guest" and addr == getattr(self, "_also", None) and addr != self._target \
                     and self.state == "connecting":
@@ -428,7 +487,7 @@ class Session:
         if self.role == "guest" and self.net is not None:
             self._recover_tick(now)
         self._voice_out(now)
-        return evs
+        return keep
 
     # ------------------------------------------------------------------ voice chat (star: guests -> host -> other guests)
     def _voice_in(self, addr, data):
@@ -439,14 +498,45 @@ class Session:
             if pid is None:
                 return
             data = bytes((pid,)) + data[1:]              # the host stamps the sender: nobody can speak as somebody else
+            direct = self.vstats.get(pid, {}).get("dir", ())       # guests the sender reaches itself
             for k, p in self.players.items():
-                if k and k != pid and p["addr"] is not None:
+                if k and k != pid and p["addr"] is not None and k not in direct:
                     self.net.send_voice(p["addr"], data)
-        else:
+        elif addr in self._mesh:                         # straight from that guest: its link tells who it is
+            pid = self._mesh[addr]
+            self.mesh_rx = getattr(self, "mesh_rx", 0) + 1
+            data = bytes((pid,)) + data[1:]
+        elif addr == self._target:
             pid = data[0]
             if pid == self.pid:
                 return
+        else:
+            return
         self.voice.receive(pid, data)
+
+    def _mesh_up(self, now):
+        """Guest: other guests that answer directly (fresh packet in the last 2 s)."""
+        return {a: k for a, k in self._mesh.items()
+                if self.net.peers.get(a) is not None and self.net.peers[a].up and now - self.net.peers[a].last_rx < 2}
+
+    def _mesh_set(self, m, now):
+        """Host's list of the other guests' addresses: knock on each one; direct voice once it answers."""
+        want = {}
+        for k, a in (m.get("p") or {}).items():
+            try:
+                if int(k) != self.pid and int(k) and isinstance(a, list) and len(a) == 2 \
+                        and (not _private(str(a[0])) or _private(str(self._target[0]))):
+                    want[(str(a[0]), int(a[1]))] = int(k)          # a LAN address only helps when I am on the host's LAN
+            except (TypeError, ValueError):
+                pass
+        for a in list(self._mesh):
+            if a not in want:
+                self.net.drop_peer(a)
+        for a in want:
+            if a not in self.net.peers and a != self._target:
+                self.net.add_peer(a)
+                self._punch[a] = now + 20
+        self._mesh = {a: k for a, k in want.items() if a != self._target}
 
     def _voice_out(self, now):
         v = self.voice
@@ -460,6 +550,8 @@ class Session:
                         self.net.send_voice(p["addr"], pkt)
             elif self.net.peers.get(self._target) is not None:
                 self.net.send_voice(self._target, pkt)
+                for a in self._mesh_up(now):
+                    self.net.send_voice(a, pkt)
         if now - self._vst_at > 2:
             self._vst_at = now
             loss = jit = None                            # how the others hear me -> quality of what I send
@@ -475,8 +567,14 @@ class Session:
             v.use_opus = op and len(self.players) > 1 and all(
                 self.vstats.get(k, {}).get("op") for k in self.players if k != self.pid)
             mine = {"mic": v.mic_state(), "rx": v.rx_stats(), "talk": v.talking, "op": op}
+            if self.role == "guest":
+                mine["dir"] = sorted(self._mesh_up(now).values())
+                mine["rid"] = self.net.rid
             if self.role == "host":
-                self.vstats[0] = dict(mine, at=now)
+                self.vstats[self.pid] = dict(mine, at=now)
+                self.net.broadcast_rel({"t": "mesh", "p": {str(k): list(p["addr"]) for k, p in self.players.items()
+                                                           if k and isinstance(p["addr"], tuple) and p["addr"][0] != "mqtt"},
+                                        "r": {str(k): self.vstats.get(k, {}).get("rid") for k in self.players if k}})
                 self.net.broadcast_rel({"t": "vsa", "s": {str(k): {"mic": x["mic"], "rx": x["rx"], "op": bool(x.get("op"))} for k, x in self.vstats.items()
                                                           if k in self.players}})
             elif self.net.peers.get(self._target) is not None and self.state != "connecting":
@@ -519,6 +617,19 @@ class Session:
             self._bd_at = 0.0
             net.log("guest: symmetric NAT, host normal NAT: birthday punching with %d ports" % len(self._bd))
             self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine), "bday": 1})
+        if not self._rv and self.nat == "cone" and self._game.get("nat") in ("symmetric", "multi-ip") and not self.relayed \
+                and self._mine and self.mqtt and self.mqtt.connected and now - self._t0 > 1.0:
+            self._rv = now + 8
+            self._rv_rng = random.Random()
+            net.log("guest: host behind symmetric NAT, we are not: knocking on random ports of %s (reverse punch)" % self._target[0])
+            self.mqtt.publish("join/" + self._hid, {"addr": list(self._mine), "rev": 1})
+        if self._rv and now < self._rv and not (self.net.peers.get(self._target) and self.net.peers[self._target].up):
+            hello = net.HDR.pack(net.MAGIC, net.HELLO, 0)
+            for _ in range(20):
+                try:
+                    self.net.sock.sendto(hello, (self._target[0], self._rv_rng.randrange(1024, 65536)))
+                except OSError:
+                    pass
         if not self._bd:
             return
         hello = net.HDR.pack(net.MAGIC, net.HELLO, 0)
@@ -601,6 +712,70 @@ class Session:
         self.route_note = "се поврзува повторно…"
         return True
 
+    def _rebind(self, addr):
+        for w in self._rec["ways"] + [self._rec.get("old")]:
+            if w and w != addr:
+                self.net.drop_peer(w)
+        self._rec["ways"] = [addr]
+        self._target = addr
+        self.route = "реле преку MQTT (%s)" % self.mqtt.connected if addr[0] == "mqtt" else "%s:%s" % addr
+        self.relayed = addr[0] == "mqtt"
+        self.net.send_rel(addr, {"t": "rebind", "uid": self.prof.uid, "name": self.prof.name, "ver": VER})
+
+    def _migrate(self, now):
+        """The host is gone in a running game: the guest with the lowest player number takes over as host (player 0),
+        the others go to it over their direct link or its relay id. False = nobody to hand over to (old recovery)."""
+        guests = sorted(k for k in self.players if k)
+        if len(guests) < 2 or self.pid not in guests:
+            return False
+        succ = guests[0]
+        name = self.players[succ]["name"]
+        if self.voice is not None:
+            self.voice.forget(0)
+            self.voice.forget(succ)
+        self.vstats.pop(0, None)
+        self.vstats.pop(succ, None)
+        if succ == self.pid:
+            net.log("guest: the host is gone: I am the lowest player (%d), taking over as host" % succ)
+            self.role, self.net.accept, self._rec = "host", True, None
+            for k, p in self.players.items():
+                if k and k != succ:
+                    self._ghosts[p["uid"]] = (k, dict(p, addr=None), now)
+            self.players = {0: dict(self.players[succ], addr=None)}
+            self.pid, self._mesh, self._target = 0, {}, None
+            if self.mqtt is not None and self.net.relay is None:
+                self.net.use_relay(self.mqtt)
+            self.route = "ти си новиот домаќин"
+            self.blips.append("leave")
+            self.migrated += 1
+            self._roster()
+            return True
+        ways = [a for a, k in self._mesh.items() if k == succ]
+        if self._rids.get(succ) and self.mqtt is not None and self.mqtt.connected:
+            if self.net.relay is None:
+                self.net.use_relay(self.mqtt)
+            ways.append(("mqtt", self._rids[succ]))
+        if not ways:
+            return False
+        net.log("guest: the host is gone: player %d (%s) takes over, going there via %s" % (
+            succ, name, ", ".join("%s:%s" % w for w in ways)))
+        old = self._target
+        self._rec = {"at": now, "stage": "mig", "ways": ways}
+        self.net.drop_peer(old)
+        for w in ways:
+            p = self.net.peers.get(w)
+            if p is not None and p.up:
+                self._rebind(w)
+                break
+            self.net.add_peer(w)
+            self.net.hello(w)
+        self._mesh = {}
+        self.players.pop(0, None)
+        self.blips.append("leave")
+        self.route_note = "домаќинот замина: преминува кај %s…" % name
+        self.migrated += 1
+        return True
+
     def _recover_tick(self, now):
         r = self._rec
         if r is None:
@@ -613,6 +788,9 @@ class Session:
             p = self.net.peers.get(w)
             if p is not None and not p.up:
                 self.net.hello(w)
+            elif p is not None and r.get("stage") == "mig" and now - r.get("rb", 0) > 1.5:
+                r["rb"] = now
+                self._rebind(w)
         if now - r["at"] > 30:
             self._rec = None
             self.state, self.error = "closed", "Врската се прекина: домаќинот не се јавува 30 s ни директно ни преку реле"
@@ -672,6 +850,10 @@ class Session:
         if self.role == "guest":
             if addr != self._target:
                 return
+            if self._rec is not None and self._rec.get("stage") == "mig":
+                return
+            if self.state == "playing" and self._migrate(time.monotonic()):
+                return
             if self.state in ("lobby", "playing") and self._recover_start(time.monotonic(), "rejoin"):
                 return
             self.state, self.error = "closed", self.error or "Врската се прекина"
@@ -713,7 +895,9 @@ class Session:
                     self._color(pid, m["c"])
                 elif t == "vst":
                     self.vstats[pid] = {"mic": str(m.get("mic", ""))[:8], "rx": m.get("rx") if isinstance(m.get("rx"), dict) else {},
-                                        "op": m.get("op") is True, "at": time.monotonic()}
+                                        "op": m.get("op") is True, "at": time.monotonic(),
+                                        "rid": m.get("rid") if isinstance(m.get("rid"), int) else None,
+                                        "dir": [k for k in m.get("dir", ()) if isinstance(k, int)][:8] if isinstance(m.get("dir"), list) else []}
                 elif t == "bye":
                     self.net.drop_peer(addr)
                     self._gone(addr)
@@ -746,13 +930,18 @@ class Session:
                 if self.state != "playing":
                     self.start_info = {"spawn": m["spawn"], "ff": m["ff"], "seed": m["seed"]}
                 self.state = "playing"
+            elif t == "mesh" and isinstance(m.get("p"), dict):
+                self._mesh_set(m, time.monotonic())
+                if isinstance(m.get("r"), dict):
+                    self._rids = {int(k): v for k, v in m["r"].items() if str(k).isdigit() and isinstance(v, int)}
             elif t == "vsa" and isinstance(m.get("s"), dict):
                 now = time.monotonic()
                 for k, x in m["s"].items():
                     if str(k).isdigit() and isinstance(x, dict):
                         self.vstats[int(k)] = {"mic": str(x.get("mic", ""))[:8], "rx": x.get("rx") if isinstance(x.get("rx"), dict) else {}, "op": x.get("op") is True, "at": now}
             elif t == "closed":
-                self.state, self.error = "closed", "Домаќинот ја затвори играта"
+                if not (self.state == "playing" and self._migrate(time.monotonic())):
+                    self.state, self.error = "closed", "Домаќинот ја затвори играта"
 
 
 # ------------------------------------------------------------------ join code (shared privately, e.g. over WhatsApp)
@@ -821,6 +1010,15 @@ def parse_code(text):
     else:
         raise ValueError("кодот нема адреса (домаќинот нема ни интернет ни LAN)")
     return g
+
+
+def _private(ip):
+    p = ip.split(".")
+    try:
+        a, b = int(p[0]), int(p[1])
+    except (ValueError, IndexError):
+        return False
+    return a == 10 or (a == 172 and 16 <= b < 32) or (a == 192 and b == 168) or (a == 100 and 64 <= b < 128)
 
 
 def _lan_ip():

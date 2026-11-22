@@ -109,6 +109,7 @@ class Game:
         self._gone_seen = set(sim.gone)
         self.over = False                                 # the session closed under us (handled once in update)
         self.t_ids = 0.0
+        self._mig = session.migrated
 
     # ------------------------------------------------------------------ own state
     def _my_state(self):
@@ -200,6 +201,18 @@ class Game:
                 for pid, a in list(self.addr.items()):
                     if a == addr:
                         self._drop_remote(pid)
+        if ses.migrated != self._mig:                               # the host left mid-game and somebody took over: re-sync
+            self._mig = ses.migrated
+            for pid in list(self.remote):
+                self._drop_remote(pid)
+            if s.client:
+                self._to_authority()
+            s.traffic.extra = s.peds.extra = []
+            self.host, self.pid = ses.role == "host", ses.pid
+            self.ids, self.next_id, self.addr, self.auth, self.byid = {}, 1, {}, {}, {}
+            self.player_tick, self.world_tick = None, None
+            self._reset_puppets()
+            self._view()
         if ses.state == "closed" and not self.over:                 # the host left / the line dropped: carry on alone, nothing frozen
             self.over = True
             if ses.net is not None:

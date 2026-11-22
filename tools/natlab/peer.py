@@ -84,7 +84,7 @@ for pid, pl in ses.players.items():
         h_, t_ = ses.voice_report(pid)
         voices[pl["name"]] = "%d frames, %s" % (v.jit[pid].recv if pid in v.jit else 0, h_)
 dbg = {str(k): {"recv": j.recv, "seen": j.seen, "age": round(time.monotonic() - j.last_rx, 1), "late": j.late} for k, j in v.jit.items()}
-print(json.dumps({"dbg": dbg, "bad": v.bad_rx, "badwhy": v.bad_why, "tx": v.tx_packets, "voices": voices, "route": ses.route, "role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
+print(json.dumps({"dbg": dbg, "mesh_rx": getattr(ses, "mesh_rx", 0), "host_rx": getattr(ses, "host_rx", 0), "bad": v.bad_rx, "badwhy": v.bad_why, "tx": v.tx_packets, "voices": voices, "route": ses.route, "role": role, "log": log, "state": ses.state, "chat": [c[1] for c in ses.chat], "info": ses.info(),
                   "voice_rx_frames": j.recv if j else 0, "loss": j.loss_pct() if j else None, "jitter_ms": int(j.jit) if j else None,
                   "fec_fixed": j.fixed if j else 0, "tier": voice.TIERS[v.tier][0], "why": v.link, "hear": hear, "them": them,
                   "tx_packets": v.tx_packets, "nat": ses.nat, "error": ses.error}, ensure_ascii=False))

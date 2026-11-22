@@ -55,3 +55,9 @@ Lab: `WORD=1 tools/natlab/lab.sh ...`.
 Lab v2 (2-4 players): `sudo python3 tools/natlab/lab2.py home public 5g strict` - first is the host; profiles home
 (normal NAT), public (symmetric NAT), strict (UDP blocked except DNS: relay only, host too), 5g (hotspot behind carrier
 symmetric NAT), same (same router as the previous player). Joins use the short word code; prints route + voice per pair.
+
+## Reverse punching, guest-to-guest voice, host migration
+
+- **Reverse punching** (host behind symmetric NAT, guest behind a normal one): the guest posts `rev` in its join notice and knocks on random ports of the host's IP (20 per frame, 8 s); the host opens 256 sockets that all say HELLO to the guest's one public address. The socket that hears the guest becomes that guest's own socket (`Net.alt`). Lab: `lab2.py public home` now connects P2P instead of through the relay.
+- **Guest-to-guest voice**: every 2 s the host sends `mesh` (the guests' public UDP addresses and relay ids). Guests knock on each other; once a link answers, voice goes straight there and the guest lists that pid in `vst.dir`, so the host stops relaying its voice to it. LAN addresses are used only by guests that are on the host's LAN. Voice that comes over a direct link is stamped with the pid of that link; other messages on it are ignored.
+- **Host migration** (in game, 2+ guests left): when the host goes silent or closes, the guest with the lowest player number becomes host as player 0 (others kept as 90 s ghosts); the rest send `rebind` to it over the direct link or its relay id and keep their player numbers. `Session.migrated` makes mpgame drop puppets and re-sync. Lab: `lab2.py home home home down@0:12:100 40` -> new host in about 1 s, both still hear each other.

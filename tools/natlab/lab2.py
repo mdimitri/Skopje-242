@@ -112,6 +112,6 @@ if __name__ == "__main__":
     for i, r in enumerate(main(args, talk, evs)):
         if "crash" in r:
             print("P%d %-6s CRASH %s" % (i, args[i], r["crash"])); continue
-        print("P%d %-6s %-8s NAT %-9s route %-40s err %r" % (i, args[i], r["state"], r["nat"], r.get("route", ""), r["error"]))
+        print("P%d %-6s %-8s NAT %-9s route %-40s err %r direct-voice %s" % (i, args[i], r["state"], r["nat"], r.get("route", ""), r["error"], r.get("mesh_rx")))
         for k, v in sorted(r.get("voices", {}).items()):
             print("      hears %s: %s" % (k, v))

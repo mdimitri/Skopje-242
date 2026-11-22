@@ -135,6 +135,7 @@ class Net:
         self._dh = int.from_bytes(os.urandom(32), "big")
         self._dhpub = pow(2, self._dh, _P).to_bytes(256, "big")
         self.forged = 0                          # packets dropped for a missing / wrong tag
+        self.alt = {}                            # addr -> own socket for that peer (host behind symmetric NAT, reverse punch)
 
     def use_relay(self, mqtt):
         """Packets to ("mqtt", rid) addresses go through the MQTT notice board; packets for me arrive on r/<my rid>."""
@@ -192,6 +193,19 @@ class Net:
 
     def drop_peer(self, addr):
         self.peers.pop(addr, None)
+        s = self.alt.pop(addr, None)
+        if s is not None:
+            s.close()
+
+    def _recv(self):
+        for s in (self.sock, *self.alt.values()):
+            try:
+                return s.recvfrom(2048)
+            except (BlockingIOError, InterruptedError):
+                continue
+            except OSError:
+                return b"", None
+        return None
 
     def hello(self, addr, body=b""):
         """Punch / keep-alive; also the client's first packet to the host."""
@@ -216,7 +230,7 @@ class Net:
                     self._rout.setdefault(addr, []).append(pkt)
             return
         try:
-            sent = self.sock.sendto(pkt, addr)
+            sent = self.alt.get(addr, self.sock).sendto(pkt, addr)
         except OSError:
             return
         with self._tx_lock:
@@ -292,11 +306,11 @@ class Net:
             if self._rin:
                 pkt, addr = self._rin.popleft()
             else:
-                try:
-                    pkt, addr = self.sock.recvfrom(2048)
-                except (BlockingIOError, InterruptedError):
+                r = self._recv()
+                if r is None:
                     break
-                except OSError:           # e.g. ICMP unreachable on Windows
+                pkt, addr = r
+                if addr is None:          # e.g. ICMP unreachable on Windows
                     continue
             self.bytes_rx += len(pkt)
             if len(pkt) < HDR.size:
@@ -380,7 +394,7 @@ class Net:
                         ev.append(("unrel", addr, body))
         for a, p in list(self.peers.items()):
             if p.up and now - p.last_rx > TIMEOUT:
-                self.peers.pop(a)
+                self.drop_peer(a)
                 log("peer %s:%d silent for %.1f s: dropped" % (a + (now - p.last_rx,)))
                 ev.append(("gone", a, None))
                 continue
@@ -400,6 +414,9 @@ class Net:
 
     def close(self):
         self.stop_heartbeat()
+        for s in self.alt.values():
+            s.close()
+        self.alt.clear()
         try:
             self.sock.close()
         except OSError:
