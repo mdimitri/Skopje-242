@@ -554,8 +554,21 @@ class Renderer:
             # Keep the glow readable from the top / far camera: grow with distance (about 0.05 m per metre, capped).
             dist = math.sqrt((eye.x - center.x) ** 2 + (eye.y - center.y) ** 2 + (eye.z - center.z) ** 2)
             size *= min(6.0, max(1.0, dist * 0.05))
-            rl.draw_billboard_pro(cam, texture, rl.Rectangle(0, 0, texture.width, texture.height), center,
-                                  cam.up, rl.Vector2(size, size), rl.Vector2(size * 0.5, size * 0.5), 0.0, WHITE)
+            flat = max(0.0, min(1.0, ((eye.y - center.y) / max(dist, 0.01) - 0.55) / 0.35))     # 0 level view .. 1 from straight above
+            if flat < 1.0:
+                rl.draw_billboard_pro(cam, texture, rl.Rectangle(0, 0, texture.width, texture.height), center,
+                                      cam.up, rl.Vector2(size, size), rl.Vector2(size * 0.5, size * 0.5), 0.0,
+                                      rl.Color(255, 255, 255, int(255 * (1.0 - flat))))
+            if flat > 0.0:                                         # seen from above the glow lies flat on the road, not standing up
+                h = size * 0.5
+                rl.rl_set_texture(texture.id)
+                rl.rl_begin(rl.RL_QUADS)
+                rl.rl_color4ub(255, 255, 255, int(255 * flat))
+                for u, v, dx, dz in ((0, 0, -h, -h), (0, 1, -h, h), (1, 1, h, h), (1, 0, h, -h)):
+                    rl.rl_tex_coord2f(u, v)
+                    rl.rl_vertex3f(center.x + dx, center.y + 0.03, center.z + dz)
+                rl.rl_end()
+                rl.rl_set_texture(0)
         rl.end_blend_mode()
         rl.rl_enable_depth_mask()
 

@@ -2670,6 +2670,8 @@ class Traffic:
     CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
     CLEAR_LINE = False                             # OFF: made blocking worse in the lab; a car waiting at a junction stops far enough back that its body is clear of the other roads' lanes (shallow slip-road merges)
     YIELD_BACKOFF = False                          # a waiting car that blocks a priority car from another road backs off to let it pass
+    EXIT_ETA = 0.5                                 # s: a waiting car counts exit-lane cars as gone once they will have moved on by the time it arrives (0.5 = only those already clear)
+    BRAKE_DECEL = 5.0                              # m/s2: hardest slowing a car applies towards its speed limit
     DODGE = True                                   # a car held up by a standing car that is itself waiting (not a queue) takes a free neighbouring lane at once
 
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2, heading=None, include_cars=True):
@@ -3516,7 +3518,7 @@ class Traffic:
                 self.w.edges[ei]["len"] - sg.stopd.get((ei, int(direction == 1)), 10.0) - SIGNAL_STOP_BUFFER < end
                 and sg.state_of(ei, int(direction == 1)) in (1, 2)
                 for (ei, direction, _), end in slots)
-            if not self._exit_complete(c, slots) or self._exit_blocked(c) or signal_blocks_exit:
+            if not self._exit_complete(c, slots) or self._exit_blocked(c, self.EXIT_ETA) or signal_blocks_exit:
                 blocked.add(c)
                 continue
             poses = []
@@ -4253,7 +4255,7 @@ class Traffic:
                 entry_boost = 1.2 if follow_route and not at_red else 1.0
                 c.v = min(vlim, c.v + entry_boost * min(3.2, vehicles.PERF[c.kind][1] * 0.4) * dt)
             else:
-                c.v = max(vlim, c.v - 8.0 * dt)
+                c.v = max(vlim, c.v - self.BRAKE_DECEL * dt)
             if gap is not None and c.rev <= 0 and not tight:
                 # If a blocker cuts in within braking distance, never integrate through its bumper.
                 c.v = min(c.v, max(0.0, gap - 0.4 + lv * dt) / dt)
