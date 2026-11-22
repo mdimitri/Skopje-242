@@ -2468,6 +2468,8 @@ def main():
                 font.exit_button(bx_ + 224, 10)
         finally:
             present.end(cfg["scale"] == 0, cfg["aa"] >= 2)
+            if mpg is not None:
+                guard.run("faces check", faces.verify, present.dest, present.rt.texture.width, present.rt.texture.height)
             if sf_due_:
                 selfie.take(present.rt.texture)         # the world is in the offscreen buffer; the window framebuffer reads black
             t_sw = time.perf_counter()

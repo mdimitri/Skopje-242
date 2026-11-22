@@ -62,6 +62,7 @@ class _Face:
         self.sp = self.m = self.lvl_s = 0.0
         self.spd = self.yr = self.dec = 0.0
         self.prev = None
+        self.seen_n, self.verified = 0, False                  # frames drawn / screen check passed (verify())
         self.ev = {"crash": 0.0, "hit": 0.0, "punch": 0.0, "fight": 0.0, "cash": 0.0, "stun": 0.0}
         self.vowel = 0.0
         self.next_vowel = 0.0
@@ -381,17 +382,20 @@ def _props(f, head, x, y, S, color):
 def _draw(f, i, x, y, S, color, name, me, ctx):
     spk = f.sp > .3
     head = _head(i, S) if ctx["mesh"] else False
-    if head and head.ok is False:                      # the head target stayed empty on this GPU: the picture fallback
-        head = False
+    if head and head.ok is False:                      # the head target stayed empty on this GPU: paint the same mesh on the CPU instead
+        head.mode = "cpu"
     if ctx["phase"] != "pre":
         rl.draw_rectangle(x - 3, y - 3, S + 6, S + 6, rl.Color(10, 10, 14, 190))
     if head:
         now = ctx["now"]
-        if ctx["phase"] != "blit" and (now - f.last_draw >= ctx["interval"] or f.last_draw == 0):
+        if ctx["phase"] != "blit" and (now - f.last_draw >= ctx["interval"] * (3 if head.mode == "cpu" else 1) or f.last_draw == 0):
             f.last_draw = now - f.phase if f.last_draw == 0 else now
             a = time.perf_counter()
             bg = rl.Color(color[0] // 6 + 22, color[1] // 6 + 24, color[2] // 6 + 30, 255)
-            head.render(f.e, bg)
+            if head.mode == "cpu":
+                head.cpu_render(f.e, bg)
+            else:
+                head.render(f.e, bg)
             ctx["spent"] += time.perf_counter() - a
             ctx["n"] += 1
         if ctx["phase"] == "pre":
@@ -406,7 +410,13 @@ def _draw(f, i, x, y, S, color, name, me, ctx):
                         head.rt.texture.id, head.rt.texture.width, head.rt.texture.height, head.ok, x, y, S, tuple(color)))
             except Exception:                                # noqa: BLE001
                 pass
-        rl.draw_texture_pro(head.rt.texture, rl.Rectangle(0, 0, head.size, -head.size), rl.Rectangle(x, y, S, S), rl.Vector2(0, 0), 0, rl.WHITE)
+        _watch.append((f, head, x, y, S))
+        if head.mode == "cpu":
+            if getattr(head, "cpu", None) is None:
+                head.cpu_render(f.e, rl.Color(20, 22, 28, 255))
+            rl.draw_texture_pro(head.cpu, rl.Rectangle(0, 0, head.size, head.size), rl.Rectangle(x, y, S, S), rl.Vector2(0, 0), 0, rl.WHITE)
+        else:
+            rl.draw_texture_pro(head.rt.texture, rl.Rectangle(0, 0, head.size, -head.size), rl.Rectangle(x, y, S, S), rl.Vector2(0, 0), 0, rl.WHITE)
     else:
         _sprite(f, i, x, y, S, color, name)
     if ctx["phase"] == "pre":
@@ -462,6 +472,52 @@ def _bearing(sim, cam, q, sw, sh):
 
 
 _slow = [False]
+_watch = []                  # (face, head, x, y, S) of the heads drawn this frame, for verify()
+
+
+def _log(msg):
+    try:
+        import os
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs"); os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "game.log"), "a", encoding="utf-8") as fh:
+            fh.write(msg + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def verify(dest, buf_w, buf_h):
+    """Call right after the frame was composed onto the window (before end_drawing).  A few frames after a head's first draw, read the REAL
+    screen pixels inside its box: if they hold no more than the flat background the GL head is invisible on this GPU, so that head switches
+    to the CPU raster of the same mesh.  dest = (x, y, w, h) of the game buffer on the window.  One small readback, only until verified."""
+    _watch_all = list(_watch)
+    _watch.clear()
+    for f, head, x, y, S in _watch_all:
+        f.seen_n += 1
+    pend = [w for w in _watch_all if not w[0].verified and w[0].seen_n in (4, 14, 30)]
+    if not pend:
+        return
+    img = rl.load_image_from_screen()
+    k = dest[2] / max(1, buf_w)
+    try:
+        for f, head, x, y, S in pend:
+            cols = set()
+            for i in range(10):
+                for j in range(10):
+                    px = int(dest[0] + (x + S * (.12 + .76 * i / 9)) * k)
+                    py = int(dest[1] + (y + S * (.12 + .76 * j / 9)) * k)
+                    if 0 <= px < img.width and 0 <= py < img.height:
+                        c = rl.get_image_color(img, px, py)
+                        cols.add((c.r // 12, c.g // 12, c.b // 12))
+            good = len(cols) > 8
+            _log("[faces] screen check #%d box (%d,%d,%d): %d colours on screen -> %s" % (f.seen_n, x, y, S, len(cols), "ok" if good else "EMPTY"))
+            if good:
+                f.verified = True
+            elif f.seen_n >= 30 and head.mode == "gl":
+                head.mode = "cpu"
+                f.verified = True
+                _log("[faces] the GL head never showed on screen: switching to the CPU raster of the same mesh")
+    finally:
+        rl.unload_image(img)
 
 
 def draw(sim, cam, sw, sh, cfg, dt, phase=None):

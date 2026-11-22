@@ -63,6 +63,7 @@ def rotz(a):
 class Head:
     """Rest geometry for one hero + the deformation / rendering."""
 
+    mode = "gl"                                              # "gl": render target; "cpu": PIL raster (set by faces when the target is empty or never visible)
     ok = None                                                # None: not probed yet, True: the render target holds a head, False: it stayed empty
     _probes = 0
 
@@ -257,6 +258,38 @@ class Head:
                             self.rt.id, self.rt.texture.id, n, self._probes, len(cols), "ok" if good else ("EMPTY, using the picture fallback" if self.ok is False else "empty so far")))
             except Exception:                                 # noqa: BLE001
                 self.ok = True
+
+    # ---------------------------------------------------------- CPU fallback: the same posed mesh, painted by PIL (no GL target involved)
+    def cpu_render(self, e, bg):
+        """Painter's-algorithm raster of the actual hero head mesh into self.cpu (a plain texture); returns it.  ~15 ms, used only when the GL
+        target never reaches the screen on this GPU."""
+        from PIL import Image, ImageDraw
+        self.pose(e)
+        n = self.size
+        P = self._pos.reshape(-1, 3, 3)
+        C = self._col.reshape(-1, 3, 4)[:, :, :3].astype(np.float32).mean(axis=1)
+        d = self.dist - P[:, :, 2]
+        t = math.tan(math.radians(FOV / 2))
+        ok = (d > .01).all(axis=1)
+        d = np.maximum(d, .01)
+        X = (.5 + .5 * P[:, :, 0] / (d * t)) * n
+        Y = (.5 - .5 * (P[:, :, 1] - self.cy) / (d * t)) * n
+        order = np.argsort(P[:, :, 2].mean(axis=1))                   # far (small z) to near
+        img = Image.new("RGB", (n, n), (bg.r, bg.g, bg.b))
+        dr = ImageDraw.Draw(img)
+        for i in order:
+            if ok[i]:
+                c = C[i]
+                dr.polygon([(float(X[i, 0]), float(Y[i, 0])), (float(X[i, 1]), float(Y[i, 1])), (float(X[i, 2]), float(Y[i, 2]))],
+                           fill=(int(c[0]), int(c[1]), int(c[2])))
+        buf = img.convert("RGBA").tobytes()
+        if getattr(self, "cpu", None) is None:
+            im = rl.gen_image_color(n, n, rl.BLACK)
+            self.cpu = rl.load_texture_from_image(im)
+            rl.unload_image(im)
+            rl.set_texture_filter(self.cpu, rl.TEXTURE_FILTER_BILINEAR)
+        rl.update_texture(self.cpu, ffi.cast("void *", ffi.from_buffer(buf)))
+        return self.cpu
 
     def project(self, pt, e):
         """Window position (0..1, 0..1) of a head-space point under the current head turn (for 2D overlays on the eyes)."""

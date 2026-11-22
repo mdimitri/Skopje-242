@@ -20,6 +20,7 @@ def view(n):
 cfg = {"faces_on": True, "faces_size": 1, "faces_mesh": True}
 pr = present.Present(); pr.activate(1280, 720)
 bad = 0
+shot_cb = None
 def frame(dof, n, check):
     global bad
     view(n)
@@ -30,7 +31,9 @@ def frame(dof, n, check):
     faces.draw(sim, cam, 1280, 720, cfg, 1 / 60, "blit")
     pr.ui_layer()                         # as main: the HUD layer opens after the faces when dof is off
     rl.draw_circle(640, 360, 20, rl.RED)  # something drawn after the faces must still show
-    pr.end(False, False); rl.end_drawing()
+    pr.end(False, False); faces.verify(pr.dest, 1280, 720)
+    if shot_cb: shot_cb()
+    rl.end_drawing()
     rl.rl_draw_render_batch_active()
     if not check: return
     img = rl.load_image_from_screen(); W_ = img.width
@@ -56,4 +59,21 @@ for dof in (False, True):
 oks = [h.ok for h in faces._heads.values() if h]
 print("head probes ok:", oks)
 bad += (not oks) or (not all(oks))
-print("RESULT", "FAIL" if bad else "PASS"); sys.exit(1 if bad else 0)
+
+# ---- scenario 2: the GL head is invisible on screen (as reported on a real GPU): verify() must switch it to the CPU raster, and the final pixels must then show heads
+faces._state.clear(); bad2 = 0
+for h in faces._heads.values():
+    if h:
+        h.mode, h.ok = "gl", True
+        def _blank(e, bg, h=h):                   # the target only ever gets the flat background: nothing of the head reaches the screen
+            rl.begin_texture_mode(h.rt); rl.clear_background(bg); rl.end_texture_mode()
+        h.render = _blank
+        h.rt_dead = True
+for i in range(80):
+    frame(False, 3, False)       # before the switch the boxes are flat background by construction
+modes = [h.mode for h in faces._heads.values() if h]
+print("modes after invisible-GL scenario:", modes)
+for i in range(3):
+    frame(False, 3, i == 2)
+bad += not all(m == "cpu" for m in modes)
+print("RESULT2", "FAIL" if bad else "PASS"); sys.exit(1 if bad else 0)
