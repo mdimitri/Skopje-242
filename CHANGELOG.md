@@ -2,6 +2,10 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Traffic: dodge a standing car
+
+- A car held up by a standing car that is not part of a queue (a side-street or slip-road car waiting at its line with its body in the lane, a breakdown) now takes a free neighbouring lane at once, by space, with no timer (`Traffic.DODGE`, switchable in the lab). Before, cars creeping at 0.3 m/s never counted as stuck and sat behind it. Lab, 12 seeds on a Partizanski Odredi sample: time boulevard cars spent blocked by side-street cars 51 s -> 23 s, no more collisions.
+
 ## Traffic lab (trafficSimulator.bat)
 
 - New `trafficSimulator.bat` opens a full-screen 2D traffic lab on the built world. It runs the game's own simulation (AI cars, buses, ambulances and fire engines, trains and level crossings, pedestrians, traffic lights) and only measures it, so the lab always matches the current game. Collision boxes and the overlap test are the game's own (`actors.parts`, `actors._sat`).

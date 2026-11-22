@@ -2655,6 +2655,7 @@ class Traffic:
 
     SQUEEZE_V = 3.0
     CREEP = True                                   # stopped cars may edge into a junction once their body fits clear of the box
+    DODGE = True                                   # a car held up by a standing car that is itself waiting (not a queue) takes a free neighbouring lane at once
 
     def scan(self, c, rng_ahead, ox=0.0, oy=0.0, flip=False, back=-0.2, heading=None, include_cars=True):
         """Gap to the nearest thing in front of car c (or, moved by (ox, oy) / turned round, where it could go); the thing
@@ -3138,6 +3139,8 @@ class Traffic:
                         or behind.s >= driver.s or back_gap >= 2.7:
                     break
                 driver = behind
+        if not head_on and not c.shift and own_side and self._dodge(c, e, gap, lead, side):
+            return
         if c.v > 0.35 or c.stuck < self.WAIT[ag] or gap is None or gap > 4.0:
             return
         if not head_on and not c.shift and own_side:
@@ -3161,6 +3164,30 @@ class Traffic:
             if self._request_reverse(c, c.lane):
                 c.shift, c.shift_t = 0.0, 0.0
         c.cool = max(c.cool, 0.35)
+
+    def _dodge(self, c, e, gap, lead, side):
+        """Space-based: the car ahead stands still and is not itself held by anything in front (a side-street car waiting
+        at its line, a slip-road car, a breakdown), so waiting behind it gains nothing.  Take a neighbouring lane the moment
+        that lane is free, no timer.  The shift is undone by _restore_lane once the own lane is clear again."""
+        if not self.DODGE or gap is None or not isinstance(lead, Car) or c.v > 7.0 or gap > 6.0 + c.v * 1.2:
+            return False
+        if lead.v > 0.5 or lead.rev > 0 or lead.turnaround or c.rev > 0 or c.man > 0:
+            return False                                     # moving or reversing
+        if lead.blk is not None and (lead.e, lead.d) == (c.e, c.d):
+            return False                                     # one car of a queue in our own lane (a car from another road is no queue)
+        if c.kind in (vehicles.SEMI, vehicles.ARTIC_BUS) or e["len"] - c.s < 10.0:
+            return False
+        lanes = self.lanes_of(e, c.d)
+        permitted = movement_lanes(self.w, (c.e, c.d), c.nxt, c.turn) if c.nxt is not None else None
+        for idx in sorted(range(len(lanes)), key=lambda i: abs(lanes[i] - side)):
+            lane = lanes[idx]
+            if abs(lane - side) <= 0.65 or abs(lane - side) > 4.2 or (permitted is not None and idx not in permitted):
+                continue
+            if self._lane_room(c, e, lane, 14.0 + c.v * 1.5, behind=7.0):
+                c.shift, c.shift_t, c.man = lane - c.lane, 0.0, 3.0
+                c.avoid = 0.0
+                return True
+        return False
 
     def _courtesy(self, c, e, vlim, ems, ph, dt):
         """Swerve round kerb-parked cars and pull over for emergency vehicles.  Smooth sideways targets (c.avoid / c.yld);
