@@ -201,7 +201,7 @@ class World:
         self.pgrid = pg
         self.trees = ta                                                  # (x, y, radius, kind): half a million Python tuples become one 15 MB block
         self.broken, self.broken_ver = [], 0
-        self.tree_state, self.fallen = {}, []                            # (x, y) -> (1 stripped | 2 felled, time); trees lying down: see break_point
+        self.tree_state, self.fallen, self.shedding = {}, [], {}                            # (x, y) -> (1 stripped | 2 felled, time); trees lying down: see break_point
         P(1.0, "collision ready")
 
     GROUND_Y = (0.0, 0.07, 0.16, 0.0)
@@ -687,10 +687,25 @@ class World:
         if st is None:
             if impact > 2.5:
                 self.tree_state[k] = (1, now)
+                import treegen
+                r, kind = self.tree_info(e[0], e[1])
+                sp, v, yaw, sc, _t = treegen.pick(e[0], e[1], r, kind)
+                hh, rr = treegen.extent(sp, v)
+                self.shedding[k] = (e[0], e[1], sp, v, yaw, sc, now, hh, rr, treegen.leaf_col(e[0], e[1], r, kind))   # drawn on its own while the leaves go
                 return "shed"
         elif st[0] == 1 and impact > 6.0 and now - st[1] > 0.8:
             return "fall"
         return None
+
+    SHED_T = 2.2                                   # seconds a stripped tree takes to lose its leaves, top to bottom
+
+    def shed_done(self):
+        """Trees whose leaves are all gone by now: back into the chunk meshes (as bare trees). Returns their (x, y)."""
+        now = time.monotonic()
+        out = [k for k, s in self.shedding.items() if now - s[6] > self.SHED_T]
+        for k in out:
+            del self.shedding[k]
+        return out
 
     def tree_leaf_col(self, x, y):
         import treegen
@@ -715,6 +730,7 @@ class World:
             now = time.monotonic()
             bare = self.tree_state.get((e[0], e[1]), (0,))[0] == 1       # stripped by an earlier hit: it falls without leaves
             self.tree_state[(e[0], e[1])] = (2, now)
+            self.shedding.pop((e[0], e[1]), None)
             import treegen
             r, kind = self.tree_info(e[0], e[1])
             sp, v, yaw, sc, _tint = treegen.pick(e[0], e[1], r, kind)

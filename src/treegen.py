@@ -416,6 +416,17 @@ def pick(x, y, r, kind):
     return sp, rr.randrange(VARIANTS), rr.uniform(0, 6.2832), rr.uniform(.85, 1.15) * min(1.6, max(.7, r / 2.8)), rr.uniform(.9, 1.1)
 
 
+_EXT = {}
+def extent(sp, v, lvl=4):
+    """(height, crown radius) of a tree mesh in model space."""
+    k = (sp, v, lvl)
+    if k not in _EXT:
+        sol, crd = tree_mesh(sp, lvl, v)
+        pts = np.concatenate([a[0] for a in (sol, crd) if len(a[0])])
+        _EXT[k] = (float(pts[:, 1].max()), float(np.abs(pts[:, [0, 2]]).max()))
+    return _EXT[k]
+
+
 def leaf_col(x, y, r, kind):
     """A leaf colour of the tree at (x, y) (for the leaves a crash shakes off it)."""
     sp = pick(x, y, r, kind)[0]

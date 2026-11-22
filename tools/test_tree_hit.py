@@ -43,12 +43,18 @@ print("tree at", tx, ty, "verts", v0)
 e = (tx, ty, tr, lo, hi)
 assert w.tree_hit(e, 1.0, 0, 1) is None
 assert w.tree_hit(e, 4.0, 0, 1) == "shed"
+assert len(w.shedding) == 1
 st.tree_changed(tx, ty)
 for _ in range(60):
     st.update([key], True, 50.0)
 v1 = tree_verts()
 print("after shed", v1)
-assert v1 < v0, "leaves not removed"
+assert v1 < v0, "tree not taken out of the chunk mesh while it sheds"
+w.shedding.clear(); st.tree_changed(tx, ty)
+for _ in range(60):
+    st.update([key], True, 50.0)
+v1 = tree_verts()
+print("bare in chunk", v1)
 assert w.tree_hit(e, 12.0, 0, 1) is None, "second hit inside the cooldown must not fell"
 time.sleep(0.9)
 assert w.tree_hit(e, 12.0, 0, 1) == "fall"

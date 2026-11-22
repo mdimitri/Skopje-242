@@ -1077,6 +1077,23 @@ class Renderer:
                         m_.transform = M_
                         rl.draw_model(m_, V3(0, 0, 0), 1.0, WHITE)
                         m_.transform = old_t[0]
+        sg = getattr(w, "shedding", None)
+        if sg and gl3d.tree_pack() is not None:                    # a tree losing its leaves: they go from the top down
+            now_ = time.monotonic()
+            for sx_, sy_, sp_, v_, yaw_, sc_, t0_, hh_, rr_, _c in list(sg.values()):
+                if not self._in(sx_, sy_, rect, 8.0):
+                    continue
+                prog = min(1.0, (now_ - t0_) / w.SHED_T)
+                M_ = rl.matrix_multiply(rl.matrix_multiply(rl.matrix_scale(sc_, sc_, sc_), rl.matrix_rotate_y(-yaw_)),
+                                        rl.matrix_translate(sx_, w.ground_y(sx_, sy_), sy_))
+                for i_, m_ in enumerate(self._fall_model(sp_, v_, 4)):
+                    if m_ is not None:
+                        gl3d.tree_cut(1e9 if i_ == 0 else hh_ * (1.0 - prog) ** 1.0)
+                        old_t = _keep(m_.transform)
+                        m_.transform = M_
+                        rl.draw_model(m_, V3(0, 0, 0), 1.0, WHITE)
+                        m_.transform = old_t[0]
+                gl3d.tree_cut(1e9)
         for hx_, hy_, hz_, roof_ in getattr(sim, "helipads", ()):  # hospital helipads: grey disc with a white ring and H
             if self._in(hx_, hy_, rect):
                 if roof_ is not None:                             # roof pad: a steel deck on posts, clear of the roof surface

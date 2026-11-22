@@ -1312,7 +1312,7 @@ def main():
                     shake = max(shake, min(imp * 0.12, 1.8))
                 if d["kind"] == "tree_shed":                       # first hit: the tree loses its leaves, they fly off all round
                     streamer.tree_changed(d["x"], d["y"])
-                    particles.leaf_burst(d["x"], d["y"], world.tree_leaf_col(d["x"], d["y"]))
+                    particles.leaf_burst(d["x"], d["y"], world.tree_leaf_col(d["x"], d["y"]), 12, 4.0)       # a puff at the hit; the rest falls with the stripping (below)
                     aud.at("tree_break", d["x"], d["y"], 0.3, 1.3)
                 if d["kind"] in ("break", "break_tree"):           # knocked it over: hide the mesh, throw bits
                     (streamer.tree_changed if d["kind"] == "break_tree" else streamer.reload_near)(d["x"], d["y"])
@@ -2211,6 +2211,15 @@ def main():
         guard.run("effects", effects, dt)
         guard.run("exhaust", exhaust, dt)
         lights.update(dt)
+        if getattr(world, "shedding", None):                # leaves leave the crown top-down, in step with the stripped sprites
+            now_s = time.monotonic()
+            for sx_, sy_, _sp, _v, _yw, sc_, t0_, hh_, rr_, col_ in world.shedding.values():
+                prog = (now_s - t0_) / world.SHED_T
+                if prog < 1.0 and math.hypot(sx_ - sim.focus()[0], sy_ - sim.focus()[1]) < 120:
+                    ncut = max(1, int(round(60 * dt / world.SHED_T)))
+                    particles.leaf_burst(sx_, sy_, col_, ncut, world.ground_y(sx_, sy_) + (1.0 - prog) * hh_ * sc_, rr_ * sc_ * 0.7, (0.3, 1.8), (-0.6, 0.6))
+            for k_ in world.shed_done():
+                streamer.tree_changed(*k_)
         particles.update(dt)
         popups.update(dt)
         gains.update(dt)

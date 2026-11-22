@@ -3455,9 +3455,10 @@ void main(){
   p += vec3(f1, 0.4 * f1, f2) * (leaf * w * 0.035 * wind.z);                   // leaf shimmer
   wpos = vertexPosition.xz; wp = vertexPosition;
   gl_Position = mvp * vec4(p, 1.0); }"""
-TREE_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")] + """void main(){
+TREE_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")] + """uniform float cut;       // leaves higher than this (model space) are gone: a tree shedding from the top down
+void main(){
   vec4 base = texture(texture0, fragTexCoord);
-  if (base.a < 0.45) discard;
+  if (base.a < 0.45 || wp.y > cut) discard;
   vec3 c = base.rgb * colDiffuse.rgb * fragColor.rgb;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
   if (nrm.y < 0.0) nrm = -nrm;
@@ -3489,7 +3490,7 @@ def tree_pack():
             raise RuntimeError("shader did not compile")
         _sun_register(sh)
         surfacepack.register(sh)
-        _tree = (sh, tex, rl.get_shader_location(sh, "wind"), rl.get_shader_location(sh, "time"))
+        _tree = (sh, tex, rl.get_shader_location(sh, "wind"), rl.get_shader_location(sh, "time"), rl.get_shader_location(sh, "cut"))
     except Exception as e:  # noqa: BLE001 - no runtime trees then (the world is built without baked ones)
         print(f"[gfx] runtime trees off: {e}")
     return _tree or None
@@ -3509,6 +3510,13 @@ def tree_model(pos, uv, col):
     return m
 
 
+def tree_cut(y):
+    """Hide the leaves above model-space height y in the next tree draws (1e9: none)."""
+    d = tree_pack()
+    if d is not None and d[4] >= 0:
+        rl.set_shader_value(d[0], d[4], rl.ffi.new("float *", float(y)), rl.SHADER_UNIFORM_FLOAT)
+
+
 def tree_wind(t, amp=0.22, direction=(0.8, 0.6)):
     """Wind for this frame: t seconds, sway in metres at the very top of a tree (the leaves shimmer in proportion), horizontal direction."""
     d = tree_pack()
@@ -3516,6 +3524,7 @@ def tree_wind(t, amp=0.22, direction=(0.8, 0.6)):
         return
     rl.set_shader_value(d[0], d[2], rl.ffi.new("float[3]", [direction[0], direction[1], amp]), rl.SHADER_UNIFORM_VEC3)
     rl.set_shader_value(d[0], d[3], rl.ffi.new("float *", float(t)), rl.SHADER_UNIFORM_FLOAT)
+    tree_cut(1e9)
 
 
 _solid = None

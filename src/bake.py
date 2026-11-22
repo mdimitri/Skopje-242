@@ -549,7 +549,8 @@ class Streamer:
             rows = np.c_[tr, w.th_v(tr[:, 0], tr[:, 1])].tolist()
             ts = getattr(w, "tree_state", None)
             if ts:                                           # felled trees are gone (they lie as models of their own), shed ones are bare
-                rows = [r + [ts.get((r[0], r[1]), (0,))[0] == 1] for r in rows if ts.get((r[0], r[1]), (0,))[0] != 2]
+                sd = getattr(w, "shedding", {})
+                rows = [r + [ts.get((r[0], r[1]), (0,))[0] == 1] for r in rows if ts.get((r[0], r[1]), (0,))[0] != 2 and (r[0], r[1]) not in sd]
             job = self._tj[key] = {"lvl": lvl, "rows": rows, "i": 0, "p": {20: [], 21: [], 22: []}}
         rows, acc = job["rows"], job["p"]
         while True:                                              # at least one slice per call, so a starved chunk still gets there
