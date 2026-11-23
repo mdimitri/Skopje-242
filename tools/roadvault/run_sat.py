@@ -12,25 +12,33 @@ def font(n):
         return ImageFont.load_default()
 
 
-def panel(f, r, S, O, tile=700):
+def panel(f, r, S, O, tile=560):
     a, b, _ = S.overlay(f)
-    t, sd, pl = O.render_views(f, r)
+    t0, _s0, _p0 = O.render_views(f, r)
+    t, sd, pl = O.render_views(f, r, fitted=True)
     name = os.path.basename(f).split("_z19")[0].replace("id_", "")
-    im = Image.new("RGB", (tile * 4, tile + 36), (24, 26, 30))
-    for i, x in enumerate([a, b, t, sd]):
+    im = Image.new("RGB", (tile * 5, tile + 36), (24, 26, 30))
+    for i, x in enumerate([a, b, t0, t, sd]):
         im.paste(x.resize((tile, tile), Image.LANCZOS), (i * tile, 36))
     d = ImageDraw.Draw(im)
     lat, lng = pl.info["site"]
-    d.text((8, 8), f"{name}   {lat:.5f}, {lng:.5f}   {pl.info['width_m']:.0f} m wide   {pl.info['n_roads']} OSM roads", fill=(255, 255, 255), font=font(18))
-    for i, lab in enumerate(["satellite", "satellite + OSM", "top view (OSM in vault engine)", "side view"]):
-        d.text((i * tile + 700 - 8 - 10 * len(lab) // 1, 8), lab, fill=(180, 200, 255), font=font(15))
+    fl = pl.info["fit_log"]
+    d.text((8, 8), f"{name}   {lat:.5f}, {lng:.5f}   {pl.info['width_m']:.0f} m wide   {pl.info['n_roads']} roads   fit rules fired: {len(fl)}", fill=(255, 255, 255), font=font(18))
+    for i, lab in enumerate(["satellite", "satellite + OSM", "top: raw OSM", "top: fitted", "side: fitted"]):
+        d.text((i * tile + tile - 8 - 10 * len(lab), 8), lab, fill=(180, 200, 255), font=font(15))
+    with open(os.path.join(os.path.dirname(f) if False else OUTDIR[0], "fitlog.jsonl"), "a") as fh:
+        fh.write(json.dumps(dict(site=name, log=fl)) + "\n")
     return im
+
+
+OUTDIR = [""]
 
 
 def main(inp, out, shard, nsh):
     import sat_overlay as S, osm_render as O
     from render import Renderer
     os.makedirs(out, exist_ok=True)
+    OUTDIR[0] = out
     r = Renderer((900, 900))
     fs = sorted(glob.glob(os.path.join(inp, "*.jpg")))
     for i, f in enumerate(fs):

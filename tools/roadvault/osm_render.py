@@ -17,6 +17,7 @@ PRIO = {"motorway": 3, "trunk": 3, "primary": 2, "secondary": 2, "tertiary": 1}
 
 
 def road_from(r, cx, cy, rid):
+    RL = r.get('_rl', 70.0)
     pts = np.array([(x - cx, -(y - cy)) for x, y in r["pts"]], float)      # (east, north) relative to the site centre
     if len(pts) < 2:
         return None
@@ -30,7 +31,7 @@ def road_from(r, cx, cy, rid):
     z = 0.0
     if r.get("bridge") or r.get("layer", 0) > 0:
         h = 6.2 * max(1, int(r.get("layer", 1) or 1)) if not r.get("tunnel") else 0.0
-        rl = min(70.0, L * 0.38)
+        rl = min(RL, L * (0.38 if RL <= 70 else 0.46))
         z = K([(0, 0.0), (rl, h), (max(L - rl, rl + 1), h), (L, 0.0)]) if h else 0.0
     if drive:
         lanes = max(1, int(round(w / (3.3 if ow else 6.6))))
@@ -56,7 +57,7 @@ def road_from(r, cx, cy, rid):
     return rd
 
 
-def plan_for(path, radius=105.0):
+def plan_for(path, radius=105.0, fitted=False):
     lat, lng, mpp = S.parse(os.path.basename(path))
     from PIL import Image
     W = Image.open(path).size[0]
@@ -64,7 +65,7 @@ def plan_for(path, radius=105.0):
     import geo
     cx, cy = geo.project(lat, lng)
     half = W * s * 0.5 + 40
-    roads = []
+    sel = []
     for i, r in enumerate(S.roads()):
         xs = [p[0] for p in r["pts"]]
         ys = [p[1] for p in r["pts"]]
@@ -73,19 +74,26 @@ def plan_for(path, radius=105.0):
         if r["cls"] in ("footway", "path", "steps", "cycleway", "pedestrian", "track", "bridleway"):
             if r["w"] and r["w"] > 3.5 or not r.get("walk"):
                 continue
+        sel.append(r)
+    flog = []
+    if fitted:
+        import fit as F
+        sel = F.fit(sel, flog, cx, cy, half)
+    roads = []
+    for i, r in enumerate(sel):
         rd = road_from(r, cx, cy, i)
         if rd is not None:
             roads.append(rd)
     pl = Plan("osm", roads, extent=half + 40, seed=1, cars=True)
-    pl.info.update(notrees=True, site=(lat, lng), scale=s, width_m=W * s, n_roads=len(roads))
+    pl.info.update(fit_log=flog, notrees=True, site=(lat, lng), scale=s, width_m=W * s, n_roads=len(roads))
     return pl
 
 
-def render_views(path, r, size=(900, 900)):
+def render_views(path, r, size=(900, 900), fitted=False):
     """Return (top view, side view) PIL images for the OSM roads around the screenshot."""
     import pyray as rl
     from PIL import Image
-    pl = plan_for(path)
+    pl = plan_for(path, fitted=fitted)
     W = Image.open(path).size[0]
     wm = pl.info["width_m"]
     m = C.build_plan(pl)

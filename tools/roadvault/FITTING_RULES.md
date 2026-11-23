@@ -33,6 +33,19 @@ vault corridor engine (not the game's roads3d, and not yet a matched vault desig
 - The side view is a low far camera: only useful on bridge/underpass sites. Flat at-grade sites look empty from the side.
   Next version should pick the side camera nearer and aim at the highest deck.
 
+## Fit pass v1 (fit.py, 132 p1 sites)
+Rules applied automatically before rendering, logged per site in fitlog.jsonl:
+- F1 lane floor (width >= lanes x 3.25 m): fired 0 times. The game's road data already carries lane-based widths, so my earlier
+  visual impression of "OSM understates lanes" is not coming from the tags; it is a drawing issue (paint/median), not data.
+- F2 unpaved demotion (service/unclassified/track with <12% of in-frame samples within 20 m of a building -> track, 3.2 m, no
+  paint): 476 ways. Risky: it also removes real asphalt in car parks and industrial yards where the building layer is sparse.
+  Needs a satellite surface check before it is trusted; do not apply to game data yet.
+- F3 link tangent join (link ends meeting a parent road at 12-80 degrees get a 60 m Hermite taper): 109 link ends.
+- F4 deck ramps lengthened to 90 m on bridges/layer>0.
+Lessons: (a) geometry of OSM already tracks the imagery well, the visible differences are what OSM does not carry: medians with
+planting, green islands, channelised slips, paved yards. (b) top-down comparisons are easy, side-by-side judgement of grade needs
+the side camera nearer. (c) The next real gain is from choosing a vault family per junction (needs satellite classification).
+
 ## Not built yet
 - The actual fit step (choose family, lane counts, radii per site and render the matched design next to the OSM render).
 - p2 sites (259) are not staged yet.
