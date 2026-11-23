@@ -93,10 +93,71 @@ def dashed_segments(line, dash=3.0, gap=6.0, start=1.0):
     return out
 
 
-def build(edges, cx, cy, buildings=()):
-    E = []
+WALK_W = {"footway": 1.2, "path": 0.9, "pedestrian": 2.0, "steps": 1.0, "cycleway": 1.3, "track": 1.0}
+
+
+def bridge_mesh(m, B, decks, cx, cy, base):
+    """Elevated carriageways at their real deck heights: asphalt, 2.4 m pavements with kerbs, parapets, soffit and piers."""
+    for d in B:
+        e, ln, hw = d["e"], d["ln"], d["hw"]
+        deck = decks.get(e["road"])
+        if deck is None or ln.length < 4:
+            continue
+        n = max(2, int(ln.length / 2.0))
+        P, H, F = [], [], []
+        for i in range(n + 1):
+            p = ln.interpolate(ln.length * i / n)
+            q = ln.interpolate(min(ln.length, ln.length * i / n + 1.0))
+            r = ln.interpolate(max(0.0, ln.length * i / n - 1.0))
+            tx, ty = q.x - r.x, q.y - r.y
+            l = math.hypot(tx, ty) or 1.0
+            P.append((p.x, p.y))
+            F.append((-ty / l, tx / l))
+            H.append(max(0.0, float(deck.at(p.x + cx, p.y + cy)[0]) - base))
+        SWB = 2.4
+        def edge(off):
+            return [(p[0] + f[0] * off, p[1] + f[1] * off) for p, f in zip(P, F)]
+        def quadstrip(o0, o1, dy, col):
+            A, Bb = edge(o0), edge(o1)
+            for i in range(n):
+                m.quad((A[i][0], H[i] + dy, A[i][1]), (A[i + 1][0], H[i + 1] + dy, A[i + 1][1]), (Bb[i + 1][0], H[i + 1] + dy, Bb[i + 1][1]), (Bb[i][0], H[i] + dy, Bb[i][1]), col)
+        def vwall(o, y0, y1, col):
+            A = edge(o)
+            for i in range(n):
+                m.quad((A[i][0], H[i] + y0, A[i][1]), (A[i + 1][0], H[i + 1] + y0, A[i + 1][1]), (A[i + 1][0], H[i + 1] + y1, A[i + 1][1]), (A[i][0], H[i] + y1, A[i][1]), col)
+        quadstrip(-hw, hw, 0.0, ASPH)
+        for sg in (-1, 1):
+            quadstrip(sg * hw, sg * (hw + SWB), KERB, KTOP)
+            vwall(sg * hw, 0.0, KERB, KFACE)
+            vwall(sg * (hw + SWB), -1.1, 1.05, (196, 194, 188))
+            quadstrip(sg * (hw + SWB - 0.25), sg * (hw + SWB), 1.05, (214, 212, 206))
+            quadstrip(sg * (hw - 0.45), sg * (hw - 0.31), 0.05, WHITE)
+        if not e["ow"]:
+            quadstrip(-0.07, 0.07, 0.05, WHITE)
+        quadstrip(-hw - SWB, hw + SWB, -1.1, (150, 148, 142))
+        for i in range(2, n - 1, 10):
+            if H[i] > 1.2:
+                m.box(P[i][0], 0.0, P[i][1], 1.8, H[i] - 1.1, 2 * (hw + SWB) - 1.0, (176, 174, 168), math.atan2(F[i][0], -F[i][1]) + math.pi / 2)
+        for i in range(3, n - 2, 12):
+            for sg in (-1, 1):
+                x, z = P[i][0] + F[i][0] * sg * (hw + SWB - 0.9), P[i][1] + F[i][1] * sg * (hw + SWB - 0.9)
+                m.cyl(x, H[i] + KERB, H[i] + 8.0, z, 0.1, jd.POLE, 6)
+
+
+def build(edges, cx, cy, buildings=(), decks=None):
+    E, B, W = [], [], []
     for e in edges:
-        if not e["drive"] or e["bridge"]:
+        if not e["drive"] and not e["bridge"] and e["cls"] in WALK_W and len(e["pts"]) >= 2:
+            P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
+            if min(math.hypot(p[0], p[1]) for p in P) < RANGE:
+                W.append({"e": e, "ln": LineString(P), "hw": WALK_W[e["cls"]]})
+            continue
+        if e["drive"] and e["bridge"]:
+            P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
+            if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + 30:
+                B.append({"e": e, "ln": LineString(P), "hw": half_w(e), "per": per_dir(e)})
+            continue
+        if not e["drive"]:
             continue
         P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
         if min(math.hypot(p[0], p[1]) for p in P) > RANGE + 30 or len(P) < 2:
@@ -111,9 +172,9 @@ def build(edges, cx, cy, buildings=()):
         inc.setdefault(d["e"]["a"], []).append(d)
         inc.setdefault(d["e"]["b"], []).append(d)
     nodes = {n: L for n, L in inc.items() if len(L) >= 3}
-    ribs = [d["ln"].buffer(d["hw"], cap_style=1, join_style=1, resolution=8) for d in E]
+    ribs = [d["ln"].buffer(d["hw"], cap_style=1, join_style=1, resolution=16) for d in E]
     U = unary_union(ribs)
-    C = U.buffer(R_KERB, resolution=12).buffer(-R_KERB, resolution=12)
+    C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     gap = C.difference(U)
     isl = gap.buffer(-1.3, resolution=6).buffer(1.3, resolution=6).intersection(gap)
     isl = unary_union([p for p in polys_of(isl) if p.area > 6.0])
@@ -140,6 +201,33 @@ def build(edges, cx, cy, buildings=()):
         for q in polys_of(ins):
             tri_poly(m, q, KERB + 0.04, GRASS)
         walls_of(m, p, 0.0, KERB, KFACE)
+    if W:
+        foot = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] != "cycleway"])
+        cyc = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] == "cycleway"])
+        cut = asph.union(isl)
+        stroke(m, foot.difference(cut).intersection(clip), KERB + 0.01, (214, 210, 202))
+        cyc = cyc.difference(cut).intersection(clip)
+        stroke(m, cyc, KERB + 0.02, (176, 92, 84))
+        for w in W:
+            if w["e"]["cls"] != "cycleway":
+                continue
+            s_ = 6.0
+            while s_ < w["ln"].length - 3:
+                p = w["ln"].interpolate(s_)
+                q = w["ln"].interpolate(min(w["ln"].length, s_ + 1.0))
+                tx, ty = q.x - p.x, q.y - p.y
+                l = math.hypot(tx, ty) or 1.0
+                tx, ty = tx / l, ty / l
+                nx, ny = -ty, tx
+                for off in (-0.55, 0.55):                     # bicycle glyph: two wheels and a frame
+                    wx, wy = p.x + tx * off, p.y + ty * off
+                    ring = Point(wx, wy).buffer(0.32, resolution=6).difference(Point(wx, wy).buffer(0.24, resolution=6))
+                    stroke(m, ring, KERB + 0.04, WHITE)
+                stroke(m, LineString([(p.x - tx * 0.55, p.y - ty * 0.55), (p.x, p.y + 0.0), (p.x + tx * 0.55, p.y + ty * 0.55)]).buffer(0.05), KERB + 0.04, WHITE)
+                s_ += 25.0
+    if B and decks:
+        base = min(float(decks[d["e"]["road"]].at(*d["ln"].coords[0][:2] if False else (d["ln"].coords[0][0] + cx, d["ln"].coords[0][1] + cy))[0]) for d in B if d["e"]["road"] in decks) if any(d["e"]["road"] in decks for d in B) else 0.0
+        bridge_mesh(m, B, decks, cx, cy, base)
     # paint zone: asphalt without junction cores and islands
     core = unary_union([Point(0, 0).buffer(0)] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(9.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
     zone = asph.difference(core).difference(isl.buffer(0.3))
@@ -152,7 +240,8 @@ def build(edges, cx, cy, buildings=()):
                 path = shapely.offset_curve(ln, off) if abs(off) > 1e-6 else ln
             except Exception:  # noqa: BLE001
                 return
-            parts = dashed_segments(path) if dash else [path]
+            lines = [path] if isinstance(path, LineString) else list(getattr(path, "geoms", []))
+            parts = [q for ln_ in lines for q in (dashed_segments(ln_) if dash else [ln_])]
             for s_ in parts:
                 if s_.is_empty or s_.length < 0.3:
                     continue
@@ -162,8 +251,11 @@ def build(edges, cx, cy, buildings=()):
             for k in range(1, per):
                 paint(-hw + LW * k, 0.15, True)
         else:
-            if per >= 1:
-                paint(0.0, 0.15)
+            if per >= 2:
+                paint(0.14, 0.11)
+                paint(-0.14, 0.11)
+            else:
+                paint(0.0, 0.14, True)
             for k in range(1, per):
                 paint(LW * k, 0.15, True)
                 paint(-LW * k, 0.15, True)
@@ -192,6 +284,8 @@ def build(edges, cx, cy, buildings=()):
                 b = (x + nx * (k + 0.25), y + ny * (k + 0.25))
                 poly = Polygon([a, b, (b[0] + tx * 3.0, b[1] + ty * 3.0), (a[0] + tx * 3.0, a[1] + ty * 3.0)]).intersection(asph.difference(isl))
                 stroke(m, poly, 0.05, WHITE)
+                raised = Polygon([a, b, (b[0] + tx * 3.0, b[1] + ty * 3.0), (a[0] + tx * 3.0, a[1] + ty * 3.0)]).intersection(isl)
+                stroke(m, raised, KERB + 0.07, (222, 220, 214))
                 k += 1.0
             inbound = (not e["ow"]) or (e["b"] == n)
             if inbound:
@@ -294,7 +388,7 @@ def main():
     import junction_scenes as js
     for i, a in enumerate(sys.argv[3:]):
         cx, cy = (float(v) for v in a.split(","))
-        m = build(dump["edges"], cx, cy, dump.get("buildings", ()))
+        m = build(dump["edges"], cx, cy, dump.get("buildings", ()), dump.get("decks"))
         js.render(m, out, {"top": ((0, 150, -1), (0, 0, 0)), "aerial": ((60, 85, -85), (0, 0, 0))}, f"net{i}")
         print("done", i, cx, cy, len(m.P) // 3, "tris")
 
