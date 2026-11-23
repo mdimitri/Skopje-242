@@ -53,7 +53,7 @@ def road_mesh(dump, x, y, r):
     up = [p for p in dump.get("upass") or [] if (abs(np.asarray(p["pts"])[:, 0] - x) < r + 60).any() and (abs(np.asarray(p["pts"])[:, 1] - y) < r + 60).any()]
     if up:                                                         # underpass roofs, cutting walls and parapets, as the game adds them
         import underpass
-        if os.environ.get("SK242_DESIGNER") == "1":               # as build_world does before the roofs
+        if os.environ.get("SK242_DESIGNER", "1") != "0":               # as build_world does before the roofs
             up = [dict(p) for p in up]
             underpass.open_under_decks(up, E)
         underpass.roof(up, lambda key, mat, pos, uv, col: got.append((pos, col)), lambda a, b: (int(a // 120), int(b // 120)), 0, dump["T"])

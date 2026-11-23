@@ -2659,7 +2659,7 @@ def main():
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
-    if os.environ.get("SK242_DESIGNER") == "1":                # a street crossing an open cutting is its bridge deck, not a roof slab too
+    if os.environ.get("SK242_DESIGNER", "1") != "0":                # a street crossing an open cutting is its bridge deck, not a roof slab too
         print(f"[build] underpass roof opened under {underpass.open_under_decks(upass, edges)} m of decks")
     if ROADS_ONLY:                                             # tools/road_audit.py reads this and stops here
         with open(ROADS_ONLY, "wb") as f_:

@@ -3,7 +3,7 @@ network tile by tile (asphalt with tapered splits, kerbs, pavements, islands, la
 triangles to roads3d.Out, whose flush() then drapes them on the 10 m terrain grid like every other road piece.
 
 Tiles are clipped to their square and carry a 60 m margin of neighbouring roads, so neighbouring tiles agree on the
-shared border.  Switched on with SK242_DESIGNER=1 (roads3d.build)."""
+shared border.  On by default; SK242_DESIGNER=0 returns to the old builder (roads3d.build)."""
 import math
 
 import numpy as np
