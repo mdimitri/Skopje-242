@@ -284,6 +284,96 @@ def context(edges):
     return {"BL": bridge_lanes(edges), "gn": set(gdeg), "gdeg": gdeg}
 
 
+def regularise(E, join=35.0, straight=40.0):
+    """Drawing-only clean-up of the OSM junction geometry: nearby junction nodes (joined by short edges) become one
+    junction, the arms leave it on straight approaches, and opposite arms of a road carry the same lanes.  Works on
+    copies of the edge dicts, so the traffic graph is untouched."""
+    deg = {}
+    for d in E:
+        for k in ("a", "b"):
+            deg[d["e"][k]] = deg.get(d["e"][k], 0) + 1
+    jn_nodes = {n for n, c in deg.items() if c >= 3}
+    parent = {n: n for n in jn_nodes}
+
+    def find(n):
+        while parent[n] != n:
+            parent[n] = parent[parent[n]]
+            n = parent[n]
+        return n
+    internal = set()
+    for i, d in enumerate(E):
+        a, b = d["e"]["a"], d["e"]["b"]
+        if a in jn_nodes and b in jn_nodes and a != b and d["ln"].length < join:
+            parent[find(a)] = find(b)
+            internal.add(i)
+    members = {}
+    for n in jn_nodes:
+        members.setdefault(find(n), []).append(n)
+    where = {}
+    for d in E:
+        c = d["ln"].coords
+        where[d["e"]["a"]] = c[0]
+        where[d["e"]["b"]] = c[-1]
+    centre = {}
+    for root, ns in members.items():
+        xs = [where[n] for n in ns if n in where]
+        centre[root] = (sum(p[0] for p in xs) / len(xs), sum(p[1] for p in xs) / len(xs))
+    out = []
+    for i, d in enumerate(E):
+        if i in internal:
+            continue
+        e = dict(d["e"])
+        ln = d["ln"]
+        pts = list(ln.coords)
+        for end, key in ((0, "a"), (1, "b")):
+            n = e[key]
+            if n not in jn_nodes:
+                continue
+            root = find(n)
+            c = centre[root]
+            e[key] = root
+            L = ln.length
+            if L < straight + 12:
+                pts = [c] + pts[1:] if end == 0 else pts[:-1] + [c]
+                continue
+            # straight approach: centre -> the point `straight` metres out, then the original line
+            if end == 0:
+                q = ln.interpolate(straight)
+                rest = [p for p in pts if LineString(pts).project(Point(p)) > straight]
+                pts = [c, (q.x, q.y)] + rest
+            else:
+                q = ln.interpolate(L - straight)
+                rest = [p for p in pts if LineString(pts).project(Point(p)) < L - straight]
+                pts = rest + [(q.x, q.y), c]
+            ln = LineString(pts)
+        if len(pts) < 2:
+            continue
+        nd = dict(d)
+        nd["e"] = e
+        nd["ln"] = LineString(pts)
+        out.append(nd)
+    # opposite arms of one road: the wider lane count on both sides of the junction
+    at = {}
+    for d in out:
+        for k in ("a", "b"):
+            if d["e"][k] in jn_nodes or d["e"][k] in members:
+                at.setdefault(d["e"][k], []).append((d, k))
+    for n, arms in at.items():
+        for i in range(len(arms)):
+            for j in range(i + 1, len(arms)):
+                (d1, k1), (d2, k2) = arms[i], arms[j]
+                if d1["e"]["cls"] != d2["e"]["cls"] or d1["e"]["ow"] != d2["e"]["ow"]:
+                    continue
+                u1 = _out_dir(d1["ln"], k1 == "a")
+                u2 = _out_dir(d2["ln"], k2 == "a")
+                if u1[0] * u2[0] + u1[1] * u2[1] < -0.85:
+                    per = max(d1["per"], d2["per"])
+                    for d in (d1, d2):
+                        d["per"] = per
+                        d["hw"] = per * LW / 2 if d["e"]["ow"] else per * LW
+    return out
+
+
 def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None):
     """port=True: only what replaces the game's ground-road surfaces (asphalt, kerbs, pavements, islands, paint, zebras),
     heights relative to the terrain, no furniture / bridges / buildings; ctx = context(edges) when `edges` is a subset."""
@@ -311,6 +401,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         if ln.length < 3.0:
             continue
         E.append({"e": e, "ln": ln, "hw": half_w(e), "per": per_dir(e)})
+    E = regularise(E)
     # junction nodes: >= 3 incident drive edges
     inc = {}
     for d in E:
