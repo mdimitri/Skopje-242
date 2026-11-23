@@ -31,9 +31,25 @@ POLE, HEAD = (66, 68, 72), (34, 35, 38)
 class Mesh:
     def __init__(self):
         self.P, self.C = [], []
+        self.gfn = None                      # optional terrain draping: (x, z) -> ground height
 
     def tri(self, a, b, c, col, lit=True):
         a, b, c = np.array(a, float), np.array(b, float), np.array(c, float)
+        if self.gfn is not None:
+            # split long triangles so the surface follows the terrain, then lift every vertex by the ground height
+            e = [np.linalg.norm((b - a)[[0, 2]]), np.linalg.norm((c - b)[[0, 2]]), np.linalg.norm((a - c)[[0, 2]])]
+            k = int(np.argmax(e))
+            if e[k] > 3.5:
+                v = (a, b, c)
+                p, q, r = v[k], v[(k + 1) % 3], v[(k + 2) % 3]
+                mid = (p + q) / 2
+                self.tri(p, mid, r, col, lit)
+                self.tri(mid, q, r, col, lit)
+                return
+            g, self.gfn = self.gfn, None
+            self.tri(*[v + np.array([0.0, g(v[0], v[2]), 0.0]) for v in (a, b, c)], col, lit)
+            self.gfn = g
+            return
         n = np.cross(b - a, c - a)
         ln = np.linalg.norm(n)
         k = 1.0
