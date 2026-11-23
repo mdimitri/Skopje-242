@@ -280,6 +280,27 @@ def build(edges, cx, cy, buildings=(), decks=None):
         stroke(m, foot.difference(cut).intersection(clip), KERB + 0.01, (214, 210, 202))
         cyc = cyc.difference(cut).intersection(clip)
         stroke(m, cyc, KERB + 0.02, (176, 92, 84))
+        # footpaths and cycleways cross carriageways only as zebra crossings
+        bars = []
+        road_only = asph.difference(isl)
+        for w in W:
+            seg = w["ln"].intersection(road_only)
+            for g in (getattr(seg, "geoms", [seg])):
+                if g.is_empty or g.geom_type != "LineString" or not 3.0 <= g.length <= 28.0:
+                    continue
+                c0, c1 = g.coords[0], g.coords[-1]
+                L = g.length
+                ux, uy = (c1[0] - c0[0]) / L, (c1[1] - c0[1]) / L
+                nx, ny = -uy, ux
+                k = 0.6
+                while k < L - 0.5:
+                    cx_, cy_ = c0[0] + ux * k, c0[1] + uy * k
+                    hl, hb = 1.5, 0.25
+                    bars.append(Polygon([(cx_ - nx * hl - ux * hb, cy_ - ny * hl - uy * hb), (cx_ + nx * hl - ux * hb, cy_ + ny * hl - uy * hb),
+                                         (cx_ + nx * hl + ux * hb, cy_ + ny * hl + uy * hb), (cx_ - nx * hl + ux * hb, cy_ - ny * hl + uy * hb)]))
+                    k += 1.0
+        if bars:
+            stroke(m, unary_union(bars).intersection(road_only).intersection(clip), 0.06, WHITE)
         for w in W:
             if w["e"]["cls"] != "cycleway":
                 continue
