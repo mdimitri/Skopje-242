@@ -18,6 +18,13 @@ def line_pts(x0, y0, x1, y1):
 
 
 def carriageway(name, pts, n, lw=3.6, z=0.0, so=3.0, si=1.2, kind="main", prio=0, edge_w=0.2, dens=0.4, lamps=False, speed=100.0):
+    n = int(C.g(name, "n", n))
+    lw = C.g(name, "lw", lw)
+    so, si = C.g(name, "shoulder_out", so), C.g(name, "shoulder_in", si)
+    dens = C.g(name, "traffic", dens)
+    speed = C.g(name, "speed", speed)
+    if not hasattr(z, "__call__"):
+        z = C.g(name, "z", z)
     r = Road(name, pts, lo=-n * lw / 2, hi=n * lw / 2, z=z, sh_lo=so, sh_hi=si, kind=kind, prio=prio, speed=speed, lamps=lamps)
     r.note.update(n=n, lw=lw)
     r.lines.append(dict(off=lambda s, r=r: r.lo(s) + 0.3, kind="solid", col=WHITE, w=edge_w))
@@ -30,11 +37,15 @@ def carriageway(name, pts, n, lw=3.6, z=0.0, so=3.0, si=1.2, kind="main", prio=0
 
 
 def freeway(n=2, lw=3.6, med=8.0, L=EXT, zk=0.0, so=3.0, si=1.2, lamps=True):
-    xc = med / 2 + n * lw / 2
-    nb = carriageway("NB", line_pts(xc, -L, xc, L), n, lw, zk, so, si, lamps=lamps)
-    sb = carriageway("SB", line_pts(-xc, L, -xc, -L), n, lw, zk, so, si, lamps=lamps)
+    med = C.g("freeway", "median", med)
+    n_nb, lw_nb = int(C.g("NB", "n", n)), C.g("NB", "lw", lw)
+    n_sb, lw_sb = int(C.g("SB", "n", n)), C.g("SB", "lw", lw)
+    xc_nb, xc_sb = med / 2 + n_nb * lw_nb / 2, med / 2 + n_sb * lw_sb / 2
+    nb = carriageway("NB", line_pts(xc_nb, -L, xc_nb, L), n, lw, zk, so, si, lamps=lamps)
+    sb = carriageway("SB", line_pts(-xc_sb, L, -xc_sb, -L), n, lw, zk, so, si, lamps=lamps)
     nb.barrier_hi = sb.barrier_hi = True
-    return nb, sb, xc
+    nb.xc, sb.xc = xc_nb, xc_sb
+    return nb, sb, xc_nb
 
 
 def over_z(L, half_flat, ramp_len, H):
@@ -52,16 +63,18 @@ def s_at_x(road, x):
 
 
 def crossroad(n=2, lw=3.5, med=3.0, L=EXT, z=None, yc=None, so=1.0, si=0.0, med_kind="paint"):
-    yc = yc if yc is not None else med / 2 + n * lw / 2
-    eb = carriageway("EB", line_pts(-L, -yc, L, -yc), n, lw, z or 0.0, so, si, kind="cross", prio=1, dens=0.35, speed=60)
-    wb = carriageway("WB", line_pts(L, yc, -L, yc), n, lw, z or 0.0, so, si, kind="cross", prio=1, dens=0.35, speed=60)
+    med = C.g("crossroad", "median", med)
+    n_e, lw_e = int(C.g("EB", "n", n)), C.g("EB", "lw", lw)
+    n_w, lw_w = int(C.g("WB", "n", n)), C.g("WB", "lw", lw)
+    yc_e, yc_w = med / 2 + n_e * lw_e / 2, med / 2 + n_w * lw_w / 2
+    eb = carriageway("EB", line_pts(-L, -yc_e, L, -yc_e), n, lw, z or 0.0, so, si, kind="cross", prio=1, dens=0.35, speed=60)
+    wb = carriageway("WB", line_pts(L, yc_w, -L, yc_w), n, lw, z or 0.0, so, si, kind="cross", prio=1, dens=0.35, speed=60)
+    eb.yc, wb.yc = yc_e, yc_w
     eb.lines = [l for l in eb.lines if l.get("col") != YELLOW]
     wb.lines = [l for l in wb.lines if l.get("col") != YELLOW]
     for r in (eb, wb):
         r.lines.append(dict(off=lambda s, r=r: r.hi(s) - 0.2, kind="dbl" if med < 1.5 else "solid", col=YELLOW, w=0.12))
-    if med >= 1.5 and med_kind != "paint":
-        pass
-    return eb, wb, yc
+    return eb, wb, max(yc_e, yc_w)
 
 
 def pocket(road, xs, side=1, length=70.0, taper=25.0, w=3.3):
@@ -83,16 +96,26 @@ def add_report(plan, ramps):
 def frame(p, flat_extra=0.0, xt=None):
     n = p.get("fw_n", 2)
     lw = p.get("fw_lw", 3.6)
-    H = p.get("H", 7.0)
+    H = C.g("crossroad", "H", p.get("H", 7.0))
     fw_over = p.get("fw_over", False)
     nb, sb, xc = freeway(n, lw, p.get("fw_med", 8.0), zk=K(over_z(EXT, 100, 130, H)) if fw_over else 0.0)
     cn, clw = p.get("c_n", 2), p.get("c_lw", 3.5)
     flat = max(p.get("flat", 0.0), (xt or 0) + 35, 90) + flat_extra
     zc = 0.0 if fw_over else K(over_z(EXT, flat, 130, H))
     eb, wb, yc = crossroad(cn, clw, p.get("c_med", 3.0), z=zc, so=p.get("c_so", 1.0))
-    yedge = yc + cn * clw / 2
-    xe = xc + n * lw / 2
-    return dict(nb=nb, sb=sb, xc=xc, eb=eb, wb=wb, yc=yc, yedge=yedge, xe=xe, H=0.0 if fw_over else H, n=n, lw=lw, cn=cn, clw=clw)
+    xe_nb = nb.xc + nb.note["n"] * nb.note["lw"] / 2
+    xe_sb = sb.xc + sb.note["n"] * sb.note["lw"] / 2
+    ye_eb = eb.yc + eb.note["n"] * eb.note["lw"] / 2
+    ye_wb = wb.yc + wb.note["n"] * wb.note["lw"] / 2
+    return dict(nb=nb, sb=sb, xc=xc, eb=eb, wb=wb, yc=yc, yedge=ye_eb, xe=xe_nb, xe_nb=xe_nb, xe_sb=xe_sb, ye_eb=ye_eb, ye_wb=ye_wb,
+                H=0.0 if fw_over else H, n=n, lw=lw, cn=cn, clw=clw)
+
+
+def edges(f, sb_, which):
+    """(freeway edge distance, cross-road edge distance) seen from the NB frame; the SB side is the 180-degree rotation of it."""
+    xe = f["xe_sb"] if sb_ else f["xe_nb"]
+    eb, wb = ("ye_wb", "ye_eb") if sb_ else ("ye_eb", "ye_wb")
+    return xe, f[eb if which == "eb" else wb]
 
 
 def rot(pts):
@@ -106,43 +129,46 @@ def mirror_plan(plan, frm):
 
 
 def outer_off(f, R, par, ta, tb, nl, rlw, ell, side_sb=False, name="oo", speed=35.0):
-    xe, ye, H = f["xe"], f["yedge"], f["H"]
+    R, par, ell = C.g(name, "R", R), C.g(name, "par", par), C.g(name, "ell", ell)
+    xe, ye = edges(f, side_sb, "eb")
     y0 = -ye - R - par
     pts, _ = seg_pts(xe, y0, math.pi / 2, [("L", par), ("A", math.pi / 2 * R, -R), ("L", ell)])
     L = seg_len(pts)
     if side_sb:
         pts = rot(pts)
-    r = C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, 0.0, H, z_rng=(8.0, L - 6.0), speed=speed)
-    return r
+    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, 0.0, f["H"], z_rng=(8.0, L - 6.0), speed=speed)
 
 
 def outer_on(f, R, par, ta, tb, nl, rlw, lead, side_sb=False, name="on", speed=35.0):
-    xe, ye, H = f["xe"], f["yedge"], f["H"]
+    R, par, lead = C.g(name, "R", R), C.g(name, "par", par), C.g(name, "lead", lead)
+    xe, ye = edges(f, side_sb, "wb")
     pts, _ = seg_pts(xe + R + lead, ye, math.pi, [("L", lead), ("A", math.pi / 2 * R, -R), ("L", par)])
     L = seg_len(pts)
     if side_sb:
         pts = rot(pts)
-    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, H, 0.0, z_rng=(6.0, L - 8.0), speed=speed)
+    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, f["H"], 0.0, z_rng=(6.0, L - 8.0), speed=speed)
 
 
 def loop_off(f, R, par, ta, tb, nl, rlw, ell, side_sb=False, name="lo", speed=40.0):
-    xe, ye, H = f["xe"], f["yedge"], f["H"]
+    R, par, ell = C.g(name, "R", R), C.g(name, "par", par), C.g(name, "ell", ell)
+    xe, ye = edges(f, side_sb, "wb")
     y0 = ye + R - par
     pts, _ = seg_pts(xe, y0, math.pi / 2, [("L", par), ("A", 1.5 * math.pi * R, -R), ("L", ell)])
     L = seg_len(pts)
     if side_sb:
         pts = rot(pts)
-    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, 0.0, H, z_rng=(par, L), speed=speed)
+    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, 0.0, f["H"], z_rng=(par, L), speed=speed)
 
 
 def loop_on(f, R, par, ta, tb, nl, rlw, ell, side_sb=False, name="ln", speed=40.0):
-    xe, ye, H = f["xe"], f["yedge"], f["H"]
+    R, par, ell = C.g(name, "R", R), C.g(name, "par", par), C.g(name, "ell", ell)
+    xe, ye = edges(f, side_sb, "eb")
     xs = xe + R - par
     pts, _ = seg_pts(xs, -ye, 0.0, [("L", par), ("A", 1.5 * math.pi * R, -R), ("L", ell)])
     L = seg_len(pts)
     if side_sb:
         pts = rot(pts)
-    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, H, 0.0, z_rng=(0.0, L - ell * 0.5), speed=speed)
+    return C.custom_ramp(name, pts, nl, rlw, -1, ta, tb, f["H"], 0.0, z_rng=(0.0, L - ell * 0.5), speed=speed)
 
 
 def seg_len(pts):
@@ -172,27 +198,31 @@ def diamond_once(p):
     k0, k1 = p.get("k0", 0.6), p.get("k1", 0.6)
     flare = p.get("flare", 3.5)
     spui = p.get("spui", False)
-    yedge, H = f["yedge"], f["H"]
+    H = f["H"]
     xtt = p.get("spui_x", 26.0) if spui else xt
     ramps = []
     for sgn, fw in ((1, nb), (-1, sb)):
-        if sgn > 0:
-            s_off, s_on = s_at_y(nb, -(yedge + dist)), s_at_y(nb, yedge + dist)
-            oe, os_ = (xtt, -yedge + 0.5, math.pi / 2), (xtt, yedge - 0.5, math.pi / 2)
-        else:
-            s_off, s_on = s_at_y(sb, yedge + dist), s_at_y(sb, -(yedge + dist))
-            oe, os_ = (-xtt, yedge - 0.5, -math.pi / 2), (-xtt, -yedge + 0.5, -math.pi / 2)
-        if spui:
-            a = math.radians(p.get("spui_angle", 38.0))
-            oe = (oe[0], oe[1], oe[2] + sgn * a)
-            os_ = (os_[0], os_[1], os_[2] + sgn * a)
         tag = "NB" if sgn > 0 else "SB"
+        ye_off = f["ye_eb"] if sgn > 0 else f["ye_wb"]
+        ye_on = f["ye_wb"] if sgn > 0 else f["ye_eb"]
+        d_off, d_on = C.g("off_" + tag, "dist", dist), C.g("on_" + tag, "dist", dist)
+        x_off, x_on = C.g("off_" + tag, "xt", xtt), C.g("on_" + tag, "xt", xtt)
+        if sgn > 0:
+            s_off, s_on = s_at_y(nb, -(ye_off + d_off)), s_at_y(nb, ye_on + d_on)
+            oe, os_ = (x_off, -ye_off + 0.5, math.pi / 2), (x_on, ye_on - 0.5, math.pi / 2)
+        else:
+            s_off, s_on = s_at_y(sb, ye_off + d_off), s_at_y(sb, -(ye_on + d_on))
+            oe, os_ = (-x_off, ye_off - 0.5, -math.pi / 2), (-x_on, -ye_on + 0.5, -math.pi / 2)
+        if spui:
+            a_ = math.radians(p.get("spui_angle", 38.0))
+            oe = (oe[0], oe[1], oe[2] + sgn * math.radians(C.g("off_" + tag, "angle", math.degrees(a_))))
+            os_ = (os_[0], os_[1], os_[2] + sgn * math.radians(C.g("on_" + tag, "angle", math.degrees(a_))))
         ramps.append(branch(fw, s_off, "off", oe, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=k0, k1=k1, z_end=H, flare=flare,
                             speed=p.get("ramp_speed", 50), name="off_" + tag, curve="hermite" if spui else "auto"))
         ramps.append(branch(fw, s_on, "on", os_, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=k0, k1=k1, z_end=H, flare=flare,
                             speed=p.get("ramp_speed", 50), name="on_" + tag, curve="hermite" if spui else "auto"))
     plan = Plan(p.get("name", "diamond"), [], extent=EXT, seed=p.get("seed", 1))
-    plan.gantries = [(nb, s_at_y(nb, -(yedge + dist + 140)), 0), (sb, s_at_y(sb, yedge + dist + 140), 0)]
+    plan.gantries = [(nb, s_at_y(nb, -(f["ye_eb"] + dist + 140)), 0), (sb, s_at_y(sb, f["ye_wb"] + dist + 140), 0)]
     if p.get("signals", True):
         for r in ramps:
             if r.note["kind"] == "off":

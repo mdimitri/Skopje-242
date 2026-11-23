@@ -15,6 +15,28 @@ from shapely.ops import unary_union
 from engine import ASPH, ASPH2, CAR_COLS, CONC, GRASS_D, GROUND, HEAD, POLE, WHITE, YELLOW, lamp, signal_head, tree
 from mesh import Mesh
 
+OV = {}          # per-element overrides: {"off_NB": {"nl": 2, "R": 40, ...}, "NB": {"n": 3}, ...}
+REG = {}         # every (element, key) the builder consulted, with its default value = the live tunable schema
+USED = set()
+
+
+def reset_ov(ov):
+    global OV
+    OV = ov or {}
+    REG.clear()
+    USED.clear()
+
+
+def g(name, key, default):
+    """Tunable lookup: the override for (name, key) when given, else the default; every lookup is recorded."""
+    REG[(name, key)] = default
+    o = OV.get(name)
+    if o is not None and key in o:
+        USED.add((name, key))
+        return o[key]
+    return default
+
+
 SHOULDER = (96, 98, 102)
 GUARD = (170, 174, 178)
 PARAPET = (196, 194, 188)
@@ -523,7 +545,7 @@ def build_plan(plan: Plan) -> Mesh:
     # context: trees in the free land
     fp_all = unary_union([r.fp for r in roads])
     ext = plan.extent
-    for _ in range(int(ext * 0.9)):
+    for _ in range(0 if plan.info.get('notrees') else int(ext * 0.9)):
         x, y = rnd.uniform(-ext, ext), rnd.uniform(-ext, ext)
         if not fp_all.buffer(8).contains(Point(x, y)):
             tree(m, x, y, rnd, 0.0, rnd.uniform(0.8, 1.3))
@@ -585,6 +607,16 @@ def ramp_report(r: Road, lat_f=None, e=0.06):
 
 def branch(parent, s, kind, end_pose, k0=None, k1=None, fit=True, **kw):
     """Ramp with automatic curve fitting: lowers the Hermite tension until the minimum radius meets the ramp speed."""
+    name = kw.get("name", "ramp")
+    dflt = dict(nl=1, lw=3.6, par=60.0, taper=60.0, flare=0.0, flare_len=45.0, speed=60.0, merge_taper=kw.get("taper", 60.0), end_taper=0.0,
+                start_taper=0.0, z_end=0.0, curve="auto", side=-1)
+    for key, dv in dflt.items():
+        kw[key] = g(name, key, kw.get(key, dv))
+    kw["nl"] = int(kw["nl"])
+    k0 = g(name, "k0", k0 or 0.6)
+    k1 = g(name, "k1", k1 or k0)
+    s = s + g(name, "s_shift", 0.0)
+    end_pose = (end_pose[0] + g(name, "end_dx", 0.0), end_pose[1] + g(name, "end_dy", 0.0), end_pose[2] + math.radians(g(name, "end_dh", 0.0)))
     sp = kw.get("speed", 60.0)
     rreq = sp ** 2 / (127 * (0.06 + friction(sp))) * 0.75
     ks = [k0 or 0.6] if not fit else sorted({k0 or 0.6, 0.6, 0.5, 0.42, 0.35, 0.3, 0.26}, reverse=True)
@@ -618,6 +650,12 @@ def widen(road, side, s0, s1, dw, ramp_in=40.0, ramp_out=40.0):
 def custom_ramp(name, pts, nl=1, lw=3.8, side=-1, taper_a=0.0, taper_b=0.0, za=0.0, zb=0.0, z_rng=None, speed=50.0, cars=0.35,
                 edge_a=True, edge_b=True):
     """Ramp from an explicit centre/reference polyline; asphalt to the right (side -1) or left (+1) of the reference line."""
+    nl = int(g(name, "nl", nl))
+    lw = g(name, "lw", lw)
+    taper_a, taper_b = g(name, "taper_a", taper_a), g(name, "taper_b", taper_b)
+    za, zb = g(name, "za", za), g(name, "zb", zb)
+    speed = g(name, "speed", speed)
+    cars = g(name, "traffic", cars)
     r = Road(name, pts, kind="ramp", speed=speed, prio=2)
     L = r.L
     W = nl * lw
