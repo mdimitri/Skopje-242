@@ -21,10 +21,10 @@ TOP = 0.52 + 0.55 * float(SUN[1])                       # flat surfaces facing u
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1,
         "living_street": 0, "service": 0}
 FILL = {
-    "motorway": (92, 94, 102), "trunk": (88, 90, 98), "primary": (88, 90, 98), "secondary": (92, 94, 101),
-    "tertiary": (97, 99, 106), "unclassified": (100, 102, 108), "residential": (102, 104, 110),
-    "living_street": (126, 124, 124), "service": (118, 118, 122), "pedestrian": (206, 198, 184),
-    "footway": (194, 188, 176), "path": (182, 168, 138), "steps": (168, 164, 160), "cycleway": (186, 150, 140),
+    "motorway": (66, 68, 74), "trunk": (64, 66, 72), "primary": (64, 66, 72), "secondary": (67, 69, 75),
+    "tertiary": (71, 73, 79), "unclassified": (74, 76, 82), "residential": (76, 78, 84),
+    "living_street": (140, 136, 130), "service": (92, 93, 98), "pedestrian": (214, 208, 196),
+    "footway": (204, 199, 188), "path": (182, 168, 138), "steps": (176, 172, 166), "cycleway": (176, 92, 84),
     "track": (160, 140, 110),
 }
 SIDEWALK = {"motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential",
@@ -833,13 +833,17 @@ def _ribbon(e, i, J, plates, PT=None):
     for end in (0, 1):
         j = J.get((i, end))
         if j and abs(j[2] - hw) > 0.05:
-            T = min(14.0, L * 0.4)
+            T = min(max(14.0, 16.0 * abs(j[2] - hw)), L * 0.5)
             taper[end] = (T, j[2])
             marks.append(T if end == 0 else L - T)
         elif PT and (i, end) in PT:                       # wider than the same road going on across the junction: narrows to it
-            T = min(30.0, L * 0.5)
+            T = min(max(30.0, 16.0 * abs(PT[(i, end)] - hw)), L * 0.6)
             taper[end] = (T, PT[(i, end)])
             marks.append(T if end == 0 else L - T)
+    for end in (0, 1):                                # intermediate vertices so the eased taper is a real curve
+        if taper[end]:
+            for q in (0.2, 0.4, 0.6, 0.8):
+                marks.append(taper[end][0] * q if end == 0 else L - taper[end][0] * q)
     if any(taper):
         e["taper"] = tuple(taper)
     else:
@@ -1054,7 +1058,7 @@ def _corners(out, edges, plates, ribs, trims, cov, hulls):
                 pieces = max(1, math.ceil(math.hypot(B[0] - A[0], B[1] - A[1]) / 2.0))
                 I = [(A[0] + (B[0] - A[0]) * j / pieces, A[1] + (B[1] - A[1]) * j / pieces) for j in range(pieces + 1)]
                 O = [(A2[0] + (B2[0] - A2[0]) * j / pieces, A2[1] + (B2[1] - A2[1]) * j / pieces) for j in range(pieces + 1)]
-            pc = (178, 174, 166)
+            pc = (206, 204, 198)
             br = edges[top[0]]["bridge"]
             for j in range(len(I) - 1):
                 mx_ = (I[j][0] + I[j + 1][0] + O[j][0] + O[j + 1][0]) / 4
@@ -1064,7 +1068,7 @@ def _corners(out, edges, plates, ribs, trims, cov, hulls):
                     continue                                       # that stretch lies on a carriageway: no kerb across asphalt
                 out.quad((I[j][0], SW_H, I[j][1]), (I[j + 1][0], SW_H, I[j + 1][1]), (O[j + 1][0], SW_H, O[j + 1][1]), (O[j][0], SW_H, O[j][1]), pc)
                 out.quad((I[j][0], yv - 0.012, I[j][1]), (I[j + 1][0], yv - 0.012, I[j + 1][1]), (I[j + 1][0], SW_H, I[j + 1][1]),
-                         (I[j][0], SW_H, I[j][1]), (200, 196, 188), 0.92)
+                         (I[j][0], SW_H, I[j][1]), (226, 224, 218), 0.95)
 
 
 REFINE_TOL = 0.025                                      # a ground triangle whose terrain bulges this much above its flat face is split
@@ -1176,7 +1180,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
     out.deck = deck
     foot = cls in FOOT
-    jit = 0 if foot else (i * 7 % 9) - 4
+    jit = 0
     base = FILL.get(cls, (100, 102, 108))
     col = tuple(max(0, min(255, c + jit)) for c in base)
     a0, a1 = (RK0, RK1) if RK1 > RK0 else (0, len(RP) - 1)
@@ -1185,11 +1189,27 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
     if not foot:                                           # gutter strips + the asphalt itself
         g = 0.42
         L2, R2 = _offset_v(AP, AF, AH, 1, -g), _offset_v(AP, AF, AH, -1, -g)
-        dark = tuple(c * 0.8 for c in col)
+        dark = tuple(c * 0.66 for c in col)
         jn = partners.get(i, ())
         for A_, B_ in ((L, L2), (R2, R)):                  # (not where another road's asphalt lies over it: a merging
             _gutter(out, A_, B_, y, dark, lambda x_, y_: cov.covered(x_, y_, i, e["bridge"], skip=jn))  # slip road)
         _strip(out, L2, R2, y, col)
+        if not e["bridge"] or True:
+            nl = lanes_per_way(e)
+            cents = []
+            if e["ow"]:
+                cents = [2 * (k + 0.5) / nl - 1 for k in range(nl)]
+            else:
+                dv = 2 * lane_bounds(e)[0] / e["w"]
+                for sd in (1, -1):
+                    c_ = lanes_per_way(e, sd)
+                    cents += [dv + (sd - dv) * (k + 0.5) / c_ for k in range(c_)]
+            wear = tuple(c * 0.90 for c in col)
+            for fc in cents:
+                for dm in (-0.95, 0.55):
+                    TA = [(p[0] + f[0][0] * (fc * h + dm) * f[1], p[1] + f[0][1] * (fc * h + dm) * f[1]) for p, f, h in zip(AP, AF, AH)]
+                    TB = [(p[0] + f[0][0] * (fc * h + dm + 0.40) * f[1], p[1] + f[0][1] * (fc * h + dm + 0.40) * f[1]) for p, f, h in zip(AP, AF, AH)]
+                    _gutter(out, TA, TB, y + 0.004, wear, lambda x_, y_: cov.covered(x_, y_, i, e["bridge"], skip=jn) or cov.in_core(x_, y_))
     else:
         if not e["drive"] and not e["bridge"]:
             lr = _clip_foot(L, R, lambda x_, y_: cov.covered(x_, y_, i, False) or cov.low_deck(x_, y_, edges, decks, T))
@@ -1262,8 +1282,8 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                 for t0, t1 in runs:
                     li = lambda A, t: (A[k][0] + (A[k + 1][0] - A[k][0]) * t, A[k][1] + (A[k + 1][1] - A[k][1]) * t)
                     Ia, Ib, Oa, Ob = li(I_, t0), li(I_, t1), li(O_, t0), li(O_, t1)
-                    _strip(out, [Ia, Ib], [Oa, Ob], SW_H, (178, 174, 166))
-                    _wall(out, [Ia, Ib], SW_H, y, (200, 196, 188), 0.92)
+                    _strip(out, [Ia, Ib], [Oa, Ob], SW_H, (206, 204, 198))
+                    _wall(out, [Ia, Ib], SW_H, y, (226, 224, 218), 0.95)
             if any(g is not None for g in gs):
                 _median(out, DP, DF, hw, gs, side, y)
                 inner[side] = [hw + max(0.0, g) / 2 if g is not None else None for g in gs]
@@ -1323,7 +1343,7 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                         pc = (pav, pav - 4, pav - 12)
                         out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), pc)
                         out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]),
-                                 (200, 196, 188), 0.92)
+                                 (226, 224, 218), 0.95)
             if first is not None:                            # where the pavement really starts / stops: the curb corners join there
                 trims[(i, 0, side)], trims[(i, 1, side)] = first, last
     # dead ends: the pavement wraps round the rounded asphalt end instead of stopping flush with it
@@ -1342,8 +1362,8 @@ def _edge_body(i, X, out, pout, piers, ribs, trims, do_piers):
                 cur = ((p_[0] + ux * hw, p_[1] + uy * hw), (p_[0] + ux * (hw + SW_W), p_[1] + uy * (hw + SW_W)))
                 if prev:
                     (i0, o0), (i1, o1) = prev, cur
-                    out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (172, 168, 158))
-                    out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (200, 196, 188), 0.92)
+                    out.quad((i0[0], SW_H, i0[1]), (i1[0], SW_H, i1[1]), (o1[0], SW_H, o1[1]), (o0[0], SW_H, o0[1]), (200, 198, 190))
+                    out.quad((i0[0], y, i0[1]), (i1[0], y, i1[1]), (i1[0], SW_H, i1[1]), (i0[0], SW_H, i0[1]), (226, 224, 218), 0.95)
                 prev = cur
     # lane markings
     if cls in MARK and e["drive"] and w >= 5.5 and e["len"] > 4:
@@ -1667,19 +1687,34 @@ def _line(out, cov, me, e, P, y, width, col, dashed, rank, free=()):
 
 def _markings(out, cov, i, e, pts, fr, half_widths, y, ext=None, free=()):
     w, rk = e["w"], rank_of(e["cls"])
-    white = (236, 234, 224)
+    white = (250, 250, 246)
 
     def line(fraction, inset, width, dashed):
         if dashed and ext is not None:                      # dashed lane lines go on through the junction
             _line(out, cov, i, e, _offset_v(ext[0], ext[1], ext[2], fraction, inset), y, width, white, True, rk, free)
             return
         path = _offset_v(pts, fr, half_widths, fraction, inset)
+        if dashed and len(path) > 2:                         # a lane line that would squeeze lanes under 2.9 m is dropped (narrowing)
+            nl_ = max(1, lanes_per_way(e)) * (1 if e["ow"] else 2)
+            ok = [2 * h / nl_ >= 2.9 for h in half_widths]
+            k = 0
+            while k < len(path):
+                if not ok[k]:
+                    k += 1
+                    continue
+                k2 = k
+                while k2 + 1 < len(path) and ok[k2 + 1]:
+                    k2 += 1
+                if k2 > k:
+                    _line(out, cov, i, e, path[k:k2 + 1], y, width, white, dashed, rk)
+                k = k2 + 1
+            return
         _line(out, cov, i, e, path, y, width, white, dashed, rk)
 
     n = lanes_per_way(e)
     if e["ow"]:
         for k in range(1, n):
-            line(2 * k / n - 1, 0.0, 0.13, True)
+            line(2 * k / n - 1, 0.0, 0.16, True)
     else:
         divider = 2 * lane_bounds(e)[0] / w
         if w >= 8.0:
@@ -1692,15 +1727,15 @@ def _markings(out, cov, i, e, pts, fr, half_widths, y, ext=None, free=()):
         for side in (1, -1):
             count = lanes_per_way(e, side)
             for k in range(1, count):
-                line(divider + (side - divider) * k / count, 0.0, 0.12, True)
+                line(divider + (side - divider) * k / count, 0.0, 0.15, True)
     if w >= 7.0:
         for sgn in (1, -1):
-            line(sgn, -0.4, 0.10, False)
+            line(sgn, -0.45, 0.14, False)
 
 
 def _zebra(out, x, y, ax, ay, w, stop, divider):
     rx, ry = ay, -ax                                         # across the road
-    white = (240, 238, 230)
+    white = (250, 250, 246)
     yy = 0.134
     k = -w / 2 + 0.6
     while k < w / 2 - 0.3:
@@ -1745,7 +1780,7 @@ def _kerb_ramps(out, x, y, ax, ay, w, sides):
     """Dropped kerb where the zebra meets each pavement: a sloped pavement-coloured wedge over the kerb face with a
     yellow tactile (blister) patch beyond it.  A handful of quads per crossing."""
     rx, ry = ay, -ax
-    pc, tac = (178, 174, 166), (214, 184, 70)
+    pc, tac = (206, 204, 198), (214, 184, 70)
     hl = 1.2                                                 # half the ramp's length along the road
     for sgn in sides:
         e0, e1 = sgn * (w / 2 - 0.06), sgn * (w / 2 + 0.95)
