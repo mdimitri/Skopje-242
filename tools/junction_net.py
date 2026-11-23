@@ -115,6 +115,19 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             F.append((-ty / l, tx / l))
             H.append(max(0.0, float(deck.at(p.x + cx, p.y + cy)[0]) - base))
         SWB = 2.4
+        inner = 0  # side (+1/-1 along F) facing a twin carriageway: no pavement there
+        if e["ow"]:
+            mid = ln.interpolate(ln.length / 2)
+            best = 25.0
+            for o in B:
+                if o is d or not o["e"]["ow"]:
+                    continue
+                dd = o["ln"].distance(mid)
+                if dd < best:
+                    best = dd
+                    q = o["ln"].interpolate(o["ln"].project(mid))
+                    k = int(n / 2)
+                    inner = 1 if (q.x - mid.x) * F[k][0] + (q.y - mid.y) * F[k][1] > 0 else -1
         def edge(off):
             return [(p[0] + f[0] * off, p[1] + f[1] * off) for p, f in zip(P, F)]
         def quadstrip(o0, o1, dy, col):
@@ -127,6 +140,10 @@ def bridge_mesh(m, B, decks, cx, cy, base):
                 m.quad((A[i][0], H[i] + y0, A[i][1]), (A[i + 1][0], H[i + 1] + y0, A[i + 1][1]), (A[i + 1][0], H[i + 1] + y1, A[i + 1][1]), (A[i][0], H[i] + y1, A[i][1]), col)
         quadstrip(-hw, hw, 0.0, ASPH)
         for sg in (-1, 1):
+            if sg == inner:
+                vwall(sg * hw, -1.1, 1.05, (196, 194, 188))
+                quadstrip(sg * (hw - 0.3), sg * hw, 1.05, (214, 212, 206))
+                continue
             quadstrip(sg * hw, sg * (hw + SWB), KERB, KTOP)
             vwall(sg * hw, 0.0, KERB, KFACE)
             vwall(sg * (hw + SWB), -1.1, 1.05, (196, 194, 188))
@@ -134,7 +151,7 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             quadstrip(sg * (hw - 0.45), sg * (hw - 0.31), 0.05, WHITE)
         if not e["ow"]:
             quadstrip(-0.07, 0.07, 0.05, WHITE)
-        quadstrip(-hw - SWB, hw + SWB, -1.1, (150, 148, 142))
+        quadstrip(-hw - (0 if inner == -1 else SWB), hw + (0 if inner == 1 else SWB), -1.1, (150, 148, 142))
         for i in range(2, n - 1, 10):
             if H[i] > 1.2:
                 m.box(P[i][0], 0.0, P[i][1], 1.8, H[i] - 1.1, 2 * (hw + SWB) - 1.0, (176, 174, 168), math.atan2(F[i][0], -F[i][1]) + math.pi / 2)
