@@ -125,7 +125,7 @@ def bridge_mesh(m, B, decks, cx, cy, base, gfn=None):
         Ha = np.maximum(Ha, G)
         s_ = np.linspace(0.0, ln.length, n + 1)
         for end, node in ((0, e["a"]), (1, e["b"])):
-            if node in d.get("gnodes", ()):
+            if node in d.get("gnodes", ()) and abs(Ha[0 if end == 0 else -1] - G[0 if end == 0 else -1]) > 0.5:
                 t = np.clip((s_ if end == 0 else ln.length - s_) / 30.0, 0, 1)
                 t = t * t * (3 - 2 * t)
                 Ha = G + (Ha - G) * t
@@ -285,6 +285,18 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
         inc.setdefault(d["e"]["b"], []).append(d)
     nodes = {n: L for n, L in inc.items() if len(L) >= 3}
     ribs = [ribbon(d, inc) for d in E]
+    # dead ends get a turning bulb (cul-de-sac) instead of a bare round cap
+    for n, L in inc.items():
+        if len(L) == 1 and L[0]["ln"].length > 20:
+            d = L[0]
+            start = d["e"]["a"] == n
+            ux, uy = _out_dir(d["ln"], start)
+            end = d["ln"].coords[0] if start else d["ln"].coords[-1]
+            if math.hypot(end[0], end[1]) > RANGE - 15:
+                continue                                  # cut off by the window, not a real dead end
+            rb = max(d["hw"] + 4.5, 10.0)
+            bx, by = end[0] + ux * rb * 0.6, end[1] + uy * rb * 0.6   # centre sits inside the road so the bulb stands 0.4 r proud
+            ribs.append(Point(bx, by).buffer(rb, resolution=24))
     U = unary_union(ribs)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     gap = C.difference(U)
