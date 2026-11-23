@@ -16,7 +16,11 @@ for i in range(rest):
     k = MERGES[i % len(MERGES)]
     cnt[k] += 1
     LIST.append(("m_" + k, cnt[k]))
-IDS = [f"IC{i + 1:03d}_{fam}_{k:02d}" for i, (fam, k) in enumerate(LIST)]
+if os.environ.get("VAULT") == "v4":
+    PLAN4 = [("t_diamond", 20), ("t_tight_diamond", 12), ("t_spui", 16), ("t_ddi", 12), ("t_rbt_ic", 12), ("t_clover", 24), ("t_parclo_a", 18), ("t_parclo_b", 18),
+             ("t_trumpet", 16), ("diamond_slip", 24), ("overpass_join", 44)] + [("tm_" + k, 3) for k in ("on_par", "on_taper", "off_par", "off_taper", "on_2lane", "off_2lane", "weave", "cd")]
+    LIST = [(f, k) for f, n in PLAN4 for k in range(1, n + 1)]
+IDS = [f"{'TC' if os.environ.get('VAULT') == 'v4' else 'IC'}{i + 1:03d}_{fam}_{k:02d}" for i, (fam, k) in enumerate(LIST)]
 
 
 def spec_for(i):
@@ -24,8 +28,8 @@ def spec_for(i):
     rnd = random.Random(1000 * (i + 1) + 7)
     p = I.sample(fam, rnd)
     p["seed"] = i + 1
-    if fam in ("clover", "parclo_a", "parclo_b"):
-        p["kind"] = fam
+    if fam.replace('t_', '') in ("clover", "parclo_a", "parclo_b"):
+        p["kind"] = fam.replace('t_', '')
     return fam, p
 
 

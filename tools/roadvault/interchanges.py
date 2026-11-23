@@ -220,7 +220,7 @@ def autofit(builder, p, vary):
 
 def _vary_diamond(p, plan, bad):
     p["dist"] = min(p.get("dist", 250) + 40, 400)
-    p["xt"] = max(p.get("xt", 75) * 0.9, 48)
+    p["xt"] = max(p.get("xt", 75) * 0.9, 34)
     if any(plan.sim[b]["max_grade_pct"] > 7 for b in bad):
         p["H"] = max(p.get("H", 7.0) - 0.4, 5.6)
     return p
@@ -247,12 +247,12 @@ def clover_once(p):
     aux = max(10.0, Rl - par - Ro + 10.0)
     for sb_ in (False, True):
         tag = "SB" if sb_ else "NB"
-        ramps.append(outer_off(f, Ro, par, 0.0 if has_ln else ta, tb, ln, rl, p.get("ell", 70.0), sb_, "oo_" + tag))
-        ramps.append(outer_on(f, Ro, aux if has_lo else 70.0, tb, 0.0 if has_lo else p.get("taper_on", 80.0), ln, rl, p.get("lead", 60.0), sb_, "on_" + tag))
+        ramps.append(outer_off(f, Ro, par, 0.0 if has_ln else ta, tb, ln, rl, p.get("ell", 70.0), sb_, "oo_" + tag, p.get("v_outer", 35.0)))
+        ramps.append(outer_on(f, Ro, aux if has_lo else 70.0, tb, 0.0 if has_lo else p.get("taper_on", 80.0), ln, rl, p.get("lead", 60.0), sb_, "on_" + tag, p.get("v_outer", 35.0)))
         if has_lo:
-            ramps.append(loop_off(f, Rl, par, 0.0, tb, p.get("loop_n", 1), rl, p.get("ell_l", 14.0), sb_, "lo_" + tag))
+            ramps.append(loop_off(f, Rl, par, 0.0, tb, p.get("loop_n", 1), rl, p.get("ell_l", 14.0), sb_, "lo_" + tag, p.get("v_loop", 40.0)))
         if has_ln:
-            ramps.append(loop_on(f, Rl, par, ta, 0.0 if True else 60.0, p.get("loop_n", 1), rl, aux, sb_, "ln_" + tag))
+            ramps.append(loop_on(f, Rl, par, ta, 0.0 if True else 60.0, p.get("loop_n", 1), rl, aux, sb_, "ln_" + tag, p.get("v_loop", 40.0)))
     plan = Plan(p.get("name", kind), [], extent=EXT, seed=p.get("seed", 1))
     return finish(plan, ramps, f, p)
 
@@ -434,8 +434,8 @@ def ddi(p):
             s_off, s_on = s_at_y(sb, yedge + dist), s_at_y(sb, -(yedge + dist))
             oe, os_ = (-xt, yedge - 0.5, -math.pi / 2), (-xt, -yedge + 0.5, -math.pi / 2)
         tag = "NB" if sgn > 0 else "SB"
-        ramps.append(branch(fw, s_off, "off", oe, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=0.6, k1=0.6, z_end=f["H"], flare=p.get("flare", 3.5), speed=50, name="off_" + tag))
-        ramps.append(branch(fw, s_on, "on", os_, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=0.6, k1=0.6, z_end=f["H"], flare=p.get("flare", 3.5), speed=50, name="on_" + tag))
+        ramps.append(branch(fw, s_off, "off", oe, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=0.6, k1=0.6, z_end=f["H"], flare=p.get("flare", 3.5), speed=p.get("ramp_speed", 50), name="off_" + tag))
+        ramps.append(branch(fw, s_on, "on", os_, side=-1, nl=ln, lw=rlw, par=par, taper=taper, k0=0.6, k1=0.6, z_end=f["H"], flare=p.get("flare", 3.5), speed=p.get("ramp_speed", 50), name="on_" + tag))
     plan = Plan(p.get("name", "ddi"), [nb, sb, eb, wb] + ramps, extent=EXT, seed=p.get("seed", 1))
     plan.medians.append((nb, sb, "raised"))
     for sgn in (1, -1):
@@ -492,8 +492,8 @@ def rbt_interchange(p):
             s_off, s_on = s_at_y(sb, dist), s_at_y(sb, -dist)
             oe, os_ = (cx, (R + wr) - 0.5, -math.pi / 2), (cx, -(R + wr) + 0.5, -math.pi / 2)
         tag = "NB" if sgn > 0 else "SB"
-        ramps.append(branch(fw, s_off, "off", oe, side=-1, nl=ln, lw=rlw, par=p.get("par", 60.0), taper=p.get("taper", 60.0), k0=0.6, k1=0.6, z_end=H, speed=40, name="off_" + tag))
-        ramps.append(branch(fw, s_on, "on", os_, side=-1, nl=ln, lw=rlw, par=p.get("par", 60.0), taper=p.get("taper", 60.0), k0=0.6, k1=0.6, z_end=H, speed=40, name="on_" + tag))
+        ramps.append(branch(fw, s_off, "off", oe, side=-1, nl=ln, lw=rlw, par=p.get("par", 60.0), taper=p.get("taper", 60.0), k0=0.6, k1=0.6, z_end=H, speed=p.get("ramp_speed", 40), name="off_" + tag))
+        ramps.append(branch(fw, s_on, "on", os_, side=-1, nl=ln, lw=rlw, par=p.get("par", 60.0), taper=p.get("taper", 60.0), k0=0.6, k1=0.6, z_end=H, speed=p.get("ramp_speed", 40), name="on_" + tag))
     plan = Plan(p.get("name", "rbt_ic"), [nb, sb] + roads + ramps, extent=EXT, seed=p.get("seed", 1))
     plan.rings = rings
     plan.medians.append((nb, sb, "raised"))
@@ -526,14 +526,14 @@ def trumpet(p):
     sroad = two_way("S_road", line_pts(0.0, -EXT, 0.0, y0 + 2.0), tn, tlw, 0.0, 1)
     # S -> EB (right turn, merges on the south edge of EB)
     pa, _ = seg_pts(0.0, y0, math.pi / 2, [("A", math.pi / 2 * R, -R), ("L", p.get("ell", 140.0))])
-    r_a = C.custom_ramp("S_to_EB", pa, tn, rlw, -1, 0.0, tb, 0.0, 0.0, speed=50.0)
+    r_a = C.custom_ramp("S_to_EB", pa, tn, rlw, -1, 0.0, tb, 0.0, 0.0, speed=p.get("v_ramp", 50.0))
     # EB -> S (exit, right turn onto the S road's southbound side)
     pb, _ = seg_pts(-par - R, -ye, 0.0, [("L", par), ("A", math.pi / 2 * R, -R)])
-    r_b = C.custom_ramp("EB_to_S", pb, tn, rlw, -1, ta, 0.0, 0.0, 0.0, speed=50.0)
+    r_b = C.custom_ramp("EB_to_S", pb, tn, rlw, -1, ta, 0.0, 0.0, 0.0, speed=p.get("v_ramp", 50.0))
     # WB -> S loop: exits right (north side), 270 deg loop, flyover across the freeway, lands on the S road
     xa = par - Rl
     pc, _ = seg_pts(xa, ye, math.pi, [("L", par), ("A", 1.5 * math.pi * Rl, -Rl), ("L", 2 * ye + Rl + R)])
-    r_c = C.custom_ramp("WB_to_S_loop", pc, tn, rlw, -1, ta, 0.0, 0.0, 0.0, speed=40.0)
+    r_c = C.custom_ramp("WB_to_S_loop", pc, tn, rlw, -1, ta, 0.0, 0.0, 0.0, speed=p.get("v_loop", 40.0))
     Lc = r_c.L
     r_c.z = K([(0, 0.0), (par + 20, 0.0), (par + 20 + H / 0.045, H), (Lc - 60 - H / 0.045, H), (Lc - 8, 0.0)])
     ramps = [r_a, r_b, r_c]
@@ -544,6 +544,115 @@ def trumpet(p):
     plan.info["focus"] = (0.0, 0.0, 380.0)
     add_report(plan, ramps)
     return plan
+
+
+def _rot_pose(pose):
+    return (-pose[0], -pose[1], pose[2] + math.pi)
+
+
+def diamond_slip_once(p):
+    """Diamond with free-flow right-turn slip ramps at the terminals (off ramp -> slip onto the cross road, cross road -> slip onto the on ramp)."""
+    p = dict(p)
+    plan = diamond_once(p)
+    f_yedge = plan.roads[2].lo(0) if False else None
+    yedge = p.get("_yedge")
+    # recover cross road edge from the plan roads
+    eb = [r for r in plan.roads if r.name == "EB"][0]
+    yedge = -(eb.at(eb.L / 2, eb.lo(eb.L / 2))[1])
+    xt = p.get("xt", 75.0)
+    lat = p.get("slip_lat", 70.0)
+    sl_w = p.get("slip_w", 3.6)
+    v = p.get("v_slip", 28.0)
+    H = p.get("H", 7.0) if not p.get("fw_over") else 0.0
+    ramps = [r for r in plan.roads if r.note.get("kind") in ("on", "off")]
+    extra = []
+    for r in ramps:
+        sb_ = r.name.endswith("SB")
+        if r.note["kind"] == "off":
+            s0 = r.L - p.get("slip_s", 100.0)
+            pose = (xt + lat, -yedge, 0.0)
+            pose = _rot_pose(pose) if sb_ else pose
+            sl = branch(r, s0, "off", pose, side=-1, nl=1, lw=sl_w, par=0.0, taper=30.0, k0=0.6, k1=0.6, z_end=H, speed=v, name="slip_" + r.name, end_taper=p.get("slip_taper", 50.0))
+        else:
+            s0 = p.get("slip_s2", 60.0)
+            pose = (xt + lat, yedge, math.pi)
+            pose = _rot_pose(pose) if sb_ else pose
+            sl = branch(r, s0, "on", pose, side=-1, nl=1, lw=sl_w, par=0.0, taper=30.0, k0=0.6, k1=0.6, z_end=H, speed=v, name="slip_" + r.name, start_taper=p.get("slip_taper", 50.0), merge_taper=30.0)
+        extra.append(sl)
+    plan.roads += extra
+    add_report(plan, [r for r in plan.roads if r.note.get("kind") in ("on", "off")])
+    return plan
+
+
+def _vary_slip(p, plan, bad):
+    p["slip_lat"] = p.get("slip_lat", 70.0) + 20
+    p["slip_s"] = p.get("slip_s", 100.0) + 20
+    return _vary_diamond(p, plan, bad)
+
+
+def diamond_slip(p):
+    return autofit(diamond_slip_once, p, _vary_slip)
+
+
+def overpass_join_once(p):
+    """Ground freeway, elevated cross road; each of the four ramps joins the overpass deck at its own angle (15..90 deg): a wedge-shaped
+    merge for shallow angles, a near-T join at 90.  Radii follow the design speed (tight urban values allowed)."""
+    xt = p.get("lateral", 110.0) + 40
+    f = frame(p, xt=xt)
+    nb, sb = f["nb"], f["sb"]
+    xe, ye, H = f["xe"], f["yedge"], f["H"]
+    ln, rlw = p.get("ramp_n", 1), p.get("ramp_lw", 3.8)
+    par, dist = p.get("par", 30.0), p.get("dist", 210.0)
+    v = p.get("ramp_speed", 30.0)
+    lat = p.get("lateral", 110.0)
+    ramps = []
+    angs = [p.get("a1", 40.0), p.get("a2", 40.0), p.get("a3", 40.0), p.get("a4", 40.0)]
+    for qi, sb_ in enumerate((False, True)):
+        tag = "SB" if sb_ else "NB"
+        # fw -> deck (SE quadrant for NB)
+        al = math.radians(angs[qi * 2])
+        lf = p.get("wedge", 55.0) if angs[qi * 2] < 85 else 8.0
+        J = (xe + lat, -ye)
+        Q = (J[0] - lf * math.cos(al), J[1] - lf * math.sin(al))
+        y0 = -ye - dist
+        a0 = np.array([(xe, y0 + t) for t in np.linspace(0, par, max(2, int(par / 2)))])
+        h = C.hermite_pts((xe, y0 + par), math.pi / 2, Q, al, 0.55, 0.55, 160)
+        b0 = np.array([(Q[0] + (J[0] - Q[0]) * t, Q[1] + (J[1] - Q[1]) * t) for t in np.linspace(0, 1, max(3, int(lf / 2)))])
+        pts = np.vstack([a0, h[1:], b0[1:]])
+        if sb_:
+            pts = rot(pts)
+        r1 = C.custom_ramp("off_" + tag, pts, ln, rlw, -1, p.get("taper", 40.0), lf if angs[qi * 2] < 85 else 0.0, 0.0, H, z_rng=(par + 8, None) if False else None, speed=v)
+        r1.z = K([(t, H * C.lin_ease((t - (par + 8)) / max(1.0, r1.L - 8 - (par + 8)))) for t in np.arange(0, r1.L + 6, 6.0)])
+        # deck -> fw (NE quadrant for NB)
+        be = math.radians(angs[qi * 2 + 1])
+        hs = math.pi - be
+        lf2 = p.get("wedge", 55.0) if angs[qi * 2 + 1] < 85 else 8.0
+        J2 = (xe + lat, ye)
+        Q2 = (J2[0] + lf2 * math.cos(hs), J2[1] + lf2 * math.sin(hs))
+        ym = ye + dist
+        h2 = C.hermite_pts(Q2, hs, (xe, ym - par), math.pi / 2, 0.55, 0.55, 160)
+        a2 = np.array([(J2[0] + (Q2[0] - J2[0]) * t, J2[1] + (Q2[1] - J2[1]) * t) for t in np.linspace(0, 1, max(3, int(lf2 / 2)))])
+        c2 = np.array([(xe, ym - par + t) for t in np.linspace(0, par, max(2, int(par / 2)))])
+        pts2 = np.vstack([a2, h2[1:], c2[1:]])
+        if sb_:
+            pts2 = rot(pts2)
+        r2 = C.custom_ramp("on_" + tag, pts2, ln, rlw, -1, lf2 if angs[qi * 2 + 1] < 85 else 0.0, p.get("taper", 60.0), H, 0.0, speed=v)
+        r2.z = K([(t, H * (1 - C.lin_ease((t - 8) / max(1.0, r2.L - par - 8 - 8)))) for t in np.arange(0, r2.L + 6, 6.0)])
+        ramps += [r1, r2]
+    plan = Plan(p.get("name", "overpass_join"), [], extent=EXT, seed=p.get("seed", 1))
+    return finish(plan, ramps, f, p)
+
+
+def _vary_join(p, plan, bad):
+    p["lateral"] = p.get("lateral", 110.0) + 25
+    p["dist"] = min(p.get("dist", 210.0) + 30, 400)
+    if any(plan.sim[b]["max_grade_pct"] > 7 for b in bad):
+        p["H"] = max(p.get("H", 7.0) - 0.3, 5.4)
+    return p
+
+
+def overpass_join(p):
+    return autofit(overpass_join_once, p, _vary_join)
 
 
 def _vary_generic(p, plan, bad):
@@ -588,20 +697,69 @@ def spui(p):
 FAMS = {"diamond": diamond, "spui": diamond, "tight_diamond": diamond, "clover": clover, "parclo_a": clover, "parclo_b": clover,
         "ddi": fitted(ddi), "rbt_ic": fitted(rbt_interchange), "trumpet": fitted(trumpet)}
 FAMS["spui"] = spui
+FAMS["diamond_slip"] = diamond_slip
+FAMS["overpass_join"] = overpass_join
 MERGE_KINDS = ["on_par", "on_taper", "on_laneadd", "on_laneadd_keep", "on_meter", "on_2lane", "off_par", "off_taper", "off_2lane", "off_lanedrop",
                "off_option", "weave", "cd", "fork", "join"]
 for _k in MERGE_KINDS:
     FAMS["m_" + _k] = fitted(merge_scene)
-DIST = {"m_": 250, "diamond": 330, "spui": 330, "tight_diamond": 300, "clover": 430, "parclo_a": 430, "parclo_b": 430, "ddi": 330, "rbt_ic": 330, "trumpet": 360}
+DIST = {"overpass_join": 330, "diamond_slip": 330, "t_clover": 330, "t_parclo_a": 330, "t_parclo_b": 330, "t_diamond": 300, "t_tight_diamond": 280, "t_spui": 300, "t_ddi": 300, "t_rbt_ic": 300, "t_trumpet": 330, "m_": 250, "diamond": 330, "spui": 330, "tight_diamond": 300, "clover": 430, "parclo_a": 430, "parclo_b": 430, "ddi": 330, "rbt_ic": 330, "trumpet": 360}
+
+
+for _b in ["diamond", "tight_diamond", "spui", "ddi", "rbt_ic", "clover", "parclo_a", "parclo_b", "trumpet"]:
+    FAMS["t_" + _b] = FAMS[_b]
 
 
 def build_family(fam, p):
+    if fam.startswith("tm_"):
+        return build_family("m_" + fam[3:], p)
     if fam.startswith("m_"):
+        p = dict(p, kind=fam[2:])
+    if fam.startswith("t_") and fam[2:] in ("clover", "parclo_a", "parclo_b"):
         p = dict(p, kind=fam[2:])
     return FAMS[fam](p)
 
 
+def tighten(base, d, rnd):
+    """Tight urban geometry: low design speeds, small radii, short ramps."""
+    if base in ("diamond", "tight_diamond"):
+        d.update(xt=rnd.choice([36, 42, 48, 56]), dist=rnd.choice([150, 180, 210]), par=rnd.choice([20, 30, 40]), taper=rnd.choice([30, 40, 50]),
+                 ramp_speed=rnd.choice([25, 30]), H=rnd.choice([5.6, 6.0, 6.4]), k0=0.6, k1=0.6)
+    elif base == "spui":
+        d.update(spui_x=rnd.choice([16, 20, 24]), spui_angle=rnd.choice([40, 50, 58]), dist=rnd.choice([150, 190, 230]), ramp_speed=rnd.choice([25, 30]), par=rnd.choice([20, 30]), taper=rnd.choice([30, 40]))
+    elif base in ("clover", "parclo_a", "parclo_b"):
+        ro = rnd.choice([18, 22, 26])
+        par = rnd.choice([14, 18, 24])
+        d.update(R_outer=ro, par=par, R_loop=ro + par + rnd.choice([12, 18, 26]), v_outer=rnd.choice([22, 26]), v_loop=rnd.choice([26, 30]),
+                 ell=rnd.choice([55, 70]), lead=rnd.choice([40, 55]), taper_a=rnd.choice([40, 50]), taper_b=rnd.choice([40, 50]), H=rnd.choice([5.6, 6.0, 6.4]))
+    elif base == "trumpet":
+        d.update(R=rnd.choice([36, 44, 52]), R_loop=rnd.choice([32, 40, 48]), par=rnd.choice([30, 45]), v_ramp=rnd.choice([26, 30]), v_loop=rnd.choice([26, 30]),
+                 ell=rnd.choice([70, 100]), taper_a=rnd.choice([40, 55]), taper_b=rnd.choice([50, 70]), H=rnd.choice([5.6, 6.0]))
+    elif base == "ddi":
+        d.update(xt=rnd.choice([72, 82, 92]), shift=rnd.choice([40, 50, 58]), dist=rnd.choice([170, 210, 240]), ramp_speed=rnd.choice([25, 30]), cross_in=rnd.choice([18, 24]), par=rnd.choice([20, 40]), taper=rnd.choice([30, 45]))
+    elif base == "rbt_ic":
+        d.update(R=rnd.choice([22, 26, 30]), xr=rnd.choice([80, 92, 104]), dist=rnd.choice([170, 210, 250]), ramp_speed=rnd.choice([25, 30]), par=rnd.choice([30, 45]), taper=rnd.choice([35, 50]), ring_n=rnd.choice([1, 2]))
+    return d
+
+
 def sample(fam, rnd):
+    if fam.startswith("t_"):
+        return tighten(fam[2:], sample(fam[2:], rnd), rnd)
+    if fam.startswith("tm_"):
+        d = sample("m_" + fam[3:], rnd)
+        d.update(dx=rnd.choice([100, 130, 170]), dy=rnd.choice([200, 240, 280]), par=rnd.choice([40, 60, 80]), taper=rnd.choice([40, 50, 60]),
+                 merge_taper=rnd.choice([40, 55, 70]), ramp_speed=rnd.choice([25, 30]), nl=rnd.choice([1, 1, 2]))
+        return d
+    if fam == "diamond_slip":
+        d = sample("diamond", rnd)
+        d.update(slip_lat=rnd.choice([55, 70, 90]), slip_s=rnd.choice([80, 100, 130]), slip_s2=rnd.choice([40, 60, 80]), slip_w=rnd.choice([3.4, 3.8, 4.2]),
+                 v_slip=rnd.choice([22, 28, 35]), slip_taper=rnd.choice([40, 50, 65]), xt=rnd.choice([50, 60, 75, 90]), ramp_speed=rnd.choice([30, 40]), dist=rnd.choice([230, 270, 320]))
+        return d
+    if fam == "overpass_join":
+        return dict(fw_n=rnd.choice([2, 3]), fw_med=rnd.choice([6.0, 10.0]), c_n=rnd.choice([1, 2, 3]), c_lw=rnd.choice([3.25, 3.5, 3.75]), c_med=rnd.choice([0.5, 3.0]),
+                    H=rnd.choice([5.6, 6.2, 7.0]), ramp_n=rnd.choice([1, 1, 2]), ramp_lw=rnd.choice([3.4, 3.8]), par=rnd.choice([20, 30, 50]), dist=rnd.choice([170, 210, 260]),
+                    lateral=rnd.choice([70, 100, 140]), wedge=rnd.choice([35, 55, 80]), taper=rnd.choice([40, 60]), ramp_speed=rnd.choice([25, 30, 40]),
+                    a1=rnd.choice([15, 25, 35, 50, 65, 90]), a2=rnd.choice([15, 25, 35, 50, 65, 90]), a3=rnd.choice([15, 25, 35, 50, 65, 90]), a4=rnd.choice([15, 25, 35, 50, 65, 90]))
     if fam == "diamond":
         d = dict(fw_n=rnd.choice([2, 2, 3, 4]), fw_lw=rnd.choice([3.5, 3.6, 3.75]), fw_med=rnd.choice([4.0, 8.0, 12.0, 18.0]),
                  c_n=rnd.choice([1, 2, 2, 3]), c_lw=rnd.choice([3.25, 3.5, 3.75]), H=rnd.choice([6.2, 7.0, 7.8]),

@@ -190,7 +190,7 @@ def _curve(p0, h0, end, k0, k1, n, curve):
 
 
 def _branch(parent, s, kind, end_pose, side=-1, nl=1, lw=3.6, par=60.0, taper=60.0, k0=1.0, k1=1.0, z_end=0.0,
-           flare=0.0, flare_len=45.0, speed=60.0, curve='auto', end_taper=0.0, name="ramp", hermite_n=140, merge_taper=None, lanes_end=None, extra=None):
+           flare=0.0, flare_len=45.0, speed=60.0, curve='auto', end_taper=0.0, start_taper=0.0, name="ramp", hermite_n=140, merge_taper=None, lanes_end=None, extra=None):
     """Ramp leaving (kind 'off') or joining (kind 'on') `parent` on its right (side -1) or left (side +1) edge at arclength s.
     Reference line = the ramp edge next to the parent; asphalt lies away from the parent.  end_pose = (x, y, heading) of the
     far end (the terminal)."""
@@ -225,7 +225,8 @@ def _branch(parent, s, kind, end_pose, side=-1, nl=1, lw=3.6, par=60.0, taper=60
     else:
         zs = [(0, z0), (L - par - 8, z1 if False else z0), (L - par, z0), (L, z1)] if False else [(0, z0), (max(L - par - 8, 1.0), z0 + (z1 - z0) * 0.0), (L, z1)]
         mt = merge_taper if merge_taper is not None else taper
-        wk = ([(0, W + flare), (flare_len, W)] if flare > 0 else [(0, W)]) + [(L - mt, W), (L, 0.0)]
+        first = [(0, 0.0), (start_taper, W)] if start_taper > 0 else ([(0, W + flare), (flare_len, W)] if flare > 0 else [(0, W)])
+        wk = first + [(L - mt, W), (L, 0.0)]
     # smooth vertical profile: ramps rise/fall over the curved part, flat while parallel to the parent
     if kind == "off":
         a_, b_ = par + 5, L
@@ -553,9 +554,21 @@ def build_plan(plan: Plan) -> Mesh:
 
 
 # ---------------------------------------------------------------- simulation / design checks for ramps
-def ramp_report(r: Road, lat_f=0.13, e=0.06):
+def friction(v):
+    """Max side friction by design speed (AASHTO Green Book table 3-6): tight, slow curves allow much more than fast ones."""
+    tab = [(20, 0.18), (30, 0.28), (40, 0.23), (50, 0.19), (60, 0.17), (80, 0.14), (100, 0.12), (120, 0.09)]
+    if v <= tab[0][0]:
+        return tab[0][1]
+    for (a, fa), (b, fb) in zip(tab, tab[1:]):
+        if v <= b:
+            return fa + (fb - fa) * (v - a) / (b - a)
+    return tab[-1][1]
+
+
+def ramp_report(r: Road, lat_f=None, e=0.06):
     """Gradient, minimum curve radius and implied design speed (R = V^2 / (127 (e+f)) ), taper checks."""
     pts = r.pts
+    lat_f = friction(r.speed) if lat_f is None else lat_f
     d1 = np.diff(pts, axis=0)
     hh = np.unwrap(np.arctan2(d1[:, 1], d1[:, 0]))
     ds = np.hypot(d1[:, 0], d1[:, 1])
@@ -573,7 +586,7 @@ def ramp_report(r: Road, lat_f=0.13, e=0.06):
 def branch(parent, s, kind, end_pose, k0=None, k1=None, fit=True, **kw):
     """Ramp with automatic curve fitting: lowers the Hermite tension until the minimum radius meets the ramp speed."""
     sp = kw.get("speed", 60.0)
-    rreq = sp ** 2 / (127 * 0.19) * 0.75
+    rreq = sp ** 2 / (127 * (0.06 + friction(sp))) * 0.75
     ks = [k0 or 0.6] if not fit else sorted({k0 or 0.6, 0.6, 0.5, 0.42, 0.35, 0.3, 0.26}, reverse=True)
     best = None
     for k in ks:
