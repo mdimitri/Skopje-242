@@ -118,6 +118,15 @@ def bridge_mesh(m, B, decks, cx, cy, base):
         k = 6
         Hp = np.concatenate([np.full(k, Ha[0]), Ha, np.full(k, Ha[-1])])
         H = list(np.convolve(Hp, np.ones(2 * k + 1) / (2 * k + 1), "valid"))
+        # ramp down to the ground over the last 30 m wherever the deck ends on a ground road
+        Ha = np.array(H)
+        s_ = np.linspace(0.0, ln.length, n + 1)
+        for end, node in ((0, e["a"]), (1, e["b"])):
+            if node in d.get("gnodes", ()):
+                t = np.clip((s_ if end == 0 else ln.length - s_) / 30.0, 0, 1)
+                t = t * t * (3 - 2 * t)
+                Ha = Ha * t
+        H = list(Ha)
         SWB = 2.4
         inner = 0  # side (+1/-1 along F) facing a twin carriageway: no pavement there
         if e["ow"]:
@@ -194,6 +203,7 @@ def bridge_lanes(edges):
 def build(edges, cx, cy, buildings=(), decks=None):
     E, B, W = [], [], []
     BL = bridge_lanes(edges)
+    gn = {n for e in edges if e["drive"] and not e["bridge"] for n in (e["a"], e["b"])}
     for e in edges:
         if not e["drive"] and not e["bridge"] and e["cls"] in WALK_W and len(e["pts"]) >= 2:
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
@@ -204,7 +214,7 @@ def build(edges, cx, cy, buildings=(), decks=None):
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
             if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + 30:
                 nb = BL.get(e["road"], per_dir(e))
-                B.append({"e": e, "ln": LineString(P), "hw": nb * LW / 2 if e["ow"] else nb * LW, "per": nb})
+                B.append({"e": e, "ln": LineString(P), "hw": nb * LW / 2 if e["ow"] else nb * LW, "per": nb, "gnodes": gn})
             continue
         if not e["drive"]:
             continue
