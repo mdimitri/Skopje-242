@@ -397,7 +397,7 @@ def roof(plans, add_abs, chunk_of, mat, T=None):
                 d_ = (S_[k][0], ya1, S_[k][1])
                 _slab(q, a_, b_, c_, d_)
                 _slab(q, a_, d_, c_, b_)
-                if cap is not None and not (cov[k] or ud[k]):
+                if cap is not None and not cov[k]:
                     C_, hg = cap
                     ya2, yb2 = max(top[k], hg[k]) + 0.03, max(top[k + 1], hg[k + 1]) + 0.03
                     a2, b2 = (S_[k][0], ya2, S_[k][1]), (S_[k + 1][0], yb2, S_[k + 1][1])
