@@ -232,7 +232,7 @@ def ribbon(d, inc, T=36.0):
             if abs(ux * ox + uy * oy) > 0.8:
                 ends[k] = o["hw"]
     if ends[0] == hw and ends[1] == hw or ln.length < 6:
-        return ln.buffer(hw, cap_style=1, join_style=1, resolution=16)
+        return ln.buffer(hw, cap_style=2 if e.get("flat") else 1, join_style=1, resolution=16)
     L = ln.length
     Tt = min(T, L * 0.5)
     n = max(2, int(L / 1.5))
@@ -250,15 +250,18 @@ def ribbon(d, inc, T=36.0):
     return unary_union([unary_union([discs[i], discs[i + 1]]).convex_hull for i in range(n)])
 
 
-def _wall_ring(m, ring, y0, y1, col, half=None):
-    """Kerb face along a ring; with `half` the artificial edges where the window clips the geometry are left out."""
+def _wall_ring(m, ring, y0, y1, col, half=None, skip=None):
+    """Kerb face along a ring; with `half` the artificial edges where the window clips the geometry are left out, with
+    `skip` (a polygon) the pieces under a deck foot."""
     c = [tuple(q) for q in ring.coords]
-    if half is None:
+    if half is None and skip is None:
         m.wall(c, y0, y1, col)
         return
+    half = half if half is not None else 1e18
+    hid = shapely.contains_xy(skip, [(a[0] + b[0]) / 2 for a, b in zip(c, c[1:])], [(a[1] + b[1]) / 2 for a, b in zip(c, c[1:])]) if skip is not None else [False] * (len(c) - 1)
     run = [c[0]]
-    for a, b in zip(c, c[1:]):
-        on = (abs(abs(a[0]) - half) < 1e-3 and abs(abs(b[0]) - half) < 1e-3 and (a[0] > 0) == (b[0] > 0)) or \
+    for k, (a, b) in enumerate(zip(c, c[1:])):
+        on = hid[k] or (abs(abs(a[0]) - half) < 1e-3 and abs(abs(b[0]) - half) < 1e-3 and (a[0] > 0) == (b[0] > 0)) or \
              (abs(abs(a[1]) - half) < 1e-3 and abs(abs(b[1]) - half) < 1e-3 and (a[1] > 0) == (b[1] > 0))
         if on:
             if len(run) > 1:
@@ -401,6 +404,15 @@ def _arms_at(n, L, road):
         kinds = [r["bands"][0][3] for r in raw]
         if best > 0.82 and (kinds.count("in") == 1 or kinds.count("out") == 1):
             return []
+    # a one-way slip road leaving (or joining) a through road at a shallow angle: a taper too, not a crossing
+    if len(raw) == 3:
+        lk = [r for r in raw if r["d"]["e"]["ow"] and r["d"]["e"]["cls"].endswith("_link")]
+        if len(lk) == 1:
+            o1, o2 = [r for r in raw if r is not lk[0]]
+            thru = o1["u"][0] * o2["u"][0] + o1["u"][1] * o2["u"][1] < -0.85
+            shallow = max(lk[0]["u"][0] * o["u"][0] + lk[0]["u"][1] * o["u"][1] for o in (o1, o2)) > 0.8
+            if thru and shallow:
+                return []
     # pair one-way carriageways: cost = angle between them + how far apart they run (soft, best pairs first)
     used, arms = set(), []
     cand = []
@@ -536,6 +548,138 @@ def _arrow_polys(a, d, s, kind):
     return out
 
 
+def _ss(t):
+    t = np.clip(t, 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def port_decks(B, own, cx, cy, decks, T, step=0.75):
+    """Driven decks for the game port, in the designer's style: the deck surface follows the profile the cars ride on
+    (terrain.Deck), carries exactly its lanes (3.25 m standard) with the same paint as its approaches, and has an outer
+    pavement with kerb and parapet.  The two carriageways of a twin bridge share one deck with a central barrier where
+    they run close and part smoothly into two decks with their own parapets where they spread; no inner pavements.
+    Low decks stand on solid side walls down to the ground, high ones on piers (roads3d._piers).  The metres where a
+    deck still lies on the ground (e["span"]) are left to the ground designer.  Heights absolute, x/z relative to (cx, cy)."""
+    m = Mesh()
+    CON, UND, WALL = (196, 194, 188), (150, 148, 142), (178, 176, 170)
+    for d in own:
+        e, ln, hw, per = d["e"], d["ln"], d["hw"], d["per"]
+        deck = decks.get(e["road"])
+        s0, s1 = e.get("span", (0.0, ln.length))
+        if deck is None or s1 - s0 < 1.0:
+            continue
+        n = max(2, int((s1 - s0) / step))
+        S = np.linspace(s0, s1, n + 1)
+        P, F = [], []
+        for s_ in S:
+            p = ln.interpolate(s_)
+            q, r = ln.interpolate(min(ln.length, s_ + 1.0)), ln.interpolate(max(0.0, s_ - 1.0))
+            tx, ty = q.x - r.x, q.y - r.y
+            l = math.hypot(tx, ty) or 1.0
+            P.append((p.x, p.y))
+            F.append((-ty / l, tx / l))
+        P, F = np.array(P), np.array(F)
+        H = np.array([deck.at(x + cx, y + cy)[0] for x, y in P])
+        G = np.asarray(T.h(P[:, 0] + cx, P[:, 1] + cy), float) if T is not None else H - 10.0
+        # twin carriageway: the nearest parallel one-way deck, its edge-to-edge gap and side
+        gap, side = np.full(n + 1, np.inf), np.zeros(n + 1)
+        if e["ow"]:
+            for o in B:
+                if o is d or not o["e"]["ow"] or o["ln"].distance(ln) > 30.0:
+                    continue
+                for i, (x, y) in enumerate(P):
+                    pt = Point(x, y)
+                    so = o["ln"].project(pt)
+                    q = o["ln"].interpolate(so)
+                    q2 = o["ln"].interpolate(min(o["ln"].length, so + 1.0))
+                    q1 = o["ln"].interpolate(max(0.0, so - 1.0))
+                    ox, oy = q2.x - q1.x, q2.y - q1.y
+                    ol = math.hypot(ox, oy) or 1.0
+                    if abs((ox * F[i][1] - oy * F[i][0]) / ol) < 0.9:          # not running alongside
+                        continue
+                    g = math.hypot(q.x - x, q.y - y) - hw - o["hw"]
+                    if g < gap[i]:
+                        gap[i] = g
+                        side[i] = 1.0 if (q.x - x) * F[i][0] + (q.y - y) * F[i][1] > 0 else -1.0
+        has = np.isfinite(gap)
+        inner = 0
+        if has.sum() > 0.2 * len(gap):
+            inner = 1 if side[has].sum() > 0 else -1
+        gf = np.where(has & (side == inner), gap, 40.0)
+        k = 6
+        gf = np.convolve(np.concatenate([np.full(k, gf[0]), gf, np.full(k, gf[-1])]), np.ones(2 * k + 1) / (2 * k + 1), "valid")
+        sj = _ss((6.0 - gf) / 3.0) if inner else np.zeros(n + 1)          # 1: one shared deck, 0: two decks apart
+        ie = np.maximum(hw + 0.3, hw + 0.55 + (np.minimum(gf, 40.0) / 2 - 0.55) * sj)
+        yA = H + 0.08
+        par_ = np.minimum(1.05, KERB + 0.3 * np.maximum(0.0, H - G))     # parapets fade where the deck meets the ground
+
+        def at(off):
+            off = np.broadcast_to(np.asarray(off, float), (n + 1,))
+            return P + F * off[:, None]
+
+        def strip(o0, o1, y, col, mask=None):
+            A, Bq = at(o0), at(o1)
+            y = np.broadcast_to(np.asarray(y, float), (n + 1,))
+            for i in range(n):
+                if mask is not None and not mask[i]:
+                    continue
+                m.quad((A[i][0], y[i], A[i][1]), (A[i + 1][0], y[i + 1], A[i + 1][1]), (Bq[i + 1][0], y[i + 1], Bq[i + 1][1]), (Bq[i][0], y[i], Bq[i][1]), col)
+
+        def vwall(o, y0, y1, col, mask=None):
+            A = at(o)
+            y0, y1 = np.broadcast_to(np.asarray(y0, float), (n + 1,)), np.broadcast_to(np.asarray(y1, float), (n + 1,))
+            for i in range(n):
+                if mask is not None and not mask[i]:
+                    continue
+                m.quad((A[i][0], y0[i], A[i][1]), (A[i + 1][0], y0[i + 1], A[i + 1][1]), (A[i + 1][0], y1[i + 1], A[i + 1][1]), (A[i][0], y1[i], A[i][1]), col)
+        low = (H - G < 6.0)
+        low = low[:-1] & low[1:]
+        strip(-hw, hw, yA, ASPH)
+        ext = {}
+        for sg in (-1, 1):
+            if sg == inner:                                    # shoulder, kerbed median out to the middle, half of the central barrier
+                sh = np.minimum(hw + 0.5, ie - 0.3)
+                strip(sg * hw, sg * sh, yA, ASPH)
+                med = (ie - 0.3 - sh) > 0.05
+                med = med[:-1] & med[1:]
+                vwall(sg * sh, yA, yA + KERB, KFACE, med)
+                strip(sg * sh, sg * (ie - 0.3), yA + KERB, (204, 202, 196), med)
+                top = yA + 0.8 + 0.25 * (1 - sj)
+                vwall(sg * (ie - 0.3), yA + np.where(ie - 0.3 - sh > 0.05, KERB, 0.0), top, CON)
+                strip(sg * (ie - 0.3), sg * ie, top, (214, 212, 206))
+                vwall(sg * ie, H - 1.1, top, CON)
+                vwall(sg * ie, G - 0.3, H - 1.1, WALL, low & (sj[:-1] < 0.5))
+                ext[sg] = ie
+                continue
+            o = hw + 2.4
+            vwall(sg * hw, yA, yA + KERB, KFACE)
+            strip(sg * hw, sg * (o - 0.25), yA + KERB, KTOP)
+            vwall(sg * (o - 0.25), yA + KERB, yA + par_, CON)
+            strip(sg * (o - 0.25), sg * o, yA + par_, (214, 212, 206))
+            vwall(sg * o, H - 1.1, yA + par_, CON)
+            vwall(sg * o, G - 0.3, H - 1.1, WALL, low)
+            ext[sg] = o
+        strip(-ext[-1], ext[1], H - 1.1, UND)
+        # paint, continuing the approach roads'
+        yP = yA + 0.02
+        dash = ((S[:-1] + S[1:]) / 2) % 9.0 < 3.0
+        for sg in (-1, 1):
+            strip(sg * (hw - 0.42), sg * (hw - 0.28), yP, WHITE)
+        if e["ow"]:
+            for k_ in range(1, per):
+                strip(-hw + LW * k_ - 0.075, -hw + LW * k_ + 0.075, yP, WHITE, dash)
+        else:
+            if per >= 2:
+                strip(0.085, 0.195, yP, WHITE)
+                strip(-0.195, -0.085, yP, WHITE)
+            else:
+                strip(-0.07, 0.07, yP, WHITE, dash)
+            for k_ in range(1, per):
+                for sg in (-1, 1):
+                    strip(sg * LW * k_ - 0.075, sg * LW * k_ + 0.075, yP, WHITE, dash)
+    return m
+
+
 def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None):
     """port=True: only what replaces the game's ground-road surfaces (asphalt, kerbs, pavements, islands, paint, zebras),
     heights relative to the terrain, no furniture / bridges / buildings; ctx = context(edges) when `edges` is a subset."""
@@ -595,6 +739,18 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     isl = unary_union(keep_isl)
     asph = C.difference(isl)
     pave = asph.buffer(SW, resolution=10).difference(asph).difference(isl)
+    # where a deck lifts off its foot (port: drawn by port_decks) the ground pavement, islands and kerbs stop
+    cuts = []
+    for d in B:
+        if "span" in d["e"]:
+            s0, s1 = d["e"]["span"]
+            L_ = d["ln"].length
+            for a_, b_, foot in ((s0, min(s1, s0 + 8.0), s0 > 0.05), (max(s0, s1 - 8.0), s1, s1 < L_ - 0.05)):
+                if foot and b_ - a_ > 0.2:
+                    cuts.append(substring(d["ln"], a_, b_).buffer(d["hw"] + 2.75, cap_style=2))
+    deckcut = unary_union(cuts) if cuts else None
+    if deckcut is not None:
+        pave, isl = pave.difference(deckcut), isl.difference(deckcut)
     clip = Polygon([(-RANGE, -RANGE), (RANGE, -RANGE), (RANGE, RANGE), (-RANGE, RANGE)])
     asph, pave, isl = asph.intersection(clip), pave.intersection(clip), isl.intersection(clip)
     m = Mesh()
@@ -613,7 +769,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     hf = RANGE if port else None
     for p in polys_of(asph):
         for ring in [p.exterior] + list(p.interiors):
-            _wall_ring(m, ring, 0.0, KERB, KFACE, hf)
+            _wall_ring(m, ring, 0.0, KERB, KFACE, hf, deckcut)
     for p in polys_of(isl):
         tri_poly(m, p, KERB, KTOP)
         ins = p.buffer(-0.35)

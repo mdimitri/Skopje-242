@@ -2659,6 +2659,8 @@ def main():
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
+    if os.environ.get("SK242_DESIGNER") == "1":                # a street crossing an open cutting is its bridge deck, not a roof slab too
+        print(f"[build] underpass roof opened under {underpass.open_under_decks(upass, edges)} m of decks")
     if ROADS_ONLY:                                             # tools/road_audit.py reads this and stops here
         with open(ROADS_ONLY, "wb") as f_:
             pickle.dump({"roads": roads, "edges": edges, "decks": decks, "upass": upass, "T": T, "hx": HX, "hy": HY,
@@ -3114,7 +3116,7 @@ def main():
         traceback.print_exc()
         print(f"[build] 3D roads failed ({e}); using flat roads")
         roads3d_ok = False
-    _up_posts, up_decks, up_recs = underpass.roof(upass, mesh.add, chunk_of, MAT_SOLID)     # roof slab, walls, roof deck
+    _up_posts, up_decks, up_recs = underpass.roof(upass, mesh.add, chunk_of, MAT_SOLID, T)     # roof slab, walls, roof deck
     up_decks = [terrain_mod.Deck(d_["pts"], d_["h"], d_["hw"]).pack() for d_ in up_decks]
     posts = list(posts) + _up_posts
     spread("road3d", edges, lambda e: flat(e["pts"], 60))

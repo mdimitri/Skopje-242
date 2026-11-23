@@ -50,6 +50,13 @@ def road_mesh(dump, x, y, r):
                       T=dump["T"], decks=dump["decks"])
     finally:
         roads3d.par.jobs = old
+    up = [p for p in dump.get("upass") or [] if (abs(np.asarray(p["pts"])[:, 0] - x) < r + 60).any() and (abs(np.asarray(p["pts"])[:, 1] - y) < r + 60).any()]
+    if up:                                                         # underpass roofs, cutting walls and parapets, as the game adds them
+        import underpass
+        if os.environ.get("SK242_DESIGNER") == "1":               # as build_world does before the roofs
+            up = [dict(p) for p in up]
+            underpass.open_under_decks(up, E)
+        underpass.roof(up, lambda key, mat, pos, uv, col: got.append((pos, col)), lambda a, b: (int(a // 120), int(b // 120)), 0, dump["T"])
     if not got:
         return np.zeros((0, 3), np.float32), np.zeros((0, 4), np.uint8)
     return (np.concatenate([np.asarray(p, np.float32).reshape(-1, 3) for p, _ in got]),
@@ -154,8 +161,8 @@ def render(dump, shots, out_dir, size=(1400, 900)):
             cam = rl.Camera3D(eye, (x, g, y), (0, 1, 0), sh.get("fov", 45.0), rl.CAMERA_PERSPECTIVE)
             rl.begin_texture_mode(rt)
             rl.clear_background((196, 214, 232, 255))
+            rl.rl_set_clip_planes(0.5, 4000.0) if hasattr(rl, "rl_set_clip_planes") else None    # before begin_mode_3d: it builds the projection
             rl.begin_mode_3d(cam)
-            rl.rl_set_clip_planes(0.5, 4000.0) if hasattr(rl, "rl_set_clip_planes") else None
             for m in models:
                 rl.draw_model(m, (0, 0, 0), 1.0, rl.WHITE)
             rl.end_mode_3d()

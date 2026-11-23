@@ -1522,15 +1522,15 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
-    designer = os.environ.get("SK242_DESIGNER") == "1"     # junction designer owns the ground-road surfaces (tools/roads_designer.py)
-    if designer:
-        order = [i for i in order if not edges[i]["drive"] or edges[i]["bridge"]]
+    designer = os.environ.get("SK242_DESIGNER") == "1"     # junction designer owns the road surfaces and driven decks (tools/roads_designer.py)
     pier_edges, done_ = set(), set()
     for i in order:
         e = edges[i]
         if (e["drive"] or e["walk"]) and len(e["pts"]) >= 2 and e["road"] not in done_ and decks and e["bridge"] and decks.get(e["road"]) is not None:
             done_.add(e["road"])
             pier_edges.add(i)
+    if designer:
+        order = [i for i in order if not edges[i]["drive"]]
     prog(0.065, "junction plates")
     X = _prepare(edges, joints, plates, decks, T)
     prog(0.07, "streets")
@@ -1562,7 +1562,10 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
     hulls = []
     if designer:
         import roads_designer
-        roads_designer.add_tiles(out, edges, lambda f: prog(0.7 + 0.2 * f, "junction designer"))
+        for i in sorted(pier_edges):                       # the designer's decks stand on the game's piers
+            if edges[i]["drive"]:
+                _piers(pout, piers, decks[edges[i]["road"]], T)
+        roads_designer.add_tiles(out, edges, lambda f: prog(0.7 + 0.2 * f, "junction designer"), decks, T)
     _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
     if not designer:
         _junctions(out, edges, plates, ribs, hulls)
