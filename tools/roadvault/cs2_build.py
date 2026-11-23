@@ -16,7 +16,7 @@ import sat_overlay as S
 DRIVE = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential", "service", "unclassified", "living_street",
          "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"}
 PATHS = {"footway", "path", "cycleway", "pedestrian", "steps"}
-GROUND, ASPH, SIDEW, GRASS, KERB = (122, 158, 96), (62, 64, 70), (196, 194, 186), (104, 148, 84), (170, 168, 160)
+GROUND, ASPH, SIDEW, GRASS, KERB = (122, 158, 96), (136, 130, 132), (204, 202, 194), (104, 148, 84), (170, 168, 160)
 WHITE, YELLOW = (236, 236, 232), (232, 196, 60)
 DEF_LANES = {"secondary": 4, "tertiary": 2, "residential": 2, "unclassified": 2, "living_street": 1, "service": 1}
 LANE_W = {"service": 2.7, "living_street": 3.0, "residential": 3.0, "unclassified": 3.0}
@@ -282,7 +282,7 @@ def prep(drive, bridges):
     for g in groups.values():
         votes = {}
         for e in g:
-            votes[e["sp"]["n"]] = votes.get(e["sp"]["n"], 0.0) + e["ls"].length
+            votes[e["sp"]["n"]] = votes.get(e["sp"]["n"], 0.0) + e["ls"].length * (3.0 if e["sp"].get("fit") else 1.0)
         n = max(votes, key=votes.get)
         for e in g:
             if e["sp"]["n"] != n:
@@ -304,8 +304,132 @@ def prep(drive, bridges):
     return drop
 
 
-def build(sel, cx, cy, half):
-    """Return (mesh, info).  sel: raw OSM road dicts."""
+def dir_at(ls, s):
+    a, b = ls.interpolate(max(0.0, s - 1.5)), ls.interpolate(min(ls.length, s + 1.5))
+    v = np.array([b.x - a.x, b.y - a.y])
+    return v / (np.hypot(*v) + 1e-9)
+
+
+def parallel_dups(drive):
+    """Same-direction one-way / link roads that hug a longer road for most of their length: redundant slips."""
+    out = set()
+    for e in sorted(drive, key=lambda x: x["ls"].length):
+        L = e["ls"].length
+        if not (e["sp"]["ow"] or e["r"]["cls"].endswith("_link")) or L > 400 or L < 25:
+            continue
+        near = [o for o in drive if o is not e and id(o) not in out and o["ls"].length > L and o["ls"].distance(e["ls"]) < 14
+                and not o["r"]["cls"].endswith("_link") and o["sp"]["n"] >= e["sp"]["n"]]
+        if not near:
+            continue
+        ts = np.linspace(0, L, max(3, int(L / 4)))
+        partner = [o for o in drive if o is not e and o["sp"]["ow"] and o["ls"].distance(e["ls"]) < 25]
+        anti = 0
+        for t in ts:                                                  # a carriageway of a divided road is never a slip
+            q, tv = e["ls"].interpolate(t), dir_at(e["ls"], t)
+            if any(o["ls"].distance(q) < 25 and float(tv @ dir_at(o["ls"], o["ls"].project(q))) < -0.85 for o in partner):
+                anti += 1
+        if anti >= 0.5 * len(ts):
+            continue
+        hit = 0
+        for t in ts:
+            q, tv = e["ls"].interpolate(t), dir_at(e["ls"], t)
+            for o in near:
+                if o["ls"].distance(q) > 14:
+                    continue
+                c = float(tv @ dir_at(o["ls"], o["ls"].project(q)))
+                if (c > 0.85) if o["sp"]["ow"] else (abs(c) > 0.85):
+                    hit += 1
+                    break
+        if hit >= 0.7 * len(ts):
+            out.add(id(e))
+    return out
+
+
+def median_bands(drive):
+    """The strip between the two carriageways of a divided road, built continuously (no on/off medians)."""
+    ows = [e for e in drive if e["sp"]["ow"] and e["ls"].length > 20]
+    bands = []
+    for i, e in enumerate(ows):
+        for o in ows[i + 1:]:
+            if e["ls"].distance(o["ls"]) > 30:
+                continue
+            quads, prev = [], None
+            for t in np.arange(0, e["ls"].length, 3.0):
+                q = e["ls"].interpolate(t)
+                s = o["ls"].project(q)
+                r = o["ls"].interpolate(s)
+                d = q.distance(r)
+                good = (0.05 < s < o["ls"].length - 0.05 and (e["sp"]["w"] + o["sp"]["w"]) / 2 + 0.4 < d < 30
+                        and float(dir_at(e["ls"], t) @ dir_at(o["ls"], s)) < -0.8)
+                if not good:
+                    prev = None
+                    continue
+                if prev is not None:
+                    pg = Polygon([prev[0], (q.x, q.y), (r.x, r.y), prev[1]]).buffer(0)
+                    if not pg.is_empty:
+                        quads.append(pg)
+                prev = ((q.x, q.y), (r.x, r.y))
+            if quads:
+                bands.append(unary_union(quads).buffer(0.2).buffer(-0.2))
+    return unary_union(bands) if bands else Polygon()
+
+
+def clusters(drive):
+    """Junction nodes (degree >= 3) grouped into one junction where they sit close together or are linked by
+    short internal roads: one set of crossings / stop lines / signals per junction, not per OSM node."""
+    inc = {}
+    for e in drive:
+        a, b = Point(e["pts"][0]), Point(e["pts"][-1])
+        for nid in e["r"]["nodes"]:
+            p = e["np"].get(nid)
+            if p is None or e["ls"].distance(Point(p)) > 1.0:
+                continue
+            end = Point(p).distance(a) < 1.0 or Point(p).distance(b) < 1.0
+            inc.setdefault(nid, []).append((e, 1 if end else 2))
+    jn = {}
+    for nid, lst in inc.items():
+        if sum(k for _, k in lst) >= 3:
+            jn[nid] = (np.asarray(lst[0][0]["np"][nid], float), max(e["sp"]["w"] for e, _ in lst) / 2 + 7.0, lst)
+    par = {n: n for n in jn}
+
+    def find(x):
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+    ids = list(jn)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            if np.hypot(*(jn[a][0] - jn[b][0])) < 25.0:
+                par[find(a)] = find(b)
+    has_ow = {n: sum(1 for e, _ in jn[n][2] if e["sp"]["ow"]) for n in jn}
+    for e in drive:                                                   # short internal roads of divided-road crossings
+        js = sorted((e["ls"].project(Point(jn[n][0])), n) for n in e["r"]["nodes"] if n in jn)
+        for (sa, a), (sb, b) in zip(js[:-1], js[1:]):
+            if sb - sa < 45.0 and (e["sp"]["ow"] or e["r"]["cls"].endswith("_link")) and has_ow[a] >= 2 and has_ow[b] >= 2:
+                par[find(a)] = find(b)
+    groups = {}
+    for n in jn:
+        groups.setdefault(find(n), []).append(n)
+    out = []
+    for ns in groups.values():
+        P = np.array([jn[n][0] for n in ns])
+        c = P.mean(0)
+        rc = max(np.hypot(*(jn[n][0] - c)) + jn[n][1] for n in ns)
+        ents = {id(e): e for n in ns for e, _ in jn[n][2]}
+        D = unary_union([Point(jn[n][0]).buffer(jn[n][1]) for n in ns]).buffer(3.0).buffer(-3.0)
+        out.append(dict(c=c, rc=rc, D=D, nodes=ns, ents=list(ents.values()),
+                        major=any(e["sp"]["cls"] in BIG and not e["r"]["cls"].endswith("_link") for e in ents.values())))
+    return out
+
+
+def road_key(r):
+    n = r.get("nodes") or []
+    return (n[0], n[-1], len(n)) if n else None
+
+
+def build(sel, cx, cy, half, fit=None):
+    """Return (mesh, info).  sel: raw OSM road dicts.  fit: {road_key: dict(n, lw, sw)} measured overrides."""
     m = Mesh()
     big = half * 3
     m.poly(box(-big, -big, big, big), -0.05, GROUND)
@@ -316,6 +440,9 @@ def build(sel, cx, cy, half):
             continue
         if r["cls"] in DRIVE:
             sp = spec(r)
+            if fit and road_key(r) in fit:
+                sp.update(fit[road_key(r)])
+                sp["w"] = sp["n"] * sp["lw"]
             ent = dict(r=r, pts=p, sp=sp, ls=LineString(p), np={nid: p[k] for k, nid in enumerate(r["nodes"][:len(p)])})
             if r.get("tunnel"):
                 continue
@@ -327,9 +454,19 @@ def build(sel, cx, cy, half):
             tracks.append(LineString(p))
         else:
             paths.append((LineString(p), 4.0 if r["cls"] == "pedestrian" else 1.6))
+    for e in list(bridges):                                           # low bridges over a canal / stream: road stays at grade
+        L = e["ls"].length
+        if int(e["r"].get("layer") or 1) > 1 or L > 70:
+            continue
+        core = e["ls"].difference(Point(e["pts"][0]).buffer(5)).difference(Point(e["pts"][-1]).buffer(5))
+        if L < 40 or not any(core.intersects(o["ls"]) for o in drive):
+            bridges.remove(e)
+            drive.append(e)
     drop = prep(drive, bridges)
     drive = [e for e in drive if id(e) not in drop]
     bridges = [e for e in bridges if id(e) not in drop]
+    dup = parallel_dups(drive)                                        # redundant parallel slips
+    drive = [e for e in drive if id(e) not in dup]
     for e in list(bridges):                                           # ground feet of ramps are ordinary road (sidewalks merge)
         L = e["ls"].length
         rl = min(85.0, 0.46 * L)
@@ -337,27 +474,30 @@ def build(sel, cx, cy, half):
         if L > 2 * foot + 10:
             for a, b in ((0.0, foot), (L - foot, L)):
                 seg = [e["ls"].interpolate(t).coords[0] for t in np.linspace(a, b, 6)]
-                drive.append(dict(r=dict(nodes=[], cls=e["r"]["cls"], ow=e["r"].get("ow")), pts=np.array(seg), sp=e["sp"], ls=LineString(seg)))
-    # ---- junction nodes (graph degree >= 3 on at-grade drive roads)
-    inc = {}
-    for e in drive:
-        nodes = e["r"]["nodes"]
-        for k, nid in enumerate(nodes):
-            inc.setdefault(nid, []).append((e, k))
-    junc = []
-    for nid, lst in inc.items():
-        deg = sum(1 if k in (0, len(e["pts"]) - 1) else 2 for e, k in lst)
-        if deg >= 3:
-            p = lst[0][0]["np"][nid]
-            rj = max(e["sp"]["w"] for e, _ in lst) / 2 + 7.0
-            junc.append((nid, p, rj, lst))
+                drive.append(dict(r=dict(nodes=[], cls=e["r"]["cls"], ow=e["r"].get("ow")), pts=np.array(seg), sp=e["sp"], ls=LineString(seg), np={}))
+    # service ways do not enter big junctions: cut them back to a dead end before the junction
+    cl = clusters(drive)
+    for J in cl:
+        if not J["major"] or len(J["nodes"]) < 2:
+            continue
+        D = J["D"].buffer(8.0)
+        for e in J["ents"]:
+            if e["sp"]["cls"] != "service" or e not in drive:
+                continue
+            rest = e["ls"].difference(D)
+            parts = [g for g in getattr(rest, "geoms", [rest]) if not g.is_empty]
+            g = max(parts, key=lambda x: x.length) if parts else None
+            if g is None or g.length < 20:
+                drive.remove(e)
+            else:
+                e["pts"], e["ls"] = np.array(g.coords), g
+    cl = clusters(drive)
     # ---- asphalt
     asph = unary_union([e["ls"].buffer(e["sp"]["w"] / 2, cap_style=2, join_style=1) for e in drive]) if drive else Polygon()
     discs = []
-    for nid, p, rj, lst in junc:
-        D = Point(p).buffer(rj)
-        discs.append(D)
-        part = asph.intersection(D)
+    for J in cl:
+        discs.append(J["D"])
+        part = asph.intersection(J["D"])
         if not part.is_empty:
             asph = asph.union(part.buffer(5.0).buffer(-5.0))
     discs_u = unary_union(discs) if discs else Polygon()
@@ -373,11 +513,36 @@ def build(sel, cx, cy, half):
         adj = bd.intersection(ab).length / max(bd.length, 1e-6)
         if adj >= 0.55 or g.interiors:
             keep.append(g)
-    verge = unary_union(keep) if keep else Polygon()
+    med = median_bands(drive).difference(asph)
+    if not med.is_empty and not discs_u.is_empty:
+        med = med.difference(discs_u)                                 # median noses stop at the junction box
+    verge = unary_union(keep + [med]).buffer(0)
+    # classify: slivers become asphalt, small compact islands in junctions are kerbed refuges, the rest grass medians
+    fill, isl_c, grass = [], [], []
+    for g in polys(verge):
+        if g.area < 30.0 or g.buffer(-0.8).is_empty:
+            fill.append(g)
+            continue
+        g = g.buffer(-1.0, join_style=1).buffer(1.0, join_style=1)     # rounded noses
+        if g.is_empty:
+            continue
+        mr = g.minimum_rotated_rectangle
+        xy = np.array(mr.exterior.coords)
+        sides = sorted([np.hypot(*(xy[1] - xy[0])), np.hypot(*(xy[2] - xy[1]))])
+        if g.area < 800 and sides[1] < 4.0 * max(sides[0], 1e-3) and not discs_u.is_empty and g.intersects(discs_u.buffer(4.0)):
+            isl_c.append(g)
+        else:
+            grass.append(g)
+    if fill:
+        asph = asph.union(unary_union(fill).buffer(0.05)).buffer(0)
+    verge = unary_union(isl_c + grass).buffer(0) if (isl_c or grass) else Polygon()
+    islands_c = unary_union(isl_c) if isl_c else Polygon()
+    grass_u = unary_union(grass) if grass else Polygon()
     # sidewalks
     sws = [e["ls"].buffer(e["sp"]["w"] / 2 + e["sp"]["sw"], cap_style=2, join_style=1) for e in drive]
     asph, verge = asph.buffer(0), verge.buffer(0)
     sw = unary_union(sws).buffer(0).difference(asph).difference(verge).buffer(0) if sws else Polygon()
+    sw = sw.buffer(-0.3).buffer(0.3)                                  # no sub-metre sidewalk crumbs
     for t in tracks:
         g = t.buffer(1.5, cap_style=2)
         m.poly(g.difference(asph), 0.01, (168, 150, 112))
@@ -385,8 +550,13 @@ def build(sel, cx, cy, half):
         g = ls.buffer(w / 2, cap_style=2).difference(asph).difference(sw)
         m.poly(g, 0.05, (206, 202, 192))
     m.poly(asph, 0.02, ASPH)
-    if not verge.is_empty:
-        m.prism(verge, 0.0, 0.16, GRASS, KERB)
+    if not grass_u.is_empty:
+        m.prism(grass_u, 0.0, 0.16, GRASS, KERB)
+    if not islands_c.is_empty:                                        # refuge islands: paved rim, grass core
+        m.prism(islands_c, 0.0, 0.16, SIDEW, KERB)
+        core = islands_c.buffer(-1.6)
+        if not core.is_empty:
+            m.poly(core, 0.165, GRASS)
     if not sw.is_empty:
         m.prism(sw, 0.0, 0.16, SIDEW, KERB)
     # ---- paint
@@ -424,22 +594,37 @@ def build(sel, cx, cy, half):
         m.poly(unary_union(white).intersection(clip), 0.04, WHITE, lit=False)
     if yellow:
         m.poly(unary_union(yellow).intersection(clip), 0.045, YELLOW, lit=False)
-    # ---- junction arms: zebras, stop / give-way lines, lane arrows, signals, signs, splitter islands
+    # ---- junction arms (one set per junction cluster): zebras, stop / give-way lines, lane arrows, signals, signs, splitter islands
     zeb, wl, islands, furn, bays = [], [], [], [], []
-    cnt = dict(signal=0, giveway=0, arrows=0, busstops=0, islands=0)
-    for nid, p, rj, lst in junc:
+    cnt = dict(signal=0, giveway=0, arrows=0, busstops=0, islands=0, merges=0)
+    for J in cl:
+        p, rc, JD = J["c"], J["rc"], J["D"]
+        circ = JD.boundary
+        others = [K["D"] for K in cl if K is not J]
         arms = []
-        for e, k in lst:
+        for e in drive:
             ls = e["ls"]
-            s0 = ls.project(Point(p))
-            for sgn in (-1, 1):
-                if (sgn < 0 and s0 < rj + 3) or (sgn > 0 and s0 > ls.length - rj - 3):
+            if not ls.intersects(JD):
+                continue
+            ix = ls.intersection(circ)
+            pts_ = [g for g in getattr(ix, "geoms", [ix]) if g.geom_type == "Point"]
+            for pt in pts_:
+                s0 = ls.project(pt)
+                sgn = -1 if JD.contains(ls.interpolate(min(ls.length, s0 + 2.0))) else 1
+                room = (ls.length - s0) if sgn > 0 else s0
+                if room < 3.0 or any(D.contains(pt) for D in others):
                     continue
-                a, b = ls.interpolate(s0 + sgn * 6.0), ls.interpolate(s0 + sgn * 12.0)
+                a, b = ls.interpolate(s0), ls.interpolate(s0 + sgn * min(6.0, room))
                 u = np.array([b.x - a.x, b.y - a.y])
                 u /= np.hypot(*u) + 1e-9
-                inbound = (not e["sp"]["ow"]) or (bool(e["r"].get("ow")) and sgn < 0)    # traffic heads towards the node on this arm
-                arms.append(dict(e=e, sgn=sgn, s0=s0, u=u, inb=inbound))
+                inbound = (not e["sp"]["ow"]) or (bool(e["r"].get("ow")) and sgn < 0)
+                arms.append(dict(e=e, sgn=sgn, s0=s0, u=u, inb=inbound, room=room))
+        if len(arms) < 3:
+            continue
+        angs = [math.degrees(math.acos(max(-1, min(1, float(x["u"] @ y["u"]))))) for i, x in enumerate(arms) for y in arms[i + 1:]]
+        if len(arms) == 3 and all(x["e"]["sp"]["ow"] for x in arms) and min(angs) < 35:
+            cnt["merges"] += 1                                         # merge / diverge: lanes just join, no furniture
+            continue
         if len(arms) < 3:
             continue
         ring = any((x["e"]["r"].get("junction") or "") in ("roundabout", "circular") for x in arms)
@@ -467,8 +652,8 @@ def build(sel, cx, cy, half):
             def at(d, lat=0.0):
                 c = ls.interpolate(A["s0"] + A["sgn"] * d)
                 return np.array([c.x, c.y]) + right * lat
-            if sp["w"] >= 4.5 and sp["sw"] >= 1.8:
-                c = at(rj - 1.0)
+            if sp["w"] >= 4.5 and sp["sw"] >= 1.8 and not e["r"]["cls"].endswith("_link"):
+                c = at(-1.0)
                 n = int(sp["w"] / 1.0) - 1
                 for q in range(n):
                     d = -sp["w"] / 2 + 0.7 + q * 1.0
@@ -476,13 +661,13 @@ def build(sel, cx, cy, half):
             nin = sp["n"] if sp["ow"] else sp["n"] // 2
             if A["inb"] and sp["w"] >= 4.5:
                 # stop line (signals / stop) or dashed give-way line, across the approach lanes
-                c = at(rj + 1.8, 0.0)
+                c = at(1.8, 0.0)
                 if sp["ow"]:
                     lo_, hi_ = -sp["w"] / 2, sp["w"] / 2
                 else:
                     lo_, hi_ = 0.0, sp["w"] / 2
                 lat0, lat1 = lo_, hi_
-                p0, p1 = at(rj + 1.8, lat0), at(rj + 1.8, lat1)
+                p0, p1 = at(1.8, lat0), at(1.8, lat1)
                 ln = LineString([tuple(p0), tuple(p1)])
                 if signal or (ai not in prio and not ring):
                     if signal:
@@ -492,7 +677,7 @@ def build(sel, cx, cy, half):
                 if ring:
                     wl += [d.buffer(0.18, cap_style=2) for d in dashes(ln, 0.6, 0.5)]
                 # lane arrows
-                if nin >= 2 and sp["w"] >= 6.0:
+                if nin >= 2 and sp["w"] >= 6.0 and A["room"] > 14.0:
                     lanes = [(i + 0.5) * sp["lw"] + (lo_ if sp["ow"] else 0.0) for i in range(nin)]
                     turns = {"L": False, "R": False}
                     for B in arms:
@@ -505,7 +690,7 @@ def build(sel, cx, cy, half):
                         elif -2.6 < ang < -0.5:
                             turns["R"] = True
                     for i, lat in enumerate(lanes):
-                        cc = at(rj + 10.0, lat)
+                        cc = at(10.0, lat)
                         if i == 0 and turns["L"]:
                             path = [(0, -1.4), (0, 0.0), (-0.9, 0.9)]
                         elif i == nin - 1 and turns["R"]:
@@ -518,26 +703,26 @@ def build(sel, cx, cy, half):
                 if signal:
                     wr = sp["w"] if sp["ow"] else sp["w"] / 2
                     cnt["signal"] += 1
-                    base = at(rj + 3.5, hi_ + sp["sw"] * 0.5)
+                    base = at(3.5, hi_ + sp["sw"] * 0.5)
                     m.cyl(base[0], 0.0, 5.2 if sp["w"] >= 6 else 3.6, base[1], 0.09, (90, 92, 96), 8)
                     face = math.atan2(u[1], u[0])
                     state = 2 if abs(math.sin(ang_u - a0)) < 0.5 else 0
                     if sp["w"] >= 6:
-                        tip = at(rj + 3.5, lo_ + 1.0)
+                        tip = at(3.5, lo_ + 1.0)
                         arm_len = math.hypot(*(tip - base))
                         mid = (tip + base) / 2
                         m.box(mid[0], 5.1, mid[1], arm_len, 0.12, 0.12, (90, 92, 96), yaw=math.atan2(tip[1] - base[1], tip[0] - base[0]))
                         for i in range(min(nin, 3)):
-                            hx = at(rj + 3.5, lo_ + (i + 0.5) * sp["lw"] * (nin / min(nin, 3)) if sp["ow"] else (i + 0.5) * sp["lw"])
+                            hx = at(3.5, lo_ + (i + 0.5) * sp["lw"] * (nin / min(nin, 3)) if sp["ow"] else (i + 0.5) * sp["lw"])
                             head(m, hx[0], 4.1, hx[1], face, state)
                     head(m, base[0], 2.6, base[1], face, state)
                 elif ai not in prio:
-                    base = at(rj + 3.0, hi_ + sp["sw"] * 0.5)
+                    base = at(3.0, hi_ + sp["sw"] * 0.5)
                     cnt["giveway"] += 1
                     giveway(m, base[0], base[1], math.atan2(u[1], u[0]))
             # splitter island on wide two-way arms
-            if (not sp["ow"]) and sp["w"] >= 9.0 and not ring:
-                d1, d2 = rj + 3.0, rj + 17.0
+            if (not sp["ow"]) and sp["w"] >= 9.0 and not ring and A["room"] > 20.0:
+                d1, d2 = 3.0, 17.0
                 pa, pb = at(d1), at(d2)
                 nrm = np.array([-u[1], u[0]])
                 cnt["islands"] += 1
@@ -549,7 +734,7 @@ def build(sel, cx, cy, half):
         sp, ls = e["sp"], e["ls"]
         if sp["cls"] not in ("secondary", "tertiary") or sp["w"] < 6.0:
             continue
-        cuts = sorted([(ls.project(Point(p)), rj) for _n, p, rj, lst in junc for ee, _k in lst if ee is e])
+        cuts = sorted([(ls.project(Point(J["c"])), J["rc"]) for J in cl if ls.intersects(J["D"])])
         bounds = [(0.0, 0.0)] + cuts + [(ls.length, 0.0)]
         for (sa, ra), (sb, rb) in zip(bounds[:-1], bounds[1:]):
             lo_s, hi_s = sa + ra + 4.0, sb - rb - 4.0
@@ -616,16 +801,16 @@ def build(sel, cx, cy, half):
             if gap < 10:
                 sides[side] = max(0.3, gap / 2)
         deck(m, e["pts"], e["sp"], max(1, int(e["r"].get("layer") or 1)), sides)
-    info = dict(cnt, n_drive=len(drive), n_bridge=len(bridges), n_junc=len(junc), n_verge=len(polys(verge)) if not verge.is_empty else 0)
+    info = dict(cnt, n_drive=len(drive), n_bridge=len(bridges), n_junc=len(cl), n_dup=len(dup), n_verge=len(polys(verge)) if not verge.is_empty else 0)
     return m, info, drive
 
 
-def render_views(path, r, zoom=None):
+def render_views(path, r, zoom=None, fit=None, want_obl=True):
     """(top PIL, oblique PIL, info) for the CS2-style build of the OSM around the screenshot."""
     import pyray as rl
     from PIL import Image
     sel, cx, cy, half, wm, site = site_roads(path)
-    m, info, drive = build(sel, cx, cy, half)
+    m, info, drive = build(sel, cx, cy, half, fit)
     P = np.array(m.P, np.float32)
     P[:, 2] *= -1.0
     m.P = [p for p in P]
@@ -644,7 +829,7 @@ def render_views(path, r, zoom=None):
     zoom = zoom or float(os.environ.get('CS2_ZOOM', '1'))
     wm = wm / zoom
     out = []
-    for kind in ("top", "obl"):
+    for kind in (("top", "obl") if want_obl else ("top",)):
         if kind == "top":
             eye, up = (0.0, (wm / 2) / math.tan(math.radians(fov / 2)), 0.0), (0.0, 0.0, -1.0)
             tgt = (0.0, 0.0, 0.0)
@@ -673,4 +858,4 @@ def render_views(path, r, zoom=None):
         for mo in models:
             rl.unload_model(mo)
         out.append(Image.open(tmp).convert("RGB"))
-    return out[0], out[1], dict(info, site=site, width_m=wm)
+    return out[0], (out[1] if want_obl else None), dict(info, site=site, width_m=wm, drive=drive)
