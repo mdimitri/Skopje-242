@@ -40,8 +40,13 @@ def per_dir(e):
     return max(lane_count(e, 1), lane_count(e, -1))
 
 
+NARROW = {"service", "living_street", "track", "path"}
+
+
 def half_w(e):
     n = per_dir(e)
+    if e["cls"] in NARROW and n <= 1:                       # car-park aisles and service ways: one lane wide, two-way
+        return 2.4
     return n * LW / 2 if e["ow"] else n * LW
 
 

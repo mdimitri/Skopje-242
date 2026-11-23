@@ -161,6 +161,7 @@ def merge_junctions(edges, kerb=7.0):
             n = parent[n]
         return n
     links = []
+    chains, loops = [], []
     seen = set()
     for n0 in J:                                               # links: chains of edges through plain (2-edge) nodes
         for i0 in at[n0]:
@@ -178,6 +179,7 @@ def merge_junctions(edges, kerb=7.0):
                 i = at[n][0] if at[n][1] == i else at[n][1]
             if chain and n == n0 and L < 60.0:                    # a U-turn / slip loop back into the same junction
                 links += chain
+                loops.append((n0, chain))
                 continue
             if not chain or n not in J or n == n0 or frozenset(chain) in seen:
                 continue
@@ -186,6 +188,7 @@ def merge_junctions(edges, kerb=7.0):
             score = 1.0 / (1.0 + np.exp((L - reach) / (0.15 * reach)))
             if score > 0.5:
                 links += chain
+                chains.append((n0, chain))
                 parent[find(n0)] = find(n)
     groups = collections.defaultdict(list)
     for n in J:
@@ -193,8 +196,25 @@ def merge_junctions(edges, kerb=7.0):
     groups = {r: ns for r, ns in groups.items() if len(ns) > 1}
     if not groups:
         return 0, 0
+    pos0 = {}
+    for e in edges:
+        pos0.setdefault(e["a"], e["pts"][0])
+        pos0.setdefault(e["b"], e["pts"][-1])
+    # a cluster whose members would have to move far to meet is not one junction (the arm pull would drag real
+    # geometry): such groups stay as they were
+    MOVE = 22.0
+    far = set()
+    for r, ns in groups.items():
+        wsum = sum(size[n] for n in ns)
+        cx = sum(pos0[n][0] * size[n] for n in ns) / wsum
+        cy = sum(pos0[n][1] * size[n] for n in ns) / wsum
+        if max(np.hypot(pos0[n][0] - cx, pos0[n][1] - cy) for n in ns) > MOVE:
+            far.add(r)
+    groups = {r: ns for r, ns in groups.items() if r not in far}
+    if not groups:
+        return 0, 0
     root = {n: r for r, ns in groups.items() for n in ns}
-    inner = set(links)
+    inner = {i for n0, ch in chains if n0 in root for i in ch} | {i for _n0, ch in loops for i in ch}
     # centre: node positions weighted by how much road meets there
     pos = {}
     for e in edges:
