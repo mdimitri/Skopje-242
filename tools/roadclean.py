@@ -228,39 +228,98 @@ def _resample(pts, step=2.0):
     return list(zip(x.tolist(), y.tolist())), ss
 
 
+def _dir_at(P, S, look):
+    j = int(np.searchsorted(S, look))
+    j = min(max(1, j), len(P) - 1)
+    u = P[j] - P[0]
+    ln = float(np.hypot(*u))
+    return (u / ln) if ln > 1e-6 else None
+
+
 def straighten_arms(edges):
     """Every road leaves a junction on a straight approach (a real junction is built square to its arms): the first
-    stretch of each arm is blended from the straight line along the arm's general direction back into the real line.
-    The straight share eases out smoothly; how far it reaches grows with the edge's length (shorter edges bend
-    sooner), never a cut-off.  Junction points do not move.  -> number of arm ends straightened."""
+    stretch of each arm is blended from a straight line along the arm's general direction back into the real line.
+    The two carriageways of a dual road approach side by side at their real spacing, so the median runs right up to
+    the junction box and only the last metres inside the box swing in to the junction point.  Weights ease smoothly;
+    reach grows with the edge's length, never a cut-off.  Junction points do not move.  -> arm ends straightened."""
     deg = collections.Counter()
-    for e in edges:
+    at = collections.defaultdict(list)
+    for i, e in enumerate(edges):
         if e["drive"]:
             deg[e["a"]] += 1
             deg[e["b"]] += 1
+            at[e["a"]].append((i, 0))
+            at[e["b"]].append((i, 1))
+    rs = {}
+    for i, e in enumerate(edges):
+        if e["drive"] and not e["bridge"] and e["len"] >= 6:
+            rs[i] = _resample([tuple(p) for p in e["pts"]])
+    # lateral offset for dual-carriageway arms: (edge, end) -> (axis u, offset along v, box radius)
+    lateral = {}
+    for node, L in at.items():
+        if deg[node] < 3:
+            continue
+        info = []
+        for i, k in L:
+            if i not in rs or not edges[i]["ow"]:
+                continue
+            P, ss = rs[i]
+            Q = np.asarray(P, float)
+            R = Q if k == 0 else Q[::-1]
+            S = ss if k == 0 else (ss[-1] - ss)[::-1]
+            u = _dir_at(R, S, min(30.0, 0.6 * S[-1]))
+            if u is None:
+                continue
+            p30 = R[min(len(R) - 1, int(np.searchsorted(S, min(30.0, 0.6 * S[-1]))))]
+            info.append((i, k, u, p30, "in" if k == 1 else "out"))
+        box = max(_hw(edges[i]) for i, _k in L) + 6.0
+        used = set()
+        cand = []
+        for x in range(len(info)):
+            for y in range(x + 1, len(info)):
+                a, b = info[x], info[y]
+                if a[4] == b[4]:
+                    continue
+                cos = float(a[2] @ b[2])
+                gap = float(np.hypot(*(a[3] - b[3])))
+                cost = (1 - cos) * 20 + gap / 30.0
+                if cost < 1.5:
+                    cand.append((cost, x, y))
+        for _c, x, y in sorted(cand):
+            if x in used or y in used:
+                continue
+            used |= {x, y}
+            a, b = info[x], info[y]
+            u = a[2] + b[2]
+            u = u / (float(np.hypot(*u)) or 1.0)
+            v = np.array([-u[1], u[0]])
+            node_p = np.asarray(edges[a[0]]["pts"][0 if a[1] == 0 else -1], float)
+            for (i, k, _u, p30, _kind) in (a, b):
+                off = float((p30 - node_p) @ v)
+                lateral[(i, k)] = (u, v, off, box)
     n = 0
-    for e in edges:
-        if not e["drive"] or e["bridge"] or e["len"] < 6:
+    for i, e in enumerate(edges):
+        if i not in rs:
             continue
         ends = [k for k, node in ((0, e["a"]), (1, e["b"])) if deg[node] >= 3]
         if not ends:
             continue
-        P, ss = _resample([tuple(p) for p in e["pts"]])
+        P, ss = rs[i]
         L = float(ss[-1])
         reach = min(45.0, 0.42 * L) if len(ends) == 2 else min(45.0, 0.6 * L)
         Q = np.asarray(P, float)
         for k in ends:
             R = Q if k == 0 else Q[::-1]
             S = ss if k == 0 else (L - ss)[::-1]
-            look = min(reach, 0.8 * L)
-            j = int(np.searchsorted(S, look * 0.8))
-            j = min(max(1, j), len(R) - 1)
-            u = R[j] - R[0]
-            ln = float(np.hypot(*u))
-            if ln < 1e-6:
-                continue
-            u /= ln
-            straight = R[0] + u * S[:, None]
+            if (i, k) in lateral:
+                u, v, off, box = lateral[(i, k)]
+                swing = np.array([_ease(s / max(1.0, box)) for s in S])[:, None]       # 0 at the junction point -> 1 at the box edge
+                straight = R[0] + u * S[:, None] + v * off * swing
+            else:
+                u = _dir_at(R, S, min(reach, 0.8 * L) * 0.8)
+                if u is None:
+                    continue
+                straight = R[0] + u * S[:, None]
             w = np.array([_ease(s / reach) for s in S])[:, None]       # 0 at the junction -> 1 where the real line takes over
             R2 = straight * (1 - w) + R * w
             Q = R2 if k == 0 else R2[::-1]
