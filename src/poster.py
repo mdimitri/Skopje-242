@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join(ROOT, "assets", "posters")
 TITLE = "title.png"
 SPLASH_DIR = os.path.join(ROOT, "assets", "splash")          # each JPEG here joins the slideshow
-HERO = "01_bazaar_baba_boza.jpg"                            # always the first splash image
+HERO = "01_bazaar_baba_boza.jpg"                            # README hero image; one of the random splash images
 SPLASH_EXT = (".jpg", ".jpeg")
 SPLASH_HOLD = 20.0                                          # seconds per image
 TEAR = 1.6                                                  # seconds of the torn-poster change
@@ -24,10 +24,7 @@ def _splash_files():
         fs = sorted(os.path.join(SPLASH_DIR, f) for f in os.listdir(SPLASH_DIR) if f.lower().endswith(SPLASH_EXT))
     except OSError:
         return []
-    hero = os.path.join(SPLASH_DIR, HERO)
-    if hero in fs:
-        fs.remove(hero)
-        fs.insert(0, hero)
+    random.shuffle(fs)                                    # random first image, random order (HERO stays in the pool)
     return fs
 
 
@@ -134,15 +131,16 @@ def draw_splash(W, H):
     if _S["t0"] is None:
         _S["t0"] = now
     if _S["tear"] is None and len(fs) - len(failed) > 1:
-        nxt = (_S["i"] + 1) % len(fs)
-        while fs[nxt] in failed:
-            nxt = (nxt + 1) % len(fs)
+        nxt = _S.get("next")
+        if nxt is None or nxt == _S["i"] or fs[nxt] in failed:
+            nxt = random.choice([k for k in range(len(fs)) if k != _S["i"] and fs[k] not in failed])
+            _S["next"] = nxt
         path = fs[nxt]
         if path not in textures and _S["job"] is None:
             _queue_poster(path)
         if path in textures and now - _S["t0"] >= SPLASH_HOLD:
             _S["old"], _S["tear"] = current, (now, 0.0, _tear_strips())
-            _S["i"], _S["t0"] = nxt, now
+            _S["i"], _S["t0"], _S["next"] = nxt, now, None
             current = path
     draw_fit(textures[current], 0, 0, W, H, 255, cover=True)
     if _S["tear"] is not None:

@@ -16,9 +16,6 @@ import radio
 FRAG = (50.0, 110.0)          # seconds of one song before the "dial" moves to another
 LEVEL = 0.38                  # relative to the radio volume setting
 PINK = rl.Color(226, 32, 104, 255)
-INTRO = os.path.join(radio.ROOT, "assets", "splash", "intro.wav")
-INTRO_TRACK_ID = "4d5bd819-c44d-4a45-aff3-f4e801003f7c"
-INTRO_TITLE = "Јазик на сенки"
 
 
 def _crackle(n, sr, rng):
@@ -83,13 +80,6 @@ class LoadMusic:
                 rl.init_audio_device()
             if not rl.is_audio_device_ready():
                 return
-            if os.path.isfile(INTRO):
-                intro = rl.load_sound(INTRO)
-                if rl.is_sound_valid(intro):
-                    self.snd = intro
-                    self.title = INTRO_TITLE
-                    rl.set_sound_volume(intro, LEVEL * volume)
-                    rl.play_sound(intro)
             self.ok = True
             self.setup = {}
             threading.Thread(target=self._scan, args=(self.setup,), daemon=True).start()
@@ -134,11 +124,9 @@ class LoadMusic:
                 setup, self.setup = self.setup, None
                 if "result" in setup:
                     self.stations, self.dir = setup["result"]
-                    if self.title == INTRO_TITLE:
-                        opening = next(((i, path) for i, (_, files) in enumerate(self.stations)
-                                        for path in files if INTRO_TRACK_ID in path), None)
-                        if opening is not None:
-                            self.sel, self.cur = opening
+                    rap = [i for i, (name, _) in enumerate(self.stations) if "рап" in name.lower()]
+                    if rap:                                   # the loader plays the rap station, a random song
+                        self.sel = random.choice(rap)
                     self.files = list(self.stations[self.sel][1])
                     random.shuffle(self.files)
                     if self.cur is not None:
