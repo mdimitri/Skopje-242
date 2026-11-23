@@ -87,7 +87,7 @@ def smooth(t):
     return t * t * t * (t * (6 * t - 15) + 10)
 
 
-def deck(m, pts, sp, layer, rnd_seed=0):
+def deck(m, pts, sp, layer, sides=None):
     ls = LineString(pts)
     L = ls.length
     if L < 8:
@@ -106,8 +106,17 @@ def deck(m, pts, sp, layer, rnd_seed=0):
         return (P[i, 0] + N[i, 0] * d, Z[i] + dz, P[i, 1] + N[i, 1] * d)
     for i in range(len(ss) - 1):
         j = i + 1
+        if max(Z[i], Z[j]) < 0.45:
+            continue
         m.quad(pt(i, -hw, 0.02), pt(i, hw, 0.02), pt(j, hw, 0.02), pt(j, -hw, 0.02), ASPH)
         for sg in (-1, 1):
+            if sides and sg in sides:                                   # twin deck: meet the neighbour in a shared median slab
+                a, b = sg * hw, sg * (hw + sides[sg])
+                m.quad(pt(i, a, 0.18), pt(i, b, 0.18), pt(j, b, 0.18), pt(j, a, 0.18), KERB)
+                m.quad(pt(i, a, 0.0), pt(i, a, 0.18), pt(j, a, 0.18), pt(j, a, 0.0), KERB)
+                m.quad(pt(i, b, -0.9), pt(i, b, 0.6), pt(j, b, 0.6), pt(j, b, -0.9), (158, 156, 150))
+                m.quad(pt(i, b * 0.98, 0.6), pt(i, b, 0.6), pt(j, b, 0.6), pt(j, b * 0.98, 0.6), (176, 174, 168))
+                continue
             a, b = sg * hw, sg * (hw + sw)
             m.quad(pt(i, a, 0.18), pt(i, b, 0.18), pt(j, b, 0.18), pt(j, a, 0.18), SIDEW)
             m.quad(pt(i, a, 0.0), pt(i, a, 0.18), pt(j, a, 0.18), pt(j, a, 0.0), KERB)
@@ -183,6 +192,118 @@ def bus_stop(m, x, z, ang, out):
     plate(m, px, 2.12, pz, ang + math.pi / 2, 0.3, 0.12, (245, 245, 245))
 
 
+def smooth_line(p, pins, step=4.0, passes=10):
+    """Resample at ~4 m and relax the interior (ends and pinned points fixed): no sudden changes of angle."""
+    ls = LineString(p)
+    L = ls.length
+    n = max(2, int(L / step))
+    q = np.array([ls.interpolate(s).coords[0] for s in np.linspace(0, L, n + 1)])
+    if len(q) < 4:
+        return q
+    fixed = np.zeros(len(q), bool)
+    fixed[0] = fixed[-1] = True
+    for pp in pins:
+        d = np.hypot(q[:, 0] - pp[0], q[:, 1] - pp[1])
+        if d.min() < step:
+            fixed[int(d.argmin())] = True
+    for _ in range(passes):
+        new = q.copy()
+        new[1:-1] = 0.25 * q[:-2] + 0.5 * q[1:-1] + 0.25 * q[2:]
+        new[fixed] = q[fixed]
+        q = new
+    return q
+
+
+def tangent_at_end(e, end):
+    P = e["pts"]
+    a, b = (P[0], P[min(len(P) - 1, 3)]) if end == 0 else (P[-1], P[max(0, len(P) - 4)])
+    v = np.asarray(b, float) - np.asarray(a, float)
+    return v / (np.hypot(*v) + 1e-9)
+
+
+def prep(drive, bridges):
+    """Graph clean-up before geometry: drop median crossovers, one lane count per chain, smooth centrelines."""
+    ents = drive + bridges
+    inc = {}
+    for e in ents:
+        nd = e["r"]["nodes"]
+        if len(nd) < 2:
+            continue
+        for end, k in ((0, 0), (1, len(nd) - 1)):
+            inc.setdefault(nd[k], []).append((e, end))
+        for k in range(1, len(nd) - 1):
+            inc.setdefault(nd[k], []).append((e, -1))
+    deg = {n: sum(1 if end >= 0 else 2 for e, end in l) for n, l in inc.items()}
+    # 1. median crossovers: short link whose both ends sit on opposite-direction one-way carriageways
+    drop = set()
+    for e in ents:
+        nd = e["r"]["nodes"]
+        if e["ls"].length > 45 or len(nd) < 2 or not (e["sp"]["ow"] or e["r"]["cls"].endswith("_link")):
+            continue
+        ok = True
+        for end, k in ((0, 0), (1, len(nd) - 1)):
+            others = [o for o, oe in inc.get(nd[k], []) if o is not e and o["sp"]["ow"] and o["ls"].length > 30]
+            if len(others) < 2 and not (len(others) == 1 and any(oe == -1 for o, oe in inc.get(nd[k], []) if o is others[0])):
+                ok = False
+        if not ok:
+            continue
+        # both ends touch carriageways that run in opposite directions
+        ds = []
+        for end, k in ((0, 0), (1, len(nd) - 1)):
+            for o, oe in inc.get(nd[k], []):
+                if o is e or not o["sp"]["ow"]:
+                    continue
+                ds.append(tangent_at_end(o, oe) * (1 if oe == 0 else -1) if oe >= 0 else None)
+        pts_dirs = []
+        for end, k in ((0, 0), (1, len(nd) - 1)):
+            for o, oe in inc.get(nd[k], []):
+                if o is e or not o["sp"]["ow"]:
+                    continue
+                P = o["pts"]
+                i = int(np.argmin(np.hypot(P[:, 0] - e["pts"][0 if end == 0 else -1][0], P[:, 1] - e["pts"][0 if end == 0 else -1][1])))
+                v = P[min(i + 1, len(P) - 1)] - P[max(i - 1, 0)]
+                pts_dirs.append(v / (np.hypot(*v) + 1e-9))
+        if len(pts_dirs) >= 2 and min(float(a @ b) for a in pts_dirs for b in pts_dirs) < -0.6:
+            drop.add(id(e))
+    # 2. one lane count per chain (joined at degree-2 nodes)
+    parent = {id(e): id(e) for e in ents}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    for n, l in inc.items():
+        if deg[n] == 2 and len(l) == 2 and l[0][0] is not l[1][0] and l[0][0]["sp"]["ow"] == l[1][0]["sp"]["ow"]:
+            parent[find(id(l[0][0]))] = find(id(l[1][0]))
+    groups = {}
+    for e in ents:
+        groups.setdefault(find(id(e)), []).append(e)
+    for g in groups.values():
+        votes = {}
+        for e in g:
+            votes[e["sp"]["n"]] = votes.get(e["sp"]["n"], 0.0) + e["ls"].length
+        n = max(votes, key=votes.get)
+        for e in g:
+            if e["sp"]["n"] != n:
+                e["sp"]["n"] = n
+                e["sp"]["w"] = n * e["sp"]["lw"]
+    # 3. smooth, keeping junction nodes fixed
+    jp = []
+    for n, l in inc.items():
+        if deg[n] >= 3:
+            e, end = l[0]
+            k = 0 if end == 0 else (len(e["r"]["nodes"]) - 1 if end == 1 else e["r"]["nodes"].index(n))
+            jp.append(e["pts"][min(k, len(e["pts"]) - 1)])
+    for e in ents:
+        if id(e) in drop:
+            continue
+        q = smooth_line(e["pts"], [p for p in jp if e["ls"].distance(Point(p)) < 1.0])
+        e["pts"] = q
+        e["ls"] = LineString(q)
+    return drop
+
+
 def build(sel, cx, cy, half):
     """Return (mesh, info).  sel: raw OSM road dicts."""
     m = Mesh()
@@ -195,7 +316,7 @@ def build(sel, cx, cy, half):
             continue
         if r["cls"] in DRIVE:
             sp = spec(r)
-            ent = dict(r=r, pts=p, sp=sp, ls=LineString(p))
+            ent = dict(r=r, pts=p, sp=sp, ls=LineString(p), np={nid: p[k] for k, nid in enumerate(r["nodes"][:len(p)])})
             if r.get("tunnel"):
                 continue
             if r.get("bridge") or (r.get("layer") or 0) > 0:
@@ -206,6 +327,17 @@ def build(sel, cx, cy, half):
             tracks.append(LineString(p))
         else:
             paths.append((LineString(p), 4.0 if r["cls"] == "pedestrian" else 1.6))
+    drop = prep(drive, bridges)
+    drive = [e for e in drive if id(e) not in drop]
+    bridges = [e for e in bridges if id(e) not in drop]
+    for e in list(bridges):                                           # ground feet of ramps are ordinary road (sidewalks merge)
+        L = e["ls"].length
+        rl = min(85.0, 0.46 * L)
+        foot = rl * 0.22
+        if L > 2 * foot + 10:
+            for a, b in ((0.0, foot), (L - foot, L)):
+                seg = [e["ls"].interpolate(t).coords[0] for t in np.linspace(a, b, 6)]
+                drive.append(dict(r=dict(nodes=[], cls=e["r"]["cls"], ow=e["r"].get("ow")), pts=np.array(seg), sp=e["sp"], ls=LineString(seg)))
     # ---- junction nodes (graph degree >= 3 on at-grade drive roads)
     inc = {}
     for e in drive:
@@ -216,7 +348,7 @@ def build(sel, cx, cy, half):
     for nid, lst in inc.items():
         deg = sum(1 if k in (0, len(e["pts"]) - 1) else 2 for e, k in lst)
         if deg >= 3:
-            p = lst[0][0]["pts"][lst[0][1]]
+            p = lst[0][0]["np"][nid]
             rj = max(e["sp"]["w"] for e, _ in lst) / 2 + 7.0
             junc.append((nid, p, rj, lst))
     # ---- asphalt
@@ -232,7 +364,16 @@ def build(sel, cx, cy, half):
     # verges: medians and islands = gaps between carriageways
     closed = asph.buffer(7.0).buffer(-7.0)
     verge = closed.difference(asph).buffer(-0.3).buffer(0.3)
-    verge = unary_union([g for g in polys(verge) if g.area > 5.0]) if not verge.is_empty else Polygon()
+    keep = []
+    ab = asph.buffer(0.35)
+    for g in polys(verge):
+        if g.area <= 5.0:
+            continue
+        bd = g.exterior
+        adj = bd.intersection(ab).length / max(bd.length, 1e-6)
+        if adj >= 0.55 or g.interiors:
+            keep.append(g)
+    verge = unary_union(keep) if keep else Polygon()
     # sidewalks
     sws = [e["ls"].buffer(e["sp"]["w"] / 2 + e["sp"]["sw"], cap_style=2, join_style=1) for e in drive]
     asph, verge = asph.buffer(0), verge.buffer(0)
@@ -451,7 +592,30 @@ def build(sel, cx, cy, half):
         isl = unary_union(islands).intersection(asph)
         m.prism(isl, 0.0, 0.16, GRASS, KERB)
     for e in bridges:
-        deck(m, e["pts"], e["sp"], max(1, int(e["r"].get("layer") or 1)))
+        sides = {}
+        P = e["pts"]
+        mid = e["ls"].interpolate(0.5, normalized=True)
+        i = int(np.argmin(np.hypot(P[:, 0] - mid.x, P[:, 1] - mid.y)))
+        tv = P[min(i + 1, len(P) - 1)] - P[max(i - 1, 0)]
+        tv = tv / (np.hypot(*tv) + 1e-9)
+        for o in bridges:
+            if o is e or not (e["sp"]["ow"] and o["sp"]["ow"]):
+                continue
+            dd = o["ls"].distance(mid)
+            if dd > 18:
+                continue
+            Q = o["pts"]
+            k = int(np.argmin(np.hypot(Q[:, 0] - mid.x, Q[:, 1] - mid.y)))
+            tw = Q[min(k + 1, len(Q) - 1)] - Q[max(k - 1, 0)]
+            tw = tw / (np.hypot(*tw) + 1e-9)
+            if float(tv @ tw) > -0.5:
+                continue
+            nrm = np.array([-tv[1], tv[0]])
+            side = 1 if float((Q[k] - np.array([mid.x, mid.y])) @ nrm) > 0 else -1
+            gap = dd - e["sp"]["w"] / 2 - o["sp"]["w"] / 2
+            if gap < 10:
+                sides[side] = max(0.3, gap / 2)
+        deck(m, e["pts"], e["sp"], max(1, int(e["r"].get("layer") or 1)), sides)
     info = dict(cnt, n_drive=len(drive), n_bridge=len(bridges), n_junc=len(junc), n_verge=len(polys(verge)) if not verge.is_empty else 0)
     return m, info, drive
 
