@@ -802,6 +802,8 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         foot = unary_union(ends) if ends else Polygon()
         keep_isl = [p for p in keep_isl if not (p.area < 250.0 and p.intersects(foot))]
     isl = unary_union(keep_isl)
+    # median noses: island tips are rounded (opening by r, then back by a hair so the kerb face stays on the asphalt edge)
+    isl = isl.buffer(-1.0, resolution=8).buffer(1.0, resolution=8).intersection(isl.buffer(0.02))
     asph = C.difference(isl)
     pave = asph.buffer(SW, resolution=10).difference(asph).difference(isl)
     # where a deck lifts off its foot (port: drawn by port_decks) the ground pavement, islands and kerbs stop
