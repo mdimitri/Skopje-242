@@ -28,6 +28,7 @@ CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 3, "
        "living_street": 1, "service": 1}
 R_KERB = 7.0
 RANGE = 120.0
+MARGIN = 60.0                                        # edges this far beyond the window still shape what is inside it
 
 
 def per_dir(e):
@@ -253,10 +254,42 @@ def ribbon(d, inc, T=36.0):
     return unary_union([unary_union([discs[i], discs[i + 1]]).convex_hull for i in range(n)])
 
 
-def build(edges, cx, cy, buildings=(), decks=None, T=None):
+def _wall_ring(m, ring, y0, y1, col, half=None):
+    """Kerb face along a ring; with `half` the artificial edges where the window clips the geometry are left out."""
+    c = [tuple(q) for q in ring.coords]
+    if half is None:
+        m.wall(c, y0, y1, col)
+        return
+    run = [c[0]]
+    for a, b in zip(c, c[1:]):
+        on = (abs(abs(a[0]) - half) < 1e-3 and abs(abs(b[0]) - half) < 1e-3 and (a[0] > 0) == (b[0] > 0)) or \
+             (abs(abs(a[1]) - half) < 1e-3 and abs(abs(b[1]) - half) < 1e-3 and (a[1] > 0) == (b[1] > 0))
+        if on:
+            if len(run) > 1:
+                m.wall(run, y0, y1, col)
+            run = [b]
+        else:
+            run.append(b)
+    if len(run) > 1:
+        m.wall(run, y0, y1, col)
+
+
+def context(edges):
+    """Whole-network facts the per-window build needs (computed once): bridge lanes, nodes under bridges, node degrees."""
+    gdeg = {}
+    for e in edges:
+        if e["drive"] and not e["bridge"]:
+            gdeg[e["a"]] = gdeg.get(e["a"], 0) + 1
+            gdeg[e["b"]] = gdeg.get(e["b"], 0) + 1
+    return {"BL": bridge_lanes(edges), "gn": set(gdeg), "gdeg": gdeg}
+
+
+def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None):
+    """port=True: only what replaces the game's ground-road surfaces (asphalt, kerbs, pavements, islands, paint, zebras),
+    heights relative to the terrain, no furniture / bridges / buildings; ctx = context(edges) when `edges` is a subset."""
     E, B, W = [], [], []
-    BL = bridge_lanes(edges)
-    gn = {n for e in edges if e["drive"] and not e["bridge"] for n in (e["a"], e["b"])}
+    ctx = ctx or context(edges)
+    BL, gn, gdeg = ctx["BL"], ctx["gn"], ctx["gdeg"]
     for e in edges:
         if not e["drive"] and not e["bridge"] and e["cls"] in WALK_W and len(e["pts"]) >= 2:
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
@@ -265,14 +298,14 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
             continue
         if e["drive"] and e["bridge"]:
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
-            if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + 30:
+            if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + MARGIN:
                 nb = BL.get(e["road"], per_dir(e))
                 B.append({"e": e, "ln": LineString(P), "hw": nb * LW / 2 if e["ow"] else nb * LW, "per": nb, "gnodes": gn})
             continue
         if not e["drive"]:
             continue
         P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
-        if min(math.hypot(p[0], p[1]) for p in P) > RANGE + 30 or len(P) < 2:
+        if min(math.hypot(p[0], p[1]) for p in P) > RANGE + MARGIN or len(P) < 2:
             continue
         ln = LineString(P)
         if ln.length < 3.0:
@@ -287,13 +320,11 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
     ribs = [ribbon(d, inc) for d in E]
     # dead ends get a turning bulb (cul-de-sac) instead of a bare round cap
     for n, L in inc.items():
-        if len(L) == 1 and L[0]["ln"].length > 20:
+        if gdeg.get(n, 0) == 1 and L[0]["ln"].length > 20:
             d = L[0]
             start = d["e"]["a"] == n
             ux, uy = _out_dir(d["ln"], start)
             end = d["ln"].coords[0] if start else d["ln"].coords[-1]
-            if math.hypot(end[0], end[1]) > RANGE - 15:
-                continue                                  # cut off by the window, not a real dead end
             rb = max(d["hw"] + 4.5, 10.0)
             bx, by = end[0] + ux * rb * 0.6, end[1] + uy * rb * 0.6   # centre sits inside the road so the bulb stands 0.4 r proud
             ribs.append(Point(bx, by).buffer(rb, resolution=24))
@@ -319,25 +350,28 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
     for p in polys_of(pave):
         pass
     # kerb faces: along the boundary between asphalt and pavement / island
+    hf = RANGE if port else None
     for p in polys_of(asph):
         for ring in [p.exterior] + list(p.interiors):
-            m.wall([tuple(c) for c in ring.coords], 0.0, KERB, KFACE)
+            _wall_ring(m, ring, 0.0, KERB, KFACE, hf)
     for p in polys_of(isl):
         tri_poly(m, p, KERB, KTOP)
         ins = p.buffer(-0.35)
         for q in polys_of(ins):
             tri_poly(m, q, KERB + 0.10, GRASS)
-        walls_of(m, p, 0.0, KERB, KFACE)
-    if W and B:
+        for ring in [p.exterior] + list(p.interiors):
+            _wall_ring(m, ring, 0.0, KERB, KFACE, hf)
+    if W and B and not port:
         corr = unary_union([d["ln"].buffer(d["hw"] + 2.6) for d in B])
         W = [w for w in W if w["ln"].intersection(corr).length < 0.5 * w["ln"].length]
     if W:
         foot = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] != "cycleway"])
         cyc = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] == "cycleway"])
         cut = asph.union(isl)
-        stroke(m, foot.difference(cut).intersection(clip), KERB + 0.05, (214, 210, 202))
-        cyc = cyc.difference(cut).intersection(clip)
-        stroke(m, cyc, KERB + 0.09, (176, 92, 84))
+        if not port:
+            stroke(m, foot.difference(cut).intersection(clip), KERB + 0.05, (214, 210, 202))
+            cyc = cyc.difference(cut).intersection(clip)
+            stroke(m, cyc, KERB + 0.09, (176, 92, 84))
         # footpaths and cycleways cross carriageways only as zebra crossings
         bars = []
         road_only = asph.difference(isl)
@@ -363,7 +397,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
                     k += 1.0
         if bars:
             stroke(m, unary_union(bars).intersection(road_only).intersection(clip), 0.06, WHITE)
-        for w in W:
+        for w in ([] if port else W):
             if w["e"]["cls"] != "cycleway":
                 continue
             s_ = 6.0
@@ -380,7 +414,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
                     stroke(m, ring, KERB + 0.14, WHITE)
                 stroke(m, LineString([(p.x - tx * 0.55, p.y - ty * 0.55), (p.x, p.y + 0.0), (p.x + tx * 0.55, p.y + ty * 0.55)]).buffer(0.05), KERB + 0.14, WHITE)
                 s_ += 25.0
-    if B and decks:
+    if B and decks and not port:
         base = min(float(decks[d["e"]["road"]].at(*d["ln"].coords[0][:2] if False else (d["ln"].coords[0][0] + cx, d["ln"].coords[0][1] + cy))[0]) for d in B if d["e"]["road"] in decks) if any(d["e"]["road"] in decks for d in B) else 0.0
         if T is not None:
             base = tbase
@@ -471,6 +505,8 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
                         hd = [(px + fx * 1.2, py + fy * 1.2), (px + rx * 0.55, py + ry * 0.55), (px - rx * 0.55, py - ry * 0.55)]
                         stroke(m, Polygon(hd).intersection(zone), 0.05, WHITE)
     # street furniture on the pavements
+    if port:
+        return m
     def free(p, r=0.5):
         return pave.buffer(0.01).contains(Point(p)) and not asph.buffer(r).contains(Point(p))
     for d in E:

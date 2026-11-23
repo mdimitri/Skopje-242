@@ -1522,6 +1522,9 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
+    designer = os.environ.get("SK242_DESIGNER") == "1"     # junction designer owns the ground-road surfaces (tools/roads_designer.py)
+    if designer:
+        order = [i for i in order if not edges[i]["drive"] or edges[i]["bridge"]]
     pier_edges, done_ = set(), set()
     for i in order:
         e = edges[i]
@@ -1557,8 +1560,12 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
             out.deck = decks.get(e["road"]) if (decks and e["bridge"]) else None
             _edge_body(i, X, out, pout, piers, ribs, trims, i in pier_edges)
     hulls = []
+    if designer:
+        import roads_designer
+        roads_designer.add_tiles(out, edges, lambda f: prog(0.7 + 0.2 * f, "junction designer"))
     _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
-    _junctions(out, edges, plates, ribs, hulls)
+    if not designer:
+        _junctions(out, edges, plates, ribs, hulls)
     for ring in junction_cores:
         x, y = (sum(p[k] for p in ring) / len(ring) for k in (0, 1))
         hulls.append((min(p[0] for p in ring), min(p[1] for p in ring),
@@ -1568,9 +1575,10 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
             out.quad((x, h, y), (a[0], h, a[1]), (b[0], h, b[1]), (b[0], h, b[1]), FILL["tertiary"])
             out.quad((x, h, y), (b[0], h, b[1]), (a[0], h, a[1]), (a[0], h, a[1]), FILL["tertiary"])
     _TICK[0] = lambda f: prog(0.82 + 0.12 * f, "corners")
-    _corners(out, edges, plates, ribs, trims, cov, hulls)
+    if not designer:
+        _corners(out, edges, plates, ribs, trims, cov, hulls)
     _TICK[0] = None
-    for k_, (x, yy, ax, ay, w, _kind, *stop) in enumerate(xwalks):    # zebra crossings + stop lines
+    for k_, (x, yy, ax, ay, w, _kind, *stop) in enumerate([] if designer else xwalks):    # zebra crossings + stop lines
         if k_ % 32 == 0:
             prog(0.94 + 0.03 * k_ / max(1, len(xwalks)), "crossings")
         _zebra(out, x, yy, ax, ay, w, stop[0] if stop else 1, stop[1] if len(stop) > 1 else 0.0)
@@ -1578,7 +1586,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
         if ramp_sides:
             _kerb_ramps(out, x, yy, ax, ay, w, ramp_sides)
     prog(0.968, "lane arrows")
-    _approach_marks(out, cov, edges, xwalks)
+    if not designer:
+        _approach_marks(out, cov, edges, xwalks)
     _TICK[0] = lambda f: prog(0.97 + 0.025 * f, "mesh")
     if os.environ.get("ROADS_DEBUG"):
         _debug_dump(out, edges, os.environ["ROADS_DEBUG"])
