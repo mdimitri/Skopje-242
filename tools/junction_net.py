@@ -425,29 +425,46 @@ def _arms_at(n, L, road):
             off = (pt.x - c[0]) * v[0] + (pt.y - c[1]) * v[1]
             s0, s1, lanes, kind = r["bands"][0]
             bands.append((off + s0, off + s1, lanes, kind))
-        arms.append({"u": u, "v": v, "bands": bands, "c": c, "n": n})
+        arms.append({"u": u, "v": v, "bands": bands, "c": c, "n": n, "ds": [a["d"], b["d"]], "deg": len(L)})
     for i, a in enumerate(raw):
         if i not in used:
-            arms.append({"u": a["u"], "v": a["v"], "bands": a["bands"], "c": c, "n": n})
+            arms.append({"u": a["u"], "v": a["v"], "bands": a["bands"], "c": c, "n": n, "ds": [a["d"]], "deg": len(L)})
     for a in arms:
         lo = min(b[0] for b in a["bands"])
         hi = max(b[1] for b in a["bands"])
         width = sum(b[1] - b[0] for b in a["bands"])
         a["lo"], a["hi"] = lo, hi
-        h = 0.0
+        # contiguous carriageways of the arm (one for a street, two for a boulevard)
+        bs = sorted(a["bands"])
+        groups = [[bs[0][0], bs[0][1]]]
+        for b0, b1, _l, _k in bs[1:]:
+            if b0 <= groups[-1][1] + 0.05:
+                groups[-1][1] = max(groups[-1][1], b1)
+            else:
+                groups.append([b0, b1])
+        h = 80.0
         for k in range(0, 160):
             dd = k * 0.5
-            p0 = (c[0] + a["u"][0] * dd + a["v"][0] * (lo - 10), c[1] + a["u"][1] * dd + a["v"][1] * (lo - 10))
-            p1 = (c[0] + a["u"][0] * dd + a["v"][0] * (hi + 10), c[1] + a["u"][1] * dd + a["v"][1] * (hi + 10))
-            if road.intersection(LineString([p0, p1])).length <= width + 0.6:
+            ok = True
+            for g0, g1 in groups:
+                cut = road.intersection(LineString([_arm_pt0(c, a, dd, g0 - 12), _arm_pt0(c, a, dd, g1 + 12)]))
+                mid = Point(_arm_pt0(c, a, dd, (g0 + g1) / 2)).buffer(0.3)
+                piece = [q for q in getattr(cut, "geoms", [cut]) if not q.is_empty and q.intersects(mid)]
+                if not piece or piece[0].length > (g1 - g0) + 0.6:
+                    ok = False
+                    break
+            if ok:
                 h = dd
                 break
-        else:
-            h = 80.0
         a["h"] = h
         a["Ln"] = h + 30.0
         a["zone"] = _arm_poly(a, 0.0, a["Ln"], lo - 0.2, hi + 0.2)
     return arms
+
+
+def _arm_pt0(c, a, d, s):
+    u, v = a["u"], a["v"]
+    return (c[0] + u[0] * d + v[0] * s, c[1] + u[1] * d + v[1] * s)
 
 
 def _arm_pt(a, d, s):
@@ -659,6 +676,23 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     arms_all = []
     for n, L in nodes.items():
         arms_all += _arms_at(n, L, road_only)
+    # two junctions close together share the road between them: the bigger junction keeps its arm markings there,
+    # the smaller one's arm is left plain (no doubled zebras / stop lines on one short link)
+    by_edge = {}
+    for a_ in arms_all:
+        for d_ in a_["ds"]:
+            by_edge.setdefault(id(d_), []).append(a_)
+    drop = set()
+    for L_ in by_edge.values():
+        if len(L_) == 2:
+            a1, a2 = L_
+            length = max(d_["ln"].length for d_ in a1["ds"] if any(d_ is q for q in a2["ds"]))
+            if a1["Ln"] + a2["Ln"] > length:
+                lesser, bigger = sorted((a1, a2), key=lambda q: (q["deg"], q["hi"] - q["lo"]))
+                drop.add(id(lesser))
+                bigger["Ln"] = max(bigger["h"] + 7.0, min(bigger["Ln"], length - lesser["h"] - 2.0))
+                bigger["zone"] = _arm_poly(bigger, 0.0, bigger["Ln"], bigger["lo"] - 0.2, bigger["hi"] + 0.2)
+    arms_all = [a_ for a_ in arms_all if id(a_) not in drop]
     zone_arm = unary_union([a_["zone"] for a_ in arms_all]) if arms_all else Polygon()
     if pending_bars:                                   # path crossings away from the junction mouths (those have their own zebras)
         stroke(m, unary_union(pending_bars).intersection(road_only).difference(zone_arm.buffer(4.0)).intersection(clip), 0.06, WHITE)
