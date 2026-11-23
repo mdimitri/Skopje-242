@@ -397,6 +397,13 @@ def _arms_at(n, L, road):
             raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(-hw, hw, d["per"], kind)]})
         else:
             raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(0.0, hw, d["per"], "in"), (-hw, 0.0, d["per"], "out")]})
+    # a merge or diverge of one-way roads (ramps joining, a carriageway splitting) is not a crossing: no zebra, no stop
+    # line; it is drawn as a taper with a hatched gore (see _gore)
+    if len(raw) == 3 and all(r["d"]["e"]["ow"] for r in raw):
+        best = max(raw[i]["u"][0] * raw[j]["u"][0] + raw[i]["u"][1] * raw[j]["u"][1] for i in range(3) for j in range(i + 1, 3))
+        kinds = [r["bands"][0][3] for r in raw]
+        if best > 0.82 and (kinds.count("in") == 1 or kinds.count("out") == 1):
+            return []
     # pair one-way carriageways: cost = angle between them + how far apart they run (soft, best pairs first)
     used, arms = set(), []
     cand = []
