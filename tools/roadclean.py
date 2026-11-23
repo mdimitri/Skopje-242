@@ -161,14 +161,32 @@ def merge_junctions(edges, kerb=7.0):
             n = parent[n]
         return n
     links = []
-    for i, e in enumerate(edges):
-        if not e["drive"] or e["bridge"] or e["a"] not in J or e["b"] not in J or e["a"] == e["b"]:
-            continue
-        reach = size[e["a"]] + size[e["b"]] + 2 * kerb          # what the two junctions pave anyway
-        score = 1.0 / (1.0 + np.exp((e["len"] - reach) / (0.15 * reach)))
-        if score > 0.5:
-            links.append(i)
-            parent[find(e["a"])] = find(e["b"])
+    seen = set()
+    for n0 in J:                                               # links: chains of edges through plain (2-edge) nodes
+        for i0 in at[n0]:
+            chain, n, i, L = [], n0, i0, 0.0
+            while True:
+                e = edges[i]
+                if not e["drive"] or e["bridge"] or i in chain:
+                    chain = None
+                    break
+                chain.append(i)
+                L += e["len"]
+                n = e["b"] if e["a"] == n else e["a"]
+                if n in J or len(at[n]) != 2 or L > 120.0:
+                    break
+                i = at[n][0] if at[n][1] == i else at[n][1]
+            if chain and n == n0 and L < 60.0:                    # a U-turn / slip loop back into the same junction
+                links += chain
+                continue
+            if not chain or n not in J or n == n0 or frozenset(chain) in seen:
+                continue
+            seen.add(frozenset(chain))
+            reach = size[n0] + size[n] + 2 * kerb              # what the two junctions pave anyway
+            score = 1.0 / (1.0 + np.exp((L - reach) / (0.15 * reach)))
+            if score > 0.5:
+                links += chain
+                parent[find(n0)] = find(n)
     groups = collections.defaultdict(list)
     for n in J:
         groups[find(n)].append(n)
@@ -176,7 +194,7 @@ def merge_junctions(edges, kerb=7.0):
     if not groups:
         return 0, 0
     root = {n: r for r, ns in groups.items() for n in ns}
-    inner = {i for i in links if find(edges[i]["a"]) == find(edges[i]["b"])}
+    inner = set(links)
     # centre: node positions weighted by how much road meets there
     pos = {}
     for e in edges:

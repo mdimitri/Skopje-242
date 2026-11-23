@@ -263,6 +263,43 @@ class StreetTerrain:
         return v
 
 
+def open_under_decks(plans, edges, extra=2.5, min_run=8.0):
+    """A covered stretch that is only a street crossing over the cutting is carried by that street's deck: the roof
+    slab is dropped where a driven deck passes (its footprint + `extra`), and so are covered leftovers shorter than
+    `min_run`.  -> metres opened."""
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    feet = [LineString(e["pts"]).buffer(e["w"] / 2 + 2.4 + extra) for e in edges
+            if e["drive"] and e["bridge"] and len(e["pts"]) >= 2]
+    if not feet:
+        return 0.0
+    U = unary_union(feet)
+    opened = 0.0
+    for p in plans:
+        X, cov = np.asarray(p["pts"]), np.asarray(p["cover"], bool).copy()
+        under = np.zeros(len(cov), bool)
+        for k in np.nonzero(cov)[0]:
+            if U.contains(Point(X[k][0], X[k][1])):
+                cov[k] = False
+                under[k] = True
+                opened += 1.0
+        k = 0
+        while k < len(cov):                                   # leftovers too short to be a tunnel
+            if cov[k]:
+                j = k
+                while j < len(cov) and cov[j]:
+                    j += 1
+                if np.hypot(*(X[j - 1] - X[k])) < min_run:
+                    cov[k:j] = False
+                    under[k:j] = True
+                    opened += j - k
+                k = j
+            else:
+                k += 1
+        p["cover"], p["under_deck"] = cov, under             # walls there stop under the deck slab, no parapet
+    return opened
+
+
 def cut(T, plans, hx, hy):
     """Dig the floors into T's fine overlay (vertical walls at hw).  -> posts changed."""
     import quays
@@ -302,7 +339,7 @@ def _slab(pos, a, b, c, d):
     pos += [a, b, c, a, c, d]
 
 
-def roof(plans, add_abs, chunk_of, mat):
+def roof(plans, add_abs, chunk_of, mat, T=None):
     """Roof slabs, headwalls and wall posts.  -> (posts, decks, underpass records for the World)."""
     posts, decks, recs = [], [], []
     for p in plans:
@@ -312,10 +349,32 @@ def roof(plans, add_abs, chunk_of, mat):
         tang /= np.linalg.norm(tang, axis=1, keepdims=True) + 1e-9
         nrm = np.stack([-tang[:, 1], tang[:, 0]], 1)
         L_, R_ = X + nrm * (hw + 0.3), X - nrm * (hw + 0.3)
-        ks = np.nonzero(cov)[0]
-        k0, k1 = int(ks[0]), int(ks[-1])
+        cov = np.asarray(cov, bool)
+        ud = np.asarray(p.get("under_deck", np.zeros(n, bool)), bool)
+        runs, k = [], 0                                        # covered runs (open_under_decks may leave none, or split one)
+        while k < n:
+            if cov[k]:
+                j = k
+                while j + 1 < n and cov[j + 1]:
+                    j += 1
+                runs.append((k, j))
+                k = j + 1
+            else:
+                k += 1
+        # with T: a wall whose outside is dug as well (two carriageways in one cutting) is left out, and the others
+        # get a coping strip over the 1-2 m the fine grid needs to climb back to the ground behind the wall
+        sides = []
+        for S_, sg in ((L_, 1.0), (R_, -1.0)):
+            if T is None:
+                sides.append((S_, np.zeros(n, bool), None))
+                continue
+            far = S_ + nrm * sg * 1.6
+            ground = S_ + nrm * sg * 2.6
+            hout = np.array([T.hs(x, y) for x, y in far])
+            hgr = np.array([T.hs(x, y) for x, y in ground])
+            sides.append((S_, (np.asarray(top) - hout) > 1.0, (S_ + nrm * sg * 2.2, hgr)))
         by_chunk = {}
-        for k in range(k0, k1):                                # roof: top at street level, underside ROOF lower
+        for k in (k for k0, k1 in runs for k in range(k0, k1)):    # roof: top at street level, underside ROOF lower
             for (ya, yb, up) in ((top[k], top[k + 1], True), (top[k] - ROOF, top[k + 1] - ROOF, False)):
                 a = (L_[k][0], ya, L_[k][1])
                 b = (R_[k][0], ya, R_[k][1])
@@ -327,16 +386,25 @@ def roof(plans, add_abs, chunk_of, mat):
                 continue
             q = by_chunk.setdefault(chunk_of(X[k][0], X[k][1]), [])
             ya0, yb0 = fl[k] - 0.3, fl[k + 1] - 0.3
-            ya1 = top[k] - (ROOF if cov[k] else -1.0)
-            yb1 = top[k + 1] - (ROOF if cov[k + 1] else -1.0)
-            for S_ in (L_, R_):
+            ya1 = top[k] - (ROOF if cov[k] or ud[k] else -1.0)
+            yb1 = top[k + 1] - (ROOF if cov[k + 1] or ud[k + 1] else -1.0)
+            for S_, opn, cap in sides:
+                if opn[k] and opn[k + 1]:
+                    continue
                 a_ = (S_[k][0], ya0, S_[k][1])
                 b_ = (S_[k + 1][0], yb0, S_[k + 1][1])
                 c_ = (S_[k + 1][0], yb1, S_[k + 1][1])
                 d_ = (S_[k][0], ya1, S_[k][1])
                 _slab(q, a_, b_, c_, d_)
                 _slab(q, a_, d_, c_, b_)
-        for k in (k0, k1):                                     # headwalls over the mouths: roof underside -> street level
+                if cap is not None and not (cov[k] or ud[k]):
+                    C_, hg = cap
+                    ya2, yb2 = max(top[k], hg[k]) + 0.03, max(top[k + 1], hg[k + 1]) + 0.03
+                    a2, b2 = (S_[k][0], ya2, S_[k][1]), (S_[k + 1][0], yb2, S_[k + 1][1])
+                    c2, d2 = (C_[k + 1][0], yb2, C_[k + 1][1]), (C_[k][0], ya2, C_[k][1])
+                    _slab(q, a2, b2, c2, d2)
+                    _slab(q, a2, d2, c2, b2)
+        for k in (k for r in runs for k in r):                # headwalls over the mouths: roof underside -> street level
             q = by_chunk.setdefault(chunk_of(X[k][0], X[k][1]), [])
             for (y0, y1) in ((top[k] - ROOF, top[k] + 0.9),):
                 a = (L_[k][0], y0, L_[k][1])
@@ -356,18 +424,22 @@ def roof(plans, add_abs, chunk_of, mat):
             uv = np.zeros((len(pos), 2), np.float32)
             add_abs(key, mat, pos, uv, col)
         # the roof is a walkable deck; the cutting's walls stop what is down in it, a parapet guards the open part
-        decks.append({"pts": [(float(x), float(y)) for x, y in X[k0:k1 + 1]], "h": [float(v) for v in top[k0:k1 + 1]],
-                      "hw": float(hw + 0.3)})
+        for k0, k1 in runs:
+            decks.append({"pts": [(float(x), float(y)) for x, y in X[k0:k1 + 1]], "h": [float(v) for v in top[k0:k1 + 1]],
+                          "hw": float(hw + 0.3)})
         for k in range(n):
             depth = top[k] - fl[k]
             if depth < 0.8:
                 continue
-            for side in (L_, R_):
+            for side, opn, _cap in sides:
+                if opn[k]:
+                    continue
                 x, y = float(side[k][0]), float(side[k][1])
-                if cov[k]:
+                if cov[k] or ud[k]:
                     posts.append((x, y, 0.35, float(fl[k] - 1.0), float(top[k] - ROOF)))
                 else:
                     posts.append((x, y, 0.35, float(fl[k] - 1.0), float(top[k] + 1.1)))
-        recs.append({"pts": [(float(x), float(y)) for x, y in X[k0:k1 + 1]], "hw": float(hw + 0.3),
-                     "roof": [float(v) for v in top[k0:k1 + 1]]})
+        for k0, k1 in runs:
+            recs.append({"pts": [(float(x), float(y)) for x, y in X[k0:k1 + 1]], "hw": float(hw + 0.3),
+                         "roof": [float(v) for v in top[k0:k1 + 1]]})
     return posts, decks, recs
