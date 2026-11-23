@@ -788,7 +788,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     bulbs = []
     # dead ends get a turning bulb (cul-de-sac) instead of a bare round cap
     for n, L in inc.items():
-        if gdeg.get(n, 0) == 1 and L[0]["ln"].length > 20:
+        if gdeg.get(n, 0) == 1 and L[0]["ln"].length > 20 and L[0]["e"]["cls"] not in NARROW:
             d = L[0]
             start = d["e"]["a"] == n
             ux, uy = _out_dir(d["ln"], start)
@@ -813,6 +813,11 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     isl = isl.buffer(-1.0, resolution=8).buffer(1.0, resolution=8).intersection(isl.buffer(0.02))
     asph = C.difference(isl)
     pave = asph.buffer(SW, resolution=10).difference(asph).difference(isl)
+    # car-park aisles and service ways have no pavements of their own (only where a real street runs beside them)
+    nar = [d["ln"].buffer(d["hw"] + SW + 0.5) for d in E if d["e"]["cls"] in NARROW]
+    if nar:
+        main = unary_union([d["ln"].buffer(d["hw"] + SW + 1.0) for d in E if d["e"]["cls"] not in NARROW] or [Polygon()])
+        pave = pave.difference(unary_union(nar).difference(main))
     # where a deck lifts off its foot (port: drawn by port_decks) the ground pavement, islands and kerbs stop
     cuts = []
     for d in B:

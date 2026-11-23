@@ -2,6 +2,7 @@
 (lanes are cut so a median at least MEDIAN wide fits between them), and short stray segments take the lane count and
 width of their longer neighbours (no narrow-then-widen bumps)."""
 import collections
+import math
 
 import numpy as np
 
@@ -373,6 +374,50 @@ CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 2, "
 LW = 3.25
 
 
+def boulevard_floor(edges, floor=3, reach=45.0, min_len=60.0):
+    """Realistic lane counts for dual carriageways: the two one-way halves of a boulevard (arterial class, an opposite
+    one-way carriageway within `reach` metres running the other way) carry at least `floor` lanes each, where OSM
+    tags only 1-2 (checked against satellite widths).  -> carriageways raised."""
+    ow = [e for e in edges if e["drive"] and e["ow"] and not e["bridge"] and e["cls"].replace("_link", "") in ("tertiary", "secondary", "primary", "trunk") and not e["cls"].endswith("_link") and e["len"] >= min_len]
+    if not ow:
+        return 0
+    cell = 60.0
+    grid = {}
+    for e in ow:
+        m = e["pts"][len(e["pts"]) // 2]
+        grid.setdefault((int(m[0] // cell), int(m[1] // cell)), []).append(e)
+
+    def dirvec(e):
+        a, b = e["pts"][0], e["pts"][-1]
+        l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+        return (b[0] - a[0]) / l, (b[1] - a[1]) / l
+    n = 0
+    for e in ow:
+        m = e["pts"][len(e["pts"]) // 2]
+        ux, uy = dirvec(e)
+        gx, gy = int(m[0] // cell), int(m[1] // cell)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for o in grid.get((gx + dx, gy + dy), ()):
+                    if o is e:
+                        continue
+                    q = o["pts"][len(o["pts"]) // 2]
+                    ox, oy = dirvec(o)
+                    if math.hypot(q[0] - m[0], q[1] - m[1]) < reach and ux * ox + uy * oy < -0.8:
+                        per = max(1, int(round(e["w"] / LW)))
+                        if per < floor:
+                            e["lanes"], e["w"] = floor, floor * LW
+                            n += 1
+                        break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+    return n
+
+
 def standardise(edges):
     """One lane standard for the whole network: lanes per direction capped by class (links one lane, tertiary two),
     every lane LW wide, so ground roads, ramps and bridge decks all share the same lane width and join seamlessly.
@@ -402,6 +447,7 @@ def standardise(edges):
 
 def repair(edges):
     print(f"[build] lane standard applied to {standardise(edges)} edges")
+    print(f"[build] boulevard carriageways raised to 3 lanes: {boulevard_floor(edges)}")
     cut = dual_carriageways(edges)
     bridge_lanes(edges)
     merged = merge_junctions(edges)
