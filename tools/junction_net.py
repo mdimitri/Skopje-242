@@ -160,6 +160,10 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             quadstrip(sg * hw, sg * (hw + SWB), KERB, KTOP)
             vwall(sg * hw, 0.0, KERB, KFACE)
             vwall(sg * (hw + SWB), -1.1, 1.05, (196, 194, 188))
+            for i in range(n):
+                if H[i] < 6.0 and H[i + 1] < 6.0:
+                    A = edge(sg * (hw + SWB))
+                    m.quad((A[i][0], -0.3, A[i][1]), (A[i + 1][0], -0.3, A[i + 1][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i][0], H[i] - 1.1, A[i][1]), (178, 176, 170))
             quadstrip(sg * (hw + SWB - 0.25), sg * (hw + SWB), 1.05, (214, 212, 206))
             quadstrip(sg * (hw - 0.45), sg * (hw - 0.31), 0.05, WHITE)
         if not e["ow"]:
@@ -260,6 +264,9 @@ def build(edges, cx, cy, buildings=(), decks=None):
         for q in polys_of(ins):
             tri_poly(m, q, KERB + 0.04, GRASS)
         walls_of(m, p, 0.0, KERB, KFACE)
+    if W and B:
+        corr = unary_union([d["ln"].buffer(d["hw"] + 2.6) for d in B])
+        W = [w for w in W if w["ln"].intersection(corr).length < 0.5 * w["ln"].length]
     if W:
         foot = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] != "cycleway"])
         cyc = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] == "cycleway"])
