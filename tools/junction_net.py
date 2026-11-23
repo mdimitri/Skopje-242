@@ -401,7 +401,6 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         if ln.length < 3.0:
             continue
         E.append({"e": e, "ln": ln, "hw": half_w(e), "per": per_dir(e)})
-    E = regularise(E)
     # junction nodes: >= 3 incident drive edges
     inc = {}
     for d in E:

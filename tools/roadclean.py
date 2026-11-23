@@ -120,7 +120,106 @@ def bridge_lanes(edges):
     return changed
 
 
+def _hw(e):
+    return lane_count(e) * LANE / 2 if e["ow"] else lane_count(e) * LANE
+
+
+def _cum_of(pts):
+    cum = [0.0]
+    for k in range(1, len(pts)):
+        cum.append(cum[-1] + float(np.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1])))
+    return cum
+
+
+def _ease(t):
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+def merge_junctions(edges, kerb=7.0):
+    """Clusters of junction nodes joined by links shorter than the junction they form become one junction node.
+
+    No fixed distance: a link merges when it is short compared with the paved area its junction covers anyway
+    (the widest roads meeting at either end plus a kerb radius each), weighted smoothly (a logistic score, links
+    on bridges never).  The arms are not snapped: each arm's centreline is pulled to the new centre with a weight
+    that eases from 1 at the junction to 0 over a distance proportional to how far it moves, so every arm keeps a
+    smooth line.  Walkways ending at a merged node follow the same way.  Lane counts, one-way flags and turn tags
+    are untouched; the drivable links inside the cluster are removed (the cluster is one junction for traffic too).
+    -> (clusters merged, links removed)."""
+    at = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        if e["drive"]:
+            at[e["a"]].append(i)
+            at[e["b"]].append(i)
+    J = {n for n, L in at.items() if len(L) >= 3}
+    size = {n: max(_hw(edges[i]) for i in at[n]) for n in J}
+    parent = {n: n for n in J}
+
+    def find(n):
+        while parent[n] != n:
+            parent[n] = parent[parent[n]]
+            n = parent[n]
+        return n
+    links = []
+    for i, e in enumerate(edges):
+        if not e["drive"] or e["bridge"] or e["a"] not in J or e["b"] not in J or e["a"] == e["b"]:
+            continue
+        reach = size[e["a"]] + size[e["b"]] + 2 * kerb          # what the two junctions pave anyway
+        score = 1.0 / (1.0 + np.exp((e["len"] - reach) / (0.15 * reach)))
+        if score > 0.5:
+            links.append(i)
+            parent[find(e["a"])] = find(e["b"])
+    groups = collections.defaultdict(list)
+    for n in J:
+        groups[find(n)].append(n)
+    groups = {r: ns for r, ns in groups.items() if len(ns) > 1}
+    if not groups:
+        return 0, 0
+    root = {n: r for r, ns in groups.items() for n in ns}
+    inner = {i for i in links if find(edges[i]["a"]) == find(edges[i]["b"])}
+    # centre: node positions weighted by how much road meets there
+    pos = {}
+    for e in edges:
+        pos.setdefault(e["a"], e["pts"][0])
+        pos.setdefault(e["b"], e["pts"][-1])
+    centre = {}
+    for r, ns in groups.items():
+        wsum = sum(size[n] for n in ns)
+        centre[r] = (sum(pos[n][0] * size[n] for n in ns) / wsum, sum(pos[n][1] * size[n] for n in ns) / wsum)
+    for i, e in enumerate(edges):
+        if i in inner:
+            continue
+        pts = [tuple(p) for p in e["pts"]]
+        moved = False
+        for end in (0, 1):
+            n = e["a"] if end == 0 else e["b"]
+            if n not in root:
+                continue
+            r = root[n]
+            c = centre[r]
+            P = pts if end == 0 else pts[::-1]
+            dx, dy = c[0] - P[0][0], c[1] - P[0][1]
+            dist = float(np.hypot(dx, dy))
+            span = min(0.8 * _cum_of(P)[-1], 4.0 * dist + 15.0)
+            cum = _cum_of(P)
+            P = [(p[0] + dx * (1 - _ease(s / span if span > 0 else 1)), p[1] + dy * (1 - _ease(s / span if span > 0 else 1))) for p, s in zip(P, cum)]
+            pts = P if end == 0 else P[::-1]
+            e["a" if end == 0 else "b"] = r
+            moved = True
+        if moved:
+            e["pts"] = pts
+            e["cum"] = _cum_of(pts)
+            e["len"] = e["cum"][-1]
+    span_of = {r: max(size[n] for n in ns) * 2 + 4 * kerb for r, ns in groups.items()}
+    # a slip lane or U-turn link whose both ends fell into the same junction now lies inside it: gone with the rest
+    keep = [e for i, e in enumerate(edges) if i not in inner and not (e["a"] == e["b"] and e["a"] in span_of and e["len"] < 2 * span_of[e["a"]])]
+    edges[:] = keep
+    return len(groups), len(inner)
+
+
 def repair(edges):
     cut = dual_carriageways(edges)
     bridge_lanes(edges)
+    merged = merge_junctions(edges)
+    print(f"[build] junction clusters merged: {merged[0]} ({merged[1]} inner links removed)")
     return cut, harmonise(edges)
