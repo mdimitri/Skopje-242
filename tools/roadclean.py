@@ -217,9 +217,64 @@ def merge_junctions(edges, kerb=7.0):
     return len(groups), len(inner)
 
 
+def _resample(pts, step=2.0):
+    cum = _cum_of(pts)
+    L = cum[-1]
+    n = max(2, int(L / step) + 1)
+    P = np.asarray(pts, float)
+    ss = np.linspace(0.0, L, n)
+    x = np.interp(ss, cum, P[:, 0])
+    y = np.interp(ss, cum, P[:, 1])
+    return list(zip(x.tolist(), y.tolist())), ss
+
+
+def straighten_arms(edges):
+    """Every road leaves a junction on a straight approach (a real junction is built square to its arms): the first
+    stretch of each arm is blended from the straight line along the arm's general direction back into the real line.
+    The straight share eases out smoothly; how far it reaches grows with the edge's length (shorter edges bend
+    sooner), never a cut-off.  Junction points do not move.  -> number of arm ends straightened."""
+    deg = collections.Counter()
+    for e in edges:
+        if e["drive"]:
+            deg[e["a"]] += 1
+            deg[e["b"]] += 1
+    n = 0
+    for e in edges:
+        if not e["drive"] or e["bridge"] or e["len"] < 6:
+            continue
+        ends = [k for k, node in ((0, e["a"]), (1, e["b"])) if deg[node] >= 3]
+        if not ends:
+            continue
+        P, ss = _resample([tuple(p) for p in e["pts"]])
+        L = float(ss[-1])
+        reach = min(45.0, 0.42 * L) if len(ends) == 2 else min(45.0, 0.6 * L)
+        Q = np.asarray(P, float)
+        for k in ends:
+            R = Q if k == 0 else Q[::-1]
+            S = ss if k == 0 else (L - ss)[::-1]
+            look = min(reach, 0.8 * L)
+            j = int(np.searchsorted(S, look * 0.8))
+            j = min(max(1, j), len(R) - 1)
+            u = R[j] - R[0]
+            ln = float(np.hypot(*u))
+            if ln < 1e-6:
+                continue
+            u /= ln
+            straight = R[0] + u * S[:, None]
+            w = np.array([_ease(s / reach) for s in S])[:, None]       # 0 at the junction -> 1 where the real line takes over
+            R2 = straight * (1 - w) + R * w
+            Q = R2 if k == 0 else R2[::-1]
+            n += 1
+        e["pts"] = [tuple(map(float, p)) for p in Q]
+        e["cum"] = _cum_of(e["pts"])
+        e["len"] = e["cum"][-1]
+    return n
+
+
 def repair(edges):
     cut = dual_carriageways(edges)
     bridge_lanes(edges)
     merged = merge_junctions(edges)
     print(f"[build] junction clusters merged: {merged[0]} ({merged[1]} inner links removed)")
+    print(f"[build] arm approaches straightened: {straighten_arms(edges)}")
     return cut, harmonise(edges)

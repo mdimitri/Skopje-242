@@ -374,10 +374,152 @@ def regularise(E, join=35.0, straight=40.0):
     return out
 
 
+def _arms_at(n, L, road):
+    """Arms of junction n as the reference design sees them: outward unit u from the junction centre c, the lateral
+    normal v (inbound side +v), and the inbound / outbound lane bands [(s0, s1, lanes)].  A one-way pair (one in, one
+    out, leaving in nearly the same direction) is one boulevard arm with the gap between them as its median.  h is
+    where the arm's kerbs are clear of the corner fillets (its cross-section is the arm's own width)."""
+    c = L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]
+    raw = []
+    for d in L:
+        e = d["e"]
+        out_line = d["ln"] if e["a"] == n else LineString(list(d["ln"].coords)[::-1])
+        if out_line.length < 8:
+            continue
+        q = out_line.interpolate(min(20.0, out_line.length * 0.6))
+        u = (q.x - c[0], q.y - c[1])
+        l = math.hypot(*u) or 1.0
+        u = (u[0] / l, u[1] / l)
+        v = (-u[1], u[0])
+        hw = d["hw"]
+        if e["ow"]:
+            kind = "in" if e["b"] == n else "out"
+            raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(-hw, hw, d["per"], kind)]})
+        else:
+            raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(0.0, hw, d["per"], "in"), (-hw, 0.0, d["per"], "out")]})
+    # pair one-way carriageways: cost = angle between them + how far apart they run (soft, best pairs first)
+    used, arms = set(), []
+    cand = []
+    for i, a in enumerate(raw):
+        for j, b in enumerate(raw):
+            if i >= j or len(a["bands"]) != 1 or len(b["bands"]) != 1 or a["bands"][0][3] == b["bands"][0][3]:
+                continue
+            cosang = a["u"][0] * b["u"][0] + a["u"][1] * b["u"][1]
+            pa, pb = a["line"].interpolate(min(20.0, a["line"].length * 0.6)), b["line"].interpolate(min(20.0, b["line"].length * 0.6))
+            gap = math.hypot(pa.x - pb.x, pa.y - pb.y)
+            cost = (1 - cosang) * 20 + gap / 30.0
+            if cost < 1.5:
+                cand.append((cost, i, j, gap))
+    for cost, i, j, gap in sorted(cand):
+        if i in used or j in used:
+            continue
+        used |= {i, j}
+        a, b = raw[i], raw[j]
+        u = (a["u"][0] + b["u"][0], a["u"][1] + b["u"][1])
+        l = math.hypot(*u) or 1.0
+        u = (u[0] / l, u[1] / l)
+        v = (-u[1], u[0])
+        bands = []
+        for r in (a, b):
+            pt = r["line"].interpolate(min(20.0, r["line"].length * 0.6))
+            off = (pt.x - c[0]) * v[0] + (pt.y - c[1]) * v[1]
+            s0, s1, lanes, kind = r["bands"][0]
+            bands.append((off + s0, off + s1, lanes, kind))
+        arms.append({"u": u, "v": v, "bands": bands, "c": c, "n": n})
+    for i, a in enumerate(raw):
+        if i not in used:
+            arms.append({"u": a["u"], "v": a["v"], "bands": a["bands"], "c": c, "n": n})
+    for a in arms:
+        lo = min(b[0] for b in a["bands"])
+        hi = max(b[1] for b in a["bands"])
+        width = sum(b[1] - b[0] for b in a["bands"])
+        a["lo"], a["hi"] = lo, hi
+        h = 0.0
+        for k in range(0, 160):
+            dd = k * 0.5
+            p0 = (c[0] + a["u"][0] * dd + a["v"][0] * (lo - 10), c[1] + a["u"][1] * dd + a["v"][1] * (lo - 10))
+            p1 = (c[0] + a["u"][0] * dd + a["v"][0] * (hi + 10), c[1] + a["u"][1] * dd + a["v"][1] * (hi + 10))
+            if road.intersection(LineString([p0, p1])).length <= width + 0.6:
+                h = dd
+                break
+        else:
+            h = 80.0
+        a["h"] = h
+        a["Ln"] = h + 30.0
+        a["zone"] = _arm_poly(a, 0.0, a["Ln"], lo - 0.2, hi + 0.2)
+    return arms
+
+
+def _arm_pt(a, d, s):
+    c, u, v = a["c"], a["u"], a["v"]
+    return (c[0] + u[0] * d + v[0] * s, c[1] + u[1] * d + v[1] * s)
+
+
+def _arm_poly(a, d0, d1, s0, s1):
+    return Polygon([_arm_pt(a, d0, s0), _arm_pt(a, d1, s0), _arm_pt(a, d1, s1), _arm_pt(a, d0, s1)])
+
+
+def _arm_marks(m, a, road, zone_arm):
+    """Markings of one arm, after the reference junction: continental zebra set back from the corner, stop line over
+    the inbound lanes, solid lane lines and edge lines up to the arm's end, centre double line, two rows of arrows."""
+    h, Ln = a["h"], a["Ln"]
+    paint = []
+    # zebra: bars 0.5 m wide, 1 m pitch, 3.2 m long, across all lanes
+    s = a["lo"] + 0.6
+    while s < a["hi"] - 0.4:
+        paint.append(_arm_poly(a, h + 1.0, h + 4.2, s - 0.25, s + 0.25))
+        s += 1.0
+    sl = h + 6.0
+    for s0, s1, lanes, kind in a["bands"]:
+        if kind == "in":
+            paint.append(_arm_poly(a, sl - 0.25, sl + 0.25, s0 + 0.15, s1 - 0.15))        # stop line
+            w = (s1 - s0) / max(1, lanes)
+            for k in range(1, lanes):
+                paint.append(_arm_poly(a, sl + 0.6, Ln, s0 + w * k - 0.075, s0 + w * k + 0.075))
+            for ds in (12.0, 28.0):
+                if h + ds + 3 > Ln:
+                    continue
+                for k in range(lanes):
+                    sc = s0 + w * (k + 0.5)
+                    kind_ = "thru"
+                    if lanes >= 2 and k == lanes - 1:
+                        kind_ = "left"
+                    elif lanes >= 3 and k == 0:
+                        kind_ = "right"
+                    paint += _arrow_polys(a, h + ds, sc, kind_)
+        else:
+            w = (s1 - s0) / max(1, lanes)
+            for k in range(1, lanes):
+                paint.append(_arm_poly(a, sl + 0.6, Ln, s0 + w * k - 0.075, s0 + w * k + 0.075))
+        paint.append(_arm_poly(a, sl + 0.6, Ln, s0 + 0.28, s0 + 0.42))                   # edge lines
+        paint.append(_arm_poly(a, sl + 0.6, Ln, s1 - 0.42, s1 - 0.28))
+    kinds = {b[3] for b in a["bands"]}
+    if len(a["bands"]) == 2 and abs(a["bands"][0][0] - a["bands"][1][1]) < 0.01 and kinds == {"in", "out"}:
+        paint.append(_arm_poly(a, sl + 0.6, Ln, -0.20, -0.08))                           # double centre line
+        paint.append(_arm_poly(a, sl + 0.6, Ln, 0.08, 0.20))
+    g = unary_union(paint).intersection(road)
+    stroke(m, g, 0.05, WHITE)
+
+
+def _arrow_polys(a, d, s, kind):
+    """Lane arrow for an inbound lane at (d, s); cars travel toward the junction (-u)."""
+    def P(f, r):                                       # f: forward (toward the junction), r: to the driver's right (-v)
+        return _arm_pt(a, d - f, s - r)
+    out = [Polygon([P(-2.6, -0.14), P(0.2, -0.14), P(0.2, 0.14), P(-2.6, 0.14)])]
+    if kind == "thru":
+        out.append(Polygon([P(0.2, -0.5), P(1.4, 0.0), P(0.2, 0.5)]))
+    else:
+        sg = -1.0 if kind == "left" else 1.0
+        out.append(Polygon([P(-0.1, -0.14 * sg), P(0.6, 0.6 * sg), P(0.8, 0.4 * sg), P(0.1, -0.14 * sg)]).convex_hull)
+        out.append(Polygon([P(0.3, 0.3 * sg), P(1.1, 1.2 * sg), P(1.2, 0.2 * sg)]).convex_hull)
+    return out
+
+
 def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None):
     """port=True: only what replaces the game's ground-road surfaces (asphalt, kerbs, pavements, islands, paint, zebras),
     heights relative to the terrain, no furniture / bridges / buildings; ctx = context(edges) when `edges` is a subset."""
     E, B, W = [], [], []
+    pending_bars = []
     ctx = ctx or context(edges)
     BL, gn, gdeg = ctx["BL"], ctx["gn"], ctx["gdeg"]
     for e in edges:
@@ -487,8 +629,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
                     bars.append(Polygon([(cx_ - nx * hl - ux * hb, cy_ - ny * hl - uy * hb), (cx_ + nx * hl - ux * hb, cy_ + ny * hl - uy * hb),
                                          (cx_ + nx * hl + ux * hb, cy_ + ny * hl + uy * hb), (cx_ - nx * hl + ux * hb, cy_ - ny * hl + uy * hb)]))
                     k += 1.0
-        if bars:
-            stroke(m, unary_union(bars).intersection(road_only).intersection(clip), 0.06, WHITE)
+        pending_bars = bars
         for w in ([] if port else W):
             if w["e"]["cls"] != "cycleway":
                 continue
@@ -513,8 +654,16 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         m.gfn = None
         bridge_mesh(m, B, decks, cx, cy, base, gfn)
         m.gfn = gfn
-    # paint zone: asphalt without junction cores and islands
-    core = unary_union([Point(0, 0).buffer(0)] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(12.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
+    # junction arms (one-way pairs read as one boulevard arm) and where each arm's own markings take over
+    road_only = asph.difference(isl)
+    arms_all = []
+    for n, L in nodes.items():
+        arms_all += _arms_at(n, L, road_only)
+    zone_arm = unary_union([a_["zone"] for a_ in arms_all]) if arms_all else Polygon()
+    if pending_bars:                                   # path crossings away from the junction mouths (those have their own zebras)
+        stroke(m, unary_union(pending_bars).intersection(road_only).difference(zone_arm.buffer(4.0)).intersection(clip), 0.06, WHITE)
+    # paint zone: asphalt without junction cores, arm mouths and islands
+    core = unary_union([Point(0, 0).buffer(0), zone_arm] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(6.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
     zone = asph.difference(core).difference(isl.buffer(0.3))
     if bulbs:
         zone = zone.difference(unary_union(bulbs))              # no lane paint inside a turning bulb
@@ -550,58 +699,9 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
                 paint(-LW * k, 0.15, True)
         paint(hw - 0.35, 0.14)
         paint(-(hw - 0.35), 0.14)
-    # crossings, stop lines and arrows at the mouth of every junction
-    ncoord = {n: (L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]) for n, L in nodes.items()}
-    crowded = {n for n, c in ncoord.items() if any(o != n and math.hypot(c[0] - q[0], c[1] - q[1]) < 45.0 for o, q in ncoord.items())}
-    for n, L in nodes.items():
-        c0 = L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]
-        r_core = 9.0 + max(d["hw"] for d in L)
-        for d in L:
-            e, ln, hw = d["e"], d["ln"], d["hw"]
-            out_line = ln if e["a"] == n else LineString(list(ln.coords)[::-1])
-            if out_line.length < r_core + 20:
-                continue
-            def at(s_):
-                p = out_line.interpolate(s_)
-                q = out_line.interpolate(min(out_line.length, s_ + 1.0))
-                tx, ty = q.x - p.x, q.y - p.y
-                l = math.hypot(tx, ty) or 1.0
-                return p.x, p.y, tx / l, ty / l
-            x, y, tx, ty = at(r_core + 3.5)
-            nx, ny = -ty, tx
-            k = -hw + 0.6
-            while k < hw - 0.3:
-                a = (x + nx * (k - 0.25), y + ny * (k - 0.25))
-                b = (x + nx * (k + 0.25), y + ny * (k + 0.25))
-                poly = Polygon([a, b, (b[0] + tx * 3.0, b[1] + ty * 3.0), (a[0] + tx * 3.0, a[1] + ty * 3.0)]).intersection(asph.difference(isl))
-                stroke(m, poly, 0.05, WHITE)
-                raised = Polygon([a, b, (b[0] + tx * 3.0, b[1] + ty * 3.0), (a[0] + tx * 3.0, a[1] + ty * 3.0)]).intersection(isl)
-                stroke(m, raised, KERB + 0.07, (222, 220, 214))
-                k += 1.0
-            inbound = (not e["ow"]) or (e["b"] == n)
-            if inbound and n not in crowded:                       # linked junctions: the stop bars and arrows would overlap
-                x, y, tx, ty = at(r_core + 8.0)
-                nx, ny = -ty, tx
-                lo, hi = (0.0, hw) if not e["ow"] else (-hw, hw)       # inbound lanes are on the left of the outward line
-                a = (x + nx * lo, y + ny * lo)
-                b = (x + nx * hi, y + ny * hi)
-                poly = Polygon([a, b, (b[0] + tx * 0.5, b[1] + ty * 0.5), (a[0] + tx * 0.5, a[1] + ty * 0.5)]).intersection(asph.difference(isl))
-                stroke(m, poly, 0.05, WHITE)
-                for ds in (15.0, 32.0):
-                    if r_core + ds + 3 > out_line.length:
-                        continue
-                    for lane in range(d["per"]):
-                        off = (lane + 0.5) * LW if not e["ow"] else -hw + (lane + 0.5) * LW
-                        x, y, tx, ty = at(r_core + ds)
-                        nx, ny = -ty, tx
-                        px, py = x + nx * off, y + ny * off
-                        # arrow points toward the junction: -t
-                        fx, fy = -tx, -ty
-                        rx, ry = -fy, fx
-                        sh = [(px - fx * 1.8 + rx * 0.14, py - fy * 1.8 + ry * 0.14), (px + rx * 0.14, py + ry * 0.14), (px - rx * 0.14, py - ry * 0.14), (px - fx * 1.8 - rx * 0.14, py - fy * 1.8 - ry * 0.14)]
-                        stroke(m, Polygon(sh).intersection(zone), 0.05, WHITE)
-                        hd = [(px + fx * 1.2, py + fy * 1.2), (px + rx * 0.55, py + ry * 0.55), (px - rx * 0.55, py - ry * 0.55)]
-                        stroke(m, Polygon(hd).intersection(zone), 0.05, WHITE)
+    # junction mouths: crossings, stop lines, lane lines and arrows laid out per arm, like the reference junction
+    for arm in arms_all:
+        _arm_marks(m, arm, asph.difference(isl), zone_arm)
     # street furniture on the pavements
     if port:
         return m
