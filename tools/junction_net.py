@@ -492,6 +492,71 @@ def _arm_poly(a, d0, d1, s0, s1):
     return Polygon([_arm_pt(a, d0, s0), _arm_pt(a, d1, s0), _arm_pt(a, d1, s1), _arm_pt(a, d0, s1)])
 
 
+def _gore(n, L, road):
+    """Merge / diverge of carriageways at node n (three edges, two leaving in nearly the same direction, as _arms_at
+    treats them): -> (hatched gore polygon between the two, chevrons [polygons]) or None.  The gore runs from where
+    the two carriageways part to the nose of the island between them (or 50 m), with chevrons every 4 m."""
+    if len(L) != 3:
+        return None
+    c = L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]
+    raw = []
+    for d in L:
+        ol = d["ln"] if d["e"]["a"] == n else LineString(list(d["ln"].coords)[::-1])
+        if ol.length < 12:
+            return None
+        q = ol.interpolate(min(20.0, ol.length * 0.6))
+        u = (q.x - c[0], q.y - c[1])
+        l = math.hypot(*u) or 1.0
+        raw.append((d, ol, (u[0] / l, u[1] / l)))
+    ow = [r[0]["e"]["ow"] for r in raw]
+    lk = [r for r in raw if r[0]["e"]["ow"] and r[0]["e"]["cls"].endswith("_link")]
+    best, pair = -2.0, None
+    for i in range(3):
+        for j in range(i + 1, 3):
+            cs = raw[i][2][0] * raw[j][2][0] + raw[i][2][1] * raw[j][2][1]
+            if cs > best:
+                best, pair = cs, (raw[i], raw[j])
+    if best <= 0.8:
+        return None
+    if not all(ow):
+        if len(lk) != 1 or not any(r is lk[0] for r in pair):
+            return None
+    (da, la, ua), (db, lb, ub) = pair
+    bx, by = ua[0] + ub[0], ua[1] + ub[1]
+    bl = math.hypot(bx, by) or 1.0
+    bx, by = bx / bl, by / bl
+    wx, wy = -by, bx
+    def side_of(line):
+        p = line.interpolate(line.length * 0.5)
+        return (p.x - c[0]) * wx + (p.y - c[1]) * wy
+    # keep the pair of offsets that face each other (the one nearer the bisector for each)
+    cand_a = [shapely.offset_curve(substring(la, 0, min(60.0, la.length)), k * da["hw"]) for k in (-1, 1)]
+    cand_b = [shapely.offset_curve(substring(lb, 0, min(60.0, lb.length)), k * db["hw"]) for k in (-1, 1)]
+    if any(g.geom_type != "LineString" for g in cand_a + cand_b):
+        return None
+    ea = min(cand_a, key=lambda g: abs(side_of(g)))
+    eb = min(cand_b, key=lambda g: abs(side_of(g)))
+    ring = list(ea.coords) + list(eb.coords)[::-1]
+    if len(ring) < 3:
+        return None
+    G = Polygon(ring).buffer(0)
+    G = G.intersection(road).intersection(Point(c).buffer(55.0)).difference(la.buffer(da["hw"] - 0.05)).difference(lb.buffer(db["hw"] - 0.05))
+    G = unary_union([p for p in polys_of(G) if p.area > 2.0])
+    if G.is_empty or G.area < 4.0:
+        return None
+    chev = []
+    inner = G.buffer(-0.35)
+    t = 4.0
+    while t < 55.0:
+        px, py = c[0] + bx * t, c[1] + by * t
+        for sg in (-1, 1):                                       # a V opening away from the nose, apex towards the node
+            ex, ey = px + (bx * 0.7 + wx * sg * 0.7) * 14, py + (by * 0.7 + wy * sg * 0.7) * 14
+            g = LineString([(px, py), (ex, ey)]).buffer(0.28, cap_style=2).intersection(inner)
+            chev += [q for q in polys_of(g) if q.area > 0.3]
+        t += 4.0
+    return G, chev
+
+
 def _arm_marks(m, a, road, zone_arm):
     """Markings of one arm, after the reference junction: continental zebra set back from the corner, stop line over
     the inbound lanes, solid lane lines and edge lines up to the arm's end, centre double line, two rows of arrows."""
@@ -866,6 +931,16 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     # paint zone: asphalt without junction cores, arm mouths and islands
     core = unary_union([Point(0, 0).buffer(0), zone_arm] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(6.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
     zone = asph.difference(core).difference(isl.buffer(0.3))
+    # merges and diverges: hatched gore between the carriageways, no lane paint inside it
+    gores = [g for n, L in nodes.items() if n not in ctx.get("bn", ()) for g in [_gore(n, L, asph.difference(isl))] if g]
+    if gores:
+        GU = unary_union([g[0] for g in gores])
+        zone = zone.difference(GU.buffer(0.1))
+        for G, chev in gores:
+            for ring in [p.exterior for p in polys_of(G)]:
+                stroke(m, LineString(ring.coords).buffer(0.1, cap_style=2).intersection(G.buffer(0.01)).intersection(clip), 0.05, WHITE)
+            for q in chev:
+                stroke(m, q.intersection(clip), 0.05, WHITE)
     if bulbs:
         zone = zone.difference(unary_union(bulbs))              # no lane paint inside a turning bulb
     for d in E:
