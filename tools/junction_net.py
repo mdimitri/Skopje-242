@@ -794,9 +794,11 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
             bulbs.append(Point(bx, by).buffer(rb + 4.0, resolution=12))
     U = unary_union(ribs)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
+    # small holes the closing leaves (corner pockets between arms) are paved: a real junction has no such rings
+    C = unary_union([Polygon(q.exterior, [h for h in q.interiors if Polygon(h).area > 150.0]) for q in polys_of(C)])
     gap = C.difference(U)
     isl = gap.buffer(-1.3, resolution=6).buffer(1.3, resolution=6).intersection(gap)
-    keep_isl = [p for p in polys_of(isl) if p.area > 6.0]
+    keep_isl = [p for p in polys_of(isl) if p.area > 400.0]
     if B:                                              # leftovers between a deck foot and the ground road are paved, not grass
         ends = [Point(d["ln"].coords[k]).buffer(d["hw"] + 8.0) for d in B for k, nd in ((0, d["e"]["a"]), (-1, d["e"]["b"])) if nd in gn]
         foot = unary_union(ends) if ends else Polygon()
