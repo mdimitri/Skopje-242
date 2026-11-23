@@ -38,7 +38,7 @@ def per_dir(e):
         cap = 1
     if e["ow"]:
         n = e["lanes"] or max(1, round(e["w"] / 3.5))
-        return max(1, min(n, cap if cls != "tertiary" else 3))
+        return max(1, min(n, cap if cls != "tertiary" else 2))
     dl = e.get("directional_lanes")
     n = max(dl) if dl else max(1, (e["lanes"] or round(e["w"] / 3.5)) // 2)
     return max(1, min(n, 2 if cls == "tertiary" else cap))
@@ -318,6 +318,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         inc.setdefault(d["e"]["b"], []).append(d)
     nodes = {n: L for n, L in inc.items() if len(L) >= 3}
     ribs = [ribbon(d, inc) for d in E]
+    bulbs = []
     # dead ends get a turning bulb (cul-de-sac) instead of a bare round cap
     for n, L in inc.items():
         if gdeg.get(n, 0) == 1 and L[0]["ln"].length > 20:
@@ -328,6 +329,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
             rb = max(d["hw"] + 4.5, 10.0)
             bx, by = end[0] + ux * rb * 0.6, end[1] + uy * rb * 0.6   # centre sits inside the road so the bulb stands 0.4 r proud
             ribs.append(Point(bx, by).buffer(rb, resolution=24))
+            bulbs.append(Point(bx, by).buffer(rb + 4.0, resolution=12))
     U = unary_union(ribs)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     gap = C.difference(U)
@@ -422,8 +424,10 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         bridge_mesh(m, B, decks, cx, cy, base, gfn)
         m.gfn = gfn
     # paint zone: asphalt without junction cores and islands
-    core = unary_union([Point(0, 0).buffer(0)] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(9.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
+    core = unary_union([Point(0, 0).buffer(0)] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(12.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
     zone = asph.difference(core).difference(isl.buffer(0.3))
+    if bulbs:
+        zone = zone.difference(unary_union(bulbs))              # no lane paint inside a turning bulb
     for d in E:
         ln, hw, per, e = d["ln"], d["hw"], d["per"], d["e"]
         if ln.length < 12:
@@ -436,10 +440,12 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
             lines = [path] if isinstance(path, LineString) else list(getattr(path, "geoms", []))
             parts = [q for ln_ in lines for q in (dashed_segments(ln_) if dash else [ln_])]
             for s_ in parts:
-                if s_.is_empty or s_.length < 0.3:
+                if s_.is_empty or s_.length < (0.3 if dash else 6.0):
                     continue
                 for g in (s_.buffer(w / 2, cap_style=2).intersection(zone),):
-                    stroke(m, g, 0.05, WHITE)
+                    for q in polys_of(g):
+                        if q.area > 0.12 * w * 2.0:                        # drop the slivers left where the zone clips a line
+                            stroke(m, q, 0.05, WHITE)
         if e["ow"]:
             for k in range(1, per):
                 paint(-hw + LW * k, 0.15, True)
@@ -455,6 +461,8 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
         paint(hw - 0.35, 0.14)
         paint(-(hw - 0.35), 0.14)
     # crossings, stop lines and arrows at the mouth of every junction
+    ncoord = {n: (L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]) for n, L in nodes.items()}
+    crowded = {n for n, c in ncoord.items() if any(o != n and math.hypot(c[0] - q[0], c[1] - q[1]) < 45.0 for o, q in ncoord.items())}
     for n, L in nodes.items():
         c0 = L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]
         r_core = 9.0 + max(d["hw"] for d in L)
@@ -481,7 +489,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
                 stroke(m, raised, KERB + 0.07, (222, 220, 214))
                 k += 1.0
             inbound = (not e["ow"]) or (e["b"] == n)
-            if inbound:
+            if inbound and n not in crowded:                       # linked junctions: the stop bars and arrows would overlap
                 x, y, tx, ty = at(r_core + 8.0)
                 nx, ny = -ty, tx
                 lo, hi = (0.0, hw) if not e["ow"] else (-hw, hw)       # inbound lanes are on the left of the outward line

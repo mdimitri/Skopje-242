@@ -88,6 +88,39 @@ def harmonise(edges, short=150.0):
     return n
 
 
+def bridge_lanes(edges):
+    """A bridge carries as many lanes per direction as the road that continues onto it (never a 1-lane road turning
+    into a 3-lane deck): every edge of a bridge takes the approach road's lane count.  -> number of edges changed."""
+    import roadwidth
+    at = {}
+    for e in edges:
+        if e["drive"] and not e["bridge"]:
+            at.setdefault(e["a"], []).append(e)
+            at.setdefault(e["b"], []).append(e)
+    groups = {}
+    for e in edges:
+        if e["drive"] and e["bridge"]:
+            groups.setdefault(e["road"], []).append(e)
+    changed = 0
+    for G in groups.values():
+        cnt = {}
+        for e in G:
+            for n in (e["a"], e["b"]):
+                cnt[n] = cnt.get(n, 0) + 1
+        ends = [n for n, c in cnt.items() if c == 1]
+        cand = [roadwidth.lane_count(a, 1) for n in ends for a in at.get(n, []) if a["ow"] == G[0]["ow"] and a["cls"] == G[0]["cls"]]
+        if not cand:
+            continue
+        per = max(cand)
+        for e in G:
+            want = per if e["ow"] else 2 * per
+            if e.get("lanes") != want or e.get("directional_lanes"):
+                e["lanes"], e["directional_lanes"] = want, None
+                changed += 1
+    return changed
+
+
 def repair(edges):
     cut = dual_carriageways(edges)
+    bridge_lanes(edges)
     return cut, harmonise(edges)
