@@ -26,7 +26,7 @@ from junction_design import ASPH, GRASS, KERB, KFACE, KTOP, LW, SW, WHITE, Mesh 
 
 CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 3, "unclassified": 1, "residential": 1,
        "living_street": 1, "service": 1}
-R_KERB = 7.0
+R_KERB = 5.5
 RANGE = 120.0
 MARGIN = 60.0                                        # edges this far beyond the window still shape what is inside it
 
