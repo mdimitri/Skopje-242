@@ -105,13 +105,33 @@ class Head:
         hair = np.array(ca.rgb(ca._PALETTES[index][4]), np.float32)
         brow = _match(c, hair) & (z > .112) & (y > .195) & (y < .248) & (np.abs(x) > .012)
         self.brow = np.nonzero(brow)[0]
-        self.jawk = np.clip((.11 - y) / .03, 0, 1) * np.clip((z + .06) / .06, 0, 1)
+        # jaw weight: the chin and lower lip follow the hinge, the upper lip / nose / moustache stay, and everything in between (cheeks, mouth corners,
+        # moustache ends) is blended smoothly so nothing shears along a line
+        ax = np.abs(x)
+        top = .093 + np.clip((ax - .03) / .04, 0, 1) * .045
+        t = np.clip((top - y) / .03, 0, 1)
+        self.jawk = (t * t * (3 - 2 * t)) * np.clip((z + .06) / .06, 0, 1) * (1 - .9 * np.clip((ax - .035) / .045, 0, 1))
         self.jawk[:self.n_head][self.eye[self.eye < self.n_head]] = 0
+        # a moustache is fastened to the upper lip: it stays with the face when the jaw drops (a beard lower down follows the jaw)
+        skin_d = np.abs(c - self.skin).sum(axis=1)
+        lipish = (c[:, 0] - c[:, 1] > 60) & (c[:, 0] > 140)
+        stache = (skin_d > 70) & ~lipish & (z > .10) & (y > .06) & (y < .135) & (ax < .11)
+        for col in EYE_COLS:
+            stache &= ~_match(c, col)
+        self.jawk[stache] = 0
         band = np.clip(1 - np.abs(y - .075) / .035, 0, 1) * np.clip((z - .07) / .05, 0, 1)
         self.band = band
         self.eye_y = float(y[self.eye].mean()) if len(self.eye) else .17
         side = np.sign(x[self.eye]) if len(self.eye) else np.zeros(0)
         self.eye_c = {s: np.array((float(x[self.eye][side == s].mean()) if (side == s).any() else s * .05, self.eye_y, .125), np.float32) for s in (-1, 1)}
+        # glasses: opaque lenses (dark sunglasses, tinted or skin-coloured glass) would hide the eyes, so the eyes sit in front of the lens
+        # surface and a dark lens is lightened: they are always clearly visible
+        lens = (_match(c, (51, 41, 54)) | _match(c, (203, 161, 129))) & (z > .09) & (y > .09) & (y < .24) & (ax > .015) & (ax < .09)
+        if lens.any() and len(self.eye):
+            dz = max(0.0, float(z[lens].max()) - float(z[self.eye].max())) + .008
+            p[self.eye, 2] += dz
+            dark = lens & _match(c, (51, 41, 54))
+            c[dark] = (118, 108, 134)                            # a smoky lens that the eyes read against, not a black plate
         self.top = float(p[:n_hh, 1].max())
         # camera: frame hat/hair top down to the neck
         lo, hi = -.03, self.top + .015
