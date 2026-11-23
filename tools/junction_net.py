@@ -295,7 +295,7 @@ def main():
     for i, a in enumerate(sys.argv[3:]):
         cx, cy = (float(v) for v in a.split(","))
         m = build(dump["edges"], cx, cy, dump.get("buildings", ()))
-        js.render(m, out, {"top": ((0, 150, 1), (0, 0, 0)), "aerial": ((60, 85, -85), (0, 0, 0))}, f"net{i}")
+        js.render(m, out, {"top": ((0, 150, -1), (0, 0, 0)), "aerial": ((60, 85, -85), (0, 0, 0))}, f"net{i}")
         print("done", i, cx, cy, len(m.P) // 3, "tris")
 
 
