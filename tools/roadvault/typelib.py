@@ -146,6 +146,84 @@ def slip_arms(code, fam, narms):
     return table[fam][code]
 
 
+RANGES = {   # continuous design parameters sampled for every type (min, max)
+    "speed": (30, 90), "lane_w": (2.9, 3.75), "flare_len": (22, 75), "taper": (14, 42), "pocket_len": (25, 65), "solid_len": (20, 45),
+    "dash": (2.0, 4.0), "dash_gap": (5.0, 12.0), "angle_jitter": (-14, 14), "arc_radius": (70, 420), "arc_start": (30, 80), "arc_len": (30, 120),
+    "neck_start": (30, 70), "neck_len": (20, 60), "neck_delta": (0.3, 0.9), "corner_r": (3.5, 12.0),
+    "slip.R": (12, 34), "slip.asym": (0.7, 1.5), "slip.k1": (0.45, 0.62), "slip.k2": (0.45, 0.62), "slip.w": (3.2, 5.0), "slip.gap": (0.4, 2.6),
+    "slip.decel_len": (0, 40), "slip.peel_len": (8, 26), "slip.straight_in": (0, 12), "slip.accel_len": (0, 40), "slip.peel_out_len": (4, 14),
+    "slip.straight_out": (0, 10), "slip.nose_r": (0.5, 1.6), "slip.zebra_at": (0.35, 0.7), "slip.yield_at": (0.78, 0.92),
+    "ring.ro": (-3, 8), "ring.apron": (1.0, 3.0), "ring.aspect": (1.0, 1.25), "ring.lane_w": (3.4, 4.8), "fillet": (6, 22), "offset": (-1.6, 1.6),
+}
+
+
+def sample_geo(rnd):
+    u = lambda k: rnd.uniform(*RANGES[k])
+    arms = []
+    for _ in range(8):
+        a = dict(speed=round(u("speed")), lane_w=round(u("lane_w"), 2), flare_len=round(u("flare_len"), 1), taper=round(u("taper"), 1),
+                 pocket_len=round(u("pocket_len"), 1), solid_len=round(u("solid_len"), 1), dash=round(u("dash"), 2), dash_gap=round(u("dash_gap"), 2),
+                 angle_jitter=round(u("angle_jitter"), 1), fillet=round(u("fillet"), 1), offset=round(u("offset"), 2))
+        if rnd.random() < 0.3:
+            a["arcs"] = [[round(u("arc_start"), 1), round(u("arc_len"), 1), round(u("arc_radius") * rnd.choice([-1, 1]), 0)]]
+        if rnd.random() < 0.25:
+            a["neck"] = dict(lane=rnd.randint(0, 1), start=round(u("neck_start"), 1), len=round(u("neck_len"), 1), delta=round(u("neck_delta"), 2), side=rnd.choice(["in", "out"]))
+        arms.append(a)
+    slip = {k.split(".")[1]: round(u(k), 2) for k in RANGES if k.startswith("slip.")}
+    slip["control"] = rnd.choice(["yield", "yield", "stop"])
+    slip["vehicle"] = rnd.choice(["P", "SU", "SU", "BUS"])
+    ring = {k.split(".")[1]: round(u(k), 2) for k in RANGES if k.startswith("ring.")}
+    return dict(arms=arms, slip=slip, ring=ring, corner_r=round(u("corner_r"), 1), autofit=rnd.random() < 0.6)
+
+
+def apply_geo(sc, geo):
+    import lanes as _l
+    from slips import as_slip
+    for a, g in zip(sc.arms, geo["arms"]):
+        if not (getattr(sc, "ring", None) and False):
+            a.speed = g["speed"]
+        a.lane_w = g["lane_w"]
+        a.flare_len, a.taper, a.pocket_len = g["flare_len"], g["taper"], g["pocket_len"]
+        a.solid_len, a.dash, a.dash_gap = g["solid_len"], g["dash"], g["dash_gap"]
+        if not sc.ring:
+            a.angle = a.angle + (g["angle_jitter"] * 0.4 if a.angle % 180 not in (0.0,) else 0.0)
+        a.fillet = g["fillet"] if rnd_flag(g) else None
+        if "arcs" in g and a.L > 150 and not sc.ring:
+            a.arcs = [list(x) for x in g["arcs"]]
+        if sc.ring:
+            a.offset = g["offset"]
+        if "neck" in g:
+            nk = g["neck"]
+            a.e = 0.0
+            _l.ensure(a)
+            L = a.lanes_in if nk["side"] == "in" else a.lanes_out
+            if L:
+                l = L[min(nk["lane"], len(L) - 1)]
+                l.keys = [(nk["start"] - 10, l.w), (nk["start"] + nk["len"], max(2.6, l.w - nk["delta"])), (nk["start"] + nk["len"] + 40, max(2.6, l.w - nk["delta"]))]
+                a._custom_lanes = True
+                a._auto_lanes = False
+    sc.corner_r = geo["corner_r"]
+    for a in sc.arms:
+        if a.slip:
+            sp = as_slip(a.slip)
+            for k, v in geo["slip"].items():
+                setattr(sp, k, v)
+            a.slip = sp
+    if sc.ring:
+        for k, v in geo["ring"].items():
+            if k == "ro":
+                sc.ring.ro += v
+                sc.ring.ri += v * 0.6
+            else:
+                setattr(sc.ring, k, v)
+    if geo["autofit"] and any(a.slip for a in sc.arms):
+        sc.autofit = geo["slip"]["vehicle"]
+
+
+def rnd_flag(g):
+    return g["fillet"] > 14.0
+
+
 def scene_of(t):
     fam, p, name = t["family"], t["params"], t["id"]
     rnd = random.Random(t["seed"])
@@ -181,6 +259,8 @@ def scene_of(t):
             angles = [(i * 360.0 / n) + (14 if i % 2 else -9) for i in range(n)]
         sc = cat.star(name, n=n, lanes=p["lanes"], signal=bool(p["signal"]), median=p["median"], flare=p["flare"], angles=angles, corner_r=p["corner_r"], seed=t["seed"])
     dressing(sc, p["dress"], rnd)
+    if t.get("geo"):
+        apply_geo(sc, t["geo"])
     return sc
 
 
@@ -212,7 +292,7 @@ def generate(total=10000, seed=242):
     rnd.shuffle(out)
     types = []
     for i, (fam, p) in enumerate(out):
-        types.append(dict(id=f"{fam}_{i + 1:05d}", family=fam, seed=1000 + i, params={k: (list(v) if isinstance(v, tuple) else v) for k, v in p.items()}))
+        types.append(dict(id=f"{fam}_{i + 1:05d}", family=fam, seed=1000 + i, geo=sample_geo(random.Random(5000 + i)), params={k: (list(v) if isinstance(v, tuple) else v) for k, v in p.items()}))
     return types, {f: len(v) for f, v in pools.items()}
 
 

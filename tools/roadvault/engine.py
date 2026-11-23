@@ -78,6 +78,15 @@ class Arm:
     taper_in: float = 0.0                # lane drop/gain: inbound lane count changes by this many lanes at taper_at
     taper_at: float = 60.0
     e: float = 0.0                       # junction edge distance (computed)
+    speed: float = 50.0                  # design speed (km/h): sets taper lengths
+    offset: float = 0.0                  # lateral shift of the arm axis from the junction centre
+    arcs: list = field(default_factory=list)       # curved arms: [(d_start, length, signed radius)]
+    lanes_in: list = field(default_factory=list)   # explicit lane schedule (inner -> outer); empty = derived from lin/flare/bike/bus
+    lanes_out: list = field(default_factory=list)
+    solid_len: float = 30.0              # solid lane lines within this distance of the stop line
+    dash: float = 3.0
+    dash_gap: float = 9.0
+    fillet: Optional[float] = None       # kerb radius where this arm meets the ring / its neighbours (None = scene.corner_r)
 
     @property
     def mw(self):
@@ -93,6 +102,11 @@ class Ring:
     apron: float = 1.8
     lanes: int = 1
     center: str = "grass"                # grass | trees | fountain | monument | plain
+    lane_w: float = 3.6                  # circulating lane width (lane lines inside the ring)
+    aspect: float = 1.0                  # 1 = circle; >1 stretches the ring along x (elliptical roundabout)
+    apron_h: float = 0.1                 # truck apron height
+    island_h: float = 0.2                # central island kerb height above the road
+    dashed: bool = True                  # dashed lane lines in a multi-lane ring
 
 
 @dataclass
@@ -107,17 +121,12 @@ class Scene:
     grades: list = field(default_factory=list)      # grade-separated crossings: kwargs of grade.ribbon
     elements: list = field(default_factory=list)    # extra design elements (see elements.py)
     sky_extent: float = 140.0
+    sim: Optional[str] = None                       # design vehicle simulated through the slip lanes and drawn (P SU BUS WB-40 WB-62)
+    autofit: Optional[str] = None                   # enlarge slips until this vehicle fits (improve loop)
 
 
-def P(a, d, s):
-    ua = math.radians(a.angle)
-    ux, uy = math.cos(ua), math.sin(ua)
-    return (ux * d - uy * s, uy * d + ux * s)
-
-
-def U(a):
-    r = math.radians(a.angle)
-    return math.cos(r), math.sin(r)
+from lanes import (Lane, P, U, heading, to_arm, in_w, out_w, s_lo, s_hi, boundary, lane_spans, widths, ramp, taper_len)  # noqa: E402
+import lanes as _lanes  # noqa: E402
 
 
 def band(a, ds, f0, f1):
@@ -128,39 +137,23 @@ def band(a, ds, f0, f1):
 
 
 def rect(a, d0, d1, s0, s1):
-    return Polygon([P(a, d0, s0), P(a, d1, s0), P(a, d1, s1), P(a, d0, s1)])
+    if not a.arcs:
+        return Polygon([P(a, d0, s0), P(a, d1, s0), P(a, d1, s1), P(a, d0, s1)])
+    n = max(1, int(abs(d1 - d0) / 1.5))
+    ds = [d0 + (d1 - d0) * i / n for i in range(n + 1)]
+    return band(a, ds, lambda d: s0, lambda d: s1)
 
 
-# ---------------------------------------------------------------- arm profile
 def in_n(a, d):
-    n = a.lin + a.flare_in * smooth((a.flare_len - (d - a.e)) / a.taper) if a.flare_in else a.lin
-    if a.taper_in:
-        n += a.taper_in * smooth((d - a.taper_at) / 30.0)
-    return n
+    return sum(w for w in _lanes.widths(a, d, True)) / max(a.lane_w, 1e-6)
 
 
 def out_n(a, d):
-    return a.lout + a.flare_out * smooth((a.flare_len - (d - a.e)) / a.taper) if a.flare_out else a.lout
+    return sum(w for w in _lanes.widths(a, d, False)) / max(a.lane_w, 1e-6)
 
 
 def extra_w(a):
-    return 1.9 if a.bike else 0.0
-
-
-def in_w(a, d):
-    return in_n(a, d) * a.lane_w + (extra_w(a) if a.lin else 0)
-
-
-def out_w(a, d):
-    return out_n(a, d) * a.lane_w + (extra_w(a) if a.lout else 0)
-
-
-def s_lo(a, d):
-    return -(a.mw / 2 + in_w(a, d)) if a.lin else -(a.mw / 2)
-
-
-def s_hi(a, d):
-    return a.mw / 2 + out_w(a, d) if a.lout else a.mw / 2
+    return 0.0
 
 
 def pocket_edge(a, d):
@@ -183,13 +176,18 @@ def compute_edges(scene):
     """e (distance from the centre to where the arm's own carriageway begins) for every arm."""
     for a in scene.arms:
         a.e = 0.0
+        _lanes.clear_auto(a)
+        _lanes.ensure(a)
     if scene.ring:
         for a in scene.arms:
             a.e = scene.ring.ro
+            _lanes.clear_auto(a)
+            _lanes.ensure(a)
         return
     base = []
     for a in scene.arms:
-        b = replace(a, flare_in=0, flare_out=0, pocket=0, taper_in=0)
+        b = replace(a, flare_in=0, flare_out=0, pocket=0, taper_in=0, lanes_in=[] if getattr(a, '_auto_lanes', False) else a.lanes_in, lanes_out=[] if getattr(a, '_auto_lanes', False) else a.lanes_out)
+        _lanes.ensure(b)
         base.append(strip_poly(b))
     for i, a in enumerate(scene.arms):
         others = unary_union([base[j] for j in range(len(base)) if j != i])
@@ -201,6 +199,9 @@ def compute_edges(scene):
             for c in p.exterior.coords:
                 e = max(e, c[0] * ua[0] + c[1] * ua[1])
         a.e = max(e, 4.0)
+    for a in scene.arms:
+        _lanes.clear_auto(a)
+        _lanes.ensure(a)
 
 
 # ---------------------------------------------------------------- junction assembly
@@ -221,16 +222,24 @@ def build_core(scene, strips):
     parts = list(strips)
     if scene.ring:
         r = scene.ring
-        ring = Point(0, 0).buffer(r.ro, 64).difference(Point(0, 0).buffer(r.ri + r.apron, 64))
-        parts = [s.difference(Point(0, 0).buffer(r.ro - 0.05)) if False else s for s in parts]
+        from shapely.affinity import scale as _sc
+        disc_o = _sc(Point(0, 0).buffer(r.ro, 64), r.aspect, 1.0)
+        disc_i = _sc(Point(0, 0).buffer(r.ri + r.apron, 64), r.aspect, 1.0)
+        ring = disc_o.difference(disc_i)
         parts.append(ring)
-        union = unary_union(parts).difference(Point(0, 0).buffer(r.ri + r.apron, 64))
+        union = unary_union(parts).difference(disc_i)
     else:
         mx = max(max(abs(s_lo(a, a.e)), abs(s_hi(a, a.e))) for a in scene.arms)
         parts.append(Point(0, 0).buffer(mx * 0.95, 32))
         union = unary_union(parts)
     cr = scene.corner_r
-    return union.buffer(cr, 24).buffer(-cr, 24).buffer(0)
+    out = union.buffer(cr, 24).buffer(-cr, 24).buffer(0)
+    for a, st in zip(scene.arms, strips):
+        if a.fillet and abs(a.fillet - cr) > 0.05:
+            f = a.fillet
+            extra = unary_union([st, ring]) if scene.ring else st
+            out = unary_union([out, extra.buffer(f, 24).buffer(-f, 24).difference(disc_i if scene.ring else Polygon())])
+    return out
 
 
 def build_slips(scene, strips, main):
@@ -281,7 +290,7 @@ def medians(scene, strips):
 # ---------------------------------------------------------------- paint
 def arrow_polys(a, d, s, kind):
     """Lane arrow for an inbound lane (vehicle travels towards the junction = -u).  Returns polygons in plan."""
-    ua = U(a)
+    ua = U(a, d)
     fwd = (-ua[0], -ua[1])
     right = (ua[1], -ua[0])                           # right of travel
 
@@ -317,20 +326,37 @@ def default_arrows(a):
     return base
 
 
+def line_along(a, d0, d1, fn, w=0.15, style="solid", dash=3.0, gap=9.0, step=1.0):
+    """Paint along a lateral curve s=fn(d) from d0 to d1; dashes follow distance along the arm."""
+    out = []
+    n = max(1, int((d1 - d0) / step))
+    cyc = dash + gap
+    for i in range(n):
+        da, db = d0 + (d1 - d0) * i / n, d0 + (d1 - d0) * (i + 1) / n
+        if style == "dashed":
+            ph = (da - d0) % cyc
+            if ph > dash:
+                continue
+        sa, sb = fn(da), fn(db)
+        if sa is None or sb is None:
+            continue
+        out.append(Polygon([P(a, da, sa - w / 2), P(a, db, sb - w / 2), P(a, db, sb + w / 2), P(a, da, sa + w / 2)]))
+    return out
+
+
 def arm_paint(scene, a, asphalt):
     """-> (white polygons, colour surface polygons [(poly, col)])"""
     w, surf = [], []
     ze = a.zebra is not None
     zc = a.e + (a.zebra or 0)
     dst = (zc + 1.7 + 1.1) if ze else a.e + 2.2
-    nmax_in = int(a.lin + a.flare_in + abs(a.taper_in))
-    nmax_out = int(a.lout + a.flare_out)
     ds_all = samples(a)
     far = a.L - 1
+    d0 = dst + 0.8
+    pk = a.lane_w if a.pocket else 0.0
     # stop line / yield teeth
     if a.lin and a.stop != "none":
-        inner = lambda d: pocket_edge(a, d) if a.lin and a.median not in ("none",) or a.pocket else 0.0
-        s0, s1 = s_lo(a, dst) + 0.1, (-a.mw / 2 + (a.lane_w if a.pocket else 0.0))
+        s0, s1 = s_lo(a, dst) + 0.1, (-a.mw / 2 + pk)
         if a.stop == "line":
             w.append(rect(a, dst - 0.22, dst + 0.22, s0, s1))
         else:
@@ -345,16 +371,38 @@ def arm_paint(scene, a, asphalt):
         while x + 0.55 < hi - 0.2:
             w.append(rect(a, zc - 1.75, zc + 1.75, x, x + 0.55))
             x += 1.1
-    d0 = dst + 0.8
-    # lane dividers (inbound)
-    solid_to = a.e + (a.flare_len if a.flare_in else 30.0)
-    for k in range(1, nmax_in):
-        s = -a.mw / 2 - k * a.lane_w
-        w.append(rect(a, d0, solid_to, s - 0.075, s + 0.075))
-        dd = solid_to
-        while dd + 3.0 < far:
-            w.append(rect(a, dd, dd + 3.0, s - 0.075, s + 0.075))
-            dd += 9.0
+    # lane lines from the lane schedule: every boundary follows the (possibly tapering) lane widths
+    for inbound in (True, False):
+        L = a.lanes_in if inbound else a.lanes_out
+        if not L:
+            continue
+        sg = -1.0 if inbound else 1.0
+        for k in range(1, len(L)):
+            lk0, lk1 = L[k - 1], L[k]
+            kinds = (lk0.kind, lk1.kind)
+            fn = lambda d, k=k, inbound=inbound: (boundary(a, k, d, inbound) if min(widths(a, d, inbound)[k - 1], widths(a, d, inbound)[k]) > 0.35 else None)
+            mk = lk1.marking_in if lk1.marking_in != "auto" else "auto"
+            if mk == "none":
+                continue
+            if "bike" in kinds:
+                w += line_along(a, d0, far, fn, 0.12, "dashed", 1.2, 0.8)
+            elif "bus" in kinds or mk == "solid":
+                w += line_along(a, d0, far, fn, 0.15, "solid")
+            elif inbound:
+                solid_to = a.e + max(a.solid_len, a.flare_len if a.flare_in else 0)
+                w += line_along(a, d0, solid_to, fn, 0.15, "solid")
+                w += line_along(a, solid_to, far, fn, 0.15, "dashed", a.dash, a.dash_gap)
+            else:
+                w += line_along(a, d0 + 6.0, far, fn, 0.15, "dashed", a.dash, a.dash_gap)
+        # carriageway edge line
+        edge = (lambda d, inbound=inbound: (s_lo(a, d) + 0.22) if (inbound and widths(a, d, True) and widths(a, d, True)[-1] > 0.35 and a.lanes_in[-1].kind != "bike") else (s_hi(a, d) - 0.22) if (not inbound and widths(a, d, False) and widths(a, d, False)[-1] > 0.35 and a.lanes_out[-1].kind != "bike") else None)
+        w += line_along(a, d0, far, edge, 0.15, "solid")
+        # coloured lanes
+        for k, lk in enumerate(L):
+            if lk.kind in ("bike", "bus") or lk.colour:
+                col = tuple(lk.colour) if lk.colour else (BIKE if lk.kind == "bike" else BUSL)
+                dsx = [d for d in ds_all if d >= d0 - 1]
+                surf.append((band(a, dsx, lambda d, k=k, inbound=inbound: boundary(a, k, d, inbound), lambda d, k=k, inbound=inbound: boundary(a, k + 1, d, inbound)), col))
     if a.pocket:
         s = -a.mw / 2
         w.append(rect(a, d0, a.e + a.pocket_len * 0.55, s - 0.075, s + 0.075))
@@ -362,21 +410,14 @@ def arm_paint(scene, a, asphalt):
         while dd + 2.0 < a.e + a.pocket_len:
             w.append(rect(a, dd, dd + 2.0, s - 0.075, s + 0.075))
             dd += 5.0
-    # outbound dividers
-    for k in range(1, nmax_out):
-        s = a.mw / 2 + k * a.lane_w
-        dd = d0 + 6.0
-        while dd + 3.0 < far:
-            w.append(rect(a, dd, dd + 3.0, s - 0.075, s + 0.075))
-            dd += 9.0
     # centre of two-way roads with no physical median
     if a.lin and a.lout and a.median == "none":
-        w.append(rect(a, d0, a.e + 34.0, -0.28, -0.13))
-        w.append(rect(a, d0, a.e + 34.0, 0.13, 0.28))
-        dd = a.e + 34.0
-        while dd + 3.0 < far:
-            w.append(rect(a, dd, dd + 3.0, -0.075, 0.075))
-            dd += 12.0
+        w.append(rect(a, d0, a.e + a.solid_len + 4.0, -0.28, -0.13))
+        w.append(rect(a, d0, a.e + a.solid_len + 4.0, 0.13, 0.28))
+        dd = a.e + a.solid_len + 4.0
+        while dd + a.dash < far:
+            w.append(rect(a, dd, dd + a.dash, -0.075, 0.075))
+            dd += a.dash + a.dash_gap + 3.0
     if a.median == "paint" and a.lin and a.lout:
         for sx in (-a.mw / 2, a.mw / 2):
             w.append(rect(a, d0, far, sx - 0.075, sx + 0.075))
@@ -384,45 +425,26 @@ def arm_paint(scene, a, asphalt):
         while dd + 1.0 < min(far, a.e + 60):
             w.append(Polygon([P(a, dd, -a.mw / 2), P(a, dd + 0.35, -a.mw / 2), P(a, dd + 0.35 + a.mw * 0.9, a.mw / 2), P(a, dd + a.mw * 0.9, a.mw / 2)]))
             dd += 2.4
-    # edge lines
-    for sgn in (-1, 1):
-        if (sgn < 0 and not a.lin) or (sgn > 0 and not a.lout):
-            continue
-        def edge(d, sgn=sgn):
-            return (s_lo(a, d) + 0.22 + extra_w(a)) if sgn < 0 else (s_hi(a, d) - 0.22 - extra_w(a))
-        ds = [d for d in ds_all if d >= d0]
-        for i in range(len(ds) - 1):
-            w.append(band(a, [ds[i], ds[i + 1]], lambda d, e=edge: e(d) - 0.075, lambda d, e=edge: e(d) + 0.075))
-    # cycle lanes and bus lanes
-    for sgn in (-1, 1):
-        if not a.bike or (sgn < 0 and not a.lin) or (sgn > 0 and not a.lout):
-            continue
-        ds = [d for d in ds_all if d >= d0 - 1]
-        if sgn < 0:
-            surf.append((band(a, ds, lambda d: s_lo(a, d), lambda d: s_lo(a, d) + 1.9), BIKE))
-            w.append(band(a, ds, lambda d: s_lo(a, d) + 1.9 - 0.075, lambda d: s_lo(a, d) + 1.9 + 0.075))
-        else:
-            surf.append((band(a, ds, lambda d: s_hi(a, d) - 1.9, lambda d: s_hi(a, d)), BIKE))
-            w.append(band(a, ds, lambda d: s_hi(a, d) - 1.9 - 0.075, lambda d: s_hi(a, d) - 1.9 + 0.075))
-    if a.bus and a.lin:
-        o = extra_w(a)
-        ds = [d for d in ds_all if d >= d0 - 1]
-        surf.append((band(a, ds, lambda d: s_lo(a, d) + o, lambda d: s_lo(a, d) + o + a.lane_w), BUSL))
-    # arrows
+    # arrows on the drive lanes that are wide enough at the arrow position
     if a.lin and a.arrows != []:
-        kinds = a.arrows or default_arrows(a)
-        centres = []
+        dar = dst + 7.0
+        spans = [(l, s0_, s1_, wd) for (l, s0_, s1_, wd) in lane_spans(a, dar, True) if l.kind in ("drive", "bus", "turn") and wd > 2.6]
+        centres = [(s0_ + s1_) / 2 for (_, s0_, s1_, _) in spans]
         if a.pocket:
-            centres.append(-a.mw / 2 + a.lane_w / 2)
-        centres += [-a.mw / 2 - (k + 0.5) * a.lane_w for k in range(a.lin + a.flare_in)]
-        if a.pocket and len(kinds) == len(centres) - 1:
-            kinds = ["L"] + kinds
+            centres.insert(0, -a.mw / 2 + a.lane_w / 2)
+        kinds = list(a.arrows or [])
+        if not kinds:
+            n = len(centres)
+            kinds = {1: ["T"], 2: ["T", "TR"], 3: ["L", "T", "TR"], 4: ["L", "T", "T", "TR"]}.get(n, ["T"] * n)
+            if a.pocket and n > 1:
+                kinds = ["L"] + kinds[1:]
+        lanes_here = [None] * (1 if a.pocket else 0) + [sp[0] for sp in spans]
+        kinds = list(kinds) + ["T"] * max(0, len(centres) - len(kinds))
+        kinds = [(l_.arrow if (l_ is not None and l_.arrow) else kd) for l_, kd in zip(lanes_here, kinds)]
         if len(kinds) < len(centres):
             kinds = kinds + ["T"] * (len(centres) - len(kinds))
         for dd in (dst + 7.0, dst + 24.0):
             for s, kd in zip(centres, kinds):
-                if kd == "L" and dd > dst + 8:
-                    pass
                 w += arrow_polys(a, dd, s, kd)
     return w, surf
 
@@ -472,6 +494,9 @@ def build(scene: Scene) -> Mesh:
     rnd = random.Random(scene.seed)
     m = Mesh()
     compute_edges(scene)
+    if scene.autofit:
+        import simulate as _sim
+        scene.fit_log = _sim.autofit(scene, scene.autofit)
     arms = scene.arms
     strips = [strip_poly(a) for a in arms]
     main = build_core(scene, strips)
@@ -486,7 +511,9 @@ def build(scene: Scene) -> Mesh:
                 s_edge2 = (lambda d: s_lo(a, d)) if sgn < 0 else (lambda d: s_hi(a, d) + 2.4)
                 pk = band(a, [d0, d1], s_edge, s_edge2).buffer(-0.5).buffer(0.5)
                 main = unary_union([main, pk])
-    asph_slip, islands = build_slips(scene, strips, main)
+    import slips as _slips
+    asph_slip, islands, slip_paint, slip_info = _slips.build_slips(scene, strips, main)
+    scene.slip_info = slip_info
     meds = medians(scene, strips)
     med_union = unary_union([g for g, _ in meds]) if meds else Polygon()
     isl_union = unary_union([g for g, _, _ in islands]) if islands else Polygon()
@@ -500,6 +527,7 @@ def build(scene: Scene) -> Mesh:
     # ground + surfaces
     big = scene.sky_extent + 120
     import grade
+    casters = []                                           # (footprint polygon, height) for the sun shadows
     grades = [grade.ribbon(**g) for g in scene.grades]
     scene.extra = grades
     hole = unary_union([g.hole for g in grades if g.hole is not None]) if any(g.hole is not None for g in grades) else Polygon()
@@ -532,13 +560,20 @@ def build(scene: Scene) -> Mesh:
                 m.poly(band(a, [a.e + 2, a.L], lambda d, s=sgn: s * 0.72 - 0.05, lambda d, s=sgn: s * 0.72 + 0.05).intersection(g), KH + 0.02, (150, 150, 156))
     for g, i, j in islands:
         planted(g, "island")
+        sp_ = _slips.as_slip(arms[i].slip)
+        if sp_.island_trees and g.area > 40:
+            rp = g.representative_point()
+            tree(m, rp.x, rp.y, rnd, KH + 0.01, 0.9)
+            casters.append((Point(rp.x, rp.y).buffer(2.0), 5.5))
     # ring centre
     ctx_pts = []
     if scene.ring:
         r = scene.ring
-        m.prism(Point(0, 0).buffer(r.ri + r.apron, 48).difference(Point(0, 0).buffer(r.ri, 48)), -0.02, 0.1, APRON, KERB_FACE)
-        m.prism(Point(0, 0).buffer(r.ri, 48), -0.02, KH + 0.05, CONC, KERB_FACE)
-        m.poly(Point(0, 0).buffer(r.ri - 0.5, 48), KH + 0.06, GRASS)
+        from shapely.affinity import scale as _sc2
+        _e = lambda g: _sc2(g, r.aspect, 1.0)
+        m.prism(_e(Point(0, 0).buffer(r.ri + r.apron, 48).difference(Point(0, 0).buffer(r.ri, 48))), -0.02, r.apron_h, APRON, KERB_FACE)
+        m.prism(_e(Point(0, 0).buffer(r.ri, 48)), -0.02, r.island_h, CONC, KERB_FACE)
+        m.poly(_e(Point(0, 0).buffer(r.ri - 0.5, 48)), r.island_h + 0.01, GRASS)
         for k in range(int(r.ri * 1.0)):
             ang = k * 2 * math.pi / max(1, int(r.ri * 1.0))
             rr = r.ri - 2.2
@@ -554,6 +589,7 @@ def build(scene: Scene) -> Mesh:
         if r.center in ("trees", "grass"):
             tree(m, 0, 0, rnd, KH + 0.05, 1.2)
     # paint
+    paint_w = list(paint_w) + list(slip_paint)
     allw = unary_union([p.buffer(0) for p in paint_w if not p.is_empty]) if paint_w else Polygon()
     allw = allw.intersection(asphalt.buffer(-0.02))
     m.poly(allw, Y_PAINT, WHITE)
@@ -562,15 +598,15 @@ def build(scene: Scene) -> Mesh:
         rr = r.ro - 0.6
         ring_p = Point(0, 0).buffer(rr + 0.075, 64).difference(Point(0, 0).buffer(rr - 0.075, 64))
         for k in range(1, r.lanes):
-            rk = r.ro - k * 3.6 - 0.2
+            rk = r.ro - k * r.lane_w - 0.2
             n = int(2 * math.pi * rk / 9)
             for q in range(n):
                 a0, a1 = q * 2 * math.pi / n, (q + 0.45) * 2 * math.pi / n
-                seg = LineString([(rk * math.cos(a0 + t * (a1 - a0)), rk * math.sin(a0 + t * (a1 - a0))) for t in np.linspace(0, 1, 5)]).buffer(0.075, cap_style=2)
-                m.poly(seg.intersection(asphalt), Y_PAINT, WHITE)
+                seg = LineString([(r.aspect * rk * math.cos(a0 + t * (a1 - a0)), rk * math.sin(a0 + t * (a1 - a0))) for t in np.linspace(0, 1, 5)]).buffer(0.075, cap_style=2)
+                if r.dashed:
+                    m.poly(seg.intersection(asphalt), Y_PAINT, WHITE)
     # furniture
     free = unary_union([asphalt, pavement, med_union, isl_union])
-    casters = []                                           # (footprint polygon, height) for the sun shadows
 
     def on_ground(x, z, pad=0.0):
         return not free.buffer(pad).intersects(Point(x, z)) and not occ.intersects(Point(x, z))
@@ -648,20 +684,19 @@ def build(scene: Scene) -> Mesh:
             ze = a.zebra is not None
             zc = a.e + (a.zebra or 0)
             dst = (zc + 1.7 + 1.1) if ze else a.e + 2.2
-            ua = U(a)
             for sgn in (-1, 1):
-                nl = a.lin if sgn < 0 else a.lout
-                if not nl:
+                if not (a.lin if sgn < 0 else a.lout):
                     continue
+                nl = len(a.lanes_in if sgn < 0 else a.lanes_out)
                 for k in range(nl):
-                    s = (-a.mw / 2 - (k + 0.5) * a.lane_w - extra_w(a)) if sgn < 0 else (a.mw / 2 + (k + 0.5) * a.lane_w)
-                    if sgn < 0 and a.bike:
-                        s += 0
                     dd = dst + 4.0 + rnd.uniform(0, 8) if sgn < 0 else a.e + 14 + rnd.uniform(0, 10)
                     while dd < min(a.L, scene.sky_extent) - 4:
-                        if rnd.random() < a.traffic:
+                        sp = lane_spans(a, dd, sgn < 0)
+                        if k < len(sp) and sp[k][3] > 2.8 and sp[k][0].kind in ("drive", "bus", "turn") and rnd.random() < a.traffic:
+                            s = (sp[k][1] + sp[k][2]) / 2
                             x, z = P(a, dd, s)
-                            yaw = math.atan2(-ua[1], -ua[0]) if sgn < 0 else math.atan2(ua[1], ua[0])
+                            hd = heading(a, dd)
+                            yaw = hd + math.pi if sgn < 0 else hd
                             if asphalt.buffer(-0.5).contains(Point(x, z)):
                                 m.car(x, z, yaw, rnd.choice(CAR_COLS))
                                 casters.append((Point(x, z).buffer(1.0), 1.5))
@@ -726,6 +761,18 @@ def build(scene: Scene) -> Mesh:
             gx += 1
     import elements
     elements.apply(scene, locals())
+    if scene.sim:
+        import simulate as _sim
+        rep, poses_all = _sim.run(scene, asphalt, islands, scene.sim)
+        scene.sim_report = rep
+        for veh, poses in poses_all:
+            for q in (0.3, 0.5, 0.7):
+                if not poses:
+                    continue
+                x_, z_, yaw_, parts_ = poses[int(q * (len(poses) - 1))]
+                for k, pol in enumerate(parts_):
+                    m.prism(pol, 0.3, 3.3 if veh in ("BUS", "SU") else 3.0, (236, 200, 60) if k == 0 else (232, 232, 228), (200, 168, 50) if k == 0 else (200, 200, 196))
+                    casters.append((pol, 3.2))
     # sun shadows: project every caster along the sun's horizontal direction, darken what lies under it
     sh = []
     for fp, h in casters:

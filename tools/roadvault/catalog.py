@@ -220,6 +220,8 @@ def make(id, **over):
             kk = dict(k)
             kk.update(over)
             sc = fn(cid, **kk)
+            if any(a.slip for a in sc.arms):
+                sc.autofit, sc.sim = "SU", "SU"
             return sc
     raise KeyError(id)
 
