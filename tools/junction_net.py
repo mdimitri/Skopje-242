@@ -159,12 +159,18 @@ def bridge_mesh(m, B, decks, cx, cy, base):
                 continue
             quadstrip(sg * hw, sg * (hw + SWB), KERB, KTOP)
             vwall(sg * hw, 0.0, KERB, KFACE)
-            vwall(sg * (hw + SWB), -1.1, 1.05, (196, 194, 188))
+            A = edge(sg * (hw + SWB))
+            for i in range(n):
+                t0, t1 = min(1.05, KERB + 0.3 * H[i]), min(1.05, KERB + 0.3 * H[i + 1])
+                m.quad((A[i][0], H[i] - 1.1, A[i][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i + 1][0], H[i + 1] + t1, A[i + 1][1]), (A[i][0], H[i] + t0, A[i][1]), (196, 194, 188))
             for i in range(n):
                 if H[i] < 6.0 and H[i + 1] < 6.0:
                     A = edge(sg * (hw + SWB))
                     m.quad((A[i][0], -0.3, A[i][1]), (A[i + 1][0], -0.3, A[i + 1][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i][0], H[i] - 1.1, A[i][1]), (178, 176, 170))
-            quadstrip(sg * (hw + SWB - 0.25), sg * (hw + SWB), 1.05, (214, 212, 206))
+            A0, A1 = edge(sg * (hw + SWB - 0.25)), edge(sg * (hw + SWB))
+            for i in range(n):
+                t0, t1 = min(1.05, KERB + 0.3 * H[i]), min(1.05, KERB + 0.3 * H[i + 1])
+                m.quad((A0[i][0], H[i] + t0, A0[i][1]), (A0[i + 1][0], H[i + 1] + t1, A0[i + 1][1]), (A1[i + 1][0], H[i + 1] + t1, A1[i + 1][1]), (A1[i][0], H[i] + t0, A1[i][1]), (214, 212, 206))
             quadstrip(sg * (hw - 0.45), sg * (hw - 0.31), 0.05, WHITE)
         if not e["ow"]:
             quadstrip(-0.07, 0.07, 0.05, WHITE)
