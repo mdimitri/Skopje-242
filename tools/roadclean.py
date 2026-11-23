@@ -3,6 +3,7 @@
 width of their longer neighbours (no narrow-then-widen bumps)."""
 import collections
 import math
+import os
 
 import numpy as np
 
@@ -203,7 +204,7 @@ def merge_junctions(edges, kerb=7.0):
         pos0.setdefault(e["b"], e["pts"][-1])
     # a cluster whose members would have to move far to meet is not one junction (the arm pull would drag real
     # geometry): such groups stay as they were
-    MOVE = 22.0
+    MOVE = float(os.environ.get("SK242_MOVE", 22.0))
     far = set()
     for r, ns in groups.items():
         wsum = sum(size[n] for n in ns)
@@ -345,7 +346,8 @@ def straighten_arms(edges):
             continue
         P, ss = rs[i]
         L = float(ss[-1])
-        reach = min(45.0, 0.42 * L) if len(ends) == 2 else min(45.0, 0.6 * L)
+        RS = float(os.environ.get("SK242_REACH", 45.0))
+        reach = min(RS, 0.42 * L) if len(ends) == 2 else min(RS, 0.6 * L)
         Q = np.asarray(P, float)
         for k in ends:
             R = Q if k == 0 else Q[::-1]
@@ -374,7 +376,7 @@ CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 2, "
 LW = 3.25
 
 
-def boulevard_floor(edges, floor=3, reach=45.0, min_len=60.0):
+def boulevard_floor(edges, floor=int(os.environ.get("SK242_FLOOR", 3)), reach=45.0, min_len=60.0):
     """Realistic lane counts for dual carriageways: the two one-way halves of a boulevard (arterial class, an opposite
     one-way carriageway within `reach` metres running the other way) carry at least `floor` lanes each, where OSM
     tags only 1-2 (checked against satellite widths).  -> carriageways raised."""

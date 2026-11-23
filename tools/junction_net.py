@@ -26,7 +26,9 @@ from junction_design import ASPH, GRASS, KERB, KFACE, KTOP, LW, SW, WHITE, Mesh 
 
 CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 3, "unclassified": 1, "residential": 1,
        "living_street": 1, "service": 1}
-R_KERB = 5.5
+R_KERB = float(os.environ.get("SK242_RKERB", 5.5))
+ISL_MIN = float(os.environ.get("SK242_ISL_MIN", 400.0))
+HOLE_MIN = float(os.environ.get("SK242_HOLE_MIN", 150.0))
 RANGE = 120.0
 MARGIN = 60.0                                        # edges this far beyond the window still shape what is inside it
 
@@ -800,10 +802,10 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     U = unary_union(ribs)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     # small holes the closing leaves (corner pockets between arms) are paved: a real junction has no such rings
-    C = unary_union([Polygon(q.exterior, [h for h in q.interiors if Polygon(h).area > 150.0]) for q in polys_of(C)])
+    C = unary_union([Polygon(q.exterior, [h for h in q.interiors if Polygon(h).area > HOLE_MIN]) for q in polys_of(C)])
     gap = C.difference(U)
     isl = gap.buffer(-1.3, resolution=6).buffer(1.3, resolution=6).intersection(gap)
-    keep_isl = [p for p in polys_of(isl) if p.area > 400.0]
+    keep_isl = [p for p in polys_of(isl) if p.area > ISL_MIN]
     if B:                                              # leftovers between a deck foot and the ground road are paved, not grass
         ends = [Point(d["ln"].coords[k]).buffer(d["hw"] + 8.0) for d in B for k, nd in ((0, d["e"]["a"]), (-1, d["e"]["b"])) if nd in gn]
         foot = unary_union(ends) if ends else Polygon()
