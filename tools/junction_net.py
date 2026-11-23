@@ -179,8 +179,8 @@ def bridge_mesh(m, B, decks, cx, cy, base, gfn=None):
             quadstrip(-0.07, 0.07, 0.05, WHITE)
         quadstrip(-hw - (0 if inner == -1 else SWB), hw + (0 if inner == 1 else SWB), -1.1, (150, 148, 142))
         for i in range(2, n - 1, 10):
-            if H[i] > 1.2:
-                m.box(P[i][0], 0.0, P[i][1], 1.8, H[i] - 1.1, 2 * (hw + SWB) - 1.0, (176, 174, 168), math.atan2(F[i][0], -F[i][1]) + math.pi / 2)
+            if H[i] - G[i] > 3.5:
+                m.box(P[i][0], G[i] - 0.3, P[i][1], 1.8, H[i] - 1.1 - G[i] + 0.3, 2 * (hw + SWB) - 1.0, (176, 174, 168), math.atan2(F[i][0], -F[i][1]) + math.pi / 2)
         for i in range(3, n - 2, 12):
             for sg in (-1, 1):
                 x, z = P[i][0] + F[i][0] * sg * (hw + SWB - 0.9), P[i][1] + F[i][1] * sg * (hw + SWB - 0.9)
@@ -211,6 +211,46 @@ def bridge_lanes(edges):
         own = max(per_dir(e) for e in G)
         out[road] = max(cand) if cand else own
     return out
+
+
+def _out_dir(ln, start):
+    c = list(ln.coords)
+    a, b = (c[0], c[min(len(c) - 1, 2)]) if start else (c[-1], c[max(0, len(c) - 3)])
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l = math.hypot(dx, dy) or 1.0
+    return dx / l, dy / l
+
+
+def ribbon(d, inc, T=36.0):
+    """Carriageway ribbon whose half-width eases (smoothstep) from its own to the width of the wider road it continues
+    or splits from at each end node, so lane counts change by tapering, never by a step."""
+    ln, hw, e = d["ln"], d["hw"], d["e"]
+    ends = [hw, hw]
+    for k, (node, start) in enumerate(((e["a"], True), (e["b"], False))):
+        ux, uy = _out_dir(ln, start)
+        for o in inc.get(node, ()):
+            if o is d or o["hw"] <= ends[k]:
+                continue
+            ox, oy = _out_dir(o["ln"], o["e"]["a"] == node)
+            if abs(ux * ox + uy * oy) > 0.8:
+                ends[k] = o["hw"]
+    if ends[0] == hw and ends[1] == hw or ln.length < 6:
+        return ln.buffer(hw, cap_style=1, join_style=1, resolution=16)
+    L = ln.length
+    Tt = min(T, L * 0.5)
+    n = max(2, int(L / 1.5))
+    discs = []
+    for i in range(n + 1):
+        s_ = L * i / n
+        r = hw
+        for end, dist in ((0, s_), (1, L - s_)):
+            if ends[end] > hw and dist < Tt:
+                t = dist / Tt
+                t = t * t * (3 - 2 * t)
+                r = max(r, hw + (ends[end] - hw) * (1 - t))
+        pt = ln.interpolate(s_)
+        discs.append(pt.buffer(r, resolution=8))
+    return unary_union([unary_union([discs[i], discs[i + 1]]).convex_hull for i in range(n)])
 
 
 def build(edges, cx, cy, buildings=(), decks=None, T=None):
@@ -244,7 +284,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
         inc.setdefault(d["e"]["a"], []).append(d)
         inc.setdefault(d["e"]["b"], []).append(d)
     nodes = {n: L for n, L in inc.items() if len(L) >= 3}
-    ribs = [d["ln"].buffer(d["hw"], cap_style=1, join_style=1, resolution=16) for d in E]
+    ribs = [ribbon(d, inc) for d in E]
     U = unary_union(ribs)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     gap = C.difference(U)
@@ -274,7 +314,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
         tri_poly(m, p, KERB, KTOP)
         ins = p.buffer(-0.35)
         for q in polys_of(ins):
-            tri_poly(m, q, KERB + 0.04, GRASS)
+            tri_poly(m, q, KERB + 0.10, GRASS)
         walls_of(m, p, 0.0, KERB, KFACE)
     if W and B:
         corr = unary_union([d["ln"].buffer(d["hw"] + 2.6) for d in B])
@@ -283,9 +323,9 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
         foot = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] != "cycleway"])
         cyc = unary_union([w["ln"].buffer(w["hw"], cap_style=1, resolution=6) for w in W if w["e"]["cls"] == "cycleway"])
         cut = asph.union(isl)
-        stroke(m, foot.difference(cut).intersection(clip), KERB + 0.01, (214, 210, 202))
+        stroke(m, foot.difference(cut).intersection(clip), KERB + 0.05, (214, 210, 202))
         cyc = cyc.difference(cut).intersection(clip)
-        stroke(m, cyc, KERB + 0.02, (176, 92, 84))
+        stroke(m, cyc, KERB + 0.09, (176, 92, 84))
         # footpaths and cycleways cross carriageways only as zebra crossings
         bars = []
         road_only = asph.difference(isl)
@@ -296,6 +336,10 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
                     continue
                 c0, c1 = g.coords[0], g.coords[-1]
                 L = g.length
+                if w["ln"].project(Point(c0)) < 2.0 or w["ln"].project(Point(c1)) > w["ln"].length - 2.0 or w["ln"].project(Point(c0)) > w["ln"].project(Point(c1)) and w["ln"].project(Point(c1)) < 2.0:
+                    continue                                    # path starts or ends at the road: no crossing
+                if g.intersection(road_only.boundary.buffer(1.8)).length > 0.35 * L:
+                    continue                                    # runs along the kerb, not across
                 ux, uy = (c1[0] - c0[0]) / L, (c1[1] - c0[1]) / L
                 nx, ny = -uy, ux
                 k = 0.6
@@ -321,8 +365,8 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None):
                 for off in (-0.55, 0.55):                     # bicycle glyph: two wheels and a frame
                     wx, wy = p.x + tx * off, p.y + ty * off
                     ring = Point(wx, wy).buffer(0.32, resolution=6).difference(Point(wx, wy).buffer(0.24, resolution=6))
-                    stroke(m, ring, KERB + 0.04, WHITE)
-                stroke(m, LineString([(p.x - tx * 0.55, p.y - ty * 0.55), (p.x, p.y + 0.0), (p.x + tx * 0.55, p.y + ty * 0.55)]).buffer(0.05), KERB + 0.04, WHITE)
+                    stroke(m, ring, KERB + 0.14, WHITE)
+                stroke(m, LineString([(p.x - tx * 0.55, p.y - ty * 0.55), (p.x, p.y + 0.0), (p.x + tx * 0.55, p.y + ty * 0.55)]).buffer(0.05), KERB + 0.14, WHITE)
                 s_ += 25.0
     if B and decks:
         base = min(float(decks[d["e"]["road"]].at(*d["ln"].coords[0][:2] if False else (d["ln"].coords[0][0] + cx, d["ln"].coords[0][1] + cy))[0]) for d in B if d["e"]["road"] in decks) if any(d["e"]["road"] in decks for d in B) else 0.0
