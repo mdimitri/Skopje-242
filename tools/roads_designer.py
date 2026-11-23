@@ -66,7 +66,7 @@ def _tile_job(job):
 
 def tiles(edges):
     """-> [((tile centre x, y), [edge indices within the tile + margin])] for every tile holding a ground road."""
-    ids = [i for i, e in enumerate(edges) if e["drive"] and not e["bridge"] and len(e["pts"]) >= 2]
+    ids = [i for i, e in enumerate(edges) if e["drive"] and len(e["pts"]) >= 2]        # decks too: they shape what meets them
     lo = np.array([[min(p[0] for p in edges[i]["pts"]), min(p[1] for p in edges[i]["pts"])] for i in ids])
     hi = np.array([[max(p[0] for p in edges[i]["pts"]), max(p[1] for p in edges[i]["pts"])] for i in ids])
     ids = np.array(ids)

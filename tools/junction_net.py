@@ -32,16 +32,12 @@ MARGIN = 60.0                                        # edges this far beyond the
 
 
 def per_dir(e):
-    cls = e["cls"].replace("_link", "")
-    cap = CAP.get(cls, 1)
-    if e["cls"].endswith("_link"):
-        cap = 1
+    """Lanes per direction (the larger direction of a two-way road), from the graph's lane standard
+    (tools/roadclean.standardise)."""
+    from roadwidth import lane_count
     if e["ow"]:
-        n = e["lanes"] or max(1, round(e["w"] / 3.5))
-        return max(1, min(n, cap if cls != "tertiary" else 2))
-    dl = e.get("directional_lanes")
-    n = max(dl) if dl else max(1, (e["lanes"] or round(e["w"] / 3.5)) // 2)
-    return max(1, min(n, 2 if cls == "tertiary" else cap))
+        return lane_count(e)
+    return max(lane_count(e, 1), lane_count(e, -1))
 
 
 def half_w(e):
@@ -281,7 +277,8 @@ def context(edges):
         if e["drive"] and not e["bridge"]:
             gdeg[e["a"]] = gdeg.get(e["a"], 0) + 1
             gdeg[e["b"]] = gdeg.get(e["b"], 0) + 1
-    return {"BL": bridge_lanes(edges), "gn": set(gdeg), "gdeg": gdeg}
+    bn = {n for e in edges if e["drive"] and e["bridge"] for n in (e["a"], e["b"])}
+    return {"BL": bridge_lanes(edges), "gn": set(gdeg), "gdeg": gdeg, "bn": bn}
 
 
 def regularise(E, join=35.0, straight=40.0):
@@ -590,7 +587,12 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
     gap = C.difference(U)
     isl = gap.buffer(-1.3, resolution=6).buffer(1.3, resolution=6).intersection(gap)
-    isl = unary_union([p for p in polys_of(isl) if p.area > 6.0])
+    keep_isl = [p for p in polys_of(isl) if p.area > 6.0]
+    if B:                                              # leftovers between a deck foot and the ground road are paved, not grass
+        ends = [Point(d["ln"].coords[k]).buffer(d["hw"] + 8.0) for d in B for k, nd in ((0, d["e"]["a"]), (-1, d["e"]["b"])) if nd in gn]
+        foot = unary_union(ends) if ends else Polygon()
+        keep_isl = [p for p in keep_isl if not (p.area < 250.0 and p.intersects(foot))]
+    isl = unary_union(keep_isl)
     asph = C.difference(isl)
     pave = asph.buffer(SW, resolution=10).difference(asph).difference(isl)
     clip = Polygon([(-RANGE, -RANGE), (RANGE, -RANGE), (RANGE, RANGE), (-RANGE, RANGE)])
@@ -682,6 +684,8 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
     road_only = asph.difference(isl)
     arms_all = []
     for n, L in nodes.items():
+        if n in ctx.get("bn", ()):                     # ramps meeting at a deck end: a merge, never a crossing
+            continue
         arms_all += _arms_at(n, L, road_only)
     # two junctions close together share the road between them: the bigger junction keeps its arm markings there,
     # the smaller one's arm is left plain (no doubled zebras / stop lines on one short link)

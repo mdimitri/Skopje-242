@@ -330,7 +330,40 @@ def straighten_arms(edges):
     return n
 
 
+CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1,
+       "living_street": 1, "service": 1}
+LW = 3.25
+
+
+def standardise(edges):
+    """One lane standard for the whole network: lanes per direction capped by class (links one lane, tertiary two),
+    every lane LW wide, so ground roads, ramps and bridge decks all share the same lane width and join seamlessly.
+    Only the count shrinks where OSM over-tags; OSM per-direction splits are kept when within the cap.  -> edges changed."""
+    n = 0
+    for e in edges:
+        if not e["drive"]:
+            continue
+        cls = e["cls"].replace("_link", "")
+        cap = 1 if e["cls"].endswith("_link") and cls not in ("motorway", "trunk") else CAP.get(cls, 1)
+        if e["ow"]:
+            per = max(1, min(lane_count(e), cap))
+            want = (per, None, per * LW)
+        else:
+            dl = e.get("directional_lanes")
+            if dl:
+                f, b = max(1, min(dl[0], cap)), max(1, min(dl[1], cap))
+                want = (f + b, (f, b), (f + b) * LW)
+            else:
+                per = max(1, min(lane_count(e), cap))
+                want = (2 * per, None, 2 * per * LW)
+        if (e.get("lanes"), e.get("directional_lanes"), e["w"]) != want:
+            e["lanes"], e["directional_lanes"], e["w"] = want
+            n += 1
+    return n
+
+
 def repair(edges):
+    print(f"[build] lane standard applied to {standardise(edges)} edges")
     cut = dual_carriageways(edges)
     bridge_lanes(edges)
     merged = merge_junctions(edges)
