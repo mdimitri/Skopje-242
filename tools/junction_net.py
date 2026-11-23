@@ -114,6 +114,10 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             P.append((p.x, p.y))
             F.append((-ty / l, tx / l))
             H.append(max(0.0, float(deck.at(p.x + cx, p.y + cy)[0]) - base))
+        Ha = np.array(H)
+        k = 6
+        Hp = np.concatenate([np.full(k, Ha[0]), Ha, np.full(k, Ha[-1])])
+        H = list(np.convolve(Hp, np.ones(2 * k + 1) / (2 * k + 1), "valid"))
         SWB = 2.4
         inner = 0  # side (+1/-1 along F) facing a twin carriageway: no pavement there
         if e["ow"]:
@@ -161,8 +165,35 @@ def bridge_mesh(m, B, decks, cx, cy, base):
                 m.cyl(x, H[i] + KERB, H[i] + 8.0, z, 0.1, jd.POLE, 6)
 
 
+def bridge_lanes(edges):
+    """Lanes per direction for every bridge edge, taken from the road that continues onto it at either end
+    (a bridge never has fewer or more lanes than its approaches), shared by the whole bridge."""
+    at = {}
+    for e in edges:
+        if e["drive"] and not e["bridge"]:
+            at.setdefault(e["a"], []).append(e)
+            at.setdefault(e["b"], []).append(e)
+    groups = {}
+    for e in edges:
+        if e["drive"] and e["bridge"]:
+            groups.setdefault(e["road"], []).append(e)
+    out = {}
+    for road, G in groups.items():
+        nodes = {n for e in G for n in (e["a"], e["b"])}
+        cnt = {}
+        for e in G:
+            cnt[e["a"]] = cnt.get(e["a"], 0) + 1
+            cnt[e["b"]] = cnt.get(e["b"], 0) + 1
+        ends = [n for n in nodes if cnt[n] == 1]
+        cand = [per_dir(a) for n in ends for a in at.get(n, []) if a["ow"] == G[0]["ow"] and a["cls"] == G[0]["cls"]]
+        own = max(per_dir(e) for e in G)
+        out[road] = max(cand) if cand else own
+    return out
+
+
 def build(edges, cx, cy, buildings=(), decks=None):
     E, B, W = [], [], []
+    BL = bridge_lanes(edges)
     for e in edges:
         if not e["drive"] and not e["bridge"] and e["cls"] in WALK_W and len(e["pts"]) >= 2:
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
@@ -172,7 +203,8 @@ def build(edges, cx, cy, buildings=(), decks=None):
         if e["drive"] and e["bridge"]:
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
             if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + 30:
-                B.append({"e": e, "ln": LineString(P), "hw": half_w(e), "per": per_dir(e)})
+                nb = BL.get(e["road"], per_dir(e))
+                B.append({"e": e, "ln": LineString(P), "hw": nb * LW / 2 if e["ow"] else nb * LW, "per": nb})
             continue
         if not e["drive"]:
             continue
