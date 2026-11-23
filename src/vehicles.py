@@ -249,7 +249,7 @@ MK_PED = {
     "Nevesta": TXT("vehicles.0118"), "Dostavuvach": TXT("vehicles.0119"), "Velosipedist": TXT("vehicles.0120"), "Dedo na Kolo": TXT("vehicles.0121"), "Moped Tomos": TXT("vehicles.0122"),
     "Glovo Skuter": TXT("vehicles.0123"), "Trotinet Dete": TXT("vehicles.0124"), "E-Trotinet Hipster": TXT("vehicles.0125"), "Skejter": TXT("vehicles.0126"),
     "Rolerash": TXT("vehicles.0127"), "Kocija": TXT("vehicles.0128"), "Jogger": TXT("vehicles.0129"),
-    "Vojnik": "Војник",
+    "Vojnik": "Војник", "Paramedik": "Болничар",
 }
 MK_LINES = {
     "Chichko": [TXT("vehicles.0130"), TXT("vehicles.0131")],
@@ -290,6 +290,7 @@ MK_LINES = {
     "Skejter": [TXT("vehicles.0234"), TXT("vehicles.0235"), TXT("vehicles.0236")],
     "Rolerash": [TXT("vehicles.0237"), TXT("vehicles.0238"), TXT("vehicles.0239")],
     "Kocija": [TXT("vehicles.0240"), TXT("vehicles.0241"), TXT("vehicles.0242")],
+    "Paramedik": ["Дишете, ќе бидете добро!", "Пациентот е стабилен.", "Внимателно со носилката!", "Останете со нас, не затворајте очи!"],
     "Jogger": [TXT("vehicles.0243"), TXT("vehicles.0244"), TXT("vehicles.0245")],
 }
 
@@ -338,6 +339,7 @@ _P = [
     ("Rolerash", 3.6, 1.0, ["Ako gi imav kocnicite...", "Ae pazi se, nemam stop!", "Retro e kral."]),
     ("Kocija", 1.8, 0.6, ["Hajde, Sharo, ajde!", "Konj ne troshi gorivo.", "Sveze zelka, sveze!"]),
     ("Jogger", 3.2, 1.2, ["Petti krug, petti!", "Ne zboruvaj, trcam.", "Ovoj vozduh e ... zagaden."]),
+    ("Paramedik", 1.0, 0, []),                                    # ambulance crew (services.py), never a street walker
     ("Vojnik", 1.0, 0, []),                                       # barracks guard (compounds.py), never a street walker
 ]
 PED_IDS = [p[0] for p in _P]                                      # internal keys (models, fight table)
@@ -365,7 +367,8 @@ BTR = IDS.index("BTR-80")
 ARMY_CARS = [IDS.index(n) for n in ("Voen Hamer", "Voena Niva", "Voen Kamion")]
 FUEL_MULT = {BTR: 6.0}                                          # the APC's tanks last this many times longer
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility
-WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS and PED_IDS[i] != "Vojnik"]
+WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS and PED_IDS[i] not in ("Vojnik", "Paramedik")]
+PARAMEDIC = PED_IDS.index("Paramedik")
 SOLDIER = PED_IDS.index("Vojnik")
 COP = PED_IDS.index("Pandur")
 
@@ -408,7 +411,7 @@ _FIGHT_NAME = {"Chichko": (45, 0.45, 7), "Baba": (28, 0.2, 5), "Biznismen": (40,
                "Gastarbajter": (52, 0.6, 8), "Majka so Kolichka": (36, 0.2, 5), "Partiski Aktivist": (42, 0.4, 6), "Advokat": (40, 0.15, 5),
                "Teretana Brat": (100, 0.95, 14), "Kiosk Chika": (38, 0.5, 6), "Ribar": (42, 0.4, 6), "Golabar": (26, 0.1, 4),
                "Komunalec": (46, 0.35, 6), "Nevesta": (32, 0.3, 5), "Dostavuvach": (40, 0.2, 5), "Jogger": (40, 0.2, 5),
-               "Vojnik": (260, 1.0, 16)}
+               "Vojnik": (260, 1.0, 16), "Paramedik": (45, 0.1, 4)}
 FIGHT = [_FIGHT_NAME.get(n, (30, 0.0, 3)) for n in PED_IDS]       # riders and the player fall back to the default
 KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (TXT("vehicles.0248"), 130, 50), (TXT("vehicles.0249"), 90, 35)]
 

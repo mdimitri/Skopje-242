@@ -2540,7 +2540,12 @@ def _ped_special(arch, tone, frame, skin, tier):
     held_l = []                       # ... and with the left
     extra = []                        # static boxes (x, y, z, sx, sy, sz, col) in body space
     P3 = lambda a, b, c: [a, b, c][tone % 3]
-    if name == "Vojnik":                                                   # barracks guard: camo uniform, helmet, vest, rifle slung on the back
+    if name == "Paramedik":                                                # ambulance crew: orange hi-vis jacket, white reflective bands, medical bag
+        D.update(torso=P3((255, 112, 24), (250, 120, 30), (255, 100, 20)), legs=(40, 52, 80), shoe=(26, 26, 28))
+        extra += [(0.0, 0.8, 0, 0.3, 0.06, 0.54, (240, 240, 236)), (0.0, 1.0, 0, 0.3, 0.05, 0.54, (240, 240, 236)),
+                  (0.16, 1.1, 0, 0.02, 0.1, 0.1, (200, 30, 40))]
+        held = [(0.05, 0.1, 0.05, (230, 230, 226), 0.65, 0.0)]
+    elif name == "Vojnik":                                                   # barracks guard: camo uniform, helmet, vest, rifle slung on the back
         D.update(torso=P3((84, 96, 58), (78, 90, 54), (90, 100, 62)), legs=(76, 86, 54), shoe=(22, 22, 22)); hat = ("helmet", (62, 72, 44))
         extra += [(0.0, 0.95, 0, 0.32, 0.4, 0.54, (58, 66, 40)), (0.17, 0.8, -0.12, 0.06, 0.16, 0.12, (44, 52, 32)),
                   (0.17, 0.8, 0.12, 0.06, 0.16, 0.12, (44, 52, 32)), (-0.2, 0.55, 0.12, 0.07, 0.85, 0.07, (24, 24, 26)),

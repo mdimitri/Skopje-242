@@ -436,8 +436,8 @@ class Services:
                 j.work_t = 0.0
                 b.ctl = (0.0, 0.0, True)
                 if j.kind == "amb":
-                    self._crew(j, 2, 8, 0)
-                    sim.ev("shout", text=self.rng.choice((TXT("services.0001"), TXT("services.0002"), TXT("services.0003"))), x=b.x, y=b.y, who=TXT("services.0004"))
+                    self._crew(j, 2, vehicles.PARAMEDIC, 0)
+                    sim.ev("shout", text=self.rng.choice((TXT("services.0001"), TXT("services.0002"), TXT("services.0003"), *vehicles.PED_LINES[vehicles.PARAMEDIC])), x=b.x, y=b.y, who=TXT("services.0004"))
                 else:
                     self._crew(j, 3, 6, 0)
                     sim.ev("shout", text=self.rng.choice((TXT("services.0005"), TXT("services.0006"), TXT("services.0007"))), x=b.x, y=b.y, who=TXT("services.0008"))
