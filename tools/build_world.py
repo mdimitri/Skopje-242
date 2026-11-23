@@ -2516,6 +2516,9 @@ def main():
                 start = i
     import lanefix
     print(f"[build] lane steps levelled: {lanefix.repair(edges)} edges")
+    import roadclean
+    cut_, harm_ = roadclean.repair(edges)
+    print(f"[build] road clean-up: {cut_} carriageways narrowed to leave a median, {harm_} short segments matched to their neighbours")
     import roads3d
     roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
     frac(0.95, "rounded corners")

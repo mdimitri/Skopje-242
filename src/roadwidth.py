@@ -45,14 +45,19 @@ def _parse_turns(tag, count):
     return ()
 
 
+def _ease(t):
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
 def half_width(edge, distance):
     base = edge["w"] / 2
     start, end = edge.get("taper", (None, None))
     width = base
     if start:
         length, target = start
-        width += (target - base) * max(0.0, 1.0 - max(0.0, distance) / length)
+        width += (target - base) * _ease(1.0 - max(0.0, distance) / length)
     if end:
         length, target = end
-        width += (target - base) * max(0.0, 1.0 - max(0.0, edge["len"] - distance) / length)
+        width += (target - base) * _ease(1.0 - max(0.0, edge["len"] - distance) / length)
     return width
