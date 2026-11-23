@@ -96,7 +96,7 @@ def dashed_segments(line, dash=3.0, gap=6.0, start=1.0):
 WALK_W = {"footway": 1.2, "path": 0.9, "pedestrian": 2.0, "steps": 1.0, "cycleway": 1.3, "track": 1.0}
 
 
-def bridge_mesh(m, B, decks, cx, cy, base):
+def bridge_mesh(m, B, decks, cx, cy, base, gfn=None):
     """Elevated carriageways at their real deck heights: asphalt, 2.4 m pavements with kerbs, parapets, soffit and piers."""
     for d in B:
         e, ln, hw = d["e"], d["ln"], d["hw"]
@@ -104,7 +104,7 @@ def bridge_mesh(m, B, decks, cx, cy, base):
         if deck is None or ln.length < 4:
             continue
         n = max(2, int(ln.length / 2.0))
-        P, H, F = [], [], []
+        P, H, F, F2 = [], [], [], []
         for i in range(n + 1):
             p = ln.interpolate(ln.length * i / n)
             q = ln.interpolate(min(ln.length, ln.length * i / n + 1.0))
@@ -113,19 +113,22 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             l = math.hypot(tx, ty) or 1.0
             P.append((p.x, p.y))
             F.append((-ty / l, tx / l))
-            H.append(max(0.0, float(deck.at(p.x + cx, p.y + cy)[0]) - base))
+            H.append(float(deck.at(p.x + cx, p.y + cy)[0]) - base)
+            F2.append(gfn(p.x, p.y) if gfn else 0.0)
         Ha = np.array(H)
         k = 6
         Hp = np.concatenate([np.full(k, Ha[0]), Ha, np.full(k, Ha[-1])])
         H = list(np.convolve(Hp, np.ones(2 * k + 1) / (2 * k + 1), "valid"))
         # ramp down to the ground over the last 30 m wherever the deck ends on a ground road
         Ha = np.array(H)
+        G = np.array(F2)
+        Ha = np.maximum(Ha, G)
         s_ = np.linspace(0.0, ln.length, n + 1)
         for end, node in ((0, e["a"]), (1, e["b"])):
             if node in d.get("gnodes", ()):
                 t = np.clip((s_ if end == 0 else ln.length - s_) / 30.0, 0, 1)
                 t = t * t * (3 - 2 * t)
-                Ha = Ha * t
+                Ha = G + (Ha - G) * t
         H = list(Ha)
         SWB = 2.4
         inner = 0  # side (+1/-1 along F) facing a twin carriageway: no pavement there
@@ -161,15 +164,15 @@ def bridge_mesh(m, B, decks, cx, cy, base):
             vwall(sg * hw, 0.0, KERB, KFACE)
             A = edge(sg * (hw + SWB))
             for i in range(n):
-                t0, t1 = min(1.05, KERB + 0.3 * H[i]), min(1.05, KERB + 0.3 * H[i + 1])
+                t0, t1 = min(1.05, KERB + 0.3 * (H[i] - G[i])), min(1.05, KERB + 0.3 * (H[i + 1] - G[i + 1]))
                 m.quad((A[i][0], H[i] - 1.1, A[i][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i + 1][0], H[i + 1] + t1, A[i + 1][1]), (A[i][0], H[i] + t0, A[i][1]), (196, 194, 188))
             for i in range(n):
-                if H[i] < 6.0 and H[i + 1] < 6.0:
+                if H[i] - G[i] < 6.0 and H[i + 1] - G[i + 1] < 6.0:
                     A = edge(sg * (hw + SWB))
-                    m.quad((A[i][0], -0.3, A[i][1]), (A[i + 1][0], -0.3, A[i + 1][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i][0], H[i] - 1.1, A[i][1]), (178, 176, 170))
+                    m.quad((A[i][0], G[i] - 0.3, A[i][1]), (A[i + 1][0], G[i + 1] - 0.3, A[i + 1][1]), (A[i + 1][0], H[i + 1] - 1.1, A[i + 1][1]), (A[i][0], H[i] - 1.1, A[i][1]), (178, 176, 170))
             A0, A1 = edge(sg * (hw + SWB - 0.25)), edge(sg * (hw + SWB))
             for i in range(n):
-                t0, t1 = min(1.05, KERB + 0.3 * H[i]), min(1.05, KERB + 0.3 * H[i + 1])
+                t0, t1 = min(1.05, KERB + 0.3 * (H[i] - G[i])), min(1.05, KERB + 0.3 * (H[i + 1] - G[i + 1]))
                 m.quad((A0[i][0], H[i] + t0, A0[i][1]), (A0[i + 1][0], H[i + 1] + t1, A0[i + 1][1]), (A1[i + 1][0], H[i + 1] + t1, A1[i + 1][1]), (A1[i][0], H[i] + t0, A1[i][1]), (214, 212, 206))
             quadstrip(sg * (hw - 0.45), sg * (hw - 0.31), 0.05, WHITE)
         if not e["ow"]:
@@ -210,7 +213,7 @@ def bridge_lanes(edges):
     return out
 
 
-def build(edges, cx, cy, buildings=(), decks=None):
+def build(edges, cx, cy, buildings=(), decks=None, T=None):
     E, B, W = [], [], []
     BL = bridge_lanes(edges)
     gn = {n for e in edges if e["drive"] and not e["bridge"] for n in (e["a"], e["b"])}
@@ -252,6 +255,9 @@ def build(edges, cx, cy, buildings=(), decks=None):
     clip = Polygon([(-RANGE, -RANGE), (RANGE, -RANGE), (RANGE, RANGE), (-RANGE, RANGE)])
     asph, pave, isl = asph.intersection(clip), pave.intersection(clip), isl.intersection(clip)
     m = Mesh()
+    tbase = float(T.h(cx, cy)) if T is not None else 0.0
+    gfn = (lambda x, z: float(T.h(x + cx, z + cy)) - tbase) if T is not None else None
+    m.gfn = gfn
     for p in polys_of(asph):
         tri_poly(m, p, 0.0, ASPH)
     for p in polys_of(pave):
@@ -320,7 +326,11 @@ def build(edges, cx, cy, buildings=(), decks=None):
                 s_ += 25.0
     if B and decks:
         base = min(float(decks[d["e"]["road"]].at(*d["ln"].coords[0][:2] if False else (d["ln"].coords[0][0] + cx, d["ln"].coords[0][1] + cy))[0]) for d in B if d["e"]["road"] in decks) if any(d["e"]["road"] in decks for d in B) else 0.0
-        bridge_mesh(m, B, decks, cx, cy, base)
+        if T is not None:
+            base = tbase
+        m.gfn = None
+        bridge_mesh(m, B, decks, cx, cy, base, gfn)
+        m.gfn = gfn
     # paint zone: asphalt without junction cores and islands
     core = unary_union([Point(0, 0).buffer(0)] + [Point(L[0]["ln"].coords[0] if L[0]["e"]["a"] == n else L[0]["ln"].coords[-1]).buffer(9.0 + max(d["hw"] for d in L)) for n, L in nodes.items()])
     zone = asph.difference(core).difference(isl.buffer(0.3))
@@ -466,10 +476,14 @@ def build(edges, cx, cy, buildings=(), decks=None):
         except Exception:  # noqa: BLE001
             continue
         top = min(float(h), 30.0)
+        g0 = gfn(poly.centroid.x, poly.centroid.y) if gfn else 0.0
+        top += g0
+        m.gfn = None
         for i in range(len(pts)):
             (ax, ay), (bx, by) = pts[i], pts[(i + 1) % len(pts)]
-            m.quad((ax, 0.0, ay), (bx, 0.0, by), (bx, top, by), (ax, top, ay), (200, 194, 184))
+            m.quad((ax, g0 - 2.0, ay), (bx, g0 - 2.0, by), (bx, top, by), (ax, top, ay), (200, 194, 184))
         tri_poly(m, poly, top, (170, 164, 156))
+        m.gfn = gfn
     m.quad((-300, -0.3, -300), (300, -0.3, -300), (300, -0.3, 300), (-300, -0.3, 300), jd.GROUND)
     return m
 
@@ -481,7 +495,7 @@ def main():
     import junction_scenes as js
     for i, a in enumerate(sys.argv[3:]):
         cx, cy = (float(v) for v in a.split(","))
-        m = build(dump["edges"], cx, cy, dump.get("buildings", ()), dump.get("decks"))
+        m = build(dump["edges"], cx, cy, dump.get("buildings", ()), dump.get("decks"), dump.get("T"))
         js.render(m, out, {"top": ((0, 150, -1), (0, 0, 0)), "aerial": ((60, 85, -85), (0, 0, 0))}, f"net{i}")
         print("done", i, cx, cy, len(m.P) // 3, "tris")
 
