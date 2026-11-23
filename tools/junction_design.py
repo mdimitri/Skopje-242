@@ -213,7 +213,8 @@ def signal_head(m, x, z, yaw, red):
         m.box(x + fx * 0.17, 4.2 - k * 0.3 - 0.0, z + fz * 0.17, 0.22, 0.2, 0.06, c, yaw)
 
 
-def arm_details(a, m):
+def arm_details(a, m, signals=True, yield_=False, island=None, trees=True, Ln=None, lamps=True):
+    Ln = Ln or L
     out_e, out_o = a.s_out_in(), a.s_out_out()
     sl = 6.0                                   # stop line distance from the arm start
     y = 0.05
@@ -224,23 +225,29 @@ def arm_details(a, m):
         s += 1.0
     # stop line over the inbound lanes
     top = -a.med / 2 if a.med else 0
-    m.quad(*[(q[0], y, q[1]) for q in (a.at(sl - 0.25, out_e + 0.2), a.at(sl + 0.25, out_e + 0.2), a.at(sl + 0.25, a.s_med_in(0) if a.med else -0.1), a.at(sl - 0.25, a.s_med_in(0) if a.med else -0.1))], WHITE)
+    if yield_:
+        sx_ = out_e + 0.4
+        while sx_ < (a.s_med_in(0) if a.med else -0.1) - 0.5:
+            m.tri(*[(q[0], y, q[1]) for q in (a.at(sl, sx_), a.at(sl, sx_ + 0.6), a.at(sl + 0.8, sx_ + 0.3))], WHITE)
+            sx_ += 0.9
+    else:
+      m.quad(*[(q[0], y, q[1]) for q in (a.at(sl - 0.25, out_e + 0.2), a.at(sl + 0.25, out_e + 0.2), a.at(sl + 0.25, a.s_med_in(0) if a.med else -0.1), a.at(sl - 0.25, a.s_med_in(0) if a.med else -0.1))], WHITE)
     # edge lines
-    line(m, a, out_e + 0.35, out_e + 0.35, sl + 0.6, L, 0.15)
-    line(m, a, out_o - 0.35, out_o - 0.35, sl + 0.6, L, 0.15)
+    line(m, a, out_e + 0.35, out_e + 0.35, sl + 0.6, Ln, 0.15)
+    line(m, a, out_o - 0.35, out_o - 0.35, sl + 0.6, Ln, 0.15)
     # lane dividers
     for k in range(1, a.thru):
         s_ = out_e + LW * k
         line(m, a, s_, s_, sl + 0.6, 35.0, 0.15)
-        dashed(m, a, s_, 35.0, L)
+        dashed(m, a, s_, 35.0, Ln)
     if a.left_pocket:
         s_ = out_e + a.thru * LW
         line(m, a, s_, s_, sl + 0.6, 40.0, 0.15)
         dashed(m, a, s_, 40.0, 62.0, dash=2.0, gap=3.0)
     for k in range(1, a.nout):
-        dashed(m, a, a.med / 2 + LW * k, 12.0, L)
+        dashed(m, a, a.med / 2 + LW * k, 12.0, Ln)
     if not a.med:
-        line(m, a, 0.0, 0.0, sl + 0.6, L, 0.15)
+        line(m, a, 0.0, 0.0, sl + 0.6, Ln, 0.15)
     # arrows
     cs = lane_centres(a, 0.0)
     for d in (10.0, 26.0):
@@ -251,8 +258,9 @@ def arm_details(a, m):
             arrow(m, a, d, s_, kind)
     # median island with rounded nose, grass and a kerb
     if a.med:
-        d0 = 8.0
-        ds = [d0 + 1.2 * i for i in range(int((L - d0) / 1.2) + 1)]
+        d0 = island[0] if island else 8.0
+        d1 = island[1] if island else Ln
+        ds = [d0 + 1.2 * i for i in range(int((d1 - d0) / 1.2) + 1)]
         ends = []
         # rounded nose first
         nose_w = (a.med / 2 - a.s_med_in(d0)) / 2
@@ -271,21 +279,27 @@ def arm_details(a, m):
             c0 = a.at(d0, cx_s)
             m.tri((c0[0], KERB, c0[1]), (arc[i][0], KERB, arc[i][1]), (arc[i + 1][0], KERB, arc[i + 1][1]), KTOP)
         m.wall(arc, 0.0, KERB, KFACE)
-        for d in range(16, int(L), 14):                 # median trees
+        if island:                                      # tail nose
+            arc2 = [a.at(ds[-1] + nose_w * math.sin(math.pi * k / 16), cx_s - nose_w * math.cos(math.pi * k / 16)) for k in range(17)]
+            c1 = a.at(ds[-1], cx_s)
+            for i in range(16):
+                m.tri((c1[0], KERB, c1[1]), (arc2[i][0], KERB, arc2[i][1]), (arc2[i + 1][0], KERB, arc2[i + 1][1]), KTOP)
+            m.wall(arc2, 0.0, KERB, KFACE)
+        for d in (range(16, int(Ln), 14) if trees else ()):                 # median trees
             x, z = a.at(d, (a.s_med_in(d) + a.med / 2) / 2)
             m.cyl(x, KERB, 2.6, z, 0.12, (96, 76, 58), 6)
             m.octa(x, 2.4, z, 1.7, 2.2, (66, 120, 66))
     # street furniture on the outer pavement
     for side, s_edge in ((-1, out_e), (1, out_o)):
         sp = s_edge + side * (SW - 0.7)
-        for d in range(14, int(L), 30):                 # lamps
+        for d in (range(14, int(Ln), 30) if lamps else ()):                 # lamps
             x, z = a.at(d, sp)
             m.cyl(x, KERB, 8.0, z, 0.1, POLE, 6)
             ax_, az_ = -a.p[0] * side * -1, -a.p[1] * side * -1
             tx, tz = a.at(d, sp - side * 1.8)
             m.box((x + tx) / 2, 7.9, (z + tz) / 2, 1.9, 0.1, 0.1, POLE, math.atan2(tz - z, tx - x))
             m.box(tx, 7.8, tz, 0.5, 0.15, 0.25, (240, 232, 190), math.atan2(tz - z, tx - x))
-        for d in range(22, int(L), 15):                 # pavement trees
+        for d in range(22, int(Ln), 15):                 # pavement trees
             if (d // 15) % 2:
                 continue
             x, z = a.at(d, s_edge + side * (SW + 1.2))
@@ -302,6 +316,8 @@ def arm_details(a, m):
             m.cyl(x, 2.46, 2.47, z, 0.24, (250, 250, 250), 12)
     # signals: pole behind the stop line on the inbound kerb, mast arm on boulevards
     red = a.name in "NS"
+    if not signals:
+        return
     x, z = a.at(sl + 2.0, out_e - SW + 0.9)
     m.cyl(x, KERB, 4.2, z, 0.1, POLE, 8)
     yaw = math.atan2(a.u[1], a.u[0]) + math.pi / 2
