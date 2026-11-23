@@ -251,6 +251,8 @@ def arm_details(a, m, signals=True, yield_=False, island=None, trees=True, Ln=No
     # arrows
     cs = lane_centres(a, 0.0)
     for d in (10.0, 26.0):
+        if d > Ln - 3.0:
+            continue
         for i, s_ in enumerate(cs):
             kind = "left" if (a.left_pocket and i == len(cs) - 1) else ("right" if i == 0 and len(cs) > 1 and d == 10.0 else "thru")
             if a.thru == 1 and not a.left_pocket:

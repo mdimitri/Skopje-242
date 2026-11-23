@@ -115,7 +115,8 @@ def roundabout(m, Ln_by_arm=None, ro=20.6, ri=12.0, f=10.0):
         m.quad(*[((r + dr) * math.cos(t), 0.05, (r + dr) * math.sin(t)) for t, dr in ((a0, -w), (a1, -w), (a1, w), (a0, w))], WHITE)
     m.quad((-200, -0.3, -200), (200, -0.3, -200), (200, -0.3, 200), (-200, -0.3, 200), GROUND) if not getattr(m, "no_ground", False) else None
     for a in arms:
-        arm_details(a, m, signals=False, yield_=True, island=(0.5, 34.0), trees=False, Ln=Ln_by_arm.get(a.name, 90.0))
+        ln_ = Ln_by_arm.get(a.name, 90.0)
+        arm_details(a, m, signals=False, yield_=True, island=(0.5, min(34.0, ln_ - 4.0)), trees=False, Ln=ln_)
     return arms, yc
 
 
@@ -129,7 +130,7 @@ def underpass_roundabout(m):
     yc = math.sqrt((ro + 10) ** 2 - (4.75 + 10) ** 2)
     z0 = ro + 26.0
     arms, yc = roundabout(m, Ln_by_arm={"N": z0 - yc - 6, "S": z0 - yc - 6, "E": 90.0, "W": 90.0})
-    Wd = 9.0                                         # half width of the trench
+    Wd = 11.2                                        # half width of the trench (carriageways 9.0 + walkway 2.2)
     # ground: both sides full length, over the tunnel only
     ped_ground(m, -200, -Wd, -200, 200)
     ped_ground(m, Wd, 200, -200, 200)
@@ -146,13 +147,16 @@ def underpass_roundabout(m):
     for sgn in (-1, 1):
         zz = [sgn * z for z in zs]
         # carriageway floor + lane paint + central barrier
-        for lo, hi, col in ((-Wd, Wd, ASPH),):
+        for lo, hi, col, dh in ((-9.0, 9.0, ASPH, 0.0), (-Wd, -9.0, KTOP, KERB), (9.0, Wd, KTOP, KERB)):
             for i in range(len(zz) - 1):
-                m.quad((lo, fy(zz[i]), zz[i]), (hi, fy(zz[i]), zz[i]), (hi, fy(zz[i + 1]), zz[i + 1]), (lo, fy(zz[i + 1]), zz[i + 1]), col)
-        for sx in (-Wd + 0.4, Wd - 0.4):
+                m.quad((lo, fy(zz[i]) + dh, zz[i]), (hi, fy(zz[i]) + dh, zz[i]), (hi, fy(zz[i + 1]) + dh, zz[i + 1]), (lo, fy(zz[i + 1]) + dh, zz[i + 1]), col)
+        for kx in (-9.0, 9.0):                           # walkway kerb faces
+            for i in range(len(zz) - 1):
+                m.quad((kx, fy(zz[i]), zz[i]), (kx, fy(zz[i]) + KERB, zz[i]), (kx, fy(zz[i + 1]) + KERB, zz[i + 1]), (kx, fy(zz[i + 1]), zz[i + 1]), KFACE)
+        for sx in (-9.0 + 0.4, 9.0 - 0.4):
             for i in range(len(zz) - 1):
                 m.quad((sx - 0.07, fy(zz[i]) + 0.04, zz[i]), (sx + 0.07, fy(zz[i]) + 0.04, zz[i]), (sx + 0.07, fy(zz[i + 1]) + 0.04, zz[i + 1]), (sx - 0.07, fy(zz[i + 1]) + 0.04, zz[i + 1]), WHITE)
-        for sx in (-Wd / 2 - 0.2, Wd / 2 + 0.2):
+        for sx in (-4.5 - 0.2, 4.5 + 0.2):
             for i in range(0, len(zz) - 1, 3):
                 m.quad((sx - 0.07, fy(zz[i]) + 0.04, zz[i]), (sx + 0.07, fy(zz[i]) + 0.04, zz[i]), (sx + 0.07, fy(zz[i + 1]) + 0.04, zz[i + 1]), (sx - 0.07, fy(zz[i + 1]) + 0.04, zz[i + 1]), WHITE)
         for i in range(len(zz) - 1):                    # central concrete barrier
