@@ -1,25 +1,25 @@
-"""Gentle lane-centering for the car the player drives: a few percent of steering that fades in after a second of
-steady straight driving on a ordinary road lane and vanishes the instant the player does anything of their own."""
+"""Lane-centering for the car the player drives: steering that fades in after a moment of steady straight driving on an ordinary road lane
+and vanishes the instant the player does anything of their own. Strength level 0/1/2 (gentle/medium/strong, menu Контроли → Возење)."""
 import math
 
 import vehicles
 from roadwidth import lane_bounds, lane_count
 
-MIN_SPEED = 8.0          # m/s (~29 km/h)
-MAX_ANGLE = 0.09         # rad off the lane direction (~5 deg)
-MAX_OFFSET = 1.3         # m from the nearest lane centre
+# per strength level (0 gentle, 1 medium, 2 strong): min speed m/s, capture angle rad, capture offset m,
+# fade-in s, max steering command (of 1.0 lock), heading gain, offset gain
+LEVELS = ((8.0, 0.09, 1.3, 1.2, 0.09, 1.0, 0.045),
+          (6.0, 0.17, 1.7, 0.6, 0.20, 1.4, 0.09),
+          (5.0, 0.26, 2.0, 0.3, 0.32, 1.8, 0.14))
 MAX_SLIDE = 1.2          # m/s sideways speed: more is a drift
 END_MARGIN = 10.0        # m from either end of the edge: junction mouths are left alone
 INPUT_CUT = 0.05         # any steering input above this ends the assist at once
-RAMP = 1.2               # s to fade in
-MAX_CMD = 0.09           # strongest steering command added (of 1.0 full lock)
-K_HEADING, K_OFFSET = 1.0, 0.045
 SKIP_KINDS = (vehicles.BTR, vehicles.SEMI, vehicles.ARTIC_BUS)
 
 
 class LaneAssist:
     def __init__(self):
         self.strength = 0.0
+        self.level = 2
 
     @staticmethod
     def _cells(w):
@@ -85,17 +85,18 @@ class LaneAssist:
         return math.remainder(road_h - h, math.tau), goal - off
 
     def steer(self, car, w, traffic, steer_in, throttle, handbrake, enabled, dt):
-        """Extra steering command (-MAX_CMD..MAX_CMD) to add to the player's own input."""
+        """Extra steering command (-max_cmd..max_cmd) to add to the player's own input."""
+        min_speed, max_angle, max_offset, ramp, max_cmd, k_head, k_off = LEVELS[max(0, min(2, self.level))]
         vf = car.vx * math.cos(car.h) + car.vy * math.sin(car.h)
         vl = -car.vx * math.sin(car.h) + car.vy * math.cos(car.h)
         ok = (enabled and car.kind not in SKIP_KINDS and not car.air and not handbrake and car.alive
-              and abs(steer_in) <= INPUT_CUT and abs(car.steer) <= 0.12 and throttle >= -0.2
-              and vf >= MIN_SPEED and abs(vl) <= MAX_SLIDE and car.exploded is False
+              and abs(steer_in) <= INPUT_CUT and abs(car.steer) <= max_cmd + 0.05 and throttle >= -0.2
+              and vf >= min_speed and abs(vl) <= MAX_SLIDE and car.exploded is False
               and (car.az is None or abs(car.az - w.ground_y(car.x, car.y)) < 0.8))
         err = self._lane_error(w, traffic, car.x, car.y, car.h) if ok else None
-        if err is None or abs(err[0]) > MAX_ANGLE or abs(err[1]) > MAX_OFFSET:
+        if err is None or abs(err[0]) > max_angle or abs(err[1]) > max_offset:
             self.strength = 0.0                       # drops at once, never eased out
             return 0.0
-        self.strength = min(1.0, self.strength + dt / RAMP)
-        cmd = K_HEADING * err[0] + K_OFFSET * err[1]
-        return max(-MAX_CMD, min(MAX_CMD, cmd)) * self.strength
+        self.strength = min(1.0, self.strength + dt / ramp)
+        cmd = k_head * err[0] + k_off * err[1]
+        return max(-max_cmd, min(max_cmd, cmd)) * self.strength
