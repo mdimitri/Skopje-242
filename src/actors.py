@@ -3237,6 +3237,40 @@ class Traffic:
                 return True
         return False
 
+    OVERTAKE = True                                # swerve into the oncoming lane (or half over the line) round a standing obstruction when it is clear
+
+    def _overtake(self, c, e, obs, base, dhi, hwc, committed, ahead):
+        """Lateral move (relative to the car's lane) that passes standing obstacles by crossing the centre line, or None.
+        Only on a straight, long-enough, two-way road, and only while the oncoming lane is clear for the whole pass.  A car
+        already across the line carries on (the oncoming cars brake for it, a stop half way would block both lanes)."""
+        L = e["len"]
+        span = max([g for _, _, g in obs if g < 1e8] + [0.0]) + 24.0 + c.v * 1.0
+        if c.s < 4.0 or L - c.s < span + 8.0:
+            return None
+        if not committed and min([g for _, _, g in obs if g < 1e8] + [1e9]) < 4.0:
+            return None                                      # too close to start a swerve: the stuck-recovery logic handles it
+        _x, _y, h1 = self._ref(e, c.d, c.s + span, 0.0)
+        if math.cos(h1 - self._ref(e, c.d, c.s, 0.0)[2]) < 0.985:
+            return None
+        lo = -e["w"] / 2 + hwc + 0.2
+        for m in (0.55, 0.3):
+            need = [(lat, hwc + wid + m) for lat, wid, _g in obs]
+            cands = [0.0, lo - base, dhi]
+            for lat, r in need:
+                cands += [lat - r - 0.02, lat + r + 0.02]
+            best = None
+            for d_ in cands:
+                if lo - base - 1e-6 <= d_ <= dhi + 1e-6 and all(abs(lat - d_) >= r - 0.01 for lat, r in need) \
+                        and (best is None or abs(d_) < abs(best)):
+                    best = d_
+            if best is not None:
+                break
+        if best is None:
+            return None
+        if not committed and not self._lane_room(c, e, base + best, span, behind=0.0, opposing=True):
+            return None                                      # oncoming traffic: wait behind the obstruction
+        return best
+
     def _courtesy(self, c, e, vlim, ems, ph, dt):
         """Swerve round kerb-parked cars and pull over for emergency vehicles.  Smooth sideways targets (c.avoid / c.yld);
         returns the speed limit, slowed while the room is tight."""
@@ -3250,6 +3284,8 @@ class Traffic:
         if ph:
             m = 0.15 if tight else 0.45
             obs = []                                              # standing vehicles near the path: (lateral offset, half-width, gap ahead)
+            hl_c = vehicles.HALF_L[c.kind]
+            passing = self.OVERTAKE and abs(c.avoid) > 0.3
             gx, gy = int(c.x // 16), int(c.y // 16)
             n = int(ahead // 16) + 1
             for ix in range(gx - n, gx + n + 1):
@@ -3259,13 +3295,14 @@ class Traffic:
                             continue
                         dx, dy = ox - c.x, oy - c.y
                         fwd = dx * hx + dy * hy
-                        if fwd > ahead + ohl or fwd <= 0.1:
+                        if fwd > ahead + ohl or fwd <= (-(hl_c + ohl + 0.5) if passing else 0.1):
                             continue
                         ca, sa = abs(math.cos(oh - road_h)), abs(math.sin(oh - road_h))
                         wid = ca * ohw + sa * ohl
                         lat = dx * rx + dy * ry
                         if abs(lat) < hwc + wid + m + 0.6:
-                            obs.append((lat, wid, fwd - vehicles.HALF_L[c.kind] - (ca * ohl + sa * ohw)))
+                            g_ = fwd - hl_c - (ca * ohl + sa * ohw)
+                            obs.append((lat, wid, g_ if fwd > 0.1 else 1e9))   # beside us already: keeps the lateral room, no braking
             if obs:
                 base = (bx - c.x) * math.sin(road_h) + (c.y - by) * math.cos(road_h)
                 ext = 0.8 if tight else 0.0                       # a kerb may be mounted a little when held up
@@ -3289,7 +3326,10 @@ class Traffic:
                             best = d_
                     if best is not None:
                         break
-                block = [g for lat, wid, g in obs if abs(lat) < hwc + wid + m]
+                if best is None and self.OVERTAKE and not e["ow"] and not e["bridge"] and not c.shift and c.stn is None \
+                        and c.kind not in (vehicles.SEMI, vehicles.ARTIC_BUS) and not c.rev and c.turnaround is None:
+                    best = self._overtake(c, e, obs, base, dhi, hwc, passing, ahead)
+                block = [g for lat, wid, g in obs if abs(lat) < hwc + wid + m and g < 1e8]
                 gap0 = min(block) if block else None
                 if best is None:                                  # no room to get round it: stop short
                     tgt, bgap = c.avoid, gap0

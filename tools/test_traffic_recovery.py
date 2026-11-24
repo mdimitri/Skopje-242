@@ -363,6 +363,24 @@ class TrafficRecoveryTest(unittest.TestCase):
         self.assertGreater(driver.x, blocker.x + 10.0)
         self.assertGreater(driver.y, 0.8)
 
+    def test_approaching_car_swerves_round_a_wreck_across_the_line(self):
+        tr = setup(road(0, 1, (0, 0), (300, 0), 6.6))
+        driver = car(tr, 20.0, 1.6, 1, 12.0)
+        wreck = Body(110.0, 1.2, 0.0, 0, 0)
+        self.step(tr, 17, (wreck,))
+        self.assertGreater(driver.x, wreck.x + 6.0)
+        self.assertEqual(driver.rev, 0)
+
+    def test_overtaker_waits_for_oncoming_car_then_passes(self):
+        tr = setup(road(0, 1, (0, 0), (400, 0), 6.6))
+        driver = car(tr, 20.0, 1.6, 1, 10.0)
+        oncoming = car(tr, 330.0, -1.6, -1, 12.0)
+        wreck = Body(110.0, 1.2, 0.0, 0, 0)
+        self.step(tr, 8, (wreck,))
+        self.assertLess(driver.x, wreck.x)
+        self.step(tr, 30, (wreck,))
+        self.assertGreater(driver.x, wreck.x + 6.0)
+
     def test_borrowing_checks_oncoming_traffic_beyond_the_merge(self):
         e = road(0, 1, (0, 0), (150, 0))
         tr = setup(e)
