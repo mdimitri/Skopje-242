@@ -157,6 +157,10 @@ class Night:
                     px, py = x + ca * hl - sa * 0.5 * side, y + sa * hl + ca * 0.5 * side
                     self._glow(cam, px, py, top, 6.5 * ppm, col, a)
                     self._glow(cam, px, py, top, 2.2 * ppm, (255, 255, 255), a * 0.6)
+        crews = getattr(sim, "crews", None)
+        if crews is not None and crews.convoys and dark > 0.02:        # work lights, beacons, flashing arrow board, cones, vests
+            for x, y, h, r, col, a in crews.night_items(rect)[1]:
+                self._glow(cam, x, y, h, r * ppm, col, a * min(1.0, dark * 1.4))
         rl.end_blend_mode()
         if self.active and dark > 0.02:
             self.lm.overlay(cam, dark)                             # the light map laid over the ground, then lamp bulbs
@@ -210,6 +214,11 @@ class Night:
         for b in sim.bodies:
             if b.alive and not b.empty and not b.exploded and lm.inside(b.x, b.y, 10.0):
                 self._vehicle(b.x, b.y, b.h, b.kind, b.braking, b.trh)
+        crews = getattr(sim, "crews", None)
+        if crews is not None and crews.convoys:
+            for x, y, r, col, k in crews.night_items(rect)[0]:
+                if lm.inside(x, y, r):
+                    lm.pool(x, y, r, col, k)
         lm.render()
         self.active = True
 

@@ -399,11 +399,40 @@ class Crews:
 
     # ------------------------------------------------------------------ queries
     def open(self):
-        return HOURS[0] <= self.sim.clock.hour <= HOURS[1]
+        return True                                                # crews work round the clock (at night under their own lights)
 
     def obstacles(self):
         """The cones as bodies for Traffic.update / the traffic process."""
         return self.cone_bodies
+
+    def night_items(self, rect):
+        """Lights of the work zones inside rect: ground pools (x, y, radius m, colour, strength) from the trucks' floodlights and
+        glows (x, y, height m, radius m, colour, alpha) of the amber beacons, the flashing arrow board, the cones and the hi-vis vests."""
+        pools, glows = [], []
+        t = self.now
+        for cv in self.convoys:
+            for b, _g, _r, _s in cv.veh:
+                if not (rect[0] - 30 < b.x < rect[2] + 30 and rect[1] - 30 < b.y < rect[3] + 30):
+                    continue
+                ca, sa = math.cos(b.h), math.sin(b.h)
+                k = b.kind
+                pools.append((b.x - ca * 2.0, b.y - sa * 2.0, 11.0, (255, 245, 220), 0.8))        # work lights on a mast over the bed
+                glows.append((b.x - ca * 1.5, b.y - sa * 1.5, 4.6, 1.8, (255, 250, 230), 150))
+                if (int(t * 2.5) & 1) == (id(b) & 1):                                             # rotating beacon on the cab, two phases
+                    glows.append((b.x + ca * 2.0, b.y + sa * 2.0, vehicles.DIMS[k][4] + 0.2, 2.4, (255, 170, 20), 235))
+                if k == vehicles.CREW_TRUCKS[2] and int(t * 1.5) % 3:                             # arrow board: the arrow flashes
+                    rx, ry = -sa, ca
+                    for i in range(-3, 4):
+                        glows.append((b.x - ca * 3.2 + rx * i * 0.28, b.y - sa * 3.2 + ry * i * 0.28, 2.7, 0.55, (255, 176, 30), 255))
+        for cv in self.convoys:
+            for c in cv.cones:
+                if rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:
+                    glows.append((c.x, c.y, 0.5, 0.9, (255, 120, 40), 130))
+            for wk in cv.workers:
+                p = wk[0]
+                if rect[0] < p.x < rect[2] and rect[1] < p.y < rect[3]:
+                    glows.append((p.x, p.y, 1.2, 1.1, (220, 255, 80), 110))
+        return pools, glows
 
     def nearest(self, x, y):
         return min((cv.near(x, y) for cv in self.convoys), default=1e9)
