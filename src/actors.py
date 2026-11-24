@@ -258,7 +258,7 @@ def articulated_steer_limit(speed):
     return 0.90 / (1.0 + (abs(speed) / 7.5) ** 2)
 
 
-TRAFFIC_PED_MODES = ("walk", "flee", "rage", "brawl", "fight", "board", "alight")
+TRAFFIC_PED_MODES = ("walk", "flee", "rage", "brawl", "fight", "board", "alight", "crew")
 
 
 def door_point(b, out, side=1):
@@ -1362,7 +1362,7 @@ class Peds:
         ev("shout", text=talk.react("fight", a.arch, self.sim, lines("fight", a.arch), rng), x=a.x, y=a.y,
            who=vehicles.ped_who(a))
 
-    _SOLID = ("walk", "flee", "rage", "brawl", "fight", "play")
+    _SOLID = ("walk", "flee", "rage", "brawl", "fight", "play", "crew")
 
     def _separate(self, dt, fx, fy):
         """People are solid to each other (cyclists, mopeds, scooters and the horse cart included): overlapping pairs are
@@ -1845,7 +1845,7 @@ class Peds:
                     self.sim._pay(min(70, 25 + int(hit.speed * 2)), p.x, p.y)       # running people over pays (badly)
                 out.append(p)
                 continue
-            if p.mode in ("queue", "board", "play", "guard"):       # moved by Transit / Kids / Compounds (they can still be hit)
+            if p.mode in ("queue", "board", "play", "guard", "crew"):       # moved by Transit / Kids / Compounds / Crews (they can still be hit)
                 out.append(p)
                 continue
             if p.vault_path is not None:
@@ -5629,9 +5629,13 @@ class Sim:
             self.rentals.update(dt)
         if getattr(self, "works", None) is not None:
             self.works.update(dt)
+        if getattr(self, "crews", None) is not None:
+            self.crews.update(dt)
         self.shots.update(dt)
         for b in list(self.bodies):
             if getattr(b, "remote", False):                      # another player's car / a host puppet: placed by mpgame, not simulated here
+                continue
+            if getattr(b, "crew", None) is not None:                 # a road crew's truck: placed by crews.py, no physics
                 continue
             b.age += dt
             if b is not self.car or self.mode == "foot":
@@ -5722,8 +5726,9 @@ class Sim:
         if not self.client:
             tp = getattr(self, "tproc", None)                              # AI traffic in its own process (trafficproc.py)
             wk_ = self.walker if self.mode == "foot" else None
-            if tp is None or not tp.step(dt, fx, fy, self.bodies, self.peds.list, wk_):
-                self.traffic.update(dt, fx, fy, self.bodies, self.peds.list, wk_)
+            obst = self.bodies + self.crews.obstacles() if getattr(self, "crews", None) is not None and self.crews.cone_bodies else self.bodies
+            if tp is None or not tp.step(dt, fx, fy, obst, self.peds.list, wk_):
+                self.traffic.update(dt, fx, fy, obst, self.peds.list, wk_)
         self._cull_t -= dt
         if self._cull_t <= 0 and not self.client:                       # thin the crowd / traffic when the clock says it is quiet
             self._cull_t = 0.2

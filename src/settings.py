@@ -47,7 +47,7 @@ DEFAULTS = {
     "vol_master": 0.8, "vol_sfx": 1.0, "vol_engine": 0.8, "vol_traffic": 0.5, "vol_ambient": 0.8, "vol_speech": 1.0, "vol_radio": 0.7,
     "lik": 0, "hour": 17.0, "time_speed": 3, "traffic": 3, "peds": 3,
     "ambulance": True, "fire": True, "voice": 1, "speech_speed": 2, "speech_freq": 3, "voice_colour": True, "aggro": 1, "lang": 1, "osm_source": 0, "smog": True, "smog_level": 1.0, "pollution": 1.0, "car_gloss": True, "car_gloss_k": 1.0, "dof": False, "dof_k": 1.0, "dof_g": 0.4,
-    "lane_assist": True, "zoom_walk": 1.0, "zoom_car": 1.0, "shake": 1.0, "labels": True, "debug_chase": False, "debug": False, "debug_tools": False, "debug_nolaw": False, "mouse_sens": 1.0, "mouse_mode": 0, "theme": 5, "photogram_bg": False,
+    "lane_assist": True, "road_crews": True, "zoom_walk": 1.0, "zoom_car": 1.0, "shake": 1.0, "labels": True, "debug_chase": False, "debug": False, "debug_tools": False, "debug_nolaw": False, "mouse_sens": 1.0, "mouse_mode": 0, "theme": 5, "photogram_bg": False,
     "voice_on": True, "voice_mic": "", "voice_mic_i": 0, "voice_mode": 0, "voice_ptt": 0, "voice_gain": 1.0, "voice_vol": 1.0, "voice_vad": 0.02, "voice_quality": 0, "faces_on": True, "faces_size": 1, "faces_mesh": True,
 }
 

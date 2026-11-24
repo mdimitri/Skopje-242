@@ -201,6 +201,8 @@ import present as present_mod   # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
+import crews as crews_mod   # noqa: E402
+_SHOT_FRAMES = tuple(int(v) for v in os.environ.get("SK242_SHOT_FRAMES", "").split(",") if v)      # test harness: which frames to save
 import soundlib   # noqa: E402
 import actors   # noqa: E402
 from actors import Body, Sim   # noqa: E402
@@ -661,6 +663,7 @@ def main():
     ap.add_argument("--log-suffix", default="", help="dev: write logs/game_<suffix>.log")
     ap.add_argument("--car", action="store_true", help="start inside the car (default: on foot next to it)")
     ap.add_argument("--walker", action="store_true", help="start on foot next to the car even in --test runs")
+    ap.add_argument("--crew", action="store_true", help="dev: start a road-marking crew next to the start point")
     ap.add_argument("--foot", action="store_true", help="start on foot (with --start: at the nearest footpath)")
     ap.add_argument("--deck", action="store_true", help="with --start: stand on the bridge deck if there is one")
     _inv = [x for x in sys.argv[1:] if x.lower().startswith("skopje242:")]       # invite link clicked: skopje242://join/...
@@ -803,7 +806,7 @@ def main():
     loader.tick(0.25, "car & pedestrian models")
     renderer.BUILD_BUDGET = 10 ** 9
     mesh_started = time.perf_counter()
-    specs = [("car", kind, 0) for kind in range(vehicles.N)]
+    specs = [("car", kind, 0) for kind in range(vehicles.N) if kind not in vehicles.NO_MODEL]
     for a_ in range(vehicles.PED_COUNT):
         fr_list = (0, 1, 12, *range(20, 28, 2), *range(30, 38, 2)) if a_ in vehicles.WALKERS else (0, 1)
         specs.extend(("ped", a_, 0, characterart.lod_frame(frame, 1), 0, 1) for frame in fr_list)
@@ -892,6 +895,8 @@ def main():
     log(f"[game] rental e-scooters: {len(sim.rentals.spots)}")
     sim.works = works_mod.Works(sim)
     log(f"[game] building sites: {len(sim.works.sites)}")
+    sim.crews = crews_mod.Crews(sim)
+    sim.crews.enabled = lambda: bool(cfg["road_crews"])
     pend_say = {}
     say_state = {"t": -9.0}
     flags = {"labels": True}
@@ -955,6 +960,9 @@ def main():
             wk_.lx, wk_.ly = x_, y_
             wk_.az = world.level(x_, y_, 1e9) if a.deck else world.ground_y(x_, y_)
             sim.safe, sim.safe_z = (x_, y_, 0.0), wk_.az
+    if a.crew:
+        cv_ = sim.crews.spawn_near(sim.car.x if sim.mode == "car" else sim.walker.x, sim.car.y if sim.mode == "car" else sim.walker.y)
+        log(f"[game] road crew: {'started on edge %d' % cv_.ei if cv_ else 'no suitable street'}")
     labels = load_while_drawing(lambda: build_labels(world))
     particles, popups = Particles(random.Random(5)), Popups()
     gains = fx_mod.Gains()
@@ -1919,6 +1927,7 @@ def main():
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
         aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
         aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
+        sim.crews.sound(aud, fx_, fy_, rng)
         dk = sim.clock.dark
         amb_state["dens"] += (density_at(fx_, fy_) - amb_state["dens"]) * 0.02
         dn = amb_state["dens"]
@@ -2055,6 +2064,11 @@ def main():
                 inp["move"] = (0.0, 0.0)
                 inp["attack"] = frame % 14 == 0
                 inp["jump"] = frame in (300, 322)
+            if os.environ.get("SK242_TEST_CREW") not in (None, "") and sim.walker is not None and sim.crews.convoys and sim.crews.convoys[0].veh:   # watch the crew from the pavement
+                b_ = sim.crews.convoys[0].veh[int(os.environ.get("SK242_TEST_CREW", "0") or 0) % len(sim.crews.convoys[0].veh)][0]
+                sim.walker.x, sim.walker.y = b_.x - math.cos(b_.h + 1.57) * 4.0, b_.y - math.sin(b_.h + 1.57) * 4.0
+                sim.walker.lx, sim.walker.ly = sim.walker.x, sim.walker.y
+                inp["move"], inp["run"] = (0.0, 0.0), False
             if os.environ.get("SK242_TEST_MALL") and sim.walker is not None:       # walk in at a GTC door (west/east/north/south), look round
                 d_ = next(q_ for q_ in mall_mod.DOORS if q_[0] == os.environ["SK242_TEST_MALL"])
                 if frame == 2:
@@ -2176,6 +2190,10 @@ def main():
                 aud.play("map_paper", 0.5)
             if rl.is_key_pressed(rl.KEY_F3):
                 show_dbg = not show_dbg
+            if rl.is_key_pressed(rl.KEY_F9) and cfg.get("debug") and not sim.client:        # debug: a road-marking crew next to the player
+                fx9, fy9 = sim.focus()[:2]
+                cv9 = sim.crews.spawn_near(fx9, fy9)
+                hud.set_banner("Екипа за патни ознаки" if cv9 else "Нема соодветна улица во близина", 1.5)
             if rl.is_key_pressed(rl.KEY_F11):
                 set_borderless(not is_borderless())
             if rl.is_key_pressed(rl.KEY_ESCAPE) or want_menu:
@@ -2622,7 +2640,7 @@ def main():
             particles.explosion(cam_x, cam_y)
             for _ in range(6):
                 particles.fire(cam_x + rng.uniform(-2, 2), cam_y + rng.uniform(-2, 2), 2, 0.9, 1.0)
-        if a.test and a.shot and (frame in (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1) or (boom_ > 0 and frame - boom_ in (4, 12, 24, 45, 90))):
+        if a.test and a.shot and (frame in (_SHOT_FRAMES or (5, 90, 200, 258, 266, 274, 306, 345, 800, 900, 930, a.test - 1)) or (boom_ > 0 and frame - boom_ in (4, 12, 24, 45, 90))):
             img = rl.load_image_from_screen()
             rl.export_image(img, f"{a.shot}_{frame}.png")
             rl.unload_image(img)
@@ -2650,6 +2668,7 @@ def main():
         print("[test] birds", dict(Counter((b.species, b.state) for b in sim.birds.live)))
         print(f"[test] mode={sim.mode} focus={sim.focus()[:2]} health={sim.car.health:.0f} dents={len(sim.car.dents)}")
         import collections as _c
+        print(f"[test] crews: {len(sim.crews.convoys)} convoys {[(cv.state, round(cv.sp, 1), len(cv.cones), len(cv.veh)) for cv in sim.crews.convoys]} stats {sim.crews.stats} paint segments {sim.crews.n_paint} drawn {sim.crews.drawn} rect {getattr(sim, 'view_rect', None)}")
         print(f"[test] ped modes {dict(_c.Counter(p.mode for p in sim.peds.list))} queues {sum(len(q) for q in sim.transit.queue.values())} "
               f"buses {len(sim.transit.buses)} on/off {sim.transit.served} riding {sim.riding is not None} broken {len(getattr(world, 'broken', []))}")
     modelpool.stop()

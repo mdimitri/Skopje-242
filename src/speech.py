@@ -208,7 +208,7 @@ PED_VOICE = {"Chichko": ("m", True), "Baba": ("f", True), "Biznismen": ("m", Fal
              "Teretana Brat": ("m", False), "Kiosk Chika": ("f", False), "Ribar": ("m", False), "Golabar": ("f", True), "Komunalec": ("m", False),
              "Nevesta": ("f", False), "Dostavuvach": ("m", False), "Velosipedist": ("m", False), "Dedo na Kolo": ("m", True),
              "Moped Tomos": ("m", False), "Glovo Skuter": ("m", False), "Trotinet Dete": ("c", False), "E-Trotinet Hipster": ("m", False),
-             "Skejter": ("m", False), "Rolerash": ("m", False), "Kocija": ("m", False), "Jogger": ("m", False), "Vojnik": ("m", False), "Paramedik": ("m", False)}
+             "Skejter": ("m", False), "Rolerash": ("m", False), "Kocija": ("m", False), "Jogger": ("m", False), "Vojnik": ("m", False), "Paramedik": ("m", False), "Patar": ("m", False)}
 HERO_VOICE = {"kumplung": ("m", False), "maca": ("f", False), "mile": ("m", False), "stojan": ("m", False), "influenser": ("m", False),
               "influenserka": ("f", False), "tetkica": ("f", False), "baba": ("f", True), "dedo": ("m", True), "pandur": ("m", False),
               "doktor": ("m", False), "mali": ("c", False), "radnik": ("m", False), "burek": ("m", False), "boza": ("m", False),

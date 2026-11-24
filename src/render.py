@@ -844,6 +844,8 @@ class Renderer:
             if lod:
                 if getattr(w, "roads3d", False):
                     self._decals(rect)
+                    if getattr(sim, "crews", None) is not None:
+                        sim.crews.draw3d(rect, w.ground_y, rl)
                 self._actors(rect, sim, t)
                 self._shots(rect, sim)
                 self._balls(rect, sim)

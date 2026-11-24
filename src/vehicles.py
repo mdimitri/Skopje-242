@@ -120,6 +120,12 @@ _V = [
     ("Voena Niva", "suv", 3.75, 1.83, 1.64, 0, ARMY, "army"),
     ("Voen Kamion", "truck", 7.40, 2.45, 3.25, 0, ARMY, "armytruck"),
     ("BTR-80", "apc", 7.65, 2.90, 2.35, 0, ARMY, "btr"),
+    # ---- road crews (crews.py): never in traffic; the paint truck, the arrow-board truck and the cone truck of a working convoy,
+    # and the traffic cone itself, which is only a small box the traffic AI drives round (never given a model: NO_MODEL)
+    ("Kamion za Linii", "truck", 7.60, 2.40, 3.30, 0, (244, 196, 28), "linepaint"),
+    ("Signalen Kamion", "truck", 6.90, 2.40, 3.30, 0, (244, 196, 28), "arrowboard"),
+    ("Kamion za Konusi", "truck", 7.00, 2.40, 3.20, 0, (244, 196, 28), "conetruck"),
+    ("Soobrakaen Konus", "mini", 0.45, 0.48, 0.70, 0, (240, 110, 30), "cone"),
 ]
 N = len(_V)
 IDS = [v[0] for v in _V]
@@ -239,6 +245,8 @@ MK_CAR = {
     "Maritsa": "Марица", "Kamion Tovarnik": "Товарен камион", "Tir Rinfuz": "Шлепер", "Cisterna Gorivo": "Цистерна за гориво",
     "Helikopter Brza Pomosh": "Хеликоптер Брза помош",
     "Voen Hamer": "Воен Хамер", "Voena Niva": "Воена Лада Нива", "Voen Kamion": "Воен камион", "BTR-80": "БТР-80",
+    "Kamion za Linii": "Камион за означување линии", "Signalen Kamion": "Камион со сигнална табла",
+    "Kamion za Konusi": "Камион за конуси", "Soobrakaen Konus": "Сообраќаен конус",
 }
 MK_PED = {
     "Chichko": TXT("vehicles.0090"), "Baba": TXT("vehicles.0091"), "Biznismen": TXT("vehicles.0092"), "Student": TXT("vehicles.0093"), "Navivach": TXT("vehicles.0094"), "Dete": TXT("vehicles.0095"), "Rabotnik": TXT("vehicles.0096"),
@@ -249,7 +257,7 @@ MK_PED = {
     "Nevesta": TXT("vehicles.0118"), "Dostavuvach": TXT("vehicles.0119"), "Velosipedist": TXT("vehicles.0120"), "Dedo na Kolo": TXT("vehicles.0121"), "Moped Tomos": TXT("vehicles.0122"),
     "Glovo Skuter": TXT("vehicles.0123"), "Trotinet Dete": TXT("vehicles.0124"), "E-Trotinet Hipster": TXT("vehicles.0125"), "Skejter": TXT("vehicles.0126"),
     "Rolerash": TXT("vehicles.0127"), "Kocija": TXT("vehicles.0128"), "Jogger": TXT("vehicles.0129"),
-    "Vojnik": "Војник", "Paramedik": "Болничар",
+    "Vojnik": "Војник", "Paramedik": "Болничар", "Patar": "Патен работник",
 }
 MK_LINES = {
     "Chichko": [TXT("vehicles.0130"), TXT("vehicles.0131")],
@@ -341,6 +349,7 @@ _P = [
     ("Jogger", 3.2, 1.2, ["Petti krug, petti!", "Ne zboruvaj, trcam.", "Ovoj vozduh e ... zagaden."]),
     ("Paramedik", 1.0, 0, []),                                    # ambulance crew (services.py), never a street walker
     ("Vojnik", 1.0, 0, []),                                       # barracks guard (compounds.py), never a street walker
+    ("Patar", 1.0, 0, []),                                        # road-crew worker (crews.py), never a street walker
 ]
 PED_IDS = [p[0] for p in _P]                                      # internal keys (models, fight table)
 PED_NAMES = [MK_PED.get(p[0], p[0]) for p in _P]                    # what the player reads
@@ -364,10 +373,14 @@ BIKES = {i for i in range(N) if STYLE[i] == "bike"}
 FLY = {i for i in range(N) if STYLE[i] == "heli"}                  # helicopters: Sim/actors.fly() flies them, no wheels
 HELI = IDS.index("Helikopter Brza Pomosh")
 BTR = IDS.index("BTR-80")
+CREW_TRUCKS = [IDS.index(n) for n in ("Kamion za Linii", "Kamion za Konusi", "Signalen Kamion")]       # paint truck leads, arrow board brings up the rear
+CONE = IDS.index("Soobrakaen Konus")
+NO_MODEL = {CONE}                                               # an obstacle for the traffic AI only: crews.py draws the cones itself
 ARMY_CARS = [IDS.index(n) for n in ("Voen Hamer", "Voena Niva", "Voen Kamion")]
 FUEL_MULT = {BTR: 6.0}                                          # the APC's tanks last this many times longer
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility
-WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS and PED_IDS[i] not in ("Vojnik", "Paramedik")]
+WALKERS = [i for i in range(PED_COUNT) if i != PLAYER and PED_IDS[i] not in RIDERS and PED_IDS[i] not in ("Vojnik", "Paramedik", "Patar")]
+PATAR = PED_IDS.index("Patar")
 PARAMEDIC = PED_IDS.index("Paramedik")
 SOLDIER = PED_IDS.index("Vojnik")
 COP = PED_IDS.index("Pandur")
@@ -411,7 +424,7 @@ _FIGHT_NAME = {"Chichko": (45, 0.45, 7), "Baba": (28, 0.2, 5), "Biznismen": (40,
                "Gastarbajter": (52, 0.6, 8), "Majka so Kolichka": (36, 0.2, 5), "Partiski Aktivist": (42, 0.4, 6), "Advokat": (40, 0.15, 5),
                "Teretana Brat": (100, 0.95, 14), "Kiosk Chika": (38, 0.5, 6), "Ribar": (42, 0.4, 6), "Golabar": (26, 0.1, 4),
                "Komunalec": (46, 0.35, 6), "Nevesta": (32, 0.3, 5), "Dostavuvach": (40, 0.2, 5), "Jogger": (40, 0.2, 5),
-               "Vojnik": (260, 1.0, 16), "Paramedik": (45, 0.1, 4)}
+               "Vojnik": (260, 1.0, 16), "Paramedik": (45, 0.1, 4), "Patar": (55, 0.5, 8)}
 FIGHT = [_FIGHT_NAME.get(n, (30, 0.0, 3)) for n in PED_IDS]       # riders and the player fall back to the default
 KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (TXT("vehicles.0248"), 130, 50), (TXT("vehicles.0249"), 90, 35)]
 

@@ -664,6 +664,50 @@ def _truck_cab(parts, box, quad, A, gl, body_c, L, W, y0, belt, roof, cl, ex):
         box(-L * 0.36 - 0.55, y0 - 0.05, s * (W / 2 - 0.3), 0.04, 0.45, 0.5, dark)
 
 
+def _crew_bed(ex, xb, x1, belt, W, top_h, box, quad):
+    """Load bed of the road-crew trucks (crews.py): the paint truck's tanks and spray boom, the arrow-board truck's lamp panel and
+    crash cushion, the cone truck's stacked cones.  xb..x1 is the bed's length (x), belt its floor, W the body width."""
+    cl = x1 - xb
+    mid = (x1 + xb) / 2
+    dark, amber, white, red = (44, 46, 52), (255, 168, 24), (244, 244, 240), (214, 40, 36)
+    box(mid, belt, 0, cl, 0.16, W * 0.96, (52, 54, 60))                                          # flat bed
+    for s in (-1, 1):                                                                            # rails along the bed
+        box(mid, belt + 0.16, s * W * 0.46, cl, 0.22, 0.05, (230, 190, 30))
+    for k in range(6):                                                                           # chevron panel on the tail: red / white
+        cc = red if k % 2 == 0 else white
+        quad((xb - 0.014, belt + 0.1 + k * 0.1, -W * 0.48), (0, 0, W * 0.96), (0, 0.1, 0), (-1, 0, 0), cc)
+    if ex == "linepaint":
+        for k, (zc, col) in enumerate(((-0.55, white), (0.55, (240, 200, 40)))):                 # two paint tanks, white and yellow
+            box(xb + cl * 0.30, belt + 0.16, zc, cl * 0.38, 0.95, 0.9, (150, 154, 160))
+            box(xb + cl * 0.30, belt + 0.62, zc, cl * 0.385, 0.3, 0.905, col)
+            box(xb + cl * 0.30, belt + 1.11, zc, 0.5, 0.12, 0.5, (96, 100, 108))                 # filler hatch
+        box(xb + cl * 0.68, belt + 0.16, -0.5, cl * 0.22, 0.7, 0.8, (70, 74, 80))                # glass-bead hopper
+        box(xb + cl * 0.68, belt + 0.16, 0.45, cl * 0.22, 0.5, 0.7, (216, 106, 28))              # compressor
+        box(xb + cl * 0.86, belt + 0.16, -W * 0.62, 0.7, 0.07, W * 0.5 + 0.4, (78, 80, 86))      # spray boom: out to the left (the lane line), low
+        box(xb + cl * 0.86, belt - 0.3, -W * 1.0 - 0.1, 0.18, 0.5, 0.18, (30, 30, 34))            # gun and nozzle over the line being painted
+        box(xb + cl * 0.86 - 0.3, belt - 0.12, -W * 1.0 - 0.1, 0.16, 0.2, 0.16, (240, 240, 236))
+    elif ex == "arrowboard":
+        box(xb + 0.55, belt + 0.16, 0, 0.28, 1.0, 0.28, (80, 84, 90))                           # mast
+        pw, ph, y0 = W * 0.9, 1.3, belt + 1.1
+        box(xb + 0.45, y0, 0, 0.12, ph, pw, (22, 22, 24))                                       # the black board, facing backwards
+        lamps = [(-0.38 + k * 0.1, 0.0) for k in range(8)] + [(0.30 - k * 0.07, 0.07 * (k + 1) * s_) for k in range(3) for s_ in (-1, 1)]
+        for zr, yr in lamps:                                                                    # arrow of amber lamps pointing to the right
+            quad((xb + 0.385, y0 + ph * 0.5 + yr * 1.4 - 0.05, zr * pw - 0.05), (0, 0, 0.1), (0, 0.1, 0), (-1, 0, 0), amber)
+        box(xb - 0.5, y0 - 0.7, 0, 0.9, 0.7, W * 0.9, (236, 190, 30))                           # crash cushion hung on the tail
+        for k in range(4):
+            quad((xb - 0.955, y0 - 0.7, -W * 0.45 + k * W * 0.225), (0, 0, W * 0.112), (0, 0.7, 0), (-1, 0, 0), (30, 30, 34))
+    elif ex == "conetruck":
+        for col_i in range(7):                                                                  # stacked cones in their rack
+            xx = xb + 0.7 + col_i * (cl - 1.5) / 6
+            for zz in (-0.62, 0.0, 0.62):
+                box(xx, belt + 0.16, zz, 0.36, 0.34, 0.36, (240, 110, 30))
+                box(xx, belt + 0.50, zz, 0.26, 0.34, 0.26, (240, 110, 30))
+                box(xx, belt + 0.66, zz, 0.28, 0.07, 0.28, (240, 240, 236))
+        for s in (-1, 1):
+            box((x1 + xb) / 2, belt + 0.16, s * W * 0.46, cl * 0.96, 0.8, 0.04, (150, 154, 160))  # rack sides
+        box(xb + 0.35, belt + 0.16, 0, 0.7, 0.05, W * 0.8, (36, 38, 42))                         # the roller chute off the back
+
+
 def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None):
     """Body-specific add-ons: cargo boxes, sirens, ladders, luggage, logos. `box`/`quad` are car_arrays' helpers."""
     xb, xf = -L / 2, L / 2
@@ -717,6 +761,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                     parts.append((v, np.tile(cc, (6, 1)), True))
             box(xb + 0.5, belt + 0.55, 0, 1.0, 1.0, W * 0.6, (60, 62, 66))        # drum frame / hopper
             box(xz - 0.15, belt + 0.05, 0, 0.5, 0.7, W * 0.7, (200, 120, 36))      # drum support behind the cab
+        elif ex in ("linepaint", "arrowboard", "conetruck"):
+            _crew_bed(ex, xb, x1, belt, W, top_h, box, quad)
         else:
             from_h = top_h - belt if ex != "fire" else 1.5
             for name, (v, n) in box_faces(cgx, belt, 0, cgl, from_h, W * 0.96, 6, 3, 3).items():
@@ -742,6 +788,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                         quad((xb + 0.5 + k * cgl * 0.3, belt + 0.1, s * (W * 0.48 + 0.01)), (cgl * 0.27, 0, 0), (0, 1.1, 0), (0, 0, s), (176, 178, 184))
         if ex in ("fire", "garbage"):
             bar(cx, 0.0, (230, 40, 40), (240, 150, 30) if ex == "garbage" else (40, 90, 230))
+        elif ex in ("linepaint", "arrowboard", "conetruck"):
+            bar(cx, 0.0, (255, 168, 24), (255, 168, 24))                                   # amber beacons
         return
     if st == "tractor":
         box(xf - 0.8, belt + 0.5, 0, 0.12, 1.0, 0.12, (30, 30, 34))        # exhaust
@@ -1469,6 +1517,7 @@ _COMMERCIAL_RIMS = {
     "Tir Rinfuz": ("truck", 10, 0.59), "Cisterna Gorivo": ("truck", 10, 0.59),
     "Traktor IMT": ("steel", 6, 0.64), "Voen Kamion": ("steel", 8, 0.58),
     "Voen Hamer": ("steel", 8, 0.61), "Voena Niva": ("steel", 8, 0.60),
+    "Kamion za Linii": ("truck", 8, 0.60), "Signalen Kamion": ("truck", 8, 0.60), "Kamion za Konusi": ("truck", 8, 0.60),
 }
 
 _COMMERCIAL_WIDTH_HEIGHT = {
@@ -1478,6 +1527,7 @@ _COMMERCIAL_WIDTH_HEIGHT = {
     "Betonjerka": (2.50, 3.72), "Kamion Tovarnik": (2.44, 3.46),
     "Tir Rinfuz": (2.51, 3.91), "Cisterna Gorivo": (2.49, 3.48),
     "Voen Hamer": (2.16, 1.83), "Voena Niva": (1.68, 1.64), "Voen Kamion": (2.49, 3.08),
+    "Kamion za Linii": (2.46, 3.30), "Signalen Kamion": (2.46, 3.30), "Kamion za Konusi": (2.46, 3.20),
 }
 
 
@@ -2540,7 +2590,12 @@ def _ped_special(arch, tone, frame, skin, tier):
     held_l = []                       # ... and with the left
     extra = []                        # static boxes (x, y, z, sx, sy, sz, col) in body space
     P3 = lambda a, b, c: [a, b, c][tone % 3]
-    if name == "Paramedik":                                                # ambulance crew: orange hi-vis jacket, white reflective bands, medical bag
+    if name == "Patar":                                                    # road crew (crews.py): lime hi-vis vest with bands, white hard hat, orange trousers, cone in hand
+        D.update(torso=P3((196, 232, 36), (206, 236, 40), (188, 226, 30)), legs=(232, 112, 24), shoe=(34, 30, 26)); hat = ("helmet", (240, 240, 236))
+        extra += [(0.0, 0.8, 0, 0.3, 0.06, 0.54, (232, 232, 228)), (0.0, 1.0, 0, 0.3, 0.05, 0.54, (232, 232, 228)),
+                  (-0.16, 0.9, 0, 0.02, 0.4, 0.12, (232, 232, 228))]
+        held = [(0.1, 0.12, 0.1, (240, 110, 30), 0.55, 0.0)]
+    elif name == "Paramedik":                                              # ambulance crew: orange hi-vis jacket, white reflective bands, medical bag
         D.update(torso=P3((255, 112, 24), (250, 120, 30), (255, 100, 20)), legs=(40, 52, 80), shoe=(26, 26, 28))
         extra += [(0.0, 0.8, 0, 0.3, 0.06, 0.54, (240, 240, 236)), (0.0, 1.0, 0, 0.3, 0.05, 0.54, (240, 240, 236)),
                   (0.16, 1.1, 0, 0.02, 0.1, 0.1, (200, 30, 40))]
