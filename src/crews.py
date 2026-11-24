@@ -21,8 +21,8 @@ import vehicles
 from roadwidth import lane_bounds, lane_count
 
 HOURS = (6.5, 17.5)               # the working day (game clock)
-MAX_ACTIVE = 2                    # convoys at once
-RING = (130.0, 420.0)             # a convoy starts this far from the player (not in view, not out of reach)
+MAX_ACTIVE = 5                    # convoys at once
+RING = (70.0, 380.0)             # a convoy starts this far from the player (not in view, not out of reach)
 LOSE = 460.0                      # ... and goes away when the player is farther than this
 PAINT_SPEED = 1.3                 # m/s the paint truck advances
 CONE_GAP = 7.0                    # m between cones along the lane line
@@ -391,7 +391,7 @@ class Crews:
         self.n_paint = 0
         self.now = 0.0
         self.drawn = 0
-        self.cool = 6.0
+        self.cool = 1.0
         self.stats = {"queue_max": 0, "slow_cars": 0, "jam_s": 0.0}
         self._mon = 0.0
         self.enabled = lambda: True
@@ -417,7 +417,7 @@ class Crews:
             out = []
             for ei, e in enumerate(w.edges):
                 if (not e["drive"] or e.get("bridge") or e.get("tunnel") or e.get("taper") or ei in tr.internal_links
-                        or _base(e["cls"]) not in MARKED or e["w"] < 6.5 or e["len"] < 105.0):
+                        or _base(e["cls"]) not in MARKED or e["w"] < 6.0 or e["len"] < 85.0):
                     continue
                 out.append(ei)
             self._cands = out
@@ -427,8 +427,9 @@ class Crews:
         """(s0, s1): where along the street (travel direction d) the paint truck starts and stops; None when it is not straight enough."""
         e = self.sim.w.edges[ei]
         L = e["len"]
-        s0, s1 = 40.0, min(L - 16.0, 40.0 + 150.0)
-        if s1 - s0 < 50.0:
+        s0 = 38.0
+        s1 = min(L - 14.0, s0 + 150.0)
+        if s1 - s0 < 30.0:
             return None
         pts = [self.sim.w.edge_point(e, (s if d == 1 else L - s))[:2] for s in (s0 - 40.0, s0, (s0 + s1) / 2, s1)]
         ax, ay, bx, by = pts[0][0], pts[0][1], pts[-1][0], pts[-1][1]
@@ -498,7 +499,7 @@ class Crews:
         fx, fy = sim.focus()[:2]
         self.cool -= dt
         if self.cool <= 0.0 and len(self.convoys) < MAX_ACTIVE and self.open() and sim.mode is not None:
-            self.cool = self.rng.uniform(30.0, 80.0)
+            self.cool = self.rng.uniform(6.0, 16.0)
             self._try_spawn(fx, fy)
         self._monitor(dt)
         for cv in list(self.convoys):
