@@ -27,8 +27,8 @@ LOSE = 460.0                      # ... and goes away when the player is farther
 PAINT_SPEED = 1.3                 # m/s the paint truck advances
 CONE_GAP = 7.0                    # m between cones along the lane line
 AHEAD = 28.0                      # cones go out this far in front of the paint truck
-SPACING = (0.0, -17.0, -36.0)     # paint truck, cone truck, arrow-board truck, behind the leader (m)
-PICKUP_AT = -46.0                 # cones behind this (relative to the paint truck) are collected
+SPACING = (0.0, -17.0)            # paint truck, cone truck (arrow board on its tail), behind the leader (m)
+PICKUP_AT = -32.0                 # cones behind this (relative to the paint truck) are collected
 SPEED_UP = float(os.environ.get("SK242_CREW_SPEED") or 1.0)          # test harness: run the crew faster than real time
 DEBUG_COLOURS = bool(os.environ.get("SK242_CREW_DEBUG"))      # test harness: blue black-out bands, red lines
 LIFT = float(os.environ.get("SK242_CREW_LIFT") or 0.05)       # m above ground_y (the asphalt top)
@@ -38,6 +38,11 @@ LEAVE_SPEED = 8.0
 MARKED = {"primary", "secondary", "tertiary", "trunk", "unclassified", "residential"}
 BLACK_WET, BLACK_DRY = (26, 26, 30, 255), (50, 50, 53, 236)       # a black-out band dries to dark grey, nearly opaque
 WHITE_WET, WHITE_DRY = (255, 255, 252), (247, 247, 241)
+
+
+def spray_on(now):
+    """The gun fires in bursts: on 0.6 s of every 1.1 s."""
+    return (now % 1.1) < 0.6
 
 
 def _base(cls):
@@ -179,9 +184,11 @@ class Convoy:
         b = actors.Body(x, y, 0.0, vehicles.CONE, 0)
         b.az = None
         self.cones.append(_Cone(s, x, y, b))
+        self.cr.events.append((x, y, "put"))
         self.cr.cone_bodies.append(b)
 
     def _take(self, c):
+        self.cr.events.append((c.x, c.y, "take"))
         self.cones.remove(c)
         if c.body in self.cr.cone_bodies:
             self.cr.cone_bodies.remove(c.body)
@@ -392,6 +399,7 @@ class Crews:
         self.now = 0.0
         self.drawn = 0
         self.cool = 1.0
+        self.events = []                       # (x, y, 'put' | 'take') cone sounds for sound()
         self.stats = {"queue_max": 0, "slow_cars": 0, "jam_s": 0.0}
         self._mon = 0.0
         self.enabled = lambda: True
@@ -420,10 +428,10 @@ class Crews:
                 glows.append((b.x - ca * 1.5, b.y - sa * 1.5, 4.6, 1.8, (255, 250, 230), 150))
                 if (int(t * 2.5) & 1) == (id(b) & 1):                                             # rotating beacon on the cab, two phases
                     glows.append((b.x + ca * 2.0, b.y + sa * 2.0, vehicles.DIMS[k][4] + 0.2, 2.4, (255, 170, 20), 235))
-                if k == vehicles.CREW_TRUCKS[2] and int(t * 1.5) % 3:                             # arrow board: the arrow flashes
+                if k == vehicles.CREW_TRUCKS[1] and int(t * 1.5) % 3:                             # arrow board: the arrow flashes
                     rx, ry = -sa, ca
                     for i in range(-3, 4):
-                        glows.append((b.x - ca * 3.2 + rx * i * 0.28, b.y - sa * 3.2 + ry * i * 0.28, 2.7, 0.55, (255, 176, 30), 255))
+                        glows.append((b.x - ca * 3.4 + rx * i * 0.28, b.y - sa * 3.4 + ry * i * 0.28, 3.0, 0.55, (255, 176, 30), 255))
         for cv in self.convoys:
             for c in cv.cones:
                 if rect[0] < c.x < rect[2] and rect[1] < c.y < rect[3]:
@@ -546,8 +554,12 @@ class Crews:
         """Compressor and spray hiss at the paint truck, the cone truck's reversing beeper, now and then a clank of cones."""
         cv = min(self.convoys, key=lambda c: c.near(fx, fy), default=None)
         d = cv.near(fx, fy) if cv else 1e9
-        spraying = cv is not None and cv.state == "work" and d < 70.0
-        aud.loop("spray", 0.3 * (1.0 - d / 70.0) if spraying else 0.0, 0.8, "sfx")
+        spraying = cv is not None and cv.state == "work" and d < 90.0 and spray_on(self.now)
+        aud.loop("spray", 0.55 * (1.0 - d / 90.0) if spraying else 0.0, 0.9, "sfx")          # hiss in bursts, in step with the mist
+        for x, y, kind in self.events:
+            if abs(x - fx) < 100 and abs(y - fy) < 100:
+                aud.at("metal_clank", x, y, 0.8, 1.0 if kind == "put" else 1.25, "ambient", 100.0, 8.0)
+        self.events.clear()
         if cv is not None and d < 90.0 and rng.random() < 0.012:
             b = cv.veh[1][0] if len(cv.veh) > 1 else cv.veh[0][0]
             aud.at(rng.choice(("truck_reverse_beep", "metal_clank", "metal_clank")), b.x, b.y, 0.6, 1.0, "ambient", 90.0, 10.0)
@@ -609,6 +621,30 @@ class Crews:
                             rl.rl_vertex3f(*q)
         rl.rl_end()
         rl.rl_enable_depth_mask()
+        if spray_on(now):
+            rl.rl_disable_depth_mask()
+            rl.rl_begin(rl.RL_TRIANGLES)
+            for cv in self.convoys:
+                if cv.state != "work" or not cv.veh:
+                    continue
+                b = cv.veh[0][0]
+                if not (rect[0] - 6 < b.x < rect[2] + 6 and rect[1] - 6 < b.y < rect[3] + 6):
+                    continue
+                ca, sa = math.cos(b.h), math.sin(b.h)
+                gx, gz = b.x - ca * GUN - (-sa) * 2.45, b.y - sa * GUN - ca * 2.45     # the gun hangs out on the left
+                gy = ground_y(gx, gz)
+                ph = (now % 1.1) / 0.6
+                for k in range(7):                                                   # a cone of mist from the nozzle to the line, jittering
+                    a0 = 2 * math.pi * k / 7 + now * 9.0
+                    a1 = a0 + 0.9
+                    r = 0.22 + 0.16 * ph + 0.05 * math.sin(now * 40 + k)
+                    rl.rl_color4ub(255, 255, 255, 190)
+                    rl.rl_vertex3f(gx, gy + 0.62, gz)
+                    rl.rl_color4ub(250, 250, 250, 50)
+                    rl.rl_vertex3f(gx + r * math.cos(a0), gy + 0.07, gz + r * math.sin(a0))
+                    rl.rl_vertex3f(gx + r * math.cos(a1), gy + 0.07, gz + r * math.sin(a1))
+            rl.rl_end()
+            rl.rl_enable_depth_mask()
         if self.cone_bodies:
             rl.rl_begin(rl.RL_TRIANGLES)
             for b in self.cone_bodies:

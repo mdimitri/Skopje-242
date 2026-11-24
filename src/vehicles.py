@@ -373,7 +373,7 @@ BIKES = {i for i in range(N) if STYLE[i] == "bike"}
 FLY = {i for i in range(N) if STYLE[i] == "heli"}                  # helicopters: Sim/actors.fly() flies them, no wheels
 HELI = IDS.index("Helikopter Brza Pomosh")
 BTR = IDS.index("BTR-80")
-CREW_TRUCKS = [IDS.index(n) for n in ("Kamion za Linii", "Kamion za Konusi", "Signalen Kamion")]       # paint truck leads, arrow board brings up the rear
+CREW_TRUCKS = [IDS.index(n) for n in ("Kamion za Linii", "Kamion za Konusi")]       # two trucks: the paint truck leads, the cone truck (with the arrow board on its tail) follows
 CONE = IDS.index("Soobrakaen Konus")
 NO_MODEL = {CONE}                                               # an obstacle for the traffic AI only: crews.py draws the cones itself
 ARMY_CARS = [IDS.index(n) for n in ("Voen Hamer", "Voena Niva", "Voen Kamion")]
@@ -442,6 +442,8 @@ _ENGINE[92] = "engine_ev"
 for _i in (49, 50, 51, 55, *HEAVY, BTR, ARMY_CARS[2]):
     _ENGINE[_i] = "engine_truck"
 _ENGINE[ARMY_CARS[0]] = _ENGINE[ARMY_CARS[1]] = "engine_diesel"
+for _i in CREW_TRUCKS:
+    _ENGINE[_i] = "engine_truck"                                              # the crew's work trucks: loud heavy diesels
 for _i in (25, 26, 28, 29, 43, 45, 46):
     _ENGINE[_i] = "engine_v8"
 for _i in (0, 7, 9, 10, 14, 15, 17, 18, 19, 41, 44):

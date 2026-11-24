@@ -201,6 +201,7 @@ import present as present_mod   # noqa: E402
 import slang         # noqa: E402
 import vehicles      # noqa: E402
 import works as works_mod   # noqa: E402
+from types import SimpleNamespace   # noqa: E402
 import crews as crews_mod   # noqa: E402
 _SHOT_FRAMES = tuple(int(v) for v in os.environ.get("SK242_SHOT_FRAMES", "").split(",") if v)      # test harness: which frames to save
 import soundlib   # noqa: E402
@@ -1899,6 +1900,12 @@ def main():
                 d_ = math.hypot(c.x - fx_, c.y - fy_)
                 if d_ < nd:
                     near_c, nd = c, d_
+        for cv_ in sim.crews.convoys:                              # the crew's trucks idle and rev loudly (diesel work engines)
+            for v_ in cv_.veh:
+                b_ = v_[0]
+                d_ = math.hypot(b_.x - fx_, b_.y - fy_)
+                if d_ < nd:
+                    near_c, nd = SimpleNamespace(x=b_.x, y=b_.y, h=b_.h, kind=b_.kind, v=max(2.5, b_.speed), vx=b_.vx, vy=b_.vy, health=100.0), d_
         if near_c is not None:
             prof_ = vehicles.ENGINE_SOUND[near_c.kind]
             fr_ = min(1.0, near_c.v / max(1.0, vehicles.PERF[near_c.kind][0]))

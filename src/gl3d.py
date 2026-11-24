@@ -706,6 +706,12 @@ def _crew_bed(ex, xb, x1, belt, W, top_h, box, quad):
         for s in (-1, 1):
             box((x1 + xb) / 2, belt + 0.16, s * W * 0.46, cl * 0.96, 0.8, 0.04, (150, 154, 160))  # rack sides
         box(xb + 0.35, belt + 0.16, 0, 0.7, 0.05, W * 0.8, (36, 38, 42))                         # the roller chute off the back
+        box(xb + 0.3, belt + 0.16, 0, 0.2, 1.3, 0.2, (80, 84, 90))                               # mast of the arrow board over the cones
+        pw = W * 0.9
+        box(xb + 0.25, belt + 1.4, 0, 0.1, 1.0, pw, (22, 22, 24))                                # the black board, facing backwards
+        for zr in [-0.38 + k * 0.1 for k in range(8)] + [0.30, 0.23, 0.16]:
+            for yr in ((0.0,) if zr < 0.3 else (-0.07 * (0.37 - zr) * 10, 0.07 * (0.37 - zr) * 10)):
+                quad((xb + 0.195, belt + 1.9 + yr - 0.05, zr * pw - 0.05), (0, 0, 0.1), (0, 0.1, 0), (-1, 0, 0), (255, 168, 24))
 
 
 def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accent, parts, box, quad, cab_ref=None):
