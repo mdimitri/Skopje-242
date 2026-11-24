@@ -582,8 +582,8 @@ def pick_character(cfg, aud=None, music=None):
             t = _TEX.get((i, ""))
             ih = ch - 74
             if t:
-                x, y = cx + 6 - g, cy + 6 - g
-                w, h = cw - 12 + 2 * g, ih + 2 * g
+                x, y = cx - g, cy - g                                       # the portrait fills the whole tile (fit, never cropped)
+                w, h = cw + 2 * g, ch + 2 * g
                 if i == hovered and hover_variant:
                     # Fill the original portrait's frame even when the outcome PNG has a different aspect.
                     scale = min(w / t.width, h / t.height)
@@ -597,6 +597,8 @@ def pick_character(cfg, aud=None, music=None):
                 rl.draw_circle(cx + cw // 2, cy + ih // 2, min(cw, ih) // 4, placeholder)
                 ini = name[0]
                 font.draw_text(ini, cx + cw // 2 - font.measure_text(ini, 44, True) // 2, cy + ih // 2 - 26, 44, rl.WHITE, bold=True)
+            if t:
+                rl.draw_rectangle(cx - g, cy + ch - 62 + g, cw + 2 * g, 62, rl.Color(0, 0, 0, 150))   # label strip over the portrait
             fs = max(13, min(28, cw // 4))
             lines = font.wrap(name, fs, cw - 6, CD)[:2]
             while fs > 9 and any(font.measure_text(ln, fs, CD) > cw - 6 for ln in lines):     # a long word shrinks the label, never overflows
@@ -604,7 +606,7 @@ def pick_character(cfg, aud=None, music=None):
                 lines = font.wrap(name, fs, cw - 6, CD)[:2]
             for k, ln in enumerate(lines):
                 font.draw_text(ln, cx + (cw - font.measure_text(ln, fs, CD)) // 2, cy + ch - 58 + g + k * (fs + 2), fs,
-                               (_th["hlt"] or _th["fg"]) if on else _th["fg"], bold=CD)
+                               rl.WHITE, bold=CD)
         _hero_panel(sel, W, H, int(rl.get_mouse_wheel_move()) + (1 if rl.is_key_pressed(rl.KEY_PAGE_UP) else 0) - (1 if rl.is_key_pressed(rl.KEY_PAGE_DOWN) else 0))
         _btn(W - 640, 56, 300, 58, "< " + BACK, W - 640 <= m.x < W - 340 and 56 <= m.y < 114, 30)
         _btn(W - 330, 56, 310, 58, TXT("menu.0053"), W - 330 <= m.x < W - 20 and 56 <= m.y < 114, 30)
