@@ -786,8 +786,8 @@ def _extras(kind, st, ex, L, W, y0, belt, roof, top_h, cx, cl, cw, body_c, accen
                 for s in (-1, 1):
                     for k in range(3):
                         quad((xb + 0.5 + k * cgl * 0.3, belt + 0.1, s * (W * 0.48 + 0.01)), (cgl * 0.27, 0, 0), (0, 1.1, 0), (0, 0, s), (176, 178, 184))
-        if ex in ("fire", "garbage"):
-            bar(cx, 0.0, (230, 40, 40), (240, 150, 30) if ex == "garbage" else (40, 90, 230))
+        if ex == "fire":
+            bar(cx, 0.0, (230, 40, 40), (40, 90, 230))
         elif ex in ("linepaint", "arrowboard", "conetruck"):
             bar(cx, 0.0, (255, 168, 24), (255, 168, 24))                                   # amber beacons
         return

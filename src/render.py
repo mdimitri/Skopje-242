@@ -849,6 +849,7 @@ class Renderer:
                 self._actors(rect, sim, t)
                 self._shots(rect, sim)
                 self._balls(rect, sim)
+                self._garbage(rect, sim, t)
                 if getattr(sim, "lights", None) is not None:
                     sim.lights.draw(rect, w.ground_y, fr.seen)
                 if getattr(sim, "trains", None) is not None:
@@ -1007,6 +1008,15 @@ class Renderer:
         for x, y, _vx, _vy, z, _vz in (kd.balls.values() if kd is not None else ()):
             if self._in(x, y, rect):
                 rl.draw_sphere(V3(x, self.w.ground_y(x, y) + z + 0.11, y), 0.11, rl.Color(240, 240, 236, 255))
+
+    def _garbage(self, rect, sim, t):
+        """Waste containers (with the job a garbage truck is doing on one) and the amber beacons on the trucks."""
+        g = getattr(sim, "garbage", None)
+        if g is None:
+            return
+        w = self.w
+        g.draw(rl, V3, w.ground_y, rect, t, self._sh_c)
+        g.draw_beacons(rl, V3, sim.traffic.cars, w.ground_y, rect, t, fx.soft_id())
 
     def _fall_model(self, sp, v, lvl):
         """[solid, leaves] models of one tree species / variant for the trees that lie or tip over (made once)."""

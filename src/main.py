@@ -1355,6 +1355,13 @@ def main():
                 hud.set_banner(TXT("main.0017"), 3.5)
             elif kind == "teleport":
                 aud.play("teleport_whoosh", 0.5, 0.7)
+            elif kind == "gsfx":                                     # garbage trucks and containers (garbage.py)
+                aud.at(d["name"], d["x"], d["y"], d["vol"], 1.0, maxd=60.0, ref=7.0)
+            elif kind == "stink":
+                particles.stink(d["x"], d["y"], d["z"], d["n"])
+            elif kind == "garbage_dump":                             # the bin is emptied into the hopper: litter and a burst of stink
+                particles.debris(d["x"], d["y"], (120, 110, 90), 8, d["z"])
+                particles.emit("g", d["x"], d["y"], d["z"], 0, 0, 0.9, 6, 0.9, 2.4, (160, 175, 40), 1.2, 3.0)
             elif kind == "spray":
                 dxs, dys = d["x1"] - d["x0"], d["y1"] - d["y0"]
                 ls = math.hypot(dxs, dys) or 1.0

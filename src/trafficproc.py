@@ -23,6 +23,7 @@ import time
 import traceback
 
 import actors
+import garbage
 
 ON = os.environ.get("SK242_TRAFFIC_PROC", "1") != "0"
 SYNC = tuple(s for s in actors.Car.__slots__ if s not in ("blk", "uid"))      # blk points at another object: worker-side only
@@ -85,7 +86,7 @@ def _set(c, vals):
         setattr(c, s, v)
 
 
-def _serve(conn, path, seed):
+def _serve(conn, path, seed, gsites=None):
     try:
         import world as world_mod
         import stations
@@ -97,7 +98,7 @@ def _serve(conn, path, seed):
         tr.sim = sim
         sim.traffic = tr
         tr.signals = traffic_tuning.signals_for(w)
-        tr.stn = stations.Stations(sim)
+        tr.stn = stations.Stations(sim, extra=gsites)
         conn.send(("ready", os.getpid()))
     except Exception:  # noqa: BLE001
         conn.send(("err", traceback.format_exc()))
@@ -215,7 +216,7 @@ class TrafficProc:
         try:
             if mf is not None:
                 del main.__file__                              # the spawned worker must not re-run main.py (it opens a window)
-            self.proc = ctx.Process(target=_serve, args=(child, world.path, random.randrange(1 << 30)), daemon=True,
+            self.proc = ctx.Process(target=_serve, args=(child, world.path, random.randrange(1 << 30), [garbage.site_for_worker(g) for g in (getattr(world, 'garbage_sites', None) or ())]), daemon=True,
                                     name="sk242-traffic")
             self.proc.start()
         finally:

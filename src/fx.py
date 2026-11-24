@@ -50,6 +50,10 @@ class Particles:
         if self.rng.random() < 0.25 * n:
             self.emit("k", x, z, y + 0.5, 0, 0, 3.0, 1, 0.1, 1.2, (255, 170, 60), 1.2, 0.5, 0.8)
 
+    def stink(self, x, z, y=1.2, n=1):
+        """A wavy green-yellow wisp of rubbish stink, rising from a bin and spreading."""
+        self.emit("g", x, z, y, 0, 0, 0.55, n, 0.5, 2.8, (160, 175, 40), 0.35, 2.6)
+
     def debris(self, x, z, col, n=6, y=0.6):
         self.emit("d", x, z, y, 0, 0, 4.0, n, 0.26, 1.4, col, 6.0, 0.9, -9.0)
 
@@ -91,6 +95,10 @@ class Particles:
             q[0] += q[3] * dt
             q[1] += q[4] * dt
             q[2] += q[5] * dt
+            if q[13] == "g":                                    # stink: rises in a lazy sideways wave
+                wv = (q[7] - q[6]) * 3.1 + q[12]
+                q[0] += math.sin(wv) * 0.55 * dt
+                q[2] += math.cos(wv * 0.8) * 0.45 * dt
             q[4] += q[11] * dt
             q[3] *= (1 - 1.2 * dt)
             q[5] *= (1 - 1.2 * dt)
@@ -136,6 +144,9 @@ class Particles:
                     lift = int(70 * age)
                     r_, g_, b_ = min(255, col[0] + lift), min(255, col[1] + lift), min(255, col[2] + lift)
                     a = int(255 * min(1.0, f * 1.6) * 0.7)
+                elif k == "g":                                  # stink: sickly green-yellow, fades in and out, spreads as it rises
+                    r_, g_, b_ = int(168 + 50 * age), int(208 - 10 * age), 70
+                    a = int(255 * math.sin(math.pi * min(1.0, max(0.0, age))) * 0.30)
                 elif k == "k":
                     r_, g_, b_ = 255, int(col[1] * (0.5 + 0.5 * f)), int(col[2] * f)
                     a = int(255 * min(1.0, f * 2.0))

@@ -11,10 +11,12 @@ import math
 
 import vehicles
 import clock
+import garbage
 
 FILL_PRICE = 1200          # ден. for a tank filled from empty
 WASH_PRICE, RESPRAY_PRICE = 150, 1500
 FUEL_R, WASH_R = 9.0, 10.0  # how close the player's car must stand to the stop point (m)
+GARBAGE_P = 0.6                # chance a garbage truck stops at a container it passes
 ENTER_P = {0: 0.30, 1: 0.18}   # chance a car takes the entrance of a station it passes
 DWELL = {0: (18.0, 42.0), 1: (25.0, 45.0)}   # seconds a visitor stays
 WASH_SECS = 3.0
@@ -28,7 +30,8 @@ CARS = ("hatch", "sedan", "taxi", "mini", "suv", "wagon", "pickup", "van")
 
 
 class Stations:
-    def __init__(self, sim):
+    def __init__(self, sim, extra=None):
+        """extra: the waste container stops (garbage.py, site kind 2) when the caller has them already; else the world's."""
         self.sim = sim
         w = sim.w
         self.sites = []
@@ -40,6 +43,9 @@ class Stations:
                 px, py, _dx, _dy = w.edge_point(w.edges[ei], s)
                 ok = (px - x) ** 2 + (py - y) ** 2 < 9.0                 # the graph still matches the world the sites were built with
             self.sites.append({"x": x, "y": y, "kind": kind, "edge": ei if ok else -1, "s": s, "name": name, "ox": ox, "oy": oy})
+        self.n_fuel = len(self.sites)              # petrol stations and car washes first, the waste container stops after them
+        gs = extra if extra is not None else getattr(w, "garbage_sites", None)
+        self.sites.extend(dict(g) for g in (gs or ()))
         self.entry = {}                 # (edge, dir) -> [(site, hops)]: driving into it leads to the site's edge
         self.arrive = {}                # node -> [(edge, dir)] that arrive at it
         for ei, e in enumerate(w.edges):
@@ -57,11 +63,17 @@ class Stations:
         self.shoppers = []              # drivers walking to the shop: dict(ped, car, st, phase, t, tx, ty, dx, dy)
         self.wanted_cleared = 0         # how many times the re-spray was bought (the police system will read the hook)
 
+    def garbage_index(self, k):
+        """The container index (garbage.Garbage.sites) of stop k, or None for a petrol station / car wash."""
+        return k - self.n_fuel if k is not None and k >= self.n_fuel else None
+
     def _index(self, k, st):
         w = self.sim.w
         ei = st["edge"]
         e = w.edges[ei]
         for d, node in ((1, e["a"]), (-1, e["b"])):                  # entering the station edge at node `node` driving direction d
+            if st["kind"] == 2 and d != st["d"]:
+                continue                                              # a container is emptied from the one direction that has it on the truck's kerb side
             if (ei, d) in w.out.get(node, ()):
                 self.entry.setdefault((ei, d), []).append((k, 0))
                 for e2i, d2 in self.arrive.get(node, ()):             # one more hop: the edge that arrives at that node
@@ -81,11 +93,21 @@ class Stations:
                     return
             c.stn = None
             return
+        if c.kind == garbage.truck_kind():                             # garbage trucks go for waste containers only
+            for i, o in enumerate(good):
+                for k, hops in self.entry.get(o, ()):
+                    st = self.sites[k]
+                    if st["kind"] == 2 and tr.t - st.get("svc", -1e9) > garbage.SERVICED_T and tr.rng.random() < GARBAGE_P * (1.0 if hops == 0 else 0.7):
+                        c.nxt, c.turn, c.stn, c.dwell, c.stn_t = o, turns[i], k, None, 120.0
+                        return
+            return
         if c.kind in vehicles.LARGE or vehicles.STYLE[c.kind] not in CARS or c.kind in clock.EMERGENCY:
             return
         for i, o in enumerate(good):
             for k, hops in self.entry.get(o, ()):
                 st = self.sites[k]
+                if st["kind"] == 2:
+                    continue
                 if tr.rng.random() < ENTER_P[st["kind"]] * (1.0 if hops == 0 else 0.7):
                     c.nxt, c.turn, c.stn, c.dwell, c.stn_t = o, turns[i], k, None, 120.0
                     return
@@ -99,6 +121,9 @@ class Stations:
             return vlim, False
         if c.e != st["edge"]:
             return vlim, False                                       # still on the way in (steer() drops it if the way changes)
+        if st["kind"] == 2 and c.d != st["d"]:
+            c.stn = None                                             # turned round on the street: the container is on the wrong side
+            return vlim, False
         stop = st["s"] if c.d == 1 else e["len"] - st["s"]
         rem = stop - c.s
         if c.dwell is None:
@@ -106,6 +131,11 @@ class Stations:
                 c.stn = None
                 return vlim, False
             if rem < 1.3 and c.v < 0.6:
+                if st["kind"] == 2:
+                    c.dwell = garbage.DWELL
+                    st["svc"] = self.sim.traffic.t
+                    self.n_visits += 1
+                    return 0.0, True
                 a, b = DWELL[st["kind"]]
                 c.dwell = self.sim.rng.uniform(a, b)
                 self.n_visits += 1
@@ -194,7 +224,7 @@ class Stations:
     # ----------------------------------------------------------------------------------- player
     def _near(self, x, y):
         best, bd = None, 1e9
-        for st in self.sites:
+        for st in self.sites[:self.n_fuel]:
             r = FUEL_R if st["kind"] == 0 else WASH_R
             d = (st["x"] - x) ** 2 + (st["y"] - y) ** 2
             if d < r * r and d < bd:

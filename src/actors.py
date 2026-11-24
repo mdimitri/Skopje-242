@@ -11,6 +11,7 @@ from crosswalks import begin_frame, crosses_wall, over_budget, walk_path
 from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, brake_speed, corridor_entry, fastest_route,
                      follow_speed, movement_lanes, turn_angle, turn_indicator, turn_lanes)
 import escride
+import garbage
 from laneassist import LaneAssist
 import peds_lines
 import talk
@@ -2597,7 +2598,9 @@ class Traffic:
         c.kind = rng.choices(range(vehicles.N), vehicles.TRAFFIC_W)[0]
         if _rank(e["cls"]) >= 2 and e["w"] >= 7 and rng.random() < 0.12:
             c.kind = rng.choices(vehicles.HEAVY, vehicles.HEAVY_W)[0]       # lorries drive only the big roads (tertiary and up)
-        if vehicles.LARGE[c.kind] and e["w"] < (7 if c.kind in vehicles.HEAVY else 8):
+        if e["w"] >= 5.5 and e["cls"] in ("residential", "living_street", "unclassified", "tertiary", "secondary") and rng.random() < 0.03:
+            c.kind = garbage.truck_kind()                                   # garbage trucks go round the streets that have containers
+        if vehicles.LARGE[c.kind] and e["w"] < (7 if c.kind in vehicles.HEAVY else 5.5 if c.kind == garbage.truck_kind() else 8):
             c.kind = 1
         c.color = rng.randrange(vehicles.N_COLORS)
         c.pace = rng.uniform(0.85, TRAFFIC_SPEED_FACTOR) * vehicles.SPEED[c.kind]
@@ -4550,7 +4553,11 @@ class Sim:
         self.chaos = chaos.Chaos(self)       # breakable props, blast waves, chain fires
         self.traffic.sim = self
         import stations
+        import garbage
+        if getattr(world, "garbage_sites", None) is None:
+            world.garbage_sites = garbage.make_sites(world)          # waste containers along the kerbs (and the trucks' stops at them)
         self.stations = self.traffic.stn = stations.Stations(self)
+        self.garbage = garbage.Garbage(self, world.garbage_sites)
         self.clock = clock.GameClock(17.0)
         self.base_cars, self.base_peds = n_cars, n_peds
         self._cull_t = 0.0
@@ -5615,6 +5622,8 @@ class Sim:
             self._dispatch()
             self.services.update(dt)
         self.chaos.update(dt)
+        if not self.client:
+            self.garbage.update(dt)
         if getattr(self, "compounds", None) is not None:
             self.compounds.update(dt)
         if getattr(self, "transit", None) is not None and not self.client:
