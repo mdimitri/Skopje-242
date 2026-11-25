@@ -753,7 +753,7 @@ class Renderer:
                 continue
             store = self.car_models if kind == "car" else self.car_lods
             if store.get(k) is None:
-                store[k] = gl3d.gloss_apply(gl3d.make_model(*arrs), k[0])
+                store[k] = gl3d.gloss_apply(gl3d.make_model(*arrs), gl3d.car_material_variant(*k))
 
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0

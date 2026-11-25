@@ -2218,7 +2218,14 @@ def car_scene_arrays(kind, color, dents=(), burnt=0.0, player=False):
 
 def car_model(kind, color, dents=(), burnt=0.0, player=False, steer_wheels=False, scene=False):
     pos, uv, col = car_scene_arrays(kind, color, dents, burnt, player) if scene else car_arrays(kind, color, dents, burnt, player, steer_wheels)
-    return gloss_apply(make_model(pos, uv, col), kind)
+    return gloss_apply(make_model(pos, uv, col), car_material_variant(kind, color))
+
+
+def car_material_variant(kind, color):
+    """Keep material variation consistent between the car's render models."""
+    if kind == V.ARTIC_BUS:
+        return kind  # The shared rear body uses the same material as the front.
+    return kind + 7 * color
 
 
 # ------------------------------------------------------------------ glossy cars: clear-coat / metallic paint and reflective glass
@@ -2241,6 +2248,11 @@ out vec4 finalColor;
   if (generatedSurfaces == 2){
     float family = round(colSpecular.r * 255.0);
     float variant = round(colSpecular.g * 255.0);
+    bool interior = family == 27.0;
+    if (interior) {
+      family = uv.x;
+      if (family > 24.0) { finalColor = base; return; }
+    }
     float lum = dot(base.rgb, vec3(0.299, 0.587, 0.114));
     vec3 localN = normalize(cross(dFdx(localPos), dFdy(localPos)));
     vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));
@@ -2252,12 +2264,11 @@ out vec4 finalColor;
     } else if (family == 26.0) {
       if (uv.x > 1.5) { finalColor = base; return; }
       family = uv.x > 0.5 ? 20.0 : (lum < 0.18 ? 21.0 : (base.r - base.b > 0.14 ? 11.0 : (lum > 0.55 ? 7.0 : 22.0)));
-    } else if (family == 27.0) {
-      family = abs(localN.y) > 0.78 ? (lum < 0.27 ? 13.0 : (base.r - base.b > 0.13 ? 11.0 : 12.0)) :
-                                      (base.r - base.b > 0.10 ? 11.0 : 4.0);
     }
     float repeatM = family >= 14.0 && family <= 19.0 ? 0.48 : (family >= 20.0 && family <= 22.0 ? 0.60 : 2.2);
-    vec4 detail = objectSample(surfaceProjection(localPos, localN) / repeatM, family, variant);
+    vec2 materialUV = surfaceProjection(localPos, localN) / repeatM;
+    vec4 detail = interior ? surfaceSample(materialUV, localPos.xz, family, 0.75) :
+                             objectSample(materialUV, family, variant);
     vec3 bumped = surfaceNormal(wp, n, detail.a, surfaceAmplitude(family));
     float light = clamp(1.0 + 0.55 * (dot(bumped, SUNL) - dot(n, SUNL)), 0.64, 1.36);
     base.rgb *= mix(vec3(1.0), detail.rgb * 2.0, family == 16.0 ? 0.28 : 0.70) * light;
@@ -3509,9 +3520,11 @@ TREE_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp; uniform float time; uniform vec3 wind;
 out vec2 fragTexCoord; out vec4 fragColor; out vec2 wpos; out vec3 wp;
+flat out float leafCard;
 void main(){
   fragTexCoord = vertexTexCoord; fragColor = vec4(vertexColor.rgb, 1.0);
   float a = vertexColor.a * 255.0; float leaf = step(127.5, a); float w = (a - 128.0 * leaf) / 127.0;
+  leafCard = leaf;
   vec3 p = vertexPosition;
   float ph = p.x * 0.045 + p.z * 0.037;                                        // a gust front sweeping over the trees
   float gust = 0.65 + 0.35 * sin(time * 0.37 + ph * 0.5);
@@ -3522,12 +3535,22 @@ void main(){
   wpos = vertexPosition.xz; wp = vertexPosition;
   gl_Position = mvp * vec4(p, 1.0); }"""
 TREE_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")] + """uniform float cut;       // leaves higher than this (model space) are gone: a tree shedding from the top down
+flat in float leafCard;
 void main(){
   vec4 base = texture(texture0, fragTexCoord);
-  if (base.a < 0.45 || wp.y > cut) discard;
   vec3 c = base.rgb * colDiffuse.rgb * fragColor.rgb;
   vec3 nrm = normalize(cross(dFdx(wp), dFdy(wp)));
   if (nrm.y < 0.0) nrm = -nrm;
+  if (generatedSurfaces == 2){
+    // Leaf cards carry an explicit flag. Solid crown LODs use green vertex colors.
+    bool foliage = leafCard > 0.5 || fragColor.g > fragColor.r;
+    float family = foliage ? 10.0 : 9.0;
+    vec2 uv = surfaceProjection(wp, nrm) / (foliage ? 0.8 : 1.4);
+    vec4 detail = surfaceSample(uv, wpos, family, foliage ? 0.38 : 0.72);
+    vec3 bumped = surfaceNormal(wp, nrm, detail.a, surfaceAmplitude(family));
+    c = relight(c * detail.rgb * 2.0, nrm, bumped, 0.9, 0.7);
+  }
+  if (base.a < 0.45 || wp.y > cut) discard;
   c = shade(c, sunShadow(wp, nrm));
   finalColor = vec4(c, 1.0);
 }"""
@@ -3573,6 +3596,7 @@ def tree_model(pos, uv, col):
         m.materials[0].maps[0].texture = d[1]
         if SHADOW_TEX is not None:
             m.materials[0].maps[3].texture = SHADOW_TEX
+        surfacepack.track(m)
     return m
 
 

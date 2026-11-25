@@ -164,26 +164,29 @@ class Mall:
     # ---------------------------------------------------------------- geometry
     def build(self):
         import gl3d
-        P, K = [], []
+        from surfacepack import EXPANDED_FAMILIES
+        P, K, U = [], [], []
+        rows = {name: i for i, name in enumerate(EXPANDED_FAMILIES)}
         rng = np.random.default_rng(242)
         lightdir = np.array([0.3, 0.8, 0.5])
         lightdir /= np.linalg.norm(lightdir)
 
-        def quad(p0, du, dv, col, nrm):
+        def quad(p0, du, dv, col, nrm, material):
             p0, du, dv = np.array(p0, float), np.array(du, float), np.array(dv, float)
             P.extend((p0, p0 + du, p0 + du + dv, p0, p0 + du + dv, p0 + dv))
             k = 0.72 + 0.32 * abs(float(np.dot(nrm, lightdir)))
             K.extend([tuple(min(255, int(c * k)) for c in col)] * 6)
+            U.extend([(rows.get(material, 255), 0)] * 6)
 
-        def box(a0, a1, y0, y1, n0, n1, col, faces="tbaAnN"):
+        def box(a0, a1, y0, y1, n0, n1, col, faces="tbaAnN", material="plaster"):
             """Axis-aligned box in the local frame (a, y, n)."""
             da, dy, dn = a1 - a0, y1 - y0, n1 - n0
-            if "t" in faces: quad((a0, y1, n0), (da, 0, 0), (0, 0, dn), col, (0, 1, 0))
-            if "b" in faces: quad((a0, y0, n0), (da, 0, 0), (0, 0, dn), col, (0, 1, 0))
-            if "a" in faces: quad((a0, y0, n0), (0, 0, dn), (0, dy, 0), col, (1, 0, 0))
-            if "A" in faces: quad((a1, y0, n0), (0, 0, dn), (0, dy, 0), col, (1, 0, 0))
-            if "n" in faces: quad((a0, y0, n0), (da, 0, 0), (0, dy, 0), col, (0, 0, 1))
-            if "N" in faces: quad((a0, y0, n1), (da, 0, 0), (0, dy, 0), col, (0, 0, 1))
+            if "t" in faces: quad((a0, y1, n0), (da, 0, 0), (0, 0, dn), col, (0, 1, 0), material)
+            if "b" in faces: quad((a0, y0, n0), (da, 0, 0), (0, 0, dn), col, (0, 1, 0), material)
+            if "a" in faces: quad((a0, y0, n0), (0, 0, dn), (0, dy, 0), col, (1, 0, 0), material)
+            if "A" in faces: quad((a1, y0, n0), (0, 0, dn), (0, dy, 0), col, (1, 0, 0), material)
+            if "n" in faces: quad((a0, y0, n0), (da, 0, 0), (0, dy, 0), col, (0, 0, 1), material)
+            if "N" in faces: quad((a0, y0, n1), (da, 0, 0), (0, dy, 0), col, (0, 0, 1), material)
 
         def tiles(a0, a1, n0, n1, y, c1, c2, s=2.0):
             ia = max(1, int(round((a1 - a0) / s)))
@@ -191,7 +194,8 @@ class Mall:
             sa, sn = (a1 - a0) / ia, (n1 - n0) / jn
             for i in range(ia):
                 for j in range(jn):
-                    quad((a0 + i * sa, y, n0 + j * sn), (sa, 0, 0), (0, 0, sn), c1 if (i + j) % 2 else c2, (0, 1, 0))
+                    quad((a0 + i * sa, y, n0 + j * sn), (sa, 0, 0), (0, 0, sn),
+                         c1 if (i + j) % 2 else c2, (0, 1, 0), "ceramic")
 
         WALL, PIL, SLAB, CEILC = (226, 220, 206), (92, 88, 84), (200, 196, 188), (238, 236, 230)
         GLASS, RAIL = (150, 190, 205), (70, 74, 80)
@@ -213,14 +217,14 @@ class Mall:
             col = tuple(int(c) for c in rng.integers(40, 230, 3))
             inner = tuple(int(c * 0.35 + 150) for c in col)
             box(a0, a1, y0, y0 + h, b - side * 0.1, b, inner, "nN")                                   # back wall
-            box(a0, a1, y0 + 0.01, y0 + 0.02, lo, hi, (120, 112, 104), "t")                           # shop floor
+            box(a0, a1, y0 + 0.01, y0 + 0.02, lo, hi, (120, 112, 104), "t", "carpet")                           # shop floor
             box(a0, a1, y0 + h - 0.05, y0 + h, lo, hi, (235, 232, 225), "b")                          # shop ceiling
             for s_ in (a0, a1 - 0.4):                                                                 # pilasters
-                box(s_, s_ + 0.4, y0, y0 + h, lo, hi, PIL, "aAnN")
-            box(a0, a1, y0 + h - 1.1, y0 + h, f - side * 0.15, f + side * 0.05, col, "nNb")           # sign band
+                box(s_, s_ + 0.4, y0, y0 + h, lo, hi, PIL, "aAnN", "concrete")
+            box(a0, a1, y0 + h - 1.1, y0 + h, f - side * 0.15, f + side * 0.05, col, "nNb", "paint")           # sign band
             box(a0 + 0.4, a1 - 0.4, y0, y0 + 0.45, f - side * 0.05, f + side * 0.35, (60, 58, 56), "tnN")   # window sill
             for s_ in np.linspace(a0 + 0.4, a1 - 0.4, 4):                                            # glazing bars
-                box(s_ - 0.03, s_ + 0.03, y0 + 0.45, y0 + h - 1.1, f - side * 0.03, f + side * 0.03, RAIL, "aAnN")
+                box(s_ - 0.03, s_ + 0.03, y0 + 0.45, y0 + h - 1.1, f - side * 0.03, f + side * 0.03, RAIL, "aAnN", "metal")
             kind = int(rng.integers(0, 3))                                                            # the display
             for k in range(int((a1 - a0) // 1.3)):
                 x = a0 + 0.9 + k * 1.3
@@ -229,16 +233,16 @@ class Mall:
                 d = f + side * (0.9 + 0.6 * (k % 2))
                 if kind == 0:                                                                         # mannequins
                     c2 = tuple(int(c) for c in rng.integers(30, 240, 3))
-                    box(x - 0.08, x + 0.08, y0 + 0.45, y0 + 1.25, d - 0.08, d + 0.08, (225, 220, 215))
-                    box(x - 0.24, x + 0.24, y0 + 1.15, y0 + 1.85, d - 0.14, d + 0.14, c2)
-                    box(x - 0.11, x + 0.11, y0 + 1.9, y0 + 2.15, d - 0.11, d + 0.11, (232, 226, 218))
+                    box(x - 0.08, x + 0.08, y0 + 0.45, y0 + 1.25, d - 0.08, d + 0.08, (225, 220, 215), material="plastic")
+                    box(x - 0.24, x + 0.24, y0 + 1.15, y0 + 1.85, d - 0.14, d + 0.14, c2, material="cloth")
+                    box(x - 0.11, x + 0.11, y0 + 1.9, y0 + 2.15, d - 0.11, d + 0.11, (232, 226, 218), material="plastic")
                 elif kind == 1:                                                                       # shelves of goods
                     for sy in (0.9, 1.5, 2.1):
-                        box(x - 0.6, x + 0.6, y0 + sy - 0.04, y0 + sy, d - 0.25, d + 0.25, (150, 120, 90))
+                        box(x - 0.6, x + 0.6, y0 + sy - 0.04, y0 + sy, d - 0.25, d + 0.25, (150, 120, 90), material="wood")
                         for g in range(3):
                             c2 = tuple(int(c) for c in rng.integers(40, 250, 3))
                             gx = x - 0.4 + g * 0.4
-                            box(gx - 0.14, gx + 0.14, y0 + sy, y0 + sy + float(rng.uniform(0.15, 0.4)), d - 0.15, d + 0.15, c2)
+                            box(gx - 0.14, gx + 0.14, y0 + sy, y0 + sy + float(rng.uniform(0.15, 0.4)), d - 0.15, d + 0.15, c2, material="paper")
                 else:                                                                                 # plinths with one piece each
                     box(x - 0.3, x + 0.3, y0 + 0.45, y0 + 1.05, d - 0.3, d + 0.3, (238, 236, 232))
                     c2 = tuple(int(c) for c in rng.integers(60, 250, 3))
@@ -265,24 +269,24 @@ class Mall:
         # ---- the slab between the levels at the opening edge, the upper floor, ceilings
         for side in (-1, 1):
             lo, hi = sorted((side * LANE_I, side * SHOP))
-            box(A0, A1, CEIL, UP, lo, hi, SLAB, "b")                                               # our ceiling
+            box(A0, A1, CEIL, UP, lo, hi, SLAB, "b", "concrete")                                               # our ceiling
             u0, u1 = sorted((side * LANE_I, side * LANE_O))
             tiles(A0, A1, u0, u1, UP, (205, 200, 190), (185, 178, 168))                             # the upper gallery
-            box(H0, H1, CEIL, UP, side * LANE_I - 0.01, side * LANE_I + 0.01, SLAB, "nN")          # slab edge at the opening
-            box(H0, H1, LOW + CEIL, 0.0, side * LANE_I - 0.01, side * LANE_I + 0.01, SLAB, "nN")   # our floor's edge, seen from below
-            box(H0, H1, LOW + CEIL, LOW + CEIL + 0.01, lo, hi, SLAB, "b")                          # lower floor ceiling
+            box(H0, H1, CEIL, UP, side * LANE_I - 0.01, side * LANE_I + 0.01, SLAB, "nN", "concrete")          # slab edge at the opening
+            box(H0, H1, LOW + CEIL, 0.0, side * LANE_I - 0.01, side * LANE_I + 0.01, SLAB, "nN", "concrete")   # our floor's edge, seen from below
+            box(H0, H1, LOW + CEIL, LOW + CEIL + 0.01, lo, hi, SLAB, "b", "concrete")                          # lower floor ceiling
             for y in (0.0, UP):                                                                      # balustrades: glass + handrail
-                box(H0, H1, y, y + 1.05, side * LANE_I - 0.02, side * LANE_I + 0.02, GLASS, "nN")
-                box(H0, H1, y + 1.05, y + 1.12, side * LANE_I - 0.06, side * LANE_I + 0.06, RAIL)
+                box(H0, H1, y, y + 1.05, side * LANE_I - 0.02, side * LANE_I + 0.02, GLASS, "nN", None)
+                box(H0, H1, y + 1.05, y + 1.12, side * LANE_I - 0.06, side * LANE_I + 0.06, RAIL, material="metal")
             for i in range(int((A1 - A0) // 6)):                                                     # ceiling lights
                 la = A0 + 3 + i * 6
                 ln = side * (LANE_I + LANE_O) / 2
-                box(la - 0.8, la + 0.8, CEIL - 0.04, CEIL, ln - 0.6, ln + 0.6, (255, 252, 240), "b")
+                box(la - 0.8, la + 0.8, CEIL - 0.04, CEIL, ln - 0.6, ln + 0.6, (255, 252, 240), "b", None)
             for i in range(int((H1 - H0) // 12) + 1):                                                # columns at the opening
                 ca = H0 + i * 12
                 box(ca - 0.25, ca + 0.25, LOW, ROOF, side * (LANE_I + 0.3) - 0.25, side * (LANE_I + 0.3) + 0.25, (210, 206, 198))
         for a0, a1 in ((A0, H0), (H1, A1)):                                                        # end halls: ceiling + upper floor
-            box(a0, a1, CEIL, UP, -LANE_I, LANE_I, SLAB, "b")
+            box(a0, a1, CEIL, UP, -LANE_I, LANE_I, SLAB, "b", "concrete")
             tiles(a0, a1, -LANE_I, LANE_I, UP, (205, 200, 190), (185, 178, 168))
         tiles(H0, H1, -LANE_O, LANE_O, LOW, (196, 186, 170), (150, 142, 132))                      # the lower floor
         for i in range(int((H1 - H0) // 10)):                                                       # benches / planters down there
@@ -292,7 +296,7 @@ class Mall:
                 box(pa - 0.2, pa + 0.2, LOW + 0.5, LOW + 2.2, -0.2, 0.2, (60, 130, 60))
         box(A0, A1, ROOF, ROOF + 0.1, -SHOP, SHOP, CEILC, "b")                                     # roof, skylight over the opening
         for i in range(int((H1 - H0) // 4)):
-            box(H0 + i * 4, H0 + i * 4 + 3.6, ROOF - 0.05, ROOF, -LANE_I + 0.4, LANE_I - 0.4, (205, 228, 245), "b")
+            box(H0 + i * 4, H0 + i * 4 + 3.6, ROOF - 0.05, ROOF, -LANE_I + 0.4, LANE_I - 0.4, (205, 228, 245), "b", None)
         # ---- end walls, the opening's end walls, corridor walls
         for a_ in (A0, A1):
             for n0, n1 in ((-SHOP, -3.0), (3.0, SHOP)):
@@ -301,25 +305,25 @@ class Mall:
             box(a_, a_ + 0.01, UP, ROOF, -SHOP, SHOP, WALL, "aA")
         for a_ in (H0, H1):
             box(a_, a_ + 0.01, LOW, 0.0, -LANE_O, LANE_O, WALL, "aA")
-            box(a_ - 0.02, a_ + 0.02, 0.0, 1.05, -LANE_I, LANE_I, GLASS, "aA")                     # balustrade across the end
-            box(a_ - 0.02, a_ + 0.02, UP, UP + 1.05, -LANE_I, LANE_I, GLASS, "aA")
+            box(a_ - 0.02, a_ + 0.02, 0.0, 1.05, -LANE_I, LANE_I, GLASS, "aA", None)                     # balustrade across the end
+            box(a_ - 0.02, a_ + 0.02, UP, UP + 1.05, -LANE_I, LANE_I, GLASS, "aA", None)
         for (n0, n1) in ((-44.6, -LANE_O), (LANE_O, 66.2)):
             for a_ in (-2.8, 2.8):
                 box(a_, a_ + 0.01, 0.0, 3.6, n0, n1, (205, 196, 182), "aA")
             box(-2.8, 2.8, 3.6, 3.65, n0, n1, CEILC, "b")
             for i in range(int((n1 - n0) // 5)):
-                box(-0.6, 0.6, 3.56, 3.6, n0 + 2 + i * 5, n0 + 3 + i * 5, (255, 252, 240), "b")
+                box(-0.6, 0.6, 3.56, 3.6, n0 + 2 + i * 5, n0 + 3 + i * 5, (255, 252, 240), "b", None)
             for i in range(int((n1 - n0) // 7)):                                                  # posters along the corridor
                 c2 = tuple(int(c) for c in rng.integers(40, 250, 3))
                 for a_ in (-2.79, 2.78):
-                    box(a_, a_ + 0.01, 1.0, 2.6, n0 + 2 + i * 7, n0 + 3.2 + i * 7, c2, "aA")
+                    box(a_, a_ + 0.01, 1.0, 2.6, n0 + 2 + i * 7, n0 + 3.2 + i * 7, c2, "aA", "paper")
         # ---- doors: glass with the bright street behind
         for nm, ax, w, s, c, hw in DOORS:
             if ax == "a":
-                box(w - s * 0.05, w, 0.0, 3.2, c - hw, c + hw, (232, 240, 248), "aA")
-                box(w - s * 0.1, w - s * 0.05, 2.9, 3.2, c - hw, c + hw, RAIL, "aA")
+                box(w - s * 0.05, w, 0.0, 3.2, c - hw, c + hw, (232, 240, 248), "aA", None)
+                box(w - s * 0.1, w - s * 0.05, 2.9, 3.2, c - hw, c + hw, RAIL, "aA", "metal")
             else:
-                box(c - hw, c + hw, 0.0, 3.6, w - s * 0.05, w, (232, 240, 248), "nN")
+                box(c - hw, c + hw, 0.0, 3.6, w - s * 0.05, w, (232, 240, 248), "nN", None)
         # ---- escalators: in the opening, one along each lane at each place; the north ones go up, the south ones down
         for ea in ESC_A:
             for side, y1 in ((-1, UP), (1, LOW)):
@@ -328,19 +332,20 @@ class Mall:
                 for i in range(steps):
                     a0 = ea - L / 2 + i * L / steps
                     yy = y1 * (i + 0.5) / steps
-                    box(a0, a0 + L / steps, yy - 0.18, yy, n0 + 0.1, n1 - 0.1, (80, 82, 88), "tA")
+                    box(a0, a0 + L / steps, yy - 0.18, yy, n0 + 0.1, n1 - 0.1, (80, 82, 88), "tA", "metal")
                 for sn in (n0, n1 - 0.12):                                                         # side panels (glass) + rails
                     for i in range(steps):
                         a0 = ea - L / 2 + i * L / steps
                         yy = y1 * (i + 0.5) / steps
-                        box(a0, a0 + L / steps, yy - 0.5, yy + 0.95, sn, sn + 0.12, GLASS if i % 2 else (140, 175, 190), "nN")
-                        box(a0, a0 + L / steps, yy + 0.95, yy + 1.05, sn - 0.02, sn + 0.14, (30, 30, 34), "tnN")
+                        box(a0, a0 + L / steps, yy - 0.5, yy + 0.95, sn, sn + 0.12, GLASS if i % 2 else (140, 175, 190), "nN", None)
+                        box(a0, a0 + L / steps, yy + 0.95, yy + 1.05, sn - 0.02, sn + 0.14, (30, 30, 34), "tnN", "rubber")
         pos = np.asarray(P, np.float64)
         wx = C[0] + pos[:, 0] * CA - pos[:, 2] * SA
         wz = C[1] + pos[:, 0] * SA + pos[:, 2] * CA
         out = np.stack((wx, pos[:, 1] + self.floor, wz), 1).astype(np.float32)
         col = np.concatenate([np.asarray(K, np.uint8), np.full((len(K), 1), 255, np.uint8)], 1)
-        self.model = gl3d.object_detail(gl3d.make_model(out, np.zeros((len(out), 2), np.float32), col), "interior")
+        # The interior shader reads the material row from UV.x for this untextured base mesh.
+        self.model = gl3d.object_detail(gl3d.make_model(out, U, col), "interior")
 
     def draw(self, cam):
         """Inside a 3D pass with the mall camera."""
