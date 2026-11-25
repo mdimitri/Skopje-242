@@ -83,11 +83,13 @@ class Edge:
             points.append(p + right * (left_edge + fraction * (right_edge - left_edge)))
         return LineString(points)
 
-    def port(self, station, lane, direction):
+    def lane_fraction(self, lane, direction):
         lo, hi = lane_bounds(self.section, direction)
         nominal = lo + (lane + 0.5) * (hi - lo) / lane_count(self.section, direction)
-        fraction = 0.5 + nominal * direction / self.section["w"]
-        before, p, after = self.trace(fraction, [
+        return 0.5 + nominal * direction / self.section["w"]
+
+    def port(self, station, lane, direction):
+        before, p, after = self.trace(self.lane_fraction(lane, direction), [
             max(0, station - 0.25), station, min(self.line.length, station + 0.25)
         ]).coords
         return np.array(p), unit(np.subtract(after, before)) * direction
@@ -161,13 +163,30 @@ def compile_movements(edges, movements):
         a, da, d, dd = movement_ports(edges, spec)
         if spec.get("follow_via"):
             guide_id, = spec["via"]
-            guide = edges[guide_id].line
-            start, end = guide.length * 0.18, guide.length * 0.82
-            b, db, _ = frame(guide, start)
-            c, dc, _ = frame(guide, end)
-            lead, tail = np.linalg.norm(b - a) / 3, np.linalg.norm(d - c) / 3
-            points = list(cubic(a, a + da * lead, b - db * lead, b)[:-1])
-            points += list(substring(guide, start, end).coords)
+            guide = edges[guide_id]
+            source = edges[spec["from"]]
+            direction = spec.get("from_direction", 1)
+            setback = min(spec["setback"], source.line.length * 0.45)
+            split = source.line.length if direction == 1 else 0
+            stations = np.linspace(split - direction * setback, split, math.ceil(setback * 2) + 1)
+            lane = spec["from_lane"]
+            points = list(source.trace(source.lane_fraction(lane, direction), stations).coords[:-1])
+            mouth, heading = source.port(split, lane, direction)
+
+            # Keep the slip in the approach lane up to the split, then join the
+            # guide beyond the start taper so that its offset does not pull us inward.
+            length = guide.line.length
+            taper = max((entry[1] for entry in guide.section.get("tapers", []) if entry[0] == "start"), default=0)
+            start, end = min(length * 0.45, max(length * 0.18, taper)), length * 0.82
+            b, db = guide.port(start, 0, 1)
+            c, dc = guide.port(end, 0, 1)
+            lead, tail = np.linalg.norm(b - mouth) / 3, np.linalg.norm(d - c) / 3
+            normal = np.array([-heading[1], heading[0]])
+            lateral = (b - mouth) @ normal
+            heading_change = db @ normal
+            finish = min(lead, abs(lateral / heading_change)) if lateral * heading_change > 0 else lead
+            points += list(cubic(mouth, mouth + heading * lead, b - db * finish, b)[:-1])
+            points += list(guide.trace(0.5, np.linspace(start, end, math.ceil((end - start) * 2) + 1)).coords)
             points += list(cubic(c, c + dc * tail, d - dd * tail, d)[1:])
             lines[spec["id"]] = LineString(points)
             continue

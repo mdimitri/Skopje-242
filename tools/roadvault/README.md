@@ -33,8 +33,9 @@ design's latitude and longitude, with up as the second axis in the mesh.
 The compiler builds cross-sections from lane and width tags, sweeps their
 boundaries along interpolated centre lines, and uses authored split and
 merge tapers. Movements validate the direction, lane indices and OSM node
-chain. Parallel turns share a Bézier alignment. The slip lanes preserve
-their mapped guide curves. Vehicle envelopes complete the central apron,
+chain. Parallel turns share a Bézier alignment. Each slip traces its
+approach lane to the split before blending into the mapped guide.
+Vehicle envelopes complete the central apron,
 with a bound on how far the movement centre lines can leave the mapped
 road strips. Mapped paths and grass and the footprint's enclosed refuges
 produce separate raised surfaces. The layout records the proposed movement
