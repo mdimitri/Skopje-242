@@ -54,8 +54,11 @@ def site_inputs(layout, osm, bounds, road_elements=None):
             unique_xy = [point for i, point in enumerate(xy) if not i or point != xy[i - 1]]
             if len(unique_xy) >= 2:
                 way_id = str(way["id"])
-                edges.append(road_edge(way, unique_xy, layout.get("tapers", {}).get(way_id, ()),
-                                       layout.get("left_lane_openings", {}).get(way_id)))
+                edge = road_edge(way, unique_xy, layout.get("tapers", {}).get(way_id, ()),
+                                 layout.get("left_lane_openings", {}).get(way_id))
+                if taper := layout.get("lane_tapers", {}).get(way_id):
+                    edge.section["lane_taper"] = taper
+                edges.append(edge)
     areas = osm / "areas.json"
     for way in read_elements(areas) if road_elements is None or areas.exists() else []:
         tags = way.get("tags", {})

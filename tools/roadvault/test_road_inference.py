@@ -4,9 +4,12 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from shapely.geometry import box, shape
+import numpy as np
+from shapely.geometry import LineString, Point, box, shape
+from shapely.ops import unary_union
 
-from run_candidate import compile_scene, infer_site
+from run_candidate import ROOT, compile_scene, infer_site
+from road_candidate import crossing_span
 from geo import LAT0, LON0, M_LAT, M_LON
 
 
@@ -129,6 +132,43 @@ class OsmInferenceTests(unittest.TestCase):
         self.assertEqual([way for way, _ in self.layout["crossings"][0]], [101, 102])
         *_, pedestrian = compile_scene(self.edges, self.layout, self.walks, self.greens, self.bounds)
         self.assertGreater(shape(pedestrian["median_cut_throughs"]).area, 12)
+
+
+@unittest.skipUnless((ROOT / "data/osm/roads.json").exists(), "Requires the local Skopje OSM extract")
+class SkopjeInferenceTests(unittest.TestCase):
+    def test_boulevard_tapers_and_outer_slip_sidewalks(self):
+        sites = [((41.99815, 21.42544), 95, 671715324, 233082416, [16540429, 16552477, 173142133, 173142141]),
+                 ((42.00547, 21.41690), 93, 229980925, 669010521, [229986882, 229986884])]
+        for origin, radius, wider, narrower, slips in sites:
+            with self.subTest(origin=origin):
+                bounds = box(-radius, -radius, radius, radius)
+                layout = dict(origin=origin, radius=radius)
+                edges, walks, greens, originals, report = infer_site(layout, ROOT / "data/osm", bounds)
+                wide = next(e for e in edges if originals[e.id] == wider and "lane_taper" in e.section)
+                narrow = next(e for e in edges if originals[e.id] == narrower and set(e.nodes) & set(wide.nodes))
+                end, length, _ = wide.section["lane_taper"]
+                start = 0 if end == "start" else wide.line.length
+                finish = length if end == "start" else wide.line.length - length
+                self.assertGreater(length, 20)
+                self.assertLessEqual(length, 25)
+                self.assertAlmostEqual(np.diff(wide.cross_section(start)).item(), narrow.section["w"])
+                self.assertAlmostEqual(np.diff(wide.cross_section(finish)).item(), wide.section["w"])
+                self.assertEqual(wide.section["lanes"] - narrow.section["lanes"], 1)
+                _, _, _, asphalt, _, pedestrian = compile_scene(edges, layout, walks, greens, bounds, report)
+                walkable = unary_union([shape(pedestrian[key]) for key in ("sidewalks", "crossing_landings")])
+                for way in slips:
+                    self.assertEqual(layout["road_edges"][str(way)], ["curb", "sidewalk"])
+                    edge = next(item for item in edges if item.id == way)
+                    p, _, right, _, hi = crossing_span(edge, edge.line.length * 0.5, asphalt)
+                    probe = LineString([p + (hi + 0.04) * right, p + (hi + 1.7) * right])
+                    self.assertGreater(walkable.intersection(probe).length, 1.3)
+                if wider == 671715324:
+                    cuts = shape(pedestrian["median_cut_throughs"])
+                    self.assertTrue(any(cuts.covers(Point(x, 17)) for x in (-4, -3, -2)))
+                    for y in (23, 27, 31, 35, 39, 43, 47, 55, 65):
+                        # These transects span the two inner curb lines of the south leg.
+                        probe = LineString([(-10, y), (0, y)])
+                        self.assertGreater(probe.difference(asphalt).length, 0.7, y)
 
 
 if __name__ == "__main__":

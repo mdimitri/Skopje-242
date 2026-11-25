@@ -8,7 +8,7 @@ from shapely.errors import GEOSException
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
-from road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, polys
+from road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
 
 SIDEWALKS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "trunk"}
 
@@ -133,6 +133,10 @@ def lane_pairs(source, target, turn, continuation, fork_lanes=None):
     # Preserve lane order. Use the inside lane for a left turn and the outside lane
     # for a right turn when the receiving section has spare lanes.
     base = max(0, outgoing - len(choices)) if turn == "right" else 0
+    taper = target.edge.section.get("lane_taper")
+    if (turn == "through" and taper and taper[0] == "start" and taper[2] == "left"
+            and target.departure == 1 and outgoing == incoming + 1):
+        base = 1
     for rank, (i, indication) in enumerate(choices):
         j = min(outgoing - 1, base + rank * min(len(choices), outgoing) // len(choices))
         yield i, j, indication
@@ -159,7 +163,7 @@ def paired_medians(edges, tags_by_edge, road_edges):
     for edge in edges:
         tags = tags_by_edge[edge.id]
         identity = (tags.get("ref") or tags.get("name") or "").strip().casefold()
-        if identity and edge.section["ow"] and edge.line.length >= 12:
+        if identity and edge.section["ow"] and edge.line.length >= 20:
             corridors[identity].append(edge)
     pairs = []
     for group in corridors.values():
@@ -218,9 +222,6 @@ def slip_sidewalk_curves(edges, node_arms, road_edges):
         if any(len(arms) != 1 for arms in (incoming, continuing, feeding, receiving)):
             continue
         source, main, feed, target = (arms[0].edge for arms in (incoming, continuing, feeding, receiving))
-        counts = [lane_count(candidate.section) for candidate in (source, main, feed, target, edge)]
-        if counts[0] != counts[1] + counts[4] or counts[3] != counts[2] + counts[4]:
-            continue
         _, _, right = frame(source.line, source.line.length)
         if (np.array(edge.line.interpolate(6).coords[0]) - np.array(main.line.interpolate(6).coords[0])) @ right <= 0:
             continue
@@ -236,6 +237,62 @@ def slip_sidewalk_curves(edges, node_arms, road_edges):
         road_edges[str(edge.id)] = ["curb", "sidewalk"]
         curves.append([source.id, target.id, before, after, 1.35 * (edge.line.length + before + after)])
     return curves
+
+
+def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
+    """Taper a single-lane change on a straight continuation of the same road."""
+    profiles = {}
+    for hits in node_arms.values():
+        if not 2 <= len(hits) <= 3 or not bounds.covers(Point(hits[0][0])):
+            continue
+        main = [arm for _, arm in hits if not arm.edge.section["cls"].endswith("_link")]
+        if len(main) != 2:
+            continue
+        narrow, wide = sorted(main, key=lambda arm: arm.edge.section["lanes"])
+        if len(hits) == 3:
+            branch = next(arm for _, arm in hits if arm.edge.section["cls"].endswith("_link"))
+            # The extra lane in a balanced split or merge already belongs to the link.
+            if branch.at_end != wide.at_end:
+                continue
+        a, b = narrow.edge, wide.edge
+        name = tags_by_edge[a.id].get("name")
+        if (not name or name != tags_by_edge[b.id].get("name") or not a.section["ow"] or not b.section["ow"]
+                or narrow.at_end == wide.at_end or narrow.outward @ wide.outward > -0.94
+                or b.section["lanes"] - a.section["lanes"] != 1 or b.id in profiles):
+            continue
+        extra = b.section["w"] - a.section["w"]
+        if not 2 <= extra <= 4.5 or b.line.length < 12:
+            continue
+        end = "end" if wide.at_end else "start"
+        length = min(25, b.line.length - 1)
+        entry = [end, length, extra / 2, -extra / 2]
+        b.section.setdefault("tapers", []).append(entry)
+        turns = lane_turns(b.section)
+        side = "right" if turns and any(t.endswith("right") for t in turns[-1]) and not (
+            turns[0] and any(t.endswith("left") for t in turns[0])) else "left"
+        b.section["lane_taper"] = [end, length, side]
+        profiles[b.id] = [end, length, side]
+        layout.setdefault("tapers", {}).setdefault(str(b.id), []).append(entry)
+    layout["lane_tapers"] = {str(edge): profile for edge, profile in profiles.items()}
+    return profiles
+
+
+def align_paired_zebras(layout, by_id):
+    pairs = {frozenset((abs(a), abs(b))) for near, far in layout["median_corridors"] for a in near for b in far}
+    for group in layout["crossings"]:
+        for first, second in zip(group, group[1:]):
+            if frozenset((first[0], second[0])) not in pairs:
+                continue
+            a, b = by_id[first[0]], by_id[second[0]]
+            p, da, _ = frame(a.line, first[1])
+            q, db, _ = frame(b.line, second[1])
+            if da @ db > -0.85:
+                continue
+            center = Point((p + q) / 2)
+            new = (a.line.project(center), b.line.project(center))
+            if all(3 <= station <= edge.line.length - 3 and abs(station - old[1]) <= 6
+                   for edge, station, old in zip((a, b), new, (first, second))):
+                first[1], second[1] = (round(station, 3) for station in new)
 
 
 def append_crossings(layout, edges, node_tags, crossing_guides, bounds, report):
@@ -279,8 +336,13 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
     tags_by_edge = {way["id"]: way["tags"] for way in ways if way["id"] in by_id}
     layout.update(source="osm-topology", road_edges={str(edge): sidewalk_sides(tags) for edge, tags in tags_by_edge.items()},
                   corner_zones=[], unmarked=[], crossings=[], stop_lines=[], movements=[])
-    layout["median_corridors"] = paired_medians(edges, tags_by_edge, layout["road_edges"])
     relevant_nodes = road_arms(edges)
+    profiles = lane_transition_profiles(relevant_nodes, tags_by_edge, bounds, layout)
+    layout["median_corridors"] = paired_medians(edges, tags_by_edge, layout["road_edges"])
+    for edge, tags in tags_by_edge.items():
+        if tags["highway"] in {"primary_link", "secondary_link", "tertiary_link"} and by_id[edge].section["ow"]:
+            if tags.get("sidewalk", "") not in {"no", "none"}:
+                layout["road_edges"][str(edge)] = ["curb", "sidewalk"]
     layout["sidewalk_curves"] = slip_sidewalk_curves(edges, relevant_nodes, layout["road_edges"])
     ways_at_node = {node: {originals[arm.edge.id] for _, arm in hits} for node, hits in relevant_nodes.items()}
     denied, allowed, withheld = restriction_rules(relations, ways_at_node, set(originals.values()), report)
@@ -292,7 +354,9 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                 or access in {"no", "private"}):
             restricted_edges.add(edge)
             report.append(dict(kind="unmodeled_lane_or_access", way=originals[edge]))
-    frontage = unary_union([poly for edge in edges for poly in polys(footprint(edge))]).buffer(3.5)
+    raw_pavement = unary_union([poly for edge in edges for poly in polys(footprint(edge))])
+    frontage = raw_pavement.buffer(3.5)
+    divider = protected_median(by_id, layout, raw_pavement, bounds)
     trim = defaultdict(lambda: [0.0, 0.0])
     control_nodes = []
     for node, hits in sorted(relevant_nodes.items()):
@@ -338,7 +402,8 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     turn = "right" if angle > 0 else "left"
                 pairs = list(lane_pairs(source, target, turn, continuation, allocations.get(target.edge.id)))
                 if (continuation and lane_count(source.edge.section, source.arrival)
-                        != lane_count(target.edge.section, target.departure)):
+                        != lane_count(target.edge.section, target.departure)
+                        and source.edge.id not in profiles and target.edge.id not in profiles):
                     report.append(dict(kind="lane_transition_needs_review", node=node, source=source.edge.id,
                                        target=target.edge.id))
                 lane_width = min(source.edge.section["w"] / source.edge.section["lanes"],
@@ -355,7 +420,9 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     candidate = [{**spec, "handle": handle} for spec in specs]
                     try:
                         paths = compile_movements(by_id, candidate)
-                        fits = all(line.is_simple and bounds.covers(line) and frontage.covers(line) for _, line in paths)
+                        fits = all(line.is_simple and bounds.covers(line) and frontage.covers(line)
+                                   and line.buffer(spec["sweep_width"] / 2, cap_style="flat").intersection(divider).area < 0.01
+                                   for spec, line in paths)
                     except (ValueError, GEOSException):
                         fits = False
                     if fits:
@@ -365,6 +432,7 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     report.append(dict(kind="connector_needs_review", node=node, source=source.edge.id, target=target.edge.id))
     layout["unmarked"] = [[edge, start, by_id[edge].line.length - end] for edge, (start, end) in trim.items()]
     append_crossings(layout, edges, node_tags, crossing_guides, bounds, report)
+    align_paired_zebras(layout, by_id)
     stations = dict(item for group in layout["crossings"] for item in group)
     layout["pedestrian_signals"] = []
     for node, control, arms in control_nodes:

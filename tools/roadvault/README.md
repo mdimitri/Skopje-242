@@ -93,11 +93,11 @@ crossing stations and furniture.
 | Design rule | Evidence and behavior |
 | --- | --- |
 | Connect lanes before drawing the apron | Shared OSM nodes define topology, including nodes inside a way. Directions, turn lanes and direct via-node restrictions constrain movements. Candidate curves must fit near the mapped carriageways. |
-| Keep lanes ordered through forks | When one mapped link and the mainline consume the inbound lane count, reserve the lanes on the link side. Recognized right-hand slips can share a blended outer sidewalk edge. The blend is withheld if it would cut into a swept lane. |
-| Keep sidewalks on the outside of a divided road | Opposing parallel one-way ways with matching names or refs and enough room for a median get inside curbs. Mapped grass selects planted medians. OSM footways can join the road-built sidewalk. |
-| Connect paired crossings at street level | Tagged crossing geometry supplies the crossing positions. Planned zebra pairs through a median use the same rounded, flush break as the reference junction. |
+| Keep lanes ordered through forks | When one mapped link and the mainline consume the inbound lane count, reserve the lanes on the link side. Urban one-way slip lanes get an outer sidewalk. Recognized right-hand slips can share a blended outer sidewalk edge. The blend is withheld if it would cut into a swept lane. |
+| Keep sidewalks on the outside of a divided road | Opposing parallel one-way ways with matching names or refs and enough room for a median get inside curbs. The median is protected from inferred turn envelopes and junction rounding, and mapped grass selects planted medians. OSM footways can join the road-built sidewalk. |
+| Connect paired crossings at street level | Tagged crossing geometry supplies the crossing positions. Nearby opposing zebra stations are aligned across the median and use the same rounded, flush break as the reference junction. Enclosed slip refuges get rounded tips. |
 | Tie signals to the approaches they control | Mapped one-way signal approaches with a nearby zebra can supply stop lines, pedestrian heads and portals. Other signal positions are flagged for placement review. |
-| Provide useful turn-lane storage | Lane-number changes are reported for review. The authored pocket supports the 25 m target at Partizanski–Glavinov; the inference pass needs room and traffic evidence before adding a pocket. |
+| Provide useful turn-lane storage | A single-lane width change on a clear one-way continuation gets a taper up to 25 m. Other changes are reported for review. The authored pocket supports the 25 m target at Partizanski–Glavinov; the inference pass needs room and traffic evidence before adding a pocket. |
 
 The input is the game's local, right-hand-traffic, at-grade preview. A combined
 `roads.json` can include OSM nodes and relations; `restrictions.json` is also

@@ -94,6 +94,18 @@ class Edge:
                 divider = right_edge - width * (1 - 1 / lanes)
                 offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
                           else right_edge - width * (1 - fraction))
+            if lane_aligned and (taper := self.section.get("lane_taper")):
+                _, _, side = taper
+                lanes = self.section["lanes"]
+                width = self.section["w"]
+                if side == "left":
+                    divider = right_edge - width * (1 - 1 / lanes)
+                    offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
+                              else right_edge - width * (1 - fraction))
+                else:
+                    divider = left_edge + width * (1 - 1 / lanes)
+                    offset = (left_edge + width * fraction if fraction <= 1 - 1 / lanes
+                              else right_edge - (right_edge - divider) * (1 - fraction) * lanes)
             points.append(p + right * (offset + extra))
         return LineString(points)
 
@@ -302,6 +314,11 @@ def approach_paint(edge, begin, end):
             paint_stations = stations
             if index == 1 and (opening := section.get("left_lane_opening")):
                 paint_stations = stations[stations >= opening * 0.34]
+            if taper := section.get("lane_taper"):
+                end_name, length, side = taper
+                if index == (1 if side == "left" else n - 1):
+                    distance = stations if end_name == "start" else edge.line.length - stations
+                    paint_stations = stations[distance >= length * 0.33]
             if len(paint_stations) > 1:
                 shifted = edge.trace(0.5 + offset / section["w"], paint_stations, lane_aligned=True)
                 marks.extend(stroke(piece, 0.14) for piece in dash(shifted))
@@ -418,7 +435,7 @@ def median_cut_through(a, b):
     return walk.union(mouths).buffer(0.4).buffer(-0.4)
 
 
-def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk_patches):
+def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider):
     """Build road-owned walking surfaces, then admit only attached OSM path spurs."""
     sidewalks, curbs, links, zebras, crossing_areas = [], [], [], [], []
     for way, sides in layout["road_edges"].items():
@@ -431,10 +448,14 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
     sidewalk_outline = asphalt.buffer(2.4).difference(asphalt)
     for patch in sidewalk_patches:
         sidewalk = sidewalk.difference(patch).union(sidewalk_outline.intersection(patch)).intersection(bounds)
+    if not divider.is_empty:
+        sidewalk = sidewalk.difference(divider)
     # Follow the final asphalt where a road edge or a median nose calls for a curb.
     # The raw section bands only classify the edge and may be covered by the apron.
     returns = [Point(x, y).buffer(radius) for x, y, radius in layout.get("curb_returns", [])]
     curb_zone = unary_union([unary_union(curbs).buffer(0.9), refuges, *returns])
+    if not divider.is_empty:
+        curb_zone = curb_zone.union(divider)
     outline = asphalt.buffer(0.32).difference(asphalt)
     curb = outline.intersection(curb_zone).intersection(bounds).difference(sidewalk)
 
@@ -481,6 +502,8 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
     paths = []
     for line, width, _ in walks:
         clipped = stroke(line, width).intersection(bounds).difference(asphalt)
+        if not divider.is_empty:
+            clipped = clipped.difference(divider)
         usable = unary_union(polys(clipped)).difference(curb)
         paths.extend(part for part in polys(usable) if part.intersection(sidewalk).area > 0.12)
     walking_links = landings.union(cut_throughs)
@@ -489,10 +512,7 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
             footpaths, unary_union(crossing_areas), zebras)
 
 
-def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
-    """Use mapped grass to select planted medians; the carriageways set their shape."""
-    mapped = unary_union(greens).intersection(bounds)
-    planted = []
+def median_corridors(edges, layout):
     for near, far in layout.get("median_corridors", []):
         sides = []
         for chain in (near, far):
@@ -501,7 +521,29 @@ def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
                 coords = list(edges[abs(way)].line.coords)
                 points.extend(coords if way > 0 else coords[::-1])
             sides.append(points)
-        corridor = make_valid(Polygon(sides[0] + sides[1][::-1]))
+        yield make_valid(Polygon(sides[0] + sides[1][::-1]))
+
+
+def median_corridor_geometry(edges, layout):
+    """Join adjoining mapped carriageway pairs across their OSM way seams."""
+    return unary_union([poly for corridor in median_corridors(edges, layout) for poly in polys(corridor)]).buffer(
+        0.8).buffer(-0.8)
+
+
+def protected_median(edges, layout, raw_pavement, bounds):
+    corridor = median_corridor_geometry(edges, layout).intersection(bounds)
+    # Round out slivers at the caps of adjacent OSM ways. Keep the lengthwise divider
+    # while allowing explicitly mapped transverse carriageways through it.
+    return corridor.difference(raw_pavement.buffer(0.12).buffer(-0.12)).buffer(-0.26).buffer(0.26)
+
+
+def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
+    """Use mapped grass to select planted medians; the carriageways set their shape."""
+    mapped = unary_union(greens).intersection(bounds)
+    planted = []
+    corridors = (polys(median_corridor_geometry(edges, layout)) if layout.get("source") == "osm-topology"
+                 else median_corridors(edges, layout))
+    for corridor in corridors:
         median = unary_union(polys(corridor.intersection(bounds).difference(asphalt)))
         if mapped.intersection(median).area > 5:
             planted.append(median)
@@ -587,6 +629,9 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
     routes = compile_movements(by_id, movements)
     road_footprints = [poly for edge in edges for poly in polys(footprint(edge))]
     asphalt = unary_union(road_footprints)
+    inferred = layout.get("source") == "osm-topology"
+    divider = (protected_median(by_id, layout, asphalt, bounds)
+               if inferred else Polygon())
     # A routing mistake should fail review before it can pave an unmapped lot.
     safe_area = asphalt.buffer(3.5)
     for spec, line in routes:
@@ -601,19 +646,35 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
         zone = Point(x, y).buffer(radius)
         local = asphalt.intersection(zone.buffer(4))
         asphalt = asphalt.union(local.buffer(1.45).buffer(-1.45).intersection(zone))
-    asphalt = asphalt.intersection(bounds)
+    asphalt = asphalt.intersection(bounds).difference(divider) if inferred else asphalt.intersection(bounds)
     holes = [Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors]
     fill = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
-    refuges = [hole for hole in holes if 15 <= hole.area < 190]
-    for x, y, radius in layout.get("refuge_rounding", []):
+    refuges = [hole for hole in holes if 15 <= hole.area < 190
+               and (not inferred or hole.intersection(divider).area < hole.area * 0.2)]
+    rounding = list(layout.get("refuge_rounding", []))
+    rounded_tips = []
+    if inferred:
+        slip_inside = unary_union([edge_band(edge, "left", 0.55) for edge in edges
+                                  if edge.section["cls"].endswith("_link") and edge.section["ow"]])
+        for hole in holes:
+            if (15 <= hole.area <= 420 and hole.intersection(divider).area < hole.area * 0.2
+                    and hole.boundary.intersection(slip_inside.buffer(0.12)).length >= 5):
+                seed = hole.representative_point()
+                rounding.append([seed.x, seed.y, 1])
+    for x, y, radius in rounding:
         seed = Point(x, y)
         hole = next((hole for hole in holes if hole.contains(seed)), None)
         if hole is None:
             raise ValueError(f"No enclosed refuge at ({x}, {y})")
         rounded = hole.buffer(-radius).buffer(radius).intersection(hole)
         refuges = [refuge for refuge in refuges if refuge is not hole] + [rounded]
-        fill.append(hole.difference(rounded))
+        removed = hole.difference(rounded)
+        fill.append(removed)
+        if inferred:
+            rounded_tips.append(removed)
     asphalt = asphalt.union(unary_union(fill))
+    if inferred:
+        asphalt = asphalt.difference(divider)
     blended, sidewalk_patches = blend_slip_edges(asphalt, by_id, layout.get("sidewalk_curves", []), report)
     if report is not None and sidewalk_patches and any(env.difference(blended).area > 0.01 for env in envelopes.values()):
         report.append(dict(kind="sidewalk_join_would_reduce_lane_clearance"))
@@ -622,7 +683,7 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
         asphalt = blended
     refuges = unary_union(refuges)
     pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
-        by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches)
+        by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider)
     reserved = unary_union([asphalt, pavement, curb, landings, cut_throughs, paths])
     grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
     marks = []
@@ -639,7 +700,10 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
         overlaps = [road_footprints[i].intersection(road_footprints[j])
                     for i, j in neighbors.T if i < j]
         shared_pavement = unary_union([overlap for overlap in overlaps if overlap.area > 0.35])
-        marks = [unary_union(marks).difference(shared_pavement.buffer(0.6))]
+        painted = unary_union(marks).difference(shared_pavement.buffer(0.6))
+        if rounded_tips:
+            painted = painted.difference(unary_union(rounded_tips).buffer(0.5))
+        marks = [painted]
     crossing_stations = dict(item for group in layout["crossings"] for item in group)
     for way in layout["stop_lines"]:
         edge = by_id[way]
