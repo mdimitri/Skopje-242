@@ -349,6 +349,7 @@ class Hud:
         c = sim.car
         x, y, rh = 14, int(sh * 0.36), 30
         n = len(self.HELI_TIPS)
+        y = min(y, sh - 170 - 8 - (n * rh + 62))  # leave room for the vehicle panel below
         rl.draw_rectangle_rounded(rl.Rectangle(x - 6, y - 40, 300, 40 + n * rh + 62), 0.08, 6, rl.Color(10, 10, 14, 170))
         font.draw_text("Хеликоптер", x + 4, y - 32, 22, rl.Color(255, 230, 90, 255), bold=True)
         for i, (k, v) in enumerate(self.HELI_TIPS):
@@ -373,6 +374,7 @@ class Hud:
         c = sim.car
         x, y, rh = 14, int(sh * 0.36), 30
         n = len(self.BTR_TIPS)
+        y = min(y, sh - 204 - 8 - (n * rh + 62))  # leave room for the vehicle panel below
         rl.draw_rectangle_rounded(rl.Rectangle(x - 6, y - 40, 320, 40 + n * rh + 62), 0.08, 6, rl.Color(10, 10, 14, 170))
         font.draw_text("БТР-80", x + 4, y - 32, 22, rl.Color(255, 230, 90, 255), bold=True)
         for i, (k, v) in enumerate(self.BTR_TIPS):
@@ -498,22 +500,23 @@ class Hud:
             pw_ = font.measure_text(ptxt, 16)
             px_ = (sw - pw_) // 2 if (sw + pw_) // 2 <= sw - 300 else 20 + (room_ - pw_) // 2
             font.draw_text(ptxt, max(20, px_), 6, 16, rl.Color(225, 225, 235, 200))
-        # ---- vehicle panel
+        # ---- vehicle / on-foot panel (lower left, clear of the minimap)
         c = sim.car
         if sim.mode == "car":
+            vx = 20
             kmh = int(c.speed * 3.6)
-            font.draw_text(f"{kmh}", sw - 190, sh - 78, 54, rl.Color(250, 220, 80, 255))
-            font.draw_text(TXT("hud.0011"), sw - 78, sh - 52, 20, rl.Color(250, 220, 80, 255))
+            font.draw_text(f"{kmh}", vx + 70, sh - 78, 54, rl.Color(250, 220, 80, 255))
+            font.draw_text(TXT("hud.0011"), vx + 182, sh - 52, 20, rl.Color(250, 220, 80, 255))
             # (the car radio's station / song / keys live in the top-left radio button now)
             hp = max(0.0, c.health) / 100.0
-            self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
-            self._big(f"{c.name}  {int(max(0, c.health))}%", sw - 260, sh - 136, 24, rl.Color(255, 255, 255, 240))
+            self._bar(vx, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
+            self._big(f"{c.name}  {int(max(0, c.health))}%", vx, sh - 136, 24, rl.Color(255, 255, 255, 240))
             fu = max(0.0, getattr(c, "fuel", 1.0))
-            self._bar(sw - 260, sh - 150, 240, 10, fu, rl.Color(230, 90, 60, 255) if fu < 0.15 else rl.Color(240, 170, 40, 255))
-            font.draw_text((TXT("hud.0012") + f'{int(fu * 100)}%') + (TXT("hud.0013") if fu <= 0 else ""), sw - 260, sh - 170, 16,
+            self._bar(vx, sh - 150, 240, 10, fu, rl.Color(230, 90, 60, 255) if fu < 0.15 else rl.Color(240, 170, 40, 255))
+            font.draw_text((TXT("hud.0012") + f'{int(fu * 100)}%') + (TXT("hud.0013") if fu <= 0 else ""), vx, sh - 170, 16,
                            rl.Color(255, 120, 90, 255) if fu < 0.15 else rl.Color(255, 255, 255, 220))
             if c.kind == vehicles.BTR:                                  # БТР-80: 30 mm rounds left
-                self._big(f"30 мм: {getattr(c, 'ammo', 0)}", sw - 260, sh - 202, 24, rl.Color(255, 230, 140, 255))
+                self._big(f"30 мм: {getattr(c, 'ammo', 0)}", vx, sh - 202, 24, rl.Color(255, 230, 140, 255))
         else:
             wk = sim.walker
             wx = 20
