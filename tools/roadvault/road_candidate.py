@@ -74,14 +74,25 @@ class Edge:
             distance = max(0, distance - (hold[0] if hold else 0))
             t = max(0, 1 - distance / length)
             offsets += np.array([left, right]) * t * t * (3 - 2 * t)
+        if opening := self.section.get("left_lane_opening"):
+            lane_width = self.section["w"] / self.section["lanes"]
+            t = min(1, station / opening)
+            offsets += np.array([lane_width * (1 - t * t * (3 - 2 * t)), 0]) - lane_width / 2
         return offsets
 
-    def trace(self, fraction, stations, extra=0.0):
+    def trace(self, fraction, stations, extra=0.0, lane_aligned=False):
         points = []
         for station in stations:
             p, _, right = frame(self.line, station)
             left_edge, right_edge = self.cross_section(station)
-            points.append(p + right * (left_edge + fraction * (right_edge - left_edge) + extra))
+            offset = left_edge + fraction * (right_edge - left_edge)
+            if lane_aligned and self.section.get("left_lane_opening"):
+                lanes = self.section["lanes"]
+                width = self.section["w"]
+                divider = right_edge - width * (1 - 1 / lanes)
+                offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
+                          else right_edge - width * (1 - fraction))
+            points.append(p + right * (offset + extra))
         return LineString(points)
 
     def lane_fraction(self, lane, direction):
@@ -92,11 +103,11 @@ class Edge:
     def port(self, station, lane, direction):
         before, p, after = self.trace(self.lane_fraction(lane, direction), [
             max(0, station - 0.25), station, min(self.line.length, station + 0.25)
-        ]).coords
+        ], lane_aligned=True).coords
         return np.array(p), unit(np.subtract(after, before)) * direction
 
 
-def road_edge(way, points, tapers=()):
+def road_edge(way, points, tapers=(), left_lane=None):
     tags = way["tags"]
     reverse = tags.get("oneway") == "-1"
     oneway = reverse or tags.get("oneway") in {"yes", "1", "true"} or tags.get("junction") == "roundabout"
@@ -126,6 +137,11 @@ def road_edge(way, points, tapers=()):
                    w=width if math.isfinite(width) and width > 0 else default_width, turn=turns)
     if tapers:
         section["tapers"] = tapers
+    if left_lane:
+        section["left_lane_opening"] = left_lane["length"]
+        section["w"] += section["w"] / section["lanes"]
+        section["lanes"] += 1
+        section["turn"] = (left_lane["turns"], "")
     nodes = tuple(way["nodes"][::-1] if reverse else way["nodes"])
     return Edge(way["id"], nodes, spline(points), section)
 
@@ -164,7 +180,7 @@ def source_approach(source, spec):
     split = source.line.length if direction == 1 else 0
     stations = np.linspace(split - direction * setback, split, math.ceil(setback * 2) + 1)
     lane = spec["from_lane"]
-    points = list(source.trace(source.lane_fraction(lane, direction), stations).coords)
+    points = list(source.trace(source.lane_fraction(lane, direction), stations, lane_aligned=True).coords)
     mouth, heading = source.port(split, lane, direction)
     return points, mouth, heading
 
@@ -281,8 +297,12 @@ def approach_paint(edge, begin, end):
         lo, hi = lane_bounds(section, direction)
         for index in range(1, n):
             offset = (lo + (hi - lo) * index / n) * direction
-            shifted = edge.trace(0.5 + offset / section["w"], stations)
-            marks.extend(stroke(piece, 0.14) for piece in dash(shifted))
+            paint_stations = stations
+            if index == 1 and (opening := section.get("left_lane_opening")):
+                paint_stations = stations[stations >= opening * 0.34]
+            if len(paint_stations) > 1:
+                shifted = edge.trace(0.5 + offset / section["w"], paint_stations, lane_aligned=True)
+                marks.extend(stroke(piece, 0.14) for piece in dash(shifted))
         if not section["ow"] and direction == 1:
             marks.append(stroke(edge.trace(0.5 + lo / section["w"], stations), 0.15))
     return marks
@@ -360,7 +380,12 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
             elif feature == "curb":
                 curbs.append(edge_band(edges[int(way)], side, 0.32))
     sidewalk = unary_union(sidewalks).buffer(0.6).buffer(-0.6).intersection(bounds).difference(asphalt)
-    curb = unary_union(curbs).intersection(bounds).difference(asphalt).difference(sidewalk)
+    # Follow the final asphalt where a road edge or a median nose calls for a curb.
+    # The raw section bands only classify the edge and may be covered by the apron.
+    returns = [Point(x, y).buffer(radius) for x, y, radius in layout.get("curb_returns", [])]
+    curb_zone = unary_union([unary_union(curbs).buffer(0.9), refuges, *returns])
+    outline = asphalt.buffer(0.32).difference(asphalt)
+    curb = outline.intersection(curb_zone).intersection(bounds).difference(sidewalk)
 
     terminals = {}
     for group in layout["crossings"]:

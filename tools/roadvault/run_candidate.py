@@ -52,7 +52,9 @@ def site_inputs(layout, osm, bounds):
         else:
             unique_xy = [point for i, point in enumerate(xy) if not i or point != xy[i - 1]]
             if len(unique_xy) >= 2:
-                edges.append(road_edge(way, unique_xy, layout.get("tapers", {}).get(str(way["id"]), ())))
+                way_id = str(way["id"])
+                edges.append(road_edge(way, unique_xy, layout.get("tapers", {}).get(way_id, ()),
+                                       layout.get("left_lane_openings", {}).get(way_id)))
     for way in read_elements(osm / "areas.json"):
         tags = way.get("tags", {})
         if tags.get("landuse") != "grass" and tags.get("highway") != "traffic_island":
@@ -70,7 +72,7 @@ def render(mesh, routes, out):
 
     renderer = Renderer((1500, 1200))
     try:
-        top = dict(eye=(-1, 145, -6), tgt=(-1, 0, -6), up=(0, 0, -1), fov=126, orthographic=True)
+        top = dict(eye=(-1, 145, 5), tgt=(-1, 0, 5), up=(0, 0, -1), fov=146, orthographic=True)
         renderer.shot(mesh, str(out / "plan.png"), **top)
         renderer.shot(mesh, str(out / "oblique.png"), eye=(-67, 110, 83), tgt=(-1, 0, -6), fov=39)
         for spec, line in routes:

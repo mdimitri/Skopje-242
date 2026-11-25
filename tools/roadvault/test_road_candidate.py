@@ -5,11 +5,11 @@ import unittest
 
 import numpy as np
 
-from shapely.geometry import box, shape
+from shapely.geometry import Point, box, shape
 from shapely.ops import unary_union
 
 from run_candidate import HERE, ROOT, site_inputs
-from road_candidate import approach_arrows, compile_movements, compile_scene, polys, yield_teeth
+from road_candidate import approach_arrows, compile_movements, compile_scene, footprint, polys, yield_teeth
 
 
 @unittest.skipUnless((ROOT / "data/osm/roads.json").exists() and (ROOT / "data/osm/areas.json").exists(),
@@ -54,13 +54,34 @@ class RoadCandidateTests(unittest.TestCase):
         self.assertEqual(len(polys(crossings)), 8)
         self.assertTrue(any(component.covers(crossings) for component in polys(walkable.buffer(0.04))))
 
+    def test_south_turn_lane_is_full_width_well_before_the_stop_line(self):
+        opening = self.by_id[671891272]
+        approach = self.by_id[229984879]
+        uphill = opening.section["left_lane_opening"]
+        stop = dict(item for group in self.layout["crossings"] for item in group)[approach.id] - 3.4
+        self.assertGreaterEqual(opening.line.length - uphill + stop, 30)
+        self.assertAlmostEqual(np.diff(opening.cross_section(0)).item(), 6.5)
+        self.assertAlmostEqual(np.diff(opening.cross_section(uphill)).item(), 9.75)
+        np.testing.assert_allclose(opening.cross_section(opening.line.length), approach.cross_section(0))
+        self.assertGreater(footprint(opening).distance(footprint(self.by_id[190303100])), 2.0)
+
+    def test_median_curb_returns_follow_the_finished_asphalt_edge(self):
+        curb = shape(self.pedestrian["non_walkable_curbs"]).buffer(0.05)
+        walkable = unary_union([shape(self.pedestrian[key]) for key in ("sidewalks", "crossing_landings")])
+        for x, y, radius in self.layout["curb_returns"]:
+            with self.subTest(nose=(x, y)):
+                edge = self.asphalt.boundary.intersection(Point(x, y).buffer(radius - 0.15))
+                edge = edge.difference(walkable.buffer(0.08))
+                self.assertGreater(edge.length, 10)
+                self.assertLess(edge.difference(curb).length, 0.05)
+
     def test_approach_arrows_and_yield_teeth_fit_clear_of_crossings(self):
         crosswalks = shape(self.pedestrian["crosswalks"])
         stations = dict(item for group in self.layout["crossings"] for item in group)
         arrows = [(way, stations[way] - 7.9) for way in self.layout["stop_lines"]]
         arrows.extend(self.layout["approach_arrows"])
         pavement = self.asphalt.buffer(-0.08)
-        for (way, station), expected in zip(arrows, (2, 2, 4, 3, 3, 3, 1, 1), strict=True):
+        for (way, station), expected in zip(arrows, (2, 2, 4, 3, 3, 4, 1, 1), strict=True):
             with self.subTest(arrow_way=way):
                 edge = self.by_id[way]
                 at = edge.line.length + station if station < 0 else station

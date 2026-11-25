@@ -40,11 +40,14 @@ approach from the west holds its inner lanes beside the slip
 until the diverging paths have clearance. Vehicle envelopes complete the central apron,
 with a bound on how far the movement centre lines can leave the mapped
 road strips. Carriageway edges in the layout specify 2.4 m raised outer
-sidewalks and 0.32 m median-side curbs. Only designated crossing landings open the
+sidewalks and 0.32 m median-side curbs. Median noses and island returns
+follow the final asphalt outline, with openings at crossing landings. Only designated crossing landings open the
 median to pedestrians. Each zebra spans the paved cross-section at its
 authored station, and signal stop lines are derived from those stations.
 Lane arrows use mapped turn indications with the movement graph as a fallback.
-Shark teeth mark both slip entries into the receiving carriageways.
+Shark teeth mark both slip entries into the receiving carriageways. The
+south approach’s left-turn pocket opens on the preceding way and
+keeps the existing two lanes at full width through the opening taper.
 The crossing groups follow the reference imagery approximately. OSM footways
 can feed an existing sidewalk. The junction's road-owned walking surfaces
 compile independently of them. Walkable surfaces and visual curbs are
