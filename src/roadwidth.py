@@ -20,7 +20,9 @@ def lane_count(edge, direction=1):
     counts = edge.get("directional_lanes")
     if counts:
         return counts[0 if direction == 1 else 1]
-    return max(1, lanes // 2) if lanes else (2 if width >= 13.0 else 1)
+    if lanes:
+        return max(1, (lanes + (1 if direction == 1 else 0)) // 2)
+    return 2 if width >= 13.0 else 1
 
 
 def lane_bounds(edge, direction=1):

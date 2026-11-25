@@ -5,3 +5,4 @@ mapbox-earcut
 sounddevice
 PyOgg; sys_platform == "win32"
 shapely>=2.0
+shapely>=2.0

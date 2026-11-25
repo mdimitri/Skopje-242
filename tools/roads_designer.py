@@ -102,7 +102,7 @@ def _decks_job(tx, ty, sub, own):
         if e["drive"] and e["bridge"] and len(e["pts"]) >= 2:
             nb = _G["ctx"]["BL"].get(e["road"], jn.per_dir(e))
             B.append({"e": e, "ln": jn.LineString([(p[0] - tx, p[1] - ty) for p in e["pts"]]),
-                      "hw": nb * jn.LW / 2 if e["ow"] else nb * jn.LW, "per": nb})
+                      "hw": e["w"] / 2, "per": nb})
     mine = [d for d in B if any(d["e"] is _G["edges"][i] for i in own)]
     m = jn.port_decks(B, mine, tx, ty, _G["decks"], _G["T"])
     if not m.P:

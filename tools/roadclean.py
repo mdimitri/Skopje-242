@@ -10,11 +10,11 @@ import numpy as np
 from roadwidth import lane_count
 
 MEDIAN = 3.5
-LANE = 3.5
+LANE = 3.25
 
 
 def _total(e):
-    return lane_count(e) * (1 if e["ow"] else 2)
+    return lane_count(e) if e["ow"] else lane_count(e, 1) + lane_count(e, -1)
 
 
 def _samples(e):
@@ -54,6 +54,8 @@ def dual_carriageways(edges):
     cut = 0
     for i, dd in best.items():
         e = edges[i]
+        if e.get("lanes_tagged") or e.get("width_tagged"):
+            continue
         lanes = e["lanes"] or max(1, round(e["w"] / LANE))
         nl = max(1, min(lanes, int((dd - MEDIAN) // LANE)))
         if nl < lanes:
@@ -79,8 +81,8 @@ def harmonise(edges, short=150.0):
             if a["cls"] != b["cls"] or a["ow"] != b["ow"] or _total(a) == _total(b):
                 continue
             s, l = (a, b) if a["len"] < b["len"] else (b, a)
-            if s["len"] < short:
-                for f in ("w", "lanes", "directional_lanes", "turn"):
+            if s["len"] < short and not s.get("lanes_tagged") and not s.get("width_tagged"):
+                for f in ("w", "lanes", "directional_lanes", "turn", "lanes_tagged", "width_tagged"):
                     if f in l:
                         s[f] = l[f]
                 ch += 1
@@ -110,20 +112,24 @@ def bridge_lanes(edges):
             for n in (e["a"], e["b"]):
                 cnt[n] = cnt.get(n, 0) + 1
         ends = [n for n, c in cnt.items() if c == 1]
-        cand = [roadwidth.lane_count(a, 1) for n in ends for a in at.get(n, []) if a["ow"] == G[0]["ow"] and a["cls"] == G[0]["cls"]]
+        cand = [a for n in ends for a in at.get(n, []) if a["ow"] == G[0]["ow"] and a["cls"] == G[0]["cls"]]
         if not cand:
             continue
-        per = max(cand)
+        directions = (max(roadwidth.lane_count(a, 1) for a in cand), max(roadwidth.lane_count(a, -1) for a in cand))
         for e in G:
-            want = per if e["ow"] else 2 * per
-            if e.get("lanes") != want or e.get("directional_lanes"):
-                e["lanes"], e["directional_lanes"] = want, None
+            if e.get("lanes_tagged"):
+                continue
+            dl = None if e["ow"] or directions[0] == directions[1] else directions
+            want = directions[0] if e["ow"] else sum(directions)
+            if e.get("lanes") != want or e.get("directional_lanes") != dl:
+                e["lanes"], e["directional_lanes"] = want, dl
+                e["w"] = max(e["w"] if e.get("width_tagged") else 0.0, want * LANE)
                 changed += 1
     return changed
 
 
 def _hw(e):
-    return lane_count(e) * LANE / 2 if e["ow"] else lane_count(e) * LANE
+    return e["w"] / 2
 
 
 def _cum_of(pts):
@@ -380,7 +386,7 @@ def boulevard_floor(edges, floor=int(os.environ.get("SK242_FLOOR", 3)), reach=45
     """Realistic lane counts for dual carriageways: the two one-way halves of a boulevard (arterial class, an opposite
     one-way carriageway within `reach` metres running the other way) carry at least `floor` lanes each, where OSM
     tags only 1-2 (checked against satellite widths).  -> carriageways raised."""
-    ow = [e for e in edges if e["drive"] and e["ow"] and not e["bridge"] and e["cls"].replace("_link", "") in ("tertiary", "secondary", "primary", "trunk") and not e["cls"].endswith("_link") and e["len"] >= min_len]
+    ow = [e for e in edges if e["drive"] and e["ow"] and not e.get("lanes_tagged") and not e.get("width_tagged") and not e["bridge"] and e["cls"].replace("_link", "") in ("tertiary", "secondary", "primary", "trunk") and not e["cls"].endswith("_link") and e["len"] >= min_len]
     if not ow:
         return 0
     cell = 60.0
@@ -428,6 +434,11 @@ def standardise(edges):
     for e in edges:
         if not e["drive"]:
             continue
+        if e.get("lanes_tagged"):
+            total = e["lanes"] or sum(e.get("directional_lanes") or ())
+            e["lanes"] = total
+            e["w"] = max(e["w"] if e.get("width_tagged") else 0.0, total * LW)
+            continue
         cls = e["cls"].replace("_link", "")
         cap = 1 if e["cls"].endswith("_link") and cls not in ("motorway", "trunk") else CAP.get(cls, 1)
         if e["ow"]:
@@ -441,6 +452,8 @@ def standardise(edges):
             else:
                 per = max(1, min(lane_count(e), cap))
                 want = (2 * per, None, 2 * per * LW)
+        if e.get("width_tagged"):
+            want = (want[0], want[1], max(e["w"], want[2]))
         if (e.get("lanes"), e.get("directional_lanes"), e["w"]) != want:
             e["lanes"], e["directional_lanes"], e["w"] = want
             n += 1

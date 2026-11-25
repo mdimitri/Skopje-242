@@ -23,6 +23,7 @@ sys.path.insert(1, os.path.join(HERE, "..", "src"))
 import mapbox_earcut as earcut  # noqa: E402
 import junction_design as jd  # noqa: E402
 from junction_design import ASPH, GRASS, KERB, KFACE, KTOP, LW, SW, WHITE, Mesh  # noqa: E402
+from roadwidth import lane_count as lanes_per_direction, lane_turns  # noqa: E402
 
 CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 3, "unclassified": 1, "residential": 1,
        "living_street": 1, "service": 1}
@@ -36,10 +37,9 @@ MARGIN = 60.0                                        # edges this far beyond the
 def per_dir(e):
     """Lanes per direction (the larger direction of a two-way road), from the graph's lane standard
     (tools/roadclean.standardise)."""
-    from roadwidth import lane_count
     if e["ow"]:
-        return lane_count(e)
-    return max(lane_count(e, 1), lane_count(e, -1))
+        return lanes_per_direction(e)
+    return max(lanes_per_direction(e, 1), lanes_per_direction(e, -1))
 
 
 NARROW = {"service", "living_street", "track", "path"}
@@ -47,9 +47,9 @@ NARROW = {"service", "living_street", "track", "path"}
 
 def half_w(e):
     n = per_dir(e)
-    if e["cls"] in NARROW and n <= 1:                       # car-park aisles and service ways: one lane wide, two-way
+    if e["cls"] in NARROW and n <= 1 and not e.get("lanes_tagged") and not e.get("width_tagged"):
         return 2.4
-    return n * LW / 2 if e["ow"] else n * LW
+    return e["w"] / 2
 
 
 def polys_of(g):
@@ -61,20 +61,38 @@ def polys_of(g):
 
 
 def tri_poly(m, poly, y, col):
-    ext = list(poly.exterior.coords)[:-1]
-    ring_ends = [len(ext)]
-    pts = list(ext)
-    for h in poly.interiors:
-        c = list(h.coords)[:-1]
-        pts += c
-        ring_ends.append(len(pts))
-    v = np.array(pts, np.float64)
-    try:
-        idx = np.array(earcut.triangulate_float64(v, np.array(ring_ends, np.uint32))).reshape(-1, 3)
-    except Exception:  # noqa: BLE001
-        return
-    for t in idx:
-        m.tri((v[t[0]][0], y, v[t[0]][1]), (v[t[1]][0], y, v[t[1]][1]), (v[t[2]][0], y, v[t[2]][1]), col)
+    def triangles(p):
+        ext = list(p.exterior.coords)[:-1]
+        ends = [len(ext)]
+        pts = list(ext)
+        for h in p.interiors:
+            pts.extend(list(h.coords)[:-1])
+            ends.append(len(pts))
+        v = np.asarray(pts, np.float64)
+        idx = np.asarray(earcut.triangulate_float64(v, np.asarray(ends, np.uint32)), np.int64).reshape(-1, 3)
+        a, b, c = v[idx[:, 0]], v[idx[:, 1]], v[idx[:, 2]]
+        area = np.abs((b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])) * 0.5
+        keep = area > 1e-10
+        if abs(float(area[keep].sum()) - p.area) > max(0.01, p.area * 1e-6):
+            return None
+        return v, idx[keep]
+
+    clean = poly if poly.is_valid else poly.buffer(0)
+    for p in polys_of(clean):
+        result = triangles(p)
+        if result is None:
+            p = p.buffer(0)
+            for q in polys_of(p):
+                result = triangles(q)
+                if result is None:
+                    raise ValueError(f"Road polygon triangulation does not cover its area ({q.area:.3f} m2)")
+                v, idx = result
+                for t in idx:
+                    m.tri((v[t[0], 0], y, v[t[0], 1]), (v[t[1], 0], y, v[t[1], 1]), (v[t[2], 0], y, v[t[2], 1]), col)
+            continue
+        v, idx = result
+        for t in idx:
+            m.tri((v[t[0], 0], y, v[t[0], 1]), (v[t[1], 0], y, v[t[1], 1]), (v[t[2], 0], y, v[t[2], 1]), col)
 
 
 def walls_of(m, poly, y0, y1, col):
@@ -401,9 +419,15 @@ def _arms_at(n, L, road):
         hw = d["hw"]
         if e["ow"]:
             kind = "in" if e["b"] == n else "out"
-            raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(-hw, hw, d["per"], kind)]})
+            turns = lane_turns(e, 1) if kind == "in" else ()
+            raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(-hw, hw, d["per"], kind, turns)]})
         else:
-            raw.append({"u": u, "v": v, "line": out_line, "d": d, "bands": [(0.0, hw, d["per"], "in"), (-hw, 0.0, d["per"], "out")]})
+            in_dir = 1 if e["b"] == n else -1
+            inbound = lanes_per_direction(e, in_dir)
+            outbound = lanes_per_direction(e, -in_dir)
+            turns = lane_turns(e, in_dir)
+            raw.append({"u": u, "v": v, "line": out_line, "d": d,
+                        "bands": [(0.0, inbound * LW, inbound, "in", turns), (-outbound * LW, 0.0, outbound, "out", ())]})
     # a merge or diverge of one-way roads (ramps joining, a carriageway splitting) is not a crossing: no zebra, no stop
     # line; it is drawn as a taper with a hatched gore (see _gore)
     if len(raw) == 3 and all(r["d"]["e"]["ow"] for r in raw):
@@ -446,8 +470,8 @@ def _arms_at(n, L, road):
         for r in (a, b):
             pt = r["line"].interpolate(min(20.0, r["line"].length * 0.6))
             off = (pt.x - c[0]) * v[0] + (pt.y - c[1]) * v[1]
-            s0, s1, lanes, kind = r["bands"][0]
-            bands.append((off + s0, off + s1, lanes, kind))
+            s0, s1, lanes, kind, turns = r["bands"][0]
+            bands.append((off + s0, off + s1, lanes, kind, turns))
         arms.append({"u": u, "v": v, "bands": bands, "c": c, "n": n, "ds": [a["d"], b["d"]], "deg": len(L)})
     for i, a in enumerate(raw):
         if i not in used:
@@ -460,7 +484,7 @@ def _arms_at(n, L, road):
         # contiguous carriageways of the arm (one for a street, two for a boulevard)
         bs = sorted(a["bands"])
         groups = [[bs[0][0], bs[0][1]]]
-        for b0, b1, _l, _k in bs[1:]:
+        for b0, b1, _l, _k, _turns in bs[1:]:
             if b0 <= groups[-1][1] + 0.05:
                 groups[-1][1] = max(groups[-1][1], b1)
             else:
@@ -575,7 +599,7 @@ def _arm_marks(m, a, road, zone_arm):
         paint.append(_arm_poly(a, h + 1.0, h + 4.2, s - 0.25, s + 0.25))
         s += 1.0
     sl = h + 6.0
-    for s0, s1, lanes, kind in a["bands"]:
+    for s0, s1, lanes, kind, turns in a["bands"]:
         if kind == "in":
             paint.append(_arm_poly(a, sl - 0.25, sl + 0.25, s0 + 0.15, s1 - 0.15))        # stop line
             w = (s1 - s0) / max(1, lanes)
@@ -586,12 +610,18 @@ def _arm_marks(m, a, road, zone_arm):
                     continue
                 for k in range(lanes):
                     sc = s0 + w * (k + 0.5)
-                    kind_ = "thru"
-                    if lanes >= 2 and k == lanes - 1:
-                        kind_ = "left"
-                    elif lanes >= 3 and k == 0:
-                        kind_ = "right"
-                    paint += _arrow_polys(a, h + ds, sc, kind_)
+                    movements = turns[k] if turns else (frozenset({"through"}) if lanes == 1 else
+                                frozenset({"left"}) if k == lanes - 1 else
+                                frozenset({"right"}) if k == 0 and lanes >= 3 else frozenset({"through"}))
+                    glyphs = []
+                    for movement in sorted(movements):
+                        glyph = {"through": "thru", "straight_on": "thru", "left": "left", "slight_left": "left",
+                                 "sharp_left": "left", "right": "right", "slight_right": "right", "sharp_right": "right"}.get(movement)
+                        if glyph and glyph not in glyphs:
+                            glyphs.append(glyph)
+                    for j, glyph in enumerate(glyphs):
+                        shift = (j - (len(glyphs) - 1) / 2) * 0.65
+                        paint += _arrow_polys(a, h + ds, sc + shift, glyph)
         else:
             w = (s1 - s0) / max(1, lanes)
             for k in range(1, lanes):
@@ -769,7 +799,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
             P = [(p[0] - cx, p[1] - cy) for p in e["pts"]]
             if len(P) >= 2 and min(math.hypot(p[0], p[1]) for p in P) < RANGE + MARGIN:
                 nb = BL.get(e["road"], per_dir(e))
-                B.append({"e": e, "ln": LineString(P), "hw": nb * LW / 2 if e["ow"] else nb * LW, "per": nb, "gnodes": gn})
+                B.append({"e": e, "ln": LineString(P), "hw": e["w"] / 2, "per": nb, "gnodes": gn})
             continue
         if not e["drive"]:
             continue
@@ -800,7 +830,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
             ribs.append(Point(bx, by).buffer(rb, resolution=24))
             bulbs.append(Point(bx, by).buffer(rb + 4.0, resolution=12))
     U = unary_union(ribs)
-    C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04)
+    C = U.buffer(R_KERB, resolution=16).buffer(-R_KERB, resolution=16).simplify(0.04, preserve_topology=True)
     # small holes the closing leaves (corner pockets between arms) are paved: a real junction has no such rings
     C = unary_union([Polygon(q.exterior, [h for h in q.interiors if Polygon(h).area > HOLE_MIN]) for q in polys_of(C)])
     gap = C.difference(U)
@@ -959,6 +989,7 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
                 stroke(m, q.intersection(clip), 0.05, WHITE)
     if bulbs:
         zone = zone.difference(unary_union(bulbs))              # no lane paint inside a turning bulb
+    lane_paint = []
     for d in E:
         ln, hw, per, e = d["ln"], d["hw"], d["per"], d["e"]
         if ln.length < 12:
@@ -976,21 +1007,28 @@ def build(edges, cx, cy, buildings=(), decks=None, T=None, port=False, ctx=None)
                 for g in (s_.buffer(w / 2, cap_style=2).intersection(zone),):
                     for q in polys_of(g):
                         if q.area > 0.12 * w * 2.0:                        # drop the slivers left where the zone clips a line
-                            stroke(m, q, 0.05, WHITE)
+                            lane_paint.append(q)
         if e["ow"]:
             for k in range(1, per):
                 paint(-hw + LW * k, 0.15, True)
         else:
-            if per >= 2:
-                paint(0.14, 0.11)
-                paint(-0.14, 0.11)
+            forward, backward = lanes_per_direction(e, 1), lanes_per_direction(e, -1)
+            divider = (backward - forward) * LW / 2
+            if forward == backward and per >= 2:
+                paint(divider + 0.14, 0.11)
+                paint(divider - 0.14, 0.11)
+            elif forward != backward:
+                paint(divider, 0.13)
             else:
-                paint(0.0, 0.14, True)
-            for k in range(1, per):
-                paint(LW * k, 0.15, True)
-                paint(-LW * k, 0.15, True)
+                paint(divider, 0.14, True)
+            for k in range(1, forward):
+                paint(divider + forward * LW * k / forward, 0.15, True)
+            for k in range(1, backward):
+                paint(divider - backward * LW * k / backward, 0.15, True)
         paint(hw - 0.35, 0.14)
         paint(-(hw - 0.35), 0.14)
+    if lane_paint:
+        stroke(m, unary_union(lane_paint).intersection(zone), 0.05, WHITE)
     # junction mouths: crossings, stop lines, lane lines and arrows laid out per arm, like the reference junction
     for arm in arms_all:
         _arm_marks(m, arm, asph.difference(isl), zone_arm)

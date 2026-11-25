@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 78
+VERSION = 79
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2314,10 +2314,19 @@ def main():
             if t.get("access") in ("private", "no") or t.get("motor_vehicle") in ("no", "private"):
                 drv = 0
             lanes = 0
+            lanes_tagged = False
             if t.get("lanes"):
                 try:
                     lanes = max(0, int(t["lanes"]))
-                    w = max(w, lanes * 3.5)
+                    lanes_tagged = lanes > 0
+                except ValueError:
+                    pass
+            width_tagged = False
+            width = t.get("width:carriageway", t.get("width", ""))
+            if width:
+                width_value = width.strip().lower().replace("meters", "").replace("metres", "").replace("meter", "").replace("metre", "").removesuffix("m").strip().replace(",", ".")
+                try:
+                    w, width_tagged = max(0.0, float(width_value)), True
                 except ValueError:
                     pass
             ms = t.get("maxspeed", "")
@@ -2343,7 +2352,16 @@ def main():
                 fwd, bwd = (t.get("lanes:" + side, "") for side in ("forward", "backward"))
                 if fwd.isdecimal() and bwd.isdecimal() and int(fwd) > 0 and int(bwd) > 0:
                     directional = (int(fwd), int(bwd))
-                    w = max(w, sum(directional) * 3.5)
+                elif lanes and (fwd.isdecimal() ^ bwd.isdecimal()):
+                    known = int(fwd if fwd.isdecimal() else bwd)
+                    other = lanes - known
+                    if known > 0 and other > 0:
+                        directional = (known, other) if fwd.isdecimal() else (other, known)
+                if directional:
+                    lanes = sum(directional)
+                    lanes_tagged = True
+            if lanes_tagged:
+                w = max(w if width_tagged else 0.0, lanes * 3.25)
             sidewalk = t.get("sidewalk", "")
             sides = {"both": (True, True), "yes": (True, True), "left": (True, False), "right": (False, True),
                      "no": (False, False), "none": (False, False), "separate": (False, False)}.get(sidewalk)
@@ -2356,7 +2374,7 @@ def main():
                 layer = 0
             roads.append({"pts": pts, "w": w, "cls": hw, "speed": spd, "drive": drv, "walk": walk, "ow": ow,
                           "bridge": bridge, "layer": layer, "nodes": nodes, "id": el["id"], "name": t.get("name", ""), "lanes": lanes, "turn": turn,
-                          "directional_lanes": directional, "sidewalk_sides": sides,
+                          "directional_lanes": directional, "lanes_tagged": lanes_tagged, "width_tagged": width_tagged, "sidewalk_sides": sides,
                           "tunnel": tunnel, "junction": t.get("junction", "")})
         except Exception as e:  # noqa: BLE001
             print(f"   skipped road {el.get('id')}: {e}")
@@ -2512,7 +2530,8 @@ def main():
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
                                   "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0),
                                   "worn": rd.get("worn", ""), "turn": (fwd if i == len(ps) - 1 else "", bwd if start == 0 else ""),
-                                  "directional_lanes": rd.get("directional_lanes"), "sidewalk_sides": rd.get("sidewalk_sides")})
+                                  "directional_lanes": rd.get("directional_lanes"), "lanes_tagged": rd.get("lanes_tagged", False),
+                                  "width_tagged": rd.get("width_tagged", False), "sidewalk_sides": rd.get("sidewalk_sides")})
                 start = i
     import lanefix
     print(f"[build] lane steps levelled: {lanefix.repair(edges)} edges")

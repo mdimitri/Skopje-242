@@ -32,7 +32,7 @@ road design practice, scaled for a game.
 - B02 width continuity: a lane keeps its width across every join (0.05 m tolerance)
 - B03 lane count changes: only inside a taper zone
 - B04 taper length: at least 15 m per 1 m of lateral shift (eased, no kink)
-- B05 lane caps: per direction residential 1, tertiary 2, primary/secondary 3, links 1
+- B05 lane caps: apply class caps only when OSM has no lane count; explicit OSM lane counts and directional splits are preserved
 - B06 opposite arms: the two arms of one road through a junction carry the same lanes, or a taper before the box
 - B07 turn pockets: a left-turn pocket opens with a 20–30 m taper and is 30–60 m long
 - B08 bus bays: 3 m wide, 15 m tapers in and out
