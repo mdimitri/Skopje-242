@@ -1926,7 +1926,7 @@ class Peds:
                         p.y += dy / d * min(3.2 * dt, d - 0.9)
                     elif p.atk_cd <= 0:
                         p.atk_cd, p.atk_t = rng.uniform(0.7, 1.4), 0.3
-                        p.atk_kind = 4 if p.work_role or rng.random() < 0.65 else 5
+                        p.atk_kind = 4 if rng.random() < 0.65 else 5
                         o.hp -= vehicles.FIGHT[p.arch][2] * rng.uniform(0.6, 1.2)
                         o.vx, o.vy = dx / d * 1.5, dy / d * 1.5
                         if o.hp <= 0:
@@ -1979,7 +1979,7 @@ class Peds:
                                 p.y += ey / dd * (0.4 - dd)
                     elif p.atk_cd <= 0:
                         p.atk_cd, p.atk_t = rng.uniform(0.8, 1.2), 0.3
-                        p.atk_kind = 4 if rng.random() < 0.65 else 5
+                        p.atk_kind = 4 if p.work_role or rng.random() < 0.65 else 5
                         if wk.z < 0.5 and wk.inv_t <= 0:
                             dmg = vehicles.FIGHT[p.arch][2] * rng.uniform(0.8, 1.3) * HERO["end"]
                             wk.health -= dmg
