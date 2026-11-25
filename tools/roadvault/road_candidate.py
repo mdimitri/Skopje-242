@@ -67,10 +67,11 @@ class Edge:
     section: dict
 
     def cross_section(self, station):
-        """Blend signed left/right boundary changes over the authored taper distance."""
+        """Hold the section at a split or merge, then blend it over the taper distance."""
         offsets = np.array([-0.5, 0.5]) * self.section["w"]
-        for end, length, left, right in self.section.get("tapers", []):
+        for end, length, left, right, *hold in self.section.get("tapers", []):
             distance = station if end == "start" else self.line.length - station
+            distance = max(0, distance - (hold[0] if hold else 0))
             t = max(0, 1 - distance / length)
             offsets += np.array([left, right]) * t * t * (3 - 2 * t)
         return offsets
@@ -157,6 +158,17 @@ def movement_ports(edges, spec):
     return a, da, d, dd
 
 
+def source_approach(source, spec):
+    direction = spec.get("from_direction", 1)
+    setback = min(spec["setback"], source.line.length * 0.45)
+    split = source.line.length if direction == 1 else 0
+    stations = np.linspace(split - direction * setback, split, math.ceil(setback * 2) + 1)
+    lane = spec["from_lane"]
+    points = list(source.trace(source.lane_fraction(lane, direction), stations).coords)
+    mouth, heading = source.port(split, lane, direction)
+    return points, mouth, heading
+
+
 def compile_movements(edges, movements):
     groups, lines = {}, {}
     for spec in movements:
@@ -164,19 +176,14 @@ def compile_movements(edges, movements):
         if spec.get("follow_via"):
             guide_id, = spec["via"]
             guide = edges[guide_id]
-            source = edges[spec["from"]]
-            direction = spec.get("from_direction", 1)
-            setback = min(spec["setback"], source.line.length * 0.45)
-            split = source.line.length if direction == 1 else 0
-            stations = np.linspace(split - direction * setback, split, math.ceil(setback * 2) + 1)
-            lane = spec["from_lane"]
-            points = list(source.trace(source.lane_fraction(lane, direction), stations).coords[:-1])
-            mouth, heading = source.port(split, lane, direction)
+            approach, mouth, heading = source_approach(edges[spec["from"]], spec)
+            points = approach[:-1]
 
             # Keep the slip in the approach lane up to the split, then join the
             # guide beyond the start taper so that its offset does not pull us inward.
             length = guide.line.length
-            taper = max((entry[1] for entry in guide.section.get("tapers", []) if entry[0] == "start"), default=0)
+            taper = max((entry[1] + sum(entry[4:]) for entry in guide.section.get("tapers", [])
+                         if entry[0] == "start"), default=0)
             start, end = min(length * 0.45, max(length * 0.18, taper)), length * 0.82
             b, db = guide.port(start, 0, 1)
             c, dc = guide.port(end, 0, 1)
@@ -190,12 +197,26 @@ def compile_movements(edges, movements):
             points += list(cubic(c, c + dc * tail, d - dd * tail, d)[1:])
             lines[spec["id"]] = LineString(points)
             continue
+        prefix = []
+        approach_length = spec.get("approach_length", 0)
+        if approach_length:
+            prefix, mouth, heading = source_approach(edges[spec["from"]], spec)
+            guide = edges[spec["via"][0]]
+            lane = spec["from_lane"]
+            join = min(3.0, approach_length / 2)
+            b, db = guide.port(join, lane, 1)
+            reach = np.linalg.norm(b - mouth) / 3
+            prefix += list(cubic(mouth, mouth + heading * reach, b - db * reach, b)[1:-1])
+            stations = np.linspace(join, approach_length, math.ceil((approach_length - join) * 2) + 1)
+            prefix += list(guide.trace(guide.lane_fraction(lane, 1), stations).coords[:-1])
+            a, da = guide.port(approach_length, lane, 1)
+
         key = (spec["from"], spec["to"], tuple(spec["via"]), spec["setback"], spec.get("handle", 0.36),
-               spec.get("from_direction", 1), spec.get("to_direction", 1))
-        groups.setdefault(key, []).append((spec["id"], a, da, d, dd))
+               spec.get("from_direction", 1), spec.get("to_direction", 1), approach_length)
+        groups.setdefault(key, []).append((spec["id"], prefix, a, da, d, dd))
 
     for key, group in groups.items():
-        a, da, d, dd = np.mean([entry[1:] for entry in group], axis=0)
+        a, da, d, dd = np.mean([entry[2:] for entry in group], axis=0)
         da, dd = unit(da), unit(dd)
         handle = np.linalg.norm(d - a) * key[4]
         points = cubic(a, a + da * handle, d - dd * handle, d)
@@ -205,11 +226,11 @@ def compile_movements(edges, movements):
         normals /= np.linalg.norm(normals, axis=1)[:, None]
         t = np.linspace(0, 1, len(points))
         blend = t * t * (3 - 2 * t)
-        for movement_id, start, _, end, _ in group:
+        for movement_id, prefix, start, _, end, _ in group:
             offset = (1 - blend) * ((start - a) @ normals[0]) + blend * ((end - d) @ normals[-1])
             lane = points + normals * offset[:, None]
             lane[0], lane[-1] = start, end
-            lines[movement_id] = LineString(lane)
+            lines[movement_id] = LineString(prefix + list(lane))
     return [(spec, lines[spec["id"]]) for spec in movements]
 
 
@@ -284,11 +305,11 @@ def compile_scene(edges, layout, walks, greens, bounds):
         local = asphalt.intersection(zone.buffer(4))
         asphalt = asphalt.union(local.buffer(1.45).buffer(-1.45).intersection(zone))
     asphalt = asphalt.intersection(bounds)
+    holes = [Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors]
+    slivers = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
+    asphalt = asphalt.union(unary_union(slivers))
     grass = unary_union(greens).intersection(bounds).difference(asphalt)
-    refuges = unary_union([
-        Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors
-        if 12 < Polygon(ring).area < 190
-    ])
+    refuges = unary_union([hole for hole in holes if 15 <= hole.area < 190])
     pavement = unary_union([stroke(line, width) for line, width, _ in walks])
     pavement = pavement.union(refuges).intersection(bounds).difference(asphalt).difference(grass)
     marks = []
