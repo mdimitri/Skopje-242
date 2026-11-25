@@ -1,5 +1,6 @@
 """Bake the reviewed road-vault compiler into terrain-relative game tiles."""
 import json
+import math
 from pathlib import Path
 
 from shapely import STRtree
@@ -199,10 +200,10 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
     candidates, ways, originals, cooked, reviewed_graph = [], [], {}, {}, {}
     crossing_nodes = [(key, tags["point"]) for key, tags in node_tags.items() if tags["highway"] == "crossing"]
     for i, edge in enumerate(edges, 1):
-        if edge["bridge"] or len(edge["pts"]) < 2:
+        if edge["bridge"] or len(edge["pts"]) < 2 or not math.isfinite(edge["w"]) or edge["w"] <= 0:
             continue
         line = LineString([(x - tx, y - ty) for x, y in edge["pts"]])
-        if not line.intersects(bounds):
+        if not line.length or not line.intersects(bounds):
             continue
         way = source.road_ids[edge["road"]]
         tags = source.tags.get(way, {}).copy()

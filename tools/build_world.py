@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 81
+VERSION = 82
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -3140,6 +3140,8 @@ def main():
         if T.q is not None:
             __import__("quays").furnish(T, edges, quay_info, mesh.add, chunk_of, MAT_SOLID)
     except Exception as e:  # noqa: BLE001 - fall back to the flat 2D roads in the ground texture
+        if os.environ.get("SK242_DESIGNER", "1") != "0":
+            raise
         import traceback
         traceback.print_exc()
         print(f"[build] 3D roads failed ({e}); using flat roads")
