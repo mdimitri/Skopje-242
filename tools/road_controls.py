@@ -92,9 +92,15 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
                                        clearance_m=GANTRY_CLEARANCE, facing=-heading), live=True)
                 height = GANTRY_CLEARANCE
             else:
-                back, _, back_right = frame(line, max(0.35, stop - 3))
-                shoulders = [point + right * (width / 2 + 2.05), back + back_right * (width / 2 + 1.05)]
-                side = next((p for p in (supports[1], *shoulders, supports[0]) if clear(*p)), None)
+                side = None
+                for station in (stop, max(0.35, stop - 3), max(0.35, stop - 6),
+                                min(line.length - 0.35, stop + 3)):
+                    anchor, _, normal = frame(line, station)
+                    shoulders = (anchor + normal * (sign * (width / 2 + offset))
+                                 for sign in (1, -1) for offset in (1.05, 1.55, 2.05))
+                    side = next((p for p in shoulders if clear(*p)), None)
+                    if side is not None:
+                        break
                 heads = [] if side is None else [side]
                 if side is not None:
                     draw_device(mesh, "vehicle_signal", side, -heading, live=True)
