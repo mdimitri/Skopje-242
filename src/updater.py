@@ -156,7 +156,10 @@ def install_music(sha, prog):
     """Fetch the shipped station files of `sha` that are missing or differ in size (older updaters never wrote into music/)."""
     req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/git/trees/{sha}?recursive=1", headers={"User-Agent": "skopje-242"})
     with urllib.request.urlopen(req, timeout=15) as r:
-        tree = json.loads(r.read().decode("utf-8"))["tree"]
+        data = json.loads(r.read().decode("utf-8"))
+    if data.get("truncated"):
+        raise ValueError("tree too large")
+    tree = data["tree"]
     todo = []
     for f in tree:
         if f["type"] == "blob" and f["path"].startswith("music/") and not _keep(f["path"]):
