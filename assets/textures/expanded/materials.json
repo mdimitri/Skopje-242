@@ -1,0 +1,3506 @@
+{
+  "description": "500 expanded material variants. The original prompt records for pre-existing tiles were not in the repository.",
+  "bump_map_method": "16-bit grayscale local-luminance detail after subtracting an 8-pixel Gaussian blur; broad tonal variation is removed. Opposite edge strips are blended for wrapping.",
+  "materials": [
+    {
+      "id": "asphalt_01",
+      "color": "asphalt_01.jpg",
+      "height": "asphalt_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_02",
+      "color": "asphalt_02.jpg",
+      "height": "asphalt_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_03",
+      "color": "asphalt_03.jpg",
+      "height": "asphalt_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_04",
+      "color": "asphalt_04.jpg",
+      "height": "asphalt_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_05",
+      "color": "asphalt_05.jpg",
+      "height": "asphalt_05_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_06",
+      "color": "asphalt_06.jpg",
+      "height": "asphalt_06_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_07",
+      "color": "asphalt_07.jpg",
+      "height": "asphalt_07_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_08",
+      "color": "asphalt_08.jpg",
+      "height": "asphalt_08_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_09",
+      "color": "asphalt_09.jpg",
+      "height": "asphalt_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black basalt municipal roadway asphalt, dense tiny granite aggregate"
+    },
+    {
+      "id": "asphalt_10",
+      "color": "asphalt_10.jpg",
+      "height": "asphalt_10_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "asphalt_11",
+      "color": "asphalt_11.jpg",
+      "height": "asphalt_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm charcoal gray municipal roadway asphalt, sparse rounded mineral flecks"
+    },
+    {
+      "id": "asphalt_12",
+      "color": "asphalt_12.jpg",
+      "height": "asphalt_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool blue gray municipal roadway asphalt, sparse rounded mineral flecks"
+    },
+    {
+      "id": "asphalt_13",
+      "color": "asphalt_13.jpg",
+      "height": "asphalt_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale weathered gray municipal roadway asphalt, sparse rounded mineral flecks"
+    },
+    {
+      "id": "asphalt_14",
+      "color": "asphalt_14.jpg",
+      "height": "asphalt_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black basalt municipal roadway asphalt, sparse rounded mineral flecks"
+    },
+    {
+      "id": "asphalt_15",
+      "color": "asphalt_15.jpg",
+      "height": "asphalt_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brown-gray aged municipal roadway asphalt, sparse rounded mineral flecks"
+    },
+    {
+      "id": "asphalt_16",
+      "color": "asphalt_16.jpg",
+      "height": "asphalt_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm charcoal gray municipal roadway asphalt, subtle hairline wear and pinholes"
+    },
+    {
+      "id": "asphalt_17",
+      "color": "asphalt_17.jpg",
+      "height": "asphalt_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool blue gray municipal roadway asphalt, subtle hairline wear and pinholes"
+    },
+    {
+      "id": "asphalt_18",
+      "color": "asphalt_18.jpg",
+      "height": "asphalt_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale weathered gray municipal roadway asphalt, subtle hairline wear and pinholes"
+    },
+    {
+      "id": "asphalt_19",
+      "color": "asphalt_19.jpg",
+      "height": "asphalt_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black basalt municipal roadway asphalt, subtle hairline wear and pinholes"
+    },
+    {
+      "id": "asphalt_20",
+      "color": "asphalt_20.jpg",
+      "height": "asphalt_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brown-gray aged municipal roadway asphalt, subtle hairline wear and pinholes"
+    },
+    {
+      "id": "paving_01",
+      "color": "paving_01.jpg",
+      "height": "paving_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_02",
+      "color": "paving_02.jpg",
+      "height": "paving_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_03",
+      "color": "paving_03.jpg",
+      "height": "paving_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_04",
+      "color": "paving_04.jpg",
+      "height": "paving_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_05",
+      "color": "paving_05.jpg",
+      "height": "paving_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sand gray urban sidewalk paving, rectangular concrete slabs with flush joints"
+    },
+    {
+      "id": "paving_06",
+      "color": "paving_06.jpg",
+      "height": "paving_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray urban sidewalk paving, small granite setts in courses"
+    },
+    {
+      "id": "paving_07",
+      "color": "paving_07.jpg",
+      "height": "paving_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm limestone beige urban sidewalk paving, small granite setts in courses"
+    },
+    {
+      "id": "paving_08",
+      "color": "paving_08.jpg",
+      "height": "paving_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted red brown urban sidewalk paving, small granite setts in courses"
+    },
+    {
+      "id": "paving_09",
+      "color": "paving_09.jpg",
+      "height": "paving_09_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_10",
+      "color": "paving_10.jpg",
+      "height": "paving_10_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_11",
+      "color": "paving_11.jpg",
+      "height": "paving_11_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_12",
+      "color": "paving_12.jpg",
+      "height": "paving_12_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_13",
+      "color": "paving_13.jpg",
+      "height": "paving_13_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_14",
+      "color": "paving_14.jpg",
+      "height": "paving_14_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_15",
+      "color": "paving_15.jpg",
+      "height": "paving_15_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_16",
+      "color": "paving_16.jpg",
+      "height": "paving_16_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_17",
+      "color": "paving_17.jpg",
+      "height": "paving_17_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_18",
+      "color": "paving_18.jpg",
+      "height": "paving_18_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paving_19",
+      "color": "paving_19.jpg",
+      "height": "paving_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray urban sidewalk paving, worn interlocking pavers with narrow joints"
+    },
+    {
+      "id": "paving_20",
+      "color": "paving_20.jpg",
+      "height": "paving_20_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_01",
+      "color": "vegetation_01.jpg",
+      "height": "vegetation_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_02",
+      "color": "vegetation_02.jpg",
+      "height": "vegetation_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_03",
+      "color": "vegetation_03.jpg",
+      "height": "vegetation_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_04",
+      "color": "vegetation_04.jpg",
+      "height": "vegetation_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_05",
+      "color": "vegetation_05.jpg",
+      "height": "vegetation_05_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_06",
+      "color": "vegetation_06.jpg",
+      "height": "vegetation_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green Balkan park ground cover, low clover leaves mixed with grass"
+    },
+    {
+      "id": "vegetation_07",
+      "color": "vegetation_07.jpg",
+      "height": "vegetation_07_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_08",
+      "color": "vegetation_08.jpg",
+      "height": "vegetation_08_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_09",
+      "color": "vegetation_09.jpg",
+      "height": "vegetation_09_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_10",
+      "color": "vegetation_10.jpg",
+      "height": "vegetation_10_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "vegetation_11",
+      "color": "vegetation_11.jpg",
+      "height": "vegetation_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green Balkan park ground cover, sparse shoots over dry soil"
+    },
+    {
+      "id": "vegetation_12",
+      "color": "vegetation_12.jpg",
+      "height": "vegetation_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "spring green Balkan park ground cover, sparse shoots over dry soil"
+    },
+    {
+      "id": "vegetation_13",
+      "color": "vegetation_13.jpg",
+      "height": "vegetation_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry yellow green Balkan park ground cover, sparse shoots over dry soil"
+    },
+    {
+      "id": "vegetation_14",
+      "color": "vegetation_14.jpg",
+      "height": "vegetation_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green Balkan park ground cover, sparse shoots over dry soil"
+    },
+    {
+      "id": "vegetation_15",
+      "color": "vegetation_15.jpg",
+      "height": "vegetation_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep meadow green Balkan park ground cover, sparse shoots over dry soil"
+    },
+    {
+      "id": "vegetation_16",
+      "color": "vegetation_16.jpg",
+      "height": "vegetation_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green Balkan park ground cover, dense tiny meadow foliage"
+    },
+    {
+      "id": "vegetation_17",
+      "color": "vegetation_17.jpg",
+      "height": "vegetation_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "spring green Balkan park ground cover, dense tiny meadow foliage"
+    },
+    {
+      "id": "vegetation_18",
+      "color": "vegetation_18.jpg",
+      "height": "vegetation_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry yellow green Balkan park ground cover, dense tiny meadow foliage"
+    },
+    {
+      "id": "vegetation_19",
+      "color": "vegetation_19.jpg",
+      "height": "vegetation_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green Balkan park ground cover, dense tiny meadow foliage"
+    },
+    {
+      "id": "vegetation_20",
+      "color": "vegetation_20.jpg",
+      "height": "vegetation_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep meadow green Balkan park ground cover, dense tiny meadow foliage"
+    },
+    {
+      "id": "earth_01",
+      "color": "earth_01.jpg",
+      "height": "earth_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "earth_02",
+      "color": "earth_02.jpg",
+      "height": "earth_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "earth_03",
+      "color": "earth_03.jpg",
+      "height": "earth_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "earth_04",
+      "color": "earth_04.jpg",
+      "height": "earth_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "earth_05",
+      "color": "earth_05.jpg",
+      "height": "earth_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sandy beige natural ground soil, compacted fine silty soil"
+    },
+    {
+      "id": "earth_06",
+      "color": "earth_06.jpg",
+      "height": "earth_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan natural ground soil, tiny embedded gravel"
+    },
+    {
+      "id": "earth_07",
+      "color": "earth_07.jpg",
+      "height": "earth_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre natural ground soil, tiny embedded gravel"
+    },
+    {
+      "id": "earth_08",
+      "color": "earth_08.jpg",
+      "height": "earth_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep brown natural ground soil, tiny embedded gravel"
+    },
+    {
+      "id": "earth_09",
+      "color": "earth_09.jpg",
+      "height": "earth_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown natural ground soil, tiny embedded gravel"
+    },
+    {
+      "id": "earth_10",
+      "color": "earth_10.jpg",
+      "height": "earth_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sandy beige natural ground soil, tiny embedded gravel"
+    },
+    {
+      "id": "earth_11",
+      "color": "earth_11.jpg",
+      "height": "earth_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan natural ground soil, crumbly clay clods"
+    },
+    {
+      "id": "earth_12",
+      "color": "earth_12.jpg",
+      "height": "earth_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre natural ground soil, crumbly clay clods"
+    },
+    {
+      "id": "earth_13",
+      "color": "earth_13.jpg",
+      "height": "earth_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep brown natural ground soil, crumbly clay clods"
+    },
+    {
+      "id": "earth_14",
+      "color": "earth_14.jpg",
+      "height": "earth_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown natural ground soil, crumbly clay clods"
+    },
+    {
+      "id": "earth_15",
+      "color": "earth_15.jpg",
+      "height": "earth_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sandy beige natural ground soil, crumbly clay clods"
+    },
+    {
+      "id": "earth_16",
+      "color": "earth_16.jpg",
+      "height": "earth_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan natural ground soil, fine dry earth with scattered pebbles"
+    },
+    {
+      "id": "earth_17",
+      "color": "earth_17.jpg",
+      "height": "earth_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre natural ground soil, fine dry earth with scattered pebbles"
+    },
+    {
+      "id": "earth_18",
+      "color": "earth_18.jpg",
+      "height": "earth_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep brown natural ground soil, fine dry earth with scattered pebbles"
+    },
+    {
+      "id": "earth_19",
+      "color": "earth_19.jpg",
+      "height": "earth_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown natural ground soil, fine dry earth with scattered pebbles"
+    },
+    {
+      "id": "earth_20",
+      "color": "earth_20.jpg",
+      "height": "earth_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sandy beige natural ground soil, fine dry earth with scattered pebbles"
+    },
+    {
+      "id": "plaster_01",
+      "color": "plaster_01.jpg",
+      "height": "plaster_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plaster_02",
+      "color": "plaster_02.jpg",
+      "height": "plaster_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plaster_03",
+      "color": "plaster_03.jpg",
+      "height": "plaster_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plaster_04",
+      "color": "plaster_04.jpg",
+      "height": "plaster_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plaster_05",
+      "color": "plaster_05.jpg",
+      "height": "plaster_05_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plaster_06",
+      "color": "plaster_06.jpg",
+      "height": "plaster_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white weathered exterior wall plaster, subtle trowel mottling"
+    },
+    {
+      "id": "plaster_07",
+      "color": "plaster_07.jpg",
+      "height": "plaster_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige weathered exterior wall plaster, subtle trowel mottling"
+    },
+    {
+      "id": "plaster_08",
+      "color": "plaster_08.jpg",
+      "height": "plaster_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray weathered exterior wall plaster, subtle trowel mottling"
+    },
+    {
+      "id": "plaster_09",
+      "color": "plaster_09.jpg",
+      "height": "plaster_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sand colored weathered exterior wall plaster, subtle trowel mottling"
+    },
+    {
+      "id": "plaster_10",
+      "color": "plaster_10.jpg",
+      "height": "plaster_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ivory weathered exterior wall plaster, subtle trowel mottling"
+    },
+    {
+      "id": "plaster_11",
+      "color": "plaster_11.jpg",
+      "height": "plaster_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white weathered exterior wall plaster, tiny shallow pits"
+    },
+    {
+      "id": "plaster_12",
+      "color": "plaster_12.jpg",
+      "height": "plaster_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige weathered exterior wall plaster, tiny shallow pits"
+    },
+    {
+      "id": "plaster_13",
+      "color": "plaster_13.jpg",
+      "height": "plaster_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray weathered exterior wall plaster, tiny shallow pits"
+    },
+    {
+      "id": "plaster_14",
+      "color": "plaster_14.jpg",
+      "height": "plaster_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sand colored weathered exterior wall plaster, tiny shallow pits"
+    },
+    {
+      "id": "plaster_15",
+      "color": "plaster_15.jpg",
+      "height": "plaster_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ivory weathered exterior wall plaster, tiny shallow pits"
+    },
+    {
+      "id": "plaster_16",
+      "color": "plaster_16.jpg",
+      "height": "plaster_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white weathered exterior wall plaster, gentle worn brush texture"
+    },
+    {
+      "id": "plaster_17",
+      "color": "plaster_17.jpg",
+      "height": "plaster_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige weathered exterior wall plaster, gentle worn brush texture"
+    },
+    {
+      "id": "plaster_18",
+      "color": "plaster_18.jpg",
+      "height": "plaster_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray weathered exterior wall plaster, gentle worn brush texture"
+    },
+    {
+      "id": "plaster_19",
+      "color": "plaster_19.jpg",
+      "height": "plaster_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sand colored weathered exterior wall plaster, gentle worn brush texture"
+    },
+    {
+      "id": "plaster_20",
+      "color": "plaster_20.jpg",
+      "height": "plaster_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ivory weathered exterior wall plaster, gentle worn brush texture"
+    },
+    {
+      "id": "masonry_01",
+      "color": "masonry_01.jpg",
+      "height": "masonry_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "masonry_02",
+      "color": "masonry_02.jpg",
+      "height": "masonry_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "masonry_03",
+      "color": "masonry_03.jpg",
+      "height": "masonry_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "masonry_04",
+      "color": "masonry_04.jpg",
+      "height": "masonry_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "masonry_05",
+      "color": "masonry_05.jpg",
+      "height": "masonry_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale tan block exterior masonry wall, running-bond bricks with thin mortar"
+    },
+    {
+      "id": "masonry_06",
+      "color": "masonry_06.jpg",
+      "height": "masonry_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "faded red clay exterior masonry wall, rough staggered ashlar courses"
+    },
+    {
+      "id": "masonry_07",
+      "color": "masonry_07.jpg",
+      "height": "masonry_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm cream limestone exterior masonry wall, rough staggered ashlar courses"
+    },
+    {
+      "id": "masonry_08",
+      "color": "masonry_08.jpg",
+      "height": "masonry_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "neutral gray stone exterior masonry wall, rough staggered ashlar courses"
+    },
+    {
+      "id": "masonry_09",
+      "color": "masonry_09.jpg",
+      "height": "masonry_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ochre brown brick exterior masonry wall, rough staggered ashlar courses"
+    },
+    {
+      "id": "masonry_10",
+      "color": "masonry_10.jpg",
+      "height": "masonry_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale tan block exterior masonry wall, rough staggered ashlar courses"
+    },
+    {
+      "id": "masonry_11",
+      "color": "masonry_11.jpg",
+      "height": "masonry_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "faded red clay exterior masonry wall, small weathered rubble stones"
+    },
+    {
+      "id": "masonry_12",
+      "color": "masonry_12.jpg",
+      "height": "masonry_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm cream limestone exterior masonry wall, small weathered rubble stones"
+    },
+    {
+      "id": "masonry_13",
+      "color": "masonry_13.jpg",
+      "height": "masonry_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "neutral gray stone exterior masonry wall, small weathered rubble stones"
+    },
+    {
+      "id": "masonry_14",
+      "color": "masonry_14.jpg",
+      "height": "masonry_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ochre brown brick exterior masonry wall, small weathered rubble stones"
+    },
+    {
+      "id": "masonry_15",
+      "color": "masonry_15.jpg",
+      "height": "masonry_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale tan block exterior masonry wall, small weathered rubble stones"
+    },
+    {
+      "id": "masonry_16",
+      "color": "masonry_16.jpg",
+      "height": "masonry_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "faded red clay exterior masonry wall, regular masonry blocks with recessed joints"
+    },
+    {
+      "id": "masonry_17",
+      "color": "masonry_17.jpg",
+      "height": "masonry_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm cream limestone exterior masonry wall, regular masonry blocks with recessed joints"
+    },
+    {
+      "id": "masonry_18",
+      "color": "masonry_18.jpg",
+      "height": "masonry_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "neutral gray stone exterior masonry wall, regular masonry blocks with recessed joints"
+    },
+    {
+      "id": "masonry_19",
+      "color": "masonry_19.jpg",
+      "height": "masonry_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ochre brown brick exterior masonry wall, regular masonry blocks with recessed joints"
+    },
+    {
+      "id": "masonry_20",
+      "color": "masonry_20.jpg",
+      "height": "masonry_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale tan block exterior masonry wall, regular masonry blocks with recessed joints"
+    },
+    {
+      "id": "roof_01",
+      "color": "roof_01.jpg",
+      "height": "roof_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "roof_02",
+      "color": "roof_02.jpg",
+      "height": "roof_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "roof_03",
+      "color": "roof_03.jpg",
+      "height": "roof_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "roof_04",
+      "color": "roof_04.jpg",
+      "height": "roof_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "roof_05",
+      "color": "roof_05.jpg",
+      "height": "roof_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep red brown aged urban roof covering, overlapping curved clay tiles"
+    },
+    {
+      "id": "roof_06",
+      "color": "roof_06.jpg",
+      "height": "roof_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta aged urban roof covering, small flat tiles in horizontal courses"
+    },
+    {
+      "id": "roof_07",
+      "color": "roof_07.jpg",
+      "height": "roof_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "burnt orange aged urban roof covering, small flat tiles in horizontal courses"
+    },
+    {
+      "id": "roof_08",
+      "color": "roof_08.jpg",
+      "height": "roof_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate gray aged urban roof covering, small flat tiles in horizontal courses"
+    },
+    {
+      "id": "roof_09",
+      "color": "roof_09.jpg",
+      "height": "roof_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sandy brown aged urban roof covering, small flat tiles in horizontal courses"
+    },
+    {
+      "id": "roof_10",
+      "color": "roof_10.jpg",
+      "height": "roof_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep red brown aged urban roof covering, small flat tiles in horizontal courses"
+    },
+    {
+      "id": "roof_11",
+      "color": "roof_11.jpg",
+      "height": "roof_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta aged urban roof covering, weathered bitumen with fine grit"
+    },
+    {
+      "id": "roof_12",
+      "color": "roof_12.jpg",
+      "height": "roof_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "burnt orange aged urban roof covering, weathered bitumen with fine grit"
+    },
+    {
+      "id": "roof_13",
+      "color": "roof_13.jpg",
+      "height": "roof_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate gray aged urban roof covering, weathered bitumen with fine grit"
+    },
+    {
+      "id": "roof_14",
+      "color": "roof_14.jpg",
+      "height": "roof_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sandy brown aged urban roof covering, weathered bitumen with fine grit"
+    },
+    {
+      "id": "roof_15",
+      "color": "roof_15.jpg",
+      "height": "roof_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep red brown aged urban roof covering, weathered bitumen with fine grit"
+    },
+    {
+      "id": "roof_16",
+      "color": "roof_16.jpg",
+      "height": "roof_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta aged urban roof covering, overlapping concrete roof shingles"
+    },
+    {
+      "id": "roof_17",
+      "color": "roof_17.jpg",
+      "height": "roof_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "burnt orange aged urban roof covering, overlapping concrete roof shingles"
+    },
+    {
+      "id": "roof_18",
+      "color": "roof_18.jpg",
+      "height": "roof_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate gray aged urban roof covering, overlapping concrete roof shingles"
+    },
+    {
+      "id": "roof_19",
+      "color": "roof_19.jpg",
+      "height": "roof_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sandy brown aged urban roof covering, overlapping concrete roof shingles"
+    },
+    {
+      "id": "roof_20",
+      "color": "roof_20.jpg",
+      "height": "roof_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep red brown aged urban roof covering, overlapping concrete roof shingles"
+    },
+    {
+      "id": "metal_01",
+      "color": "metal_01.jpg",
+      "height": "metal_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "metal_02",
+      "color": "metal_02.jpg",
+      "height": "metal_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "metal_03",
+      "color": "metal_03.jpg",
+      "height": "metal_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "metal_04",
+      "color": "metal_04.jpg",
+      "height": "metal_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "metal_05",
+      "color": "metal_05.jpg",
+      "height": "metal_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark neutral gray exterior sheet-metal cladding, fine vertical corrugations"
+    },
+    {
+      "id": "metal_06",
+      "color": "metal_06.jpg",
+      "height": "metal_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "galvanized gray exterior sheet-metal cladding, standing-seam panels with straight joints"
+    },
+    {
+      "id": "metal_07",
+      "color": "metal_07.jpg",
+      "height": "metal_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "blue gray exterior sheet-metal cladding, standing-seam panels with straight joints"
+    },
+    {
+      "id": "metal_08",
+      "color": "metal_08.jpg",
+      "height": "metal_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dull zinc silver exterior sheet-metal cladding, standing-seam panels with straight joints"
+    },
+    {
+      "id": "metal_09",
+      "color": "metal_09.jpg",
+      "height": "metal_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "oxidized brown exterior sheet-metal cladding, standing-seam panels with straight joints"
+    },
+    {
+      "id": "metal_10",
+      "color": "metal_10.jpg",
+      "height": "metal_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark neutral gray exterior sheet-metal cladding, standing-seam panels with straight joints"
+    },
+    {
+      "id": "metal_11",
+      "color": "metal_11.jpg",
+      "height": "metal_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "galvanized gray exterior sheet-metal cladding, shallow narrow ribs"
+    },
+    {
+      "id": "metal_12",
+      "color": "metal_12.jpg",
+      "height": "metal_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "blue gray exterior sheet-metal cladding, shallow narrow ribs"
+    },
+    {
+      "id": "metal_13",
+      "color": "metal_13.jpg",
+      "height": "metal_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dull zinc silver exterior sheet-metal cladding, shallow narrow ribs"
+    },
+    {
+      "id": "metal_14",
+      "color": "metal_14.jpg",
+      "height": "metal_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "oxidized brown exterior sheet-metal cladding, shallow narrow ribs"
+    },
+    {
+      "id": "metal_15",
+      "color": "metal_15.jpg",
+      "height": "metal_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark neutral gray exterior sheet-metal cladding, shallow narrow ribs"
+    },
+    {
+      "id": "metal_16",
+      "color": "metal_16.jpg",
+      "height": "metal_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "galvanized gray exterior sheet-metal cladding, flat aged enamel panels with subtle wear"
+    },
+    {
+      "id": "metal_17",
+      "color": "metal_17.jpg",
+      "height": "metal_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "blue gray exterior sheet-metal cladding, flat aged enamel panels with subtle wear"
+    },
+    {
+      "id": "metal_18",
+      "color": "metal_18.jpg",
+      "height": "metal_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dull zinc silver exterior sheet-metal cladding, flat aged enamel panels with subtle wear"
+    },
+    {
+      "id": "metal_19",
+      "color": "metal_19.jpg",
+      "height": "metal_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "oxidized brown exterior sheet-metal cladding, flat aged enamel panels with subtle wear"
+    },
+    {
+      "id": "metal_20",
+      "color": "metal_20.jpg",
+      "height": "metal_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark neutral gray exterior sheet-metal cladding, flat aged enamel panels with subtle wear"
+    },
+    {
+      "id": "water_01",
+      "color": "water_01.jpg",
+      "height": "water_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "water_02",
+      "color": "water_02.jpg",
+      "height": "water_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "water_03",
+      "color": "water_03.jpg",
+      "height": "water_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "water_04",
+      "color": "water_04.jpg",
+      "height": "water_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "water_05",
+      "color": "water_05.jpg",
+      "height": "water_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark river gray close-up natural water surface, fine overlapping ripples"
+    },
+    {
+      "id": "water_06",
+      "color": "water_06.jpg",
+      "height": "water_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue green close-up natural water surface, soft short wavelets"
+    },
+    {
+      "id": "water_07",
+      "color": "water_07.jpg",
+      "height": "water_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool slate blue close-up natural water surface, soft short wavelets"
+    },
+    {
+      "id": "water_08",
+      "color": "water_08.jpg",
+      "height": "water_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive green close-up natural water surface, soft short wavelets"
+    },
+    {
+      "id": "water_09",
+      "color": "water_09.jpg",
+      "height": "water_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale turquoise gray close-up natural water surface, soft short wavelets"
+    },
+    {
+      "id": "water_10",
+      "color": "water_10.jpg",
+      "height": "water_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark river gray close-up natural water surface, soft short wavelets"
+    },
+    {
+      "id": "water_11",
+      "color": "water_11.jpg",
+      "height": "water_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue green close-up natural water surface, subtle circular surface undulations"
+    },
+    {
+      "id": "water_12",
+      "color": "water_12.jpg",
+      "height": "water_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool slate blue close-up natural water surface, subtle circular surface undulations"
+    },
+    {
+      "id": "water_13",
+      "color": "water_13.jpg",
+      "height": "water_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive green close-up natural water surface, subtle circular surface undulations"
+    },
+    {
+      "id": "water_14",
+      "color": "water_14.jpg",
+      "height": "water_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale turquoise gray close-up natural water surface, subtle circular surface undulations"
+    },
+    {
+      "id": "water_15",
+      "color": "water_15.jpg",
+      "height": "water_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark river gray close-up natural water surface, subtle circular surface undulations"
+    },
+    {
+      "id": "water_16",
+      "color": "water_16.jpg",
+      "height": "water_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue green close-up natural water surface, calm water with tiny broken highlights"
+    },
+    {
+      "id": "water_17",
+      "color": "water_17.jpg",
+      "height": "water_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool slate blue close-up natural water surface, calm water with tiny broken highlights"
+    },
+    {
+      "id": "water_18",
+      "color": "water_18.jpg",
+      "height": "water_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive green close-up natural water surface, calm water with tiny broken highlights"
+    },
+    {
+      "id": "water_19",
+      "color": "water_19.jpg",
+      "height": "water_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale turquoise gray close-up natural water surface, calm water with tiny broken highlights"
+    },
+    {
+      "id": "water_20",
+      "color": "water_20.jpg",
+      "height": "water_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark river gray close-up natural water surface, calm water with tiny broken highlights"
+    },
+    {
+      "id": "bark_01",
+      "color": "bark_01.jpg",
+      "height": "bark_01_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut brown tree bark surface, fine vertical furrows"
+    },
+    {
+      "id": "bark_02",
+      "color": "bark_02.jpg",
+      "height": "bark_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "bark_03",
+      "color": "bark_03.jpg",
+      "height": "bark_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "bark_04",
+      "color": "bark_04.jpg",
+      "height": "bark_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "bark_05",
+      "color": "bark_05.jpg",
+      "height": "bark_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish umber tree bark surface, fine vertical furrows"
+    },
+    {
+      "id": "bark_06",
+      "color": "bark_06.jpg",
+      "height": "bark_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut brown tree bark surface, shallow broken plates"
+    },
+    {
+      "id": "bark_07",
+      "color": "bark_07.jpg",
+      "height": "bark_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown tree bark surface, shallow broken plates"
+    },
+    {
+      "id": "bark_08",
+      "color": "bark_08.jpg",
+      "height": "bark_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark walnut tree bark surface, shallow broken plates"
+    },
+    {
+      "id": "bark_09",
+      "color": "bark_09.jpg",
+      "height": "bark_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ash gray tree bark surface, shallow broken plates"
+    },
+    {
+      "id": "bark_10",
+      "color": "bark_10.jpg",
+      "height": "bark_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish umber tree bark surface, shallow broken plates"
+    },
+    {
+      "id": "bark_11",
+      "color": "bark_11.jpg",
+      "height": "bark_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut brown tree bark surface, rough narrow ridges"
+    },
+    {
+      "id": "bark_12",
+      "color": "bark_12.jpg",
+      "height": "bark_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown tree bark surface, rough narrow ridges"
+    },
+    {
+      "id": "bark_13",
+      "color": "bark_13.jpg",
+      "height": "bark_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark walnut tree bark surface, rough narrow ridges"
+    },
+    {
+      "id": "bark_14",
+      "color": "bark_14.jpg",
+      "height": "bark_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ash gray tree bark surface, rough narrow ridges"
+    },
+    {
+      "id": "bark_15",
+      "color": "bark_15.jpg",
+      "height": "bark_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish umber tree bark surface, rough narrow ridges"
+    },
+    {
+      "id": "bark_16",
+      "color": "bark_16.jpg",
+      "height": "bark_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut brown tree bark surface, small irregular bark scales"
+    },
+    {
+      "id": "bark_17",
+      "color": "bark_17.jpg",
+      "height": "bark_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray brown tree bark surface, small irregular bark scales"
+    },
+    {
+      "id": "bark_18",
+      "color": "bark_18.jpg",
+      "height": "bark_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark walnut tree bark surface, small irregular bark scales"
+    },
+    {
+      "id": "bark_19",
+      "color": "bark_19.jpg",
+      "height": "bark_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale ash gray tree bark surface, small irregular bark scales"
+    },
+    {
+      "id": "bark_20",
+      "color": "bark_20.jpg",
+      "height": "bark_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish umber tree bark surface, small irregular bark scales"
+    },
+    {
+      "id": "leaf_01",
+      "color": "leaf_01.jpg",
+      "height": "leaf_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leaf_02",
+      "color": "leaf_02.jpg",
+      "height": "leaf_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leaf_03",
+      "color": "leaf_03.jpg",
+      "height": "leaf_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leaf_04",
+      "color": "leaf_04.jpg",
+      "height": "leaf_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre green overhead leaf and foliage ground texture, small overlapping broad leaves"
+    },
+    {
+      "id": "leaf_05",
+      "color": "leaf_05.jpg",
+      "height": "leaf_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green overhead leaf and foliage ground texture, small overlapping broad leaves"
+    },
+    {
+      "id": "leaf_06",
+      "color": "leaf_06.jpg",
+      "height": "leaf_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green overhead leaf and foliage ground texture, fine mixed leaf litter"
+    },
+    {
+      "id": "leaf_07",
+      "color": "leaf_07.jpg",
+      "height": "leaf_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "fresh spring green overhead leaf and foliage ground texture, fine mixed leaf litter"
+    },
+    {
+      "id": "leaf_08",
+      "color": "leaf_08.jpg",
+      "height": "leaf_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep forest green overhead leaf and foliage ground texture, fine mixed leaf litter"
+    },
+    {
+      "id": "leaf_09",
+      "color": "leaf_09.jpg",
+      "height": "leaf_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre green overhead leaf and foliage ground texture, fine mixed leaf litter"
+    },
+    {
+      "id": "leaf_10",
+      "color": "leaf_10.jpg",
+      "height": "leaf_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green overhead leaf and foliage ground texture, fine mixed leaf litter"
+    },
+    {
+      "id": "leaf_11",
+      "color": "leaf_11.jpg",
+      "height": "leaf_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green overhead leaf and foliage ground texture, tiny clustered foliage"
+    },
+    {
+      "id": "leaf_12",
+      "color": "leaf_12.jpg",
+      "height": "leaf_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "fresh spring green overhead leaf and foliage ground texture, tiny clustered foliage"
+    },
+    {
+      "id": "leaf_13",
+      "color": "leaf_13.jpg",
+      "height": "leaf_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep forest green overhead leaf and foliage ground texture, tiny clustered foliage"
+    },
+    {
+      "id": "leaf_14",
+      "color": "leaf_14.jpg",
+      "height": "leaf_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre green overhead leaf and foliage ground texture, tiny clustered foliage"
+    },
+    {
+      "id": "leaf_15",
+      "color": "leaf_15.jpg",
+      "height": "leaf_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green overhead leaf and foliage ground texture, tiny clustered foliage"
+    },
+    {
+      "id": "leaf_16",
+      "color": "leaf_16.jpg",
+      "height": "leaf_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green overhead leaf and foliage ground texture, rounded leaves with restrained veins"
+    },
+    {
+      "id": "leaf_17",
+      "color": "leaf_17.jpg",
+      "height": "leaf_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "fresh spring green overhead leaf and foliage ground texture, rounded leaves with restrained veins"
+    },
+    {
+      "id": "leaf_18",
+      "color": "leaf_18.jpg",
+      "height": "leaf_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep forest green overhead leaf and foliage ground texture, rounded leaves with restrained veins"
+    },
+    {
+      "id": "leaf_19",
+      "color": "leaf_19.jpg",
+      "height": "leaf_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dry ochre green overhead leaf and foliage ground texture, rounded leaves with restrained veins"
+    },
+    {
+      "id": "leaf_20",
+      "color": "leaf_20.jpg",
+      "height": "leaf_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green overhead leaf and foliage ground texture, rounded leaves with restrained veins"
+    },
+    {
+      "id": "wood_01",
+      "color": "wood_01.jpg",
+      "height": "wood_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "wood_02",
+      "color": "wood_02.jpg",
+      "height": "wood_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "wood_03",
+      "color": "wood_03.jpg",
+      "height": "wood_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "wood_04",
+      "color": "wood_04.jpg",
+      "height": "wood_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale pine weathered wood surface, fine lengthwise grain"
+    },
+    {
+      "id": "wood_05",
+      "color": "wood_05.jpg",
+      "height": "wood_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish cedar weathered wood surface, fine lengthwise grain"
+    },
+    {
+      "id": "wood_06",
+      "color": "wood_06.jpg",
+      "height": "wood_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "honey brown weathered wood surface, aged narrow planks with faint seams"
+    },
+    {
+      "id": "wood_07",
+      "color": "wood_07.jpg",
+      "height": "wood_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown weathered wood surface, aged narrow planks with faint seams"
+    },
+    {
+      "id": "wood_08",
+      "color": "wood_08.jpg",
+      "height": "wood_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep walnut weathered wood surface, aged narrow planks with faint seams"
+    },
+    {
+      "id": "wood_09",
+      "color": "wood_09.jpg",
+      "height": "wood_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale pine weathered wood surface, aged narrow planks with faint seams"
+    },
+    {
+      "id": "wood_10",
+      "color": "wood_10.jpg",
+      "height": "wood_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish cedar weathered wood surface, aged narrow planks with faint seams"
+    },
+    {
+      "id": "wood_11",
+      "color": "wood_11.jpg",
+      "height": "wood_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "honey brown weathered wood surface, subtle saw-cut fibers"
+    },
+    {
+      "id": "wood_12",
+      "color": "wood_12.jpg",
+      "height": "wood_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown weathered wood surface, subtle saw-cut fibers"
+    },
+    {
+      "id": "wood_13",
+      "color": "wood_13.jpg",
+      "height": "wood_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep walnut weathered wood surface, subtle saw-cut fibers"
+    },
+    {
+      "id": "wood_14",
+      "color": "wood_14.jpg",
+      "height": "wood_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale pine weathered wood surface, subtle saw-cut fibers"
+    },
+    {
+      "id": "wood_15",
+      "color": "wood_15.jpg",
+      "height": "wood_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish cedar weathered wood surface, subtle saw-cut fibers"
+    },
+    {
+      "id": "wood_16",
+      "color": "wood_16.jpg",
+      "height": "wood_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "honey brown weathered wood surface, weathered wood with small knots"
+    },
+    {
+      "id": "wood_17",
+      "color": "wood_17.jpg",
+      "height": "wood_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown weathered wood surface, weathered wood with small knots"
+    },
+    {
+      "id": "wood_18",
+      "color": "wood_18.jpg",
+      "height": "wood_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep walnut weathered wood surface, weathered wood with small knots"
+    },
+    {
+      "id": "wood_19",
+      "color": "wood_19.jpg",
+      "height": "wood_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale pine weathered wood surface, weathered wood with small knots"
+    },
+    {
+      "id": "wood_20",
+      "color": "wood_20.jpg",
+      "height": "wood_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish cedar weathered wood surface, weathered wood with small knots"
+    },
+    {
+      "id": "ceramic_01",
+      "color": "ceramic_01.jpg",
+      "height": "ceramic_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "ceramic_02",
+      "color": "ceramic_02.jpg",
+      "height": "ceramic_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "ceramic_03",
+      "color": "ceramic_03.jpg",
+      "height": "ceramic_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "ceramic_04",
+      "color": "ceramic_04.jpg",
+      "height": "ceramic_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "ceramic_05",
+      "color": "ceramic_05.jpg",
+      "height": "ceramic_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue gray ceramic tile surface, small glazed square tiles with fine grout"
+    },
+    {
+      "id": "ceramic_06",
+      "color": "ceramic_06.jpg",
+      "height": "ceramic_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory ceramic tile surface, matte ceramic with subtle speckles"
+    },
+    {
+      "id": "ceramic_07",
+      "color": "ceramic_07.jpg",
+      "height": "ceramic_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta ceramic tile surface, matte ceramic with subtle speckles"
+    },
+    {
+      "id": "ceramic_08",
+      "color": "ceramic_08.jpg",
+      "height": "ceramic_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray ceramic tile surface, matte ceramic with subtle speckles"
+    },
+    {
+      "id": "ceramic_09",
+      "color": "ceramic_09.jpg",
+      "height": "ceramic_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sage ceramic tile surface, matte ceramic with subtle speckles"
+    },
+    {
+      "id": "ceramic_10",
+      "color": "ceramic_10.jpg",
+      "height": "ceramic_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue gray ceramic tile surface, matte ceramic with subtle speckles"
+    },
+    {
+      "id": "ceramic_11",
+      "color": "ceramic_11.jpg",
+      "height": "ceramic_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory ceramic tile surface, rectangular tiles in staggered courses"
+    },
+    {
+      "id": "ceramic_12",
+      "color": "ceramic_12.jpg",
+      "height": "ceramic_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta ceramic tile surface, rectangular tiles in staggered courses"
+    },
+    {
+      "id": "ceramic_13",
+      "color": "ceramic_13.jpg",
+      "height": "ceramic_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray ceramic tile surface, rectangular tiles in staggered courses"
+    },
+    {
+      "id": "ceramic_14",
+      "color": "ceramic_14.jpg",
+      "height": "ceramic_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sage ceramic tile surface, rectangular tiles in staggered courses"
+    },
+    {
+      "id": "ceramic_15",
+      "color": "ceramic_15.jpg",
+      "height": "ceramic_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue gray ceramic tile surface, rectangular tiles in staggered courses"
+    },
+    {
+      "id": "ceramic_16",
+      "color": "ceramic_16.jpg",
+      "height": "ceramic_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory ceramic tile surface, worn ceramic glaze with tiny imperfections"
+    },
+    {
+      "id": "ceramic_17",
+      "color": "ceramic_17.jpg",
+      "height": "ceramic_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted terracotta ceramic tile surface, worn ceramic glaze with tiny imperfections"
+    },
+    {
+      "id": "ceramic_18",
+      "color": "ceramic_18.jpg",
+      "height": "ceramic_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool gray ceramic tile surface, worn ceramic glaze with tiny imperfections"
+    },
+    {
+      "id": "ceramic_19",
+      "color": "ceramic_19.jpg",
+      "height": "ceramic_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale sage ceramic tile surface, worn ceramic glaze with tiny imperfections"
+    },
+    {
+      "id": "ceramic_20",
+      "color": "ceramic_20.jpg",
+      "height": "ceramic_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep blue gray ceramic tile surface, worn ceramic glaze with tiny imperfections"
+    },
+    {
+      "id": "carpet_01",
+      "color": "carpet_01.jpg",
+      "height": "carpet_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "carpet_02",
+      "color": "carpet_02.jpg",
+      "height": "carpet_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "carpet_03",
+      "color": "carpet_03.jpg",
+      "height": "carpet_03_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool charcoal close-up woven carpet surface, dense short wool pile"
+    },
+    {
+      "id": "carpet_04",
+      "color": "carpet_04.jpg",
+      "height": "carpet_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "carpet_05",
+      "color": "carpet_05.jpg",
+      "height": "carpet_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dusty blue close-up woven carpet surface, dense short wool pile"
+    },
+    {
+      "id": "carpet_06",
+      "color": "carpet_06.jpg",
+      "height": "carpet_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm beige close-up woven carpet surface, tight loop pile"
+    },
+    {
+      "id": "carpet_07",
+      "color": "carpet_07.jpg",
+      "height": "carpet_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted burgundy close-up woven carpet surface, tight loop pile"
+    },
+    {
+      "id": "carpet_08",
+      "color": "carpet_08.jpg",
+      "height": "carpet_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool charcoal close-up woven carpet surface, tight loop pile"
+    },
+    {
+      "id": "carpet_09",
+      "color": "carpet_09.jpg",
+      "height": "carpet_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive brown close-up woven carpet surface, tight loop pile"
+    },
+    {
+      "id": "carpet_10",
+      "color": "carpet_10.jpg",
+      "height": "carpet_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dusty blue close-up woven carpet surface, tight loop pile"
+    },
+    {
+      "id": "carpet_11",
+      "color": "carpet_11.jpg",
+      "height": "carpet_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm beige close-up woven carpet surface, fine woven fibers"
+    },
+    {
+      "id": "carpet_12",
+      "color": "carpet_12.jpg",
+      "height": "carpet_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted burgundy close-up woven carpet surface, fine woven fibers"
+    },
+    {
+      "id": "carpet_13",
+      "color": "carpet_13.jpg",
+      "height": "carpet_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool charcoal close-up woven carpet surface, fine woven fibers"
+    },
+    {
+      "id": "carpet_14",
+      "color": "carpet_14.jpg",
+      "height": "carpet_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive brown close-up woven carpet surface, fine woven fibers"
+    },
+    {
+      "id": "carpet_15",
+      "color": "carpet_15.jpg",
+      "height": "carpet_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dusty blue close-up woven carpet surface, fine woven fibers"
+    },
+    {
+      "id": "carpet_16",
+      "color": "carpet_16.jpg",
+      "height": "carpet_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm beige close-up woven carpet surface, subtle low geometric weave without a large motif"
+    },
+    {
+      "id": "carpet_17",
+      "color": "carpet_17.jpg",
+      "height": "carpet_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted burgundy close-up woven carpet surface, subtle low geometric weave without a large motif"
+    },
+    {
+      "id": "carpet_18",
+      "color": "carpet_18.jpg",
+      "height": "carpet_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool charcoal close-up woven carpet surface, subtle low geometric weave without a large motif"
+    },
+    {
+      "id": "carpet_19",
+      "color": "carpet_19.jpg",
+      "height": "carpet_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive brown close-up woven carpet surface, subtle low geometric weave without a large motif"
+    },
+    {
+      "id": "carpet_20",
+      "color": "carpet_20.jpg",
+      "height": "carpet_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dusty blue close-up woven carpet surface, subtle low geometric weave without a large motif"
+    },
+    {
+      "id": "cloth_01",
+      "color": "cloth_01.jpg",
+      "height": "cloth_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "cloth_02",
+      "color": "cloth_02.jpg",
+      "height": "cloth_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "cloth_03",
+      "color": "cloth_03.jpg",
+      "height": "cloth_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "cloth_04",
+      "color": "cloth_04.jpg",
+      "height": "cloth_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "cloth_05",
+      "color": "cloth_05.jpg",
+      "height": "cloth_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive close-up textile fabric, plain tight woven fibers"
+    },
+    {
+      "id": "cloth_06",
+      "color": "cloth_06.jpg",
+      "height": "cloth_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream close-up textile fabric, fine diagonal twill"
+    },
+    {
+      "id": "cloth_07",
+      "color": "cloth_07.jpg",
+      "height": "cloth_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate blue close-up textile fabric, fine diagonal twill"
+    },
+    {
+      "id": "cloth_08",
+      "color": "cloth_08.jpg",
+      "height": "cloth_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray close-up textile fabric, fine diagonal twill"
+    },
+    {
+      "id": "cloth_09",
+      "color": "cloth_09.jpg",
+      "height": "cloth_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "earth brown close-up textile fabric, fine diagonal twill"
+    },
+    {
+      "id": "cloth_10",
+      "color": "cloth_10.jpg",
+      "height": "cloth_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive close-up textile fabric, fine diagonal twill"
+    },
+    {
+      "id": "cloth_11",
+      "color": "cloth_11.jpg",
+      "height": "cloth_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream close-up textile fabric, soft linen crosshatch"
+    },
+    {
+      "id": "cloth_12",
+      "color": "cloth_12.jpg",
+      "height": "cloth_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate blue close-up textile fabric, soft linen crosshatch"
+    },
+    {
+      "id": "cloth_13",
+      "color": "cloth_13.jpg",
+      "height": "cloth_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray close-up textile fabric, soft linen crosshatch"
+    },
+    {
+      "id": "cloth_14",
+      "color": "cloth_14.jpg",
+      "height": "cloth_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "earth brown close-up textile fabric, soft linen crosshatch"
+    },
+    {
+      "id": "cloth_15",
+      "color": "cloth_15.jpg",
+      "height": "cloth_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive close-up textile fabric, soft linen crosshatch"
+    },
+    {
+      "id": "cloth_16",
+      "color": "cloth_16.jpg",
+      "height": "cloth_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream close-up textile fabric, dense matte cloth weave"
+    },
+    {
+      "id": "cloth_17",
+      "color": "cloth_17.jpg",
+      "height": "cloth_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "slate blue close-up textile fabric, dense matte cloth weave"
+    },
+    {
+      "id": "cloth_18",
+      "color": "cloth_18.jpg",
+      "height": "cloth_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray close-up textile fabric, dense matte cloth weave"
+    },
+    {
+      "id": "cloth_19",
+      "color": "cloth_19.jpg",
+      "height": "cloth_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "earth brown close-up textile fabric, dense matte cloth weave"
+    },
+    {
+      "id": "cloth_20",
+      "color": "cloth_20.jpg",
+      "height": "cloth_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted olive close-up textile fabric, dense matte cloth weave"
+    },
+    {
+      "id": "leather_01",
+      "color": "leather_01.jpg",
+      "height": "leather_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leather_02",
+      "color": "leather_02.jpg",
+      "height": "leather_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leather_03",
+      "color": "leather_03.jpg",
+      "height": "leather_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leather_04",
+      "color": "leather_04.jpg",
+      "height": "leather_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "leather_05",
+      "color": "leather_05.jpg",
+      "height": "leather_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black charcoal close-up natural leather surface, fine natural grain"
+    },
+    {
+      "id": "leather_06",
+      "color": "leather_06.jpg",
+      "height": "leather_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm saddle brown close-up natural leather surface, soft pebbled grain"
+    },
+    {
+      "id": "leather_07",
+      "color": "leather_07.jpg",
+      "height": "leather_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark espresso close-up natural leather surface, soft pebbled grain"
+    },
+    {
+      "id": "leather_08",
+      "color": "leather_08.jpg",
+      "height": "leather_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted oxblood close-up natural leather surface, soft pebbled grain"
+    },
+    {
+      "id": "leather_09",
+      "color": "leather_09.jpg",
+      "height": "leather_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray taupe close-up natural leather surface, soft pebbled grain"
+    },
+    {
+      "id": "leather_10",
+      "color": "leather_10.jpg",
+      "height": "leather_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black charcoal close-up natural leather surface, soft pebbled grain"
+    },
+    {
+      "id": "leather_11",
+      "color": "leather_11.jpg",
+      "height": "leather_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm saddle brown close-up natural leather surface, subtle creases and pores"
+    },
+    {
+      "id": "leather_12",
+      "color": "leather_12.jpg",
+      "height": "leather_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark espresso close-up natural leather surface, subtle creases and pores"
+    },
+    {
+      "id": "leather_13",
+      "color": "leather_13.jpg",
+      "height": "leather_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted oxblood close-up natural leather surface, subtle creases and pores"
+    },
+    {
+      "id": "leather_14",
+      "color": "leather_14.jpg",
+      "height": "leather_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray taupe close-up natural leather surface, subtle creases and pores"
+    },
+    {
+      "id": "leather_15",
+      "color": "leather_15.jpg",
+      "height": "leather_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black charcoal close-up natural leather surface, subtle creases and pores"
+    },
+    {
+      "id": "leather_16",
+      "color": "leather_16.jpg",
+      "height": "leather_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm saddle brown close-up natural leather surface, smooth worn leather with tiny irregular marks"
+    },
+    {
+      "id": "leather_17",
+      "color": "leather_17.jpg",
+      "height": "leather_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark espresso close-up natural leather surface, smooth worn leather with tiny irregular marks"
+    },
+    {
+      "id": "leather_18",
+      "color": "leather_18.jpg",
+      "height": "leather_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted oxblood close-up natural leather surface, smooth worn leather with tiny irregular marks"
+    },
+    {
+      "id": "leather_19",
+      "color": "leather_19.jpg",
+      "height": "leather_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray taupe close-up natural leather surface, smooth worn leather with tiny irregular marks"
+    },
+    {
+      "id": "leather_20",
+      "color": "leather_20.jpg",
+      "height": "leather_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "near-black charcoal close-up natural leather surface, smooth worn leather with tiny irregular marks"
+    },
+    {
+      "id": "skin_01",
+      "color": "skin_01.jpg",
+      "height": "skin_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "skin_02",
+      "color": "skin_02.jpg",
+      "height": "skin_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "skin_03",
+      "color": "skin_03.jpg",
+      "height": "skin_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "skin_04",
+      "color": "skin_04.jpg",
+      "height": "skin_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale beige close-up natural skin surface texture, fine pores and subtle tonal variation"
+    },
+    {
+      "id": "skin_05",
+      "color": "skin_05.jpg",
+      "height": "skin_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sun-warmed tan close-up natural skin surface texture, fine pores and subtle tonal variation"
+    },
+    {
+      "id": "skin_06",
+      "color": "skin_06.jpg",
+      "height": "skin_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm light beige close-up natural skin surface texture, soft natural skin grain"
+    },
+    {
+      "id": "skin_07",
+      "color": "skin_07.jpg",
+      "height": "skin_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "medium olive tan close-up natural skin surface texture, soft natural skin grain"
+    },
+    {
+      "id": "skin_08",
+      "color": "skin_08.jpg",
+      "height": "skin_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep warm brown close-up natural skin surface texture, soft natural skin grain"
+    },
+    {
+      "id": "skin_09",
+      "color": "skin_09.jpg",
+      "height": "skin_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale beige close-up natural skin surface texture, soft natural skin grain"
+    },
+    {
+      "id": "skin_10",
+      "color": "skin_10.jpg",
+      "height": "skin_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sun-warmed tan close-up natural skin surface texture, soft natural skin grain"
+    },
+    {
+      "id": "skin_11",
+      "color": "skin_11.jpg",
+      "height": "skin_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm light beige close-up natural skin surface texture, tiny shallow freckles without distinct spots"
+    },
+    {
+      "id": "skin_12",
+      "color": "skin_12.jpg",
+      "height": "skin_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "medium olive tan close-up natural skin surface texture, tiny shallow freckles without distinct spots"
+    },
+    {
+      "id": "skin_13",
+      "color": "skin_13.jpg",
+      "height": "skin_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep warm brown close-up natural skin surface texture, tiny shallow freckles without distinct spots"
+    },
+    {
+      "id": "skin_14",
+      "color": "skin_14.jpg",
+      "height": "skin_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale beige close-up natural skin surface texture, tiny shallow freckles without distinct spots"
+    },
+    {
+      "id": "skin_15",
+      "color": "skin_15.jpg",
+      "height": "skin_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sun-warmed tan close-up natural skin surface texture, tiny shallow freckles without distinct spots"
+    },
+    {
+      "id": "skin_16",
+      "color": "skin_16.jpg",
+      "height": "skin_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm light beige close-up natural skin surface texture, fine smooth texture with restrained pores"
+    },
+    {
+      "id": "skin_17",
+      "color": "skin_17.jpg",
+      "height": "skin_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "medium olive tan close-up natural skin surface texture, fine smooth texture with restrained pores"
+    },
+    {
+      "id": "skin_18",
+      "color": "skin_18.jpg",
+      "height": "skin_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep warm brown close-up natural skin surface texture, fine smooth texture with restrained pores"
+    },
+    {
+      "id": "skin_19",
+      "color": "skin_19.jpg",
+      "height": "skin_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale beige close-up natural skin surface texture, fine smooth texture with restrained pores"
+    },
+    {
+      "id": "skin_20",
+      "color": "skin_20.jpg",
+      "height": "skin_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sun-warmed tan close-up natural skin surface texture, fine smooth texture with restrained pores"
+    },
+    {
+      "id": "hair_01",
+      "color": "hair_01.jpg",
+      "height": "hair_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "hair_02",
+      "color": "hair_02.jpg",
+      "height": "hair_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "hair_03",
+      "color": "hair_03.jpg",
+      "height": "hair_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "hair_04",
+      "color": "hair_04.jpg",
+      "height": "hair_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "hair_05",
+      "color": "hair_05.jpg",
+      "height": "hair_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blond close-up natural hair strands, fine parallel strands"
+    },
+    {
+      "id": "hair_06",
+      "color": "hair_06.jpg",
+      "height": "hair_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark brown close-up natural hair strands, soft overlapping locks"
+    },
+    {
+      "id": "hair_07",
+      "color": "hair_07.jpg",
+      "height": "hair_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "black close-up natural hair strands, soft overlapping locks"
+    },
+    {
+      "id": "hair_08",
+      "color": "hair_08.jpg",
+      "height": "hair_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut close-up natural hair strands, soft overlapping locks"
+    },
+    {
+      "id": "hair_09",
+      "color": "hair_09.jpg",
+      "height": "hair_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ash brown close-up natural hair strands, soft overlapping locks"
+    },
+    {
+      "id": "hair_10",
+      "color": "hair_10.jpg",
+      "height": "hair_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blond close-up natural hair strands, soft overlapping locks"
+    },
+    {
+      "id": "hair_11",
+      "color": "hair_11.jpg",
+      "height": "hair_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark brown close-up natural hair strands, dense short strands"
+    },
+    {
+      "id": "hair_12",
+      "color": "hair_12.jpg",
+      "height": "hair_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "black close-up natural hair strands, dense short strands"
+    },
+    {
+      "id": "hair_13",
+      "color": "hair_13.jpg",
+      "height": "hair_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut close-up natural hair strands, dense short strands"
+    },
+    {
+      "id": "hair_14",
+      "color": "hair_14.jpg",
+      "height": "hair_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ash brown close-up natural hair strands, dense short strands"
+    },
+    {
+      "id": "hair_15",
+      "color": "hair_15.jpg",
+      "height": "hair_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blond close-up natural hair strands, dense short strands"
+    },
+    {
+      "id": "hair_16",
+      "color": "hair_16.jpg",
+      "height": "hair_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark brown close-up natural hair strands, subtle curved fibers with no visible scalp"
+    },
+    {
+      "id": "hair_17",
+      "color": "hair_17.jpg",
+      "height": "hair_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "black close-up natural hair strands, subtle curved fibers with no visible scalp"
+    },
+    {
+      "id": "hair_18",
+      "color": "hair_18.jpg",
+      "height": "hair_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm chestnut close-up natural hair strands, subtle curved fibers with no visible scalp"
+    },
+    {
+      "id": "hair_19",
+      "color": "hair_19.jpg",
+      "height": "hair_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "ash brown close-up natural hair strands, subtle curved fibers with no visible scalp"
+    },
+    {
+      "id": "hair_20",
+      "color": "hair_20.jpg",
+      "height": "hair_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blond close-up natural hair strands, subtle curved fibers with no visible scalp"
+    },
+    {
+      "id": "fur_01",
+      "color": "fur_01.jpg",
+      "height": "fur_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "fur_02",
+      "color": "fur_02.jpg",
+      "height": "fur_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "fur_03",
+      "color": "fur_03.jpg",
+      "height": "fur_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "fur_04",
+      "color": "fur_04.jpg",
+      "height": "fur_04_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "fur_05",
+      "color": "fur_05.jpg",
+      "height": "fur_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish brown close-up animal fur surface, short dense hairs"
+    },
+    {
+      "id": "fur_06",
+      "color": "fur_06.jpg",
+      "height": "fur_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tawny brown close-up animal fur surface, soft medium-length fibers"
+    },
+    {
+      "id": "fur_07",
+      "color": "fur_07.jpg",
+      "height": "fur_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige close-up animal fur surface, soft medium-length fibers"
+    },
+    {
+      "id": "fur_08",
+      "color": "fur_08.jpg",
+      "height": "fur_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up animal fur surface, soft medium-length fibers"
+    },
+    {
+      "id": "fur_09",
+      "color": "fur_09.jpg",
+      "height": "fur_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown close-up animal fur surface, soft medium-length fibers"
+    },
+    {
+      "id": "fur_10",
+      "color": "fur_10.jpg",
+      "height": "fur_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish brown close-up animal fur surface, soft medium-length fibers"
+    },
+    {
+      "id": "fur_11",
+      "color": "fur_11.jpg",
+      "height": "fur_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tawny brown close-up animal fur surface, fine underfur with subtle direction"
+    },
+    {
+      "id": "fur_12",
+      "color": "fur_12.jpg",
+      "height": "fur_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige close-up animal fur surface, fine underfur with subtle direction"
+    },
+    {
+      "id": "fur_13",
+      "color": "fur_13.jpg",
+      "height": "fur_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up animal fur surface, fine underfur with subtle direction"
+    },
+    {
+      "id": "fur_14",
+      "color": "fur_14.jpg",
+      "height": "fur_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown close-up animal fur surface, fine underfur with subtle direction"
+    },
+    {
+      "id": "fur_15",
+      "color": "fur_15.jpg",
+      "height": "fur_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish brown close-up animal fur surface, fine underfur with subtle direction"
+    },
+    {
+      "id": "fur_16",
+      "color": "fur_16.jpg",
+      "height": "fur_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tawny brown close-up animal fur surface, overlapping coarse guard hairs"
+    },
+    {
+      "id": "fur_17",
+      "color": "fur_17.jpg",
+      "height": "fur_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream beige close-up animal fur surface, overlapping coarse guard hairs"
+    },
+    {
+      "id": "fur_18",
+      "color": "fur_18.jpg",
+      "height": "fur_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up animal fur surface, overlapping coarse guard hairs"
+    },
+    {
+      "id": "fur_19",
+      "color": "fur_19.jpg",
+      "height": "fur_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "gray brown close-up animal fur surface, overlapping coarse guard hairs"
+    },
+    {
+      "id": "fur_20",
+      "color": "fur_20.jpg",
+      "height": "fur_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "reddish brown close-up animal fur surface, overlapping coarse guard hairs"
+    },
+    {
+      "id": "feather_01",
+      "color": "feather_01.jpg",
+      "height": "feather_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "feather_02",
+      "color": "feather_02.jpg",
+      "height": "feather_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "feather_03",
+      "color": "feather_03.jpg",
+      "height": "feather_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "feather_04",
+      "color": "feather_04.jpg",
+      "height": "feather_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream tan close-up layered feather surface, fine feather barbs"
+    },
+    {
+      "id": "feather_05",
+      "color": "feather_05.jpg",
+      "height": "feather_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray close-up layered feather surface, fine feather barbs"
+    },
+    {
+      "id": "feather_06",
+      "color": "feather_06.jpg",
+      "height": "feather_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm brown close-up layered feather surface, overlapping small feathers"
+    },
+    {
+      "id": "feather_07",
+      "color": "feather_07.jpg",
+      "height": "feather_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft gray close-up layered feather surface, overlapping small feathers"
+    },
+    {
+      "id": "feather_08",
+      "color": "feather_08.jpg",
+      "height": "feather_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up layered feather surface, overlapping small feathers"
+    },
+    {
+      "id": "feather_09",
+      "color": "feather_09.jpg",
+      "height": "feather_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream tan close-up layered feather surface, overlapping small feathers"
+    },
+    {
+      "id": "feather_10",
+      "color": "feather_10.jpg",
+      "height": "feather_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray close-up layered feather surface, overlapping small feathers"
+    },
+    {
+      "id": "feather_11",
+      "color": "feather_11.jpg",
+      "height": "feather_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm brown close-up layered feather surface, soft down fibers"
+    },
+    {
+      "id": "feather_12",
+      "color": "feather_12.jpg",
+      "height": "feather_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft gray close-up layered feather surface, soft down fibers"
+    },
+    {
+      "id": "feather_13",
+      "color": "feather_13.jpg",
+      "height": "feather_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up layered feather surface, soft down fibers"
+    },
+    {
+      "id": "feather_14",
+      "color": "feather_14.jpg",
+      "height": "feather_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream tan close-up layered feather surface, soft down fibers"
+    },
+    {
+      "id": "feather_15",
+      "color": "feather_15.jpg",
+      "height": "feather_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray close-up layered feather surface, soft down fibers"
+    },
+    {
+      "id": "feather_16",
+      "color": "feather_16.jpg",
+      "height": "feather_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm brown close-up layered feather surface, narrow feather shafts with delicate barbs"
+    },
+    {
+      "id": "feather_17",
+      "color": "feather_17.jpg",
+      "height": "feather_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft gray close-up layered feather surface, narrow feather shafts with delicate barbs"
+    },
+    {
+      "id": "feather_18",
+      "color": "feather_18.jpg",
+      "height": "feather_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark charcoal close-up layered feather surface, narrow feather shafts with delicate barbs"
+    },
+    {
+      "id": "feather_19",
+      "color": "feather_19.jpg",
+      "height": "feather_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cream tan close-up layered feather surface, narrow feather shafts with delicate barbs"
+    },
+    {
+      "id": "feather_20",
+      "color": "feather_20.jpg",
+      "height": "feather_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray close-up layered feather surface, narrow feather shafts with delicate barbs"
+    },
+    {
+      "id": "paint_01",
+      "color": "paint_01.jpg",
+      "height": "paint_01_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white painted solid surface, matte enamel with fine orange peel"
+    },
+    {
+      "id": "paint_02",
+      "color": "paint_02.jpg",
+      "height": "paint_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paint_03",
+      "color": "paint_03.jpg",
+      "height": "paint_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paint_04",
+      "color": "paint_04.jpg",
+      "height": "paint_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brick red painted solid surface, matte enamel with fine orange peel"
+    },
+    {
+      "id": "paint_05",
+      "color": "paint_05.jpg",
+      "height": "paint_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray painted solid surface, matte enamel with fine orange peel"
+    },
+    {
+      "id": "paint_06",
+      "color": "paint_06.jpg",
+      "height": "paint_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white painted solid surface, weathered painted metal with tiny wear"
+    },
+    {
+      "id": "paint_07",
+      "color": "paint_07.jpg",
+      "height": "paint_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green painted solid surface, weathered painted metal with tiny wear"
+    },
+    {
+      "id": "paint_08",
+      "color": "paint_08.jpg",
+      "height": "paint_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue painted solid surface, weathered painted metal with tiny wear"
+    },
+    {
+      "id": "paint_09",
+      "color": "paint_09.jpg",
+      "height": "paint_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brick red painted solid surface, weathered painted metal with tiny wear"
+    },
+    {
+      "id": "paint_10",
+      "color": "paint_10.jpg",
+      "height": "paint_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray painted solid surface, weathered painted metal with tiny wear"
+    },
+    {
+      "id": "paint_11",
+      "color": "paint_11.jpg",
+      "height": "paint_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white painted solid surface, smooth wall paint with subtle roller grain"
+    },
+    {
+      "id": "paint_12",
+      "color": "paint_12.jpg",
+      "height": "paint_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green painted solid surface, smooth wall paint with subtle roller grain"
+    },
+    {
+      "id": "paint_13",
+      "color": "paint_13.jpg",
+      "height": "paint_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue painted solid surface, smooth wall paint with subtle roller grain"
+    },
+    {
+      "id": "paint_14",
+      "color": "paint_14.jpg",
+      "height": "paint_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brick red painted solid surface, smooth wall paint with subtle roller grain"
+    },
+    {
+      "id": "paint_15",
+      "color": "paint_15.jpg",
+      "height": "paint_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray painted solid surface, smooth wall paint with subtle roller grain"
+    },
+    {
+      "id": "paint_16",
+      "color": "paint_16.jpg",
+      "height": "paint_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm white painted solid surface, aged paint with faint fine scratches"
+    },
+    {
+      "id": "paint_17",
+      "color": "paint_17.jpg",
+      "height": "paint_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "sage green painted solid surface, aged paint with faint fine scratches"
+    },
+    {
+      "id": "paint_18",
+      "color": "paint_18.jpg",
+      "height": "paint_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue painted solid surface, aged paint with faint fine scratches"
+    },
+    {
+      "id": "paint_19",
+      "color": "paint_19.jpg",
+      "height": "paint_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "brick red painted solid surface, aged paint with faint fine scratches"
+    },
+    {
+      "id": "paint_20",
+      "color": "paint_20.jpg",
+      "height": "paint_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray painted solid surface, aged paint with faint fine scratches"
+    },
+    {
+      "id": "rubber_01",
+      "color": "rubber_01.jpg",
+      "height": "rubber_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "rubber_02",
+      "color": "rubber_02.jpg",
+      "height": "rubber_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "rubber_03",
+      "color": "rubber_03.jpg",
+      "height": "rubber_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "rubber_04",
+      "color": "rubber_04.jpg",
+      "height": "rubber_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted brown black rubber material surface, fine stippled grain"
+    },
+    {
+      "id": "rubber_05",
+      "color": "rubber_05.jpg",
+      "height": "rubber_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blue gray rubber material surface, fine stippled grain"
+    },
+    {
+      "id": "rubber_06",
+      "color": "rubber_06.jpg",
+      "height": "rubber_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep charcoal rubber material surface, subtle molded ribs"
+    },
+    {
+      "id": "rubber_07",
+      "color": "rubber_07.jpg",
+      "height": "rubber_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm black rubber material surface, subtle molded ribs"
+    },
+    {
+      "id": "rubber_08",
+      "color": "rubber_08.jpg",
+      "height": "rubber_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool dark gray rubber material surface, subtle molded ribs"
+    },
+    {
+      "id": "rubber_09",
+      "color": "rubber_09.jpg",
+      "height": "rubber_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted brown black rubber material surface, subtle molded ribs"
+    },
+    {
+      "id": "rubber_10",
+      "color": "rubber_10.jpg",
+      "height": "rubber_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blue gray rubber material surface, subtle molded ribs"
+    },
+    {
+      "id": "rubber_11",
+      "color": "rubber_11.jpg",
+      "height": "rubber_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep charcoal rubber material surface, dense tiny pores"
+    },
+    {
+      "id": "rubber_12",
+      "color": "rubber_12.jpg",
+      "height": "rubber_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm black rubber material surface, dense tiny pores"
+    },
+    {
+      "id": "rubber_13",
+      "color": "rubber_13.jpg",
+      "height": "rubber_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool dark gray rubber material surface, dense tiny pores"
+    },
+    {
+      "id": "rubber_14",
+      "color": "rubber_14.jpg",
+      "height": "rubber_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted brown black rubber material surface, dense tiny pores"
+    },
+    {
+      "id": "rubber_15",
+      "color": "rubber_15.jpg",
+      "height": "rubber_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blue gray rubber material surface, dense tiny pores"
+    },
+    {
+      "id": "rubber_16",
+      "color": "rubber_16.jpg",
+      "height": "rubber_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "deep charcoal rubber material surface, matte rubber with faint shallow scuffs"
+    },
+    {
+      "id": "rubber_17",
+      "color": "rubber_17.jpg",
+      "height": "rubber_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm black rubber material surface, matte rubber with faint shallow scuffs"
+    },
+    {
+      "id": "rubber_18",
+      "color": "rubber_18.jpg",
+      "height": "rubber_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool dark gray rubber material surface, matte rubber with faint shallow scuffs"
+    },
+    {
+      "id": "rubber_19",
+      "color": "rubber_19.jpg",
+      "height": "rubber_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted brown black rubber material surface, matte rubber with faint shallow scuffs"
+    },
+    {
+      "id": "rubber_20",
+      "color": "rubber_20.jpg",
+      "height": "rubber_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark blue gray rubber material surface, matte rubber with faint shallow scuffs"
+    },
+    {
+      "id": "plastic_01",
+      "color": "plastic_01.jpg",
+      "height": "plastic_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plastic_02",
+      "color": "plastic_02.jpg",
+      "height": "plastic_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plastic_03",
+      "color": "plastic_03.jpg",
+      "height": "plastic_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "plastic_04",
+      "color": "plastic_04.jpg",
+      "height": "plastic_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green molded plastic surface, fine matte molded grain"
+    },
+    {
+      "id": "plastic_05",
+      "color": "plastic_05.jpg",
+      "height": "plastic_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan molded plastic surface, fine matte molded grain"
+    },
+    {
+      "id": "plastic_06",
+      "color": "plastic_06.jpg",
+      "height": "plastic_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory molded plastic surface, subtle orange-peel texture"
+    },
+    {
+      "id": "plastic_07",
+      "color": "plastic_07.jpg",
+      "height": "plastic_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark graphite molded plastic surface, subtle orange-peel texture"
+    },
+    {
+      "id": "plastic_08",
+      "color": "plastic_08.jpg",
+      "height": "plastic_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray molded plastic surface, subtle orange-peel texture"
+    },
+    {
+      "id": "plastic_09",
+      "color": "plastic_09.jpg",
+      "height": "plastic_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green molded plastic surface, subtle orange-peel texture"
+    },
+    {
+      "id": "plastic_10",
+      "color": "plastic_10.jpg",
+      "height": "plastic_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan molded plastic surface, subtle orange-peel texture"
+    },
+    {
+      "id": "plastic_11",
+      "color": "plastic_11.jpg",
+      "height": "plastic_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory molded plastic surface, tiny regular stipple"
+    },
+    {
+      "id": "plastic_12",
+      "color": "plastic_12.jpg",
+      "height": "plastic_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark graphite molded plastic surface, tiny regular stipple"
+    },
+    {
+      "id": "plastic_13",
+      "color": "plastic_13.jpg",
+      "height": "plastic_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray molded plastic surface, tiny regular stipple"
+    },
+    {
+      "id": "plastic_14",
+      "color": "plastic_14.jpg",
+      "height": "plastic_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green molded plastic surface, tiny regular stipple"
+    },
+    {
+      "id": "plastic_15",
+      "color": "plastic_15.jpg",
+      "height": "plastic_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan molded plastic surface, tiny regular stipple"
+    },
+    {
+      "id": "plastic_16",
+      "color": "plastic_16.jpg",
+      "height": "plastic_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory molded plastic surface, smooth polymer with faint shallow scuffs"
+    },
+    {
+      "id": "plastic_17",
+      "color": "plastic_17.jpg",
+      "height": "plastic_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "dark graphite molded plastic surface, smooth polymer with faint shallow scuffs"
+    },
+    {
+      "id": "plastic_18",
+      "color": "plastic_18.jpg",
+      "height": "plastic_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "muted blue gray molded plastic surface, smooth polymer with faint shallow scuffs"
+    },
+    {
+      "id": "plastic_19",
+      "color": "plastic_19.jpg",
+      "height": "plastic_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "olive green molded plastic surface, smooth polymer with faint shallow scuffs"
+    },
+    {
+      "id": "plastic_20",
+      "color": "plastic_20.jpg",
+      "height": "plastic_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm tan molded plastic surface, smooth polymer with faint shallow scuffs"
+    },
+    {
+      "id": "concrete_01",
+      "color": "concrete_01.jpg",
+      "height": "concrete_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "concrete_02",
+      "color": "concrete_02.jpg",
+      "height": "concrete_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "concrete_03",
+      "color": "concrete_03.jpg",
+      "height": "concrete_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "concrete_04",
+      "color": "concrete_04.jpg",
+      "height": "concrete_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray cast concrete surface, fine exposed aggregate"
+    },
+    {
+      "id": "concrete_05",
+      "color": "concrete_05.jpg",
+      "height": "concrete_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft taupe gray cast concrete surface, fine exposed aggregate"
+    },
+    {
+      "id": "concrete_06",
+      "color": "concrete_06.jpg",
+      "height": "concrete_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray cast concrete surface, tiny air pores and mineral flecks"
+    },
+    {
+      "id": "concrete_07",
+      "color": "concrete_07.jpg",
+      "height": "concrete_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm gray cast concrete surface, tiny air pores and mineral flecks"
+    },
+    {
+      "id": "concrete_08",
+      "color": "concrete_08.jpg",
+      "height": "concrete_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale beige gray cast concrete surface, tiny air pores and mineral flecks"
+    },
+    {
+      "id": "concrete_09",
+      "color": "concrete_09.jpg",
+      "height": "concrete_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray cast concrete surface, tiny air pores and mineral flecks"
+    },
+    {
+      "id": "concrete_10",
+      "color": "concrete_10.jpg",
+      "height": "concrete_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft taupe gray cast concrete surface, tiny air pores and mineral flecks"
+    },
+    {
+      "id": "concrete_11",
+      "color": "concrete_11.jpg",
+      "height": "concrete_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray cast concrete surface, subtle trowel grain"
+    },
+    {
+      "id": "concrete_12",
+      "color": "concrete_12.jpg",
+      "height": "concrete_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm gray cast concrete surface, subtle trowel grain"
+    },
+    {
+      "id": "concrete_13",
+      "color": "concrete_13.jpg",
+      "height": "concrete_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale beige gray cast concrete surface, subtle trowel grain"
+    },
+    {
+      "id": "concrete_14",
+      "color": "concrete_14.jpg",
+      "height": "concrete_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray cast concrete surface, subtle trowel grain"
+    },
+    {
+      "id": "concrete_15",
+      "color": "concrete_15.jpg",
+      "height": "concrete_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft taupe gray cast concrete surface, subtle trowel grain"
+    },
+    {
+      "id": "concrete_16",
+      "color": "concrete_16.jpg",
+      "height": "concrete_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool light gray cast concrete surface, weathered cement with small embedded stones"
+    },
+    {
+      "id": "concrete_17",
+      "color": "concrete_17.jpg",
+      "height": "concrete_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm gray cast concrete surface, weathered cement with small embedded stones"
+    },
+    {
+      "id": "concrete_18",
+      "color": "concrete_18.jpg",
+      "height": "concrete_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "pale beige gray cast concrete surface, weathered cement with small embedded stones"
+    },
+    {
+      "id": "concrete_19",
+      "color": "concrete_19.jpg",
+      "height": "concrete_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "charcoal gray cast concrete surface, weathered cement with small embedded stones"
+    },
+    {
+      "id": "concrete_20",
+      "color": "concrete_20.jpg",
+      "height": "concrete_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft taupe gray cast concrete surface, weathered cement with small embedded stones"
+    },
+    {
+      "id": "paper_01",
+      "color": "paper_01.jpg",
+      "height": "paper_01_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paper_02",
+      "color": "paper_02.jpg",
+      "height": "paper_02_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paper_03",
+      "color": "paper_03.jpg",
+      "height": "paper_03_height.png",
+      "source": "pre-existing; original prompt unavailable",
+      "prompt": null
+    },
+    {
+      "id": "paper_04",
+      "color": "paper_04.jpg",
+      "height": "paper_04_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "light kraft tan unprinted paper surface, fine pressed fibers"
+    },
+    {
+      "id": "paper_05",
+      "color": "paper_05.jpg",
+      "height": "paper_05_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft white unprinted paper surface, fine pressed fibers"
+    },
+    {
+      "id": "paper_06",
+      "color": "paper_06.jpg",
+      "height": "paper_06_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory unprinted paper surface, subtle handmade pulp flecks"
+    },
+    {
+      "id": "paper_07",
+      "color": "paper_07.jpg",
+      "height": "paper_07_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream unprinted paper surface, subtle handmade pulp flecks"
+    },
+    {
+      "id": "paper_08",
+      "color": "paper_08.jpg",
+      "height": "paper_08_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale gray unprinted paper surface, subtle handmade pulp flecks"
+    },
+    {
+      "id": "paper_09",
+      "color": "paper_09.jpg",
+      "height": "paper_09_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "light kraft tan unprinted paper surface, subtle handmade pulp flecks"
+    },
+    {
+      "id": "paper_10",
+      "color": "paper_10.jpg",
+      "height": "paper_10_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft white unprinted paper surface, subtle handmade pulp flecks"
+    },
+    {
+      "id": "paper_11",
+      "color": "paper_11.jpg",
+      "height": "paper_11_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory unprinted paper surface, smooth paper with tiny fibers"
+    },
+    {
+      "id": "paper_12",
+      "color": "paper_12.jpg",
+      "height": "paper_12_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream unprinted paper surface, smooth paper with tiny fibers"
+    },
+    {
+      "id": "paper_13",
+      "color": "paper_13.jpg",
+      "height": "paper_13_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale gray unprinted paper surface, smooth paper with tiny fibers"
+    },
+    {
+      "id": "paper_14",
+      "color": "paper_14.jpg",
+      "height": "paper_14_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "light kraft tan unprinted paper surface, smooth paper with tiny fibers"
+    },
+    {
+      "id": "paper_15",
+      "color": "paper_15.jpg",
+      "height": "paper_15_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft white unprinted paper surface, smooth paper with tiny fibers"
+    },
+    {
+      "id": "paper_16",
+      "color": "paper_16.jpg",
+      "height": "paper_16_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "warm ivory unprinted paper surface, lightly fibrous matte stock"
+    },
+    {
+      "id": "paper_17",
+      "color": "paper_17.jpg",
+      "height": "paper_17_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "natural cream unprinted paper surface, lightly fibrous matte stock"
+    },
+    {
+      "id": "paper_18",
+      "color": "paper_18.jpg",
+      "height": "paper_18_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "cool pale gray unprinted paper surface, lightly fibrous matte stock"
+    },
+    {
+      "id": "paper_19",
+      "color": "paper_19.jpg",
+      "height": "paper_19_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "light kraft tan unprinted paper surface, lightly fibrous matte stock"
+    },
+    {
+      "id": "paper_20",
+      "color": "paper_20.jpg",
+      "height": "paper_20_height.png",
+      "source": "ImageGen 2x2 mosaic",
+      "prompt": "soft white unprinted paper surface, lightly fibrous matte stock"
+    }
+  ]
+}

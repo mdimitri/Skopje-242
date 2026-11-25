@@ -16,6 +16,7 @@ Quick path map:
 | World source acquisition and build | `tools/build_world.py` | `tools/stages.py`, `tools/fetch_world.py`, `tools/terrain.py`, `tools/pack_world.py` |
 | Runtime world loading and spatial queries | `src/world.py` | `src/geo.py`, `src/roadwidth.py`, `src/crosswalks.py` |
 | Rendering and GPU resources | `src/render.py` | `src/gfx.py`, `src/gl3d.py`, `src/fastrl.py`, `src/present.py`, `src/lightmap.py` |
+| Surface texture packs | `src/surfacepack.py` | `assets/textures/*/README.md`, `tools/process_texture_mosaics.py` |
 | Player and AI simulation | `src/actors.py` | `src/driving.py`, `src/vehicles.py`, `src/trafficproc.py` |
 | Dialogue and character identity | `src/characters.py` | `src/talk.py`, `src/texts.py`, `src/strings.py`, line/profile modules |
 | Network session and replicated play | `src/mp.py` | `src/mpnet.py`, `src/discovery.py`, `src/mpgame.py`, `src/mpprofile.py` |
@@ -156,6 +157,7 @@ Exact dependencies are expressed by `stage(name, data=...)` declarations and cod
 | Multiplayer behavior | Narrow `tools/test_mp*.py` script and both ends of encode/apply path |
 | World stage output | Stage-specific audit/render script and cache fingerprint/status |
 | Runtime visual behavior | `run.bat demo` for demo-only issues, otherwise affected world and screenshot tools |
+| Surface texture pack layout | `src/surfacepack.py` family/variant constants and `assets/textures/expanded/README.md` |
 | Sound content | `tools/sound_audit.py`, `tools/test_soundproc.py`, and standards in `docs/` |
 
 These are entry points, not a promise every script is side-effect free. Read arguments first. Some tools download data, rewrite caches, launch windows, or emit screenshots.
