@@ -24,8 +24,10 @@ def _splash_files():
         fs = sorted(os.path.join(SPLASH_DIR, f) for f in os.listdir(SPLASH_DIR) if f.lower().endswith(SPLASH_EXT))
     except OSError:
         return []
-    random.shuffle(fs)                                    # random first image, random order (HERO stays in the pool)
-    return fs
+    hero = os.path.join(SPLASH_DIR, HERO)
+    rest = [path for path in fs if path != hero]
+    random.shuffle(rest)
+    return ([hero] if hero in fs else []) + rest
 
 
 def _queue_poster(path):
@@ -36,6 +38,7 @@ def _queue_poster(path):
             from PIL import Image
             with Image.open(path) as photo:
                 rgb = photo.convert("RGB")
+                rgb.thumbnail((3840, 2160), Image.Resampling.LANCZOS)
                 job["image"] = (rgb.tobytes(), rgb.width, rgb.height)
         except (OSError, ValueError):
             pass
@@ -50,6 +53,14 @@ def splash():
     """The splash image on screen now (the hero image first); None if there is none."""
     fs = _S["files"]
     return _S["tex"].get(fs[_S["i"]]) if fs else None
+
+
+def start_splash():
+    """Start decoding the first splash image while the rest of startup initializes."""
+    if _S["files"] is None:
+        _S["files"] = _splash_files()
+    if _S["files"] and _S["job"] is None and _S["files"][0] not in _S["tex"]:
+        _queue_poster(_S["files"][0])
 
 
 def tearing():

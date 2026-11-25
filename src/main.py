@@ -54,9 +54,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-import numpy as np   # noqa: E402
 import pyray as rl   # noqa: E402
-import fastrl   # noqa: E402,F401 - raw cffi functions behind the plain-argument pyray names (SK242_FASTRL=0 turns it off)
 import font   # noqa: E402
 
 
@@ -129,7 +127,6 @@ def _draw_early_splash():
 
 def _early_splash():
     """Start the opening cue and paint the splash before importing the rest of the game."""
-    global _EARLY_MUSIC
     args = sys.argv[1:]
     if any(x.split("=")[0] in ("--test", "--sound-dry", "--help", "-h") for x in args):
         return
@@ -150,19 +147,31 @@ def _early_splash():
             return
         rl.set_exit_key(rl.KEY_NULL)          # Esc must not close the window (the update question uses it for "no")
         keep_window_alive(True)
-        font.load()
-        _draw_early_splash()
-        volume = cfg["vol_master"] * cfg["vol_radio"]
-        if "--mute" not in sys.argv and volume >= 0.01:
-            import loadmusic
-            _EARLY_MUSIC = loadmusic.LoadMusic(volume=volume)
-        _draw_early_splash()
+        import poster
+        poster.start_splash()
+        rl.begin_drawing()
+        poster.draw_splash(W, H)
+        rl.draw_text("Skopje 242", W // 2 - 100, H // 2 - 20, 40, rl.WHITE)
+        rl.draw_text("Loading...", W // 2 - 65, H - 50, 20, rl.WHITE)
+        rl.end_drawing()
         return cfg
     except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed
         keep_window_alive(False)
 
 
 _EARLY_CFG = _early_splash()
+
+import numpy as np   # noqa: E402 - defer heavier imports until the early splash is visible
+import fastrl   # noqa: E402,F401 - raw cffi functions behind the plain-argument pyray names (SK242_FASTRL=0 turns it off)
+
+if _EARLY_CFG is not None:
+    font.load()
+    _draw_early_splash()
+    volume = _EARLY_CFG["vol_master"] * _EARLY_CFG["vol_radio"]
+    if "--mute" not in sys.argv and volume >= 0.01:
+        import loadmusic
+        _EARLY_MUSIC = loadmusic.LoadMusic(volume=volume)
+    _draw_early_splash()
 
 if _EARLY_CFG is not None and not any(x.split("=")[0] in ("--nomenu", "--size", "--mp-host", "--mp-join") for x in sys.argv[1:]):
     keep_window_alive(False)                        # the update screens poll and consume their own input
