@@ -244,7 +244,8 @@ class Signals:
                 state = 0 if self.pedestrian_green(node) else 2
                 height = 0 if state == 0 else 0.25
             else:
-                state = self.state_of(edge, 1)
+                approach = edge if isinstance(edge, tuple) else (edge, 1)
+                state = self.state_of(*approach)
                 if state is None:
                     continue
                 height = (0.19, 0.44, 0.69)[state]

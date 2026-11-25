@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 82
+VERSION = 83
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -3151,6 +3151,14 @@ def main():
     up_decks = [terrain_mod.Deck(d_["pts"], d_["h"], d_["hw"]).pack() for d_ in up_decks]
     posts = list(posts) + _up_posts
     spread("road3d", edges, lambda e: flat(e["pts"], 60))
+    stage("road_controls", data=("signals.json",))
+    if candidate_controls:
+        import road_controls
+        phase("city traffic controls")
+        road_controls.build(edges, _read_list(os.path.join(a.src, "signals.json")), candidate_controls,
+                            mesh.add, chunk_of, MAT_SOLID, T,
+                            lambda x, y: _not_building(x, y) and not in_lane(x, y, 0.25))
+        xwalks = candidate_controls["crossings"]
     stage("rasters")
     phase("ground rasters")
     hg = Image.new("L", (NCX, NCY), 0)       # ground height class: 0 ground, 1 asphalt, 2 pavement
