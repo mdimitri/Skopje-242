@@ -42,6 +42,9 @@ with a bound on how far the movement centre lines can leave the mapped
 road strips. Carriageway edges in the layout specify 2.4 m raised outer
 sidewalks and 0.32 m median-side curbs. Median noses and island returns
 follow the final asphalt outline, with openings at crossing landings.
+Both slip lanes have raised pedestrian refuge islands. The larger northern
+refuge is selected by its interior point so it can use the same surface and
+curbs, with its sharp tips rounded into the adjoining asphalt.
 At the southbound merge, the outer sidewalk also follows the final asphalt.
 Mapped grass selects which divided-road medians are planted. The resulting
 grass follows the generated curb enclosure and leaves pedestrian landings clear. Only designated crossing landings open the

@@ -472,9 +472,18 @@ def compile_scene(edges, layout, walks, greens, bounds):
         asphalt = asphalt.union(local.buffer(1.45).buffer(-1.45).intersection(zone))
     asphalt = asphalt.intersection(bounds)
     holes = [Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors]
-    slivers = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
-    asphalt = asphalt.union(unary_union(slivers))
-    refuges = unary_union([hole for hole in holes if 15 <= hole.area < 190])
+    fill = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
+    refuges = [hole for hole in holes if 15 <= hole.area < 190]
+    for x, y, radius in layout.get("refuge_rounding", []):
+        seed = Point(x, y)
+        hole = next((hole for hole in holes if hole.contains(seed)), None)
+        if hole is None:
+            raise ValueError(f"No enclosed refuge at ({x}, {y})")
+        rounded = hole.buffer(-radius).buffer(radius).intersection(hole)
+        refuges = [refuge for refuge in refuges if refuge is not hole] + [rounded]
+        fill.append(hole.difference(rounded))
+    asphalt = asphalt.union(unary_union(fill))
+    refuges = unary_union(refuges)
     pavement, curb, landings, paths, crossings, zebras = pedestrian_geometry(
         by_id, layout, walks, asphalt, bounds, refuges)
     reserved = unary_union([asphalt, pavement, curb, landings, paths])

@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 
-from shapely.geometry import LineString, Point, box, shape
+from shapely.geometry import LineString, Point, Polygon, box, shape
 from shapely.ops import unary_union
 
 from run_candidate import HERE, ROOT, site_inputs
@@ -87,6 +87,21 @@ class RoadCandidateTests(unittest.TestCase):
             with self.subTest(nose=nose):
                 self.assertFalse(mapped.covers(Point(nose)))
                 self.assertTrue(planted.covers(Point(nose)))
+
+    def test_both_slips_have_raised_refuges_connected_to_their_crossings(self):
+        sidewalks, landings, curbs, crossings = (
+            shape(self.pedestrian[key])
+            for key in ("sidewalks", "crossing_landings", "non_walkable_curbs", "crosswalks")
+        )
+        island_surfaces = unary_union([sidewalks, landings, curbs])
+        holes = [Polygon(ring) for surface in polys(self.asphalt) for ring in surface.interiors]
+        for seed, expected_crossings in (((6, -32), 3), ((-10, 5), 2)):
+            with self.subTest(island=seed):
+                island = next(hole for hole in holes if hole.contains(Point(seed)))
+                self.assertGreater(island.intersection(sidewalks).area, 75)
+                self.assertLess(island.difference(island_surfaces).area, 0.01)
+                connected = [zebra for zebra in polys(crossings) if island.distance(zebra) < 0.04]
+                self.assertEqual(len(connected), expected_crossings)
 
     def test_southbound_merge_sidewalk_follows_the_asphalt_at_full_width(self):
         sidewalk = shape(self.pedestrian["sidewalks"])
