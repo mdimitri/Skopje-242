@@ -2,7 +2,7 @@
 
 Compares the commit id stored in `.version` next to run.bat with the latest commit on GitHub.  If they differ the
 player chooses: update (download the repo zip, overwrite game files, restart) or keep the version on disk.
-Offline / slow network / any error -> silently skip.  User data (settings, saves, built world, logs, music, .runtime)
+Offline / slow network / any error -> silently skip.  User data (settings, saves, built world, logs, own music, .runtime)
 and the .bat files (cmd may be reading run.bat right now) are never touched; files are only overwritten, never deleted.
 """
 import json
@@ -22,6 +22,7 @@ import font
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_FILE = os.path.join(ROOT, ".version")       # commit sha of the installed copy (what the update check compares)
+MUSIC_MARK = os.path.join(ROOT, ".music_synced")     # present once a zip install has the radio stations the game ships with
 MAJOR = "3"
 
 
@@ -133,6 +134,8 @@ def install_git(sha, prog):
 
 def _keep(rel):
     parts = rel.replace("\\", "/").split("/")
+    if parts[0] == "music" and len(parts) > 2:           # a station shipped in the repo (the player's own files are not in it)
+        return False
     return parts[0] in KEEP_DIRS or rel in KEEP_FILES or (len(parts) == 1 and rel.lower().endswith(".bat"))
 
 
@@ -145,10 +148,28 @@ def install_delta(base, sha, prog):
     files = cmp_.get("files") or []
     if cmp_.get("status") not in ("ahead",) or not files or len(files) >= 300:
         raise ValueError("delta not usable")
-    todo = [f for f in files if f.get("status") != "removed" and not _keep(f["filename"])]   # deletions are never applied (see module doc)
+    todo = [f["filename"] for f in files if f.get("status") != "removed" and not _keep(f["filename"])]   # deletions are never applied (see module doc)
+    _download(todo, sha, prog)
+
+
+def install_music(sha, prog):
+    """Fetch the shipped station files of `sha` that are missing or differ in size (older updaters never wrote into music/)."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/git/trees/{sha}?recursive=1", headers={"User-Agent": "skopje-242"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        tree = json.loads(r.read().decode("utf-8"))["tree"]
+    todo = []
+    for f in tree:
+        if f["type"] == "blob" and f["path"].startswith("music/") and not _keep(f["path"]):
+            dest = os.path.join(ROOT, *f["path"].split("/"))
+            if not os.path.isfile(dest) or os.path.getsize(dest) != f["size"]:
+                todo.append(f["path"])
+    _download(todo, sha, prog)
+
+
+def _download(todo, sha, prog):
+    """Write the files `todo` (repo paths) of commit `sha` into the game folder."""
     prog["phase"], prog["n"], prog["nn"] = "extract", 0, len(todo)
-    for f in todo:
-        rel = f["filename"]
+    for rel in todo:
         if ".." in rel.split("/"):
             raise ValueError("unexpected path: " + rel)
         url = f"https://raw.githubusercontent.com/{REPO}/{sha}/{urllib.parse.quote(rel)}"
@@ -160,14 +181,22 @@ def install_delta(base, sha, prog):
         prog["n"] += 1
 
 
+def _installed(sha):
+    for path, text in ((MUSIC_MARK, ""), (VERSION_FILE, sha)):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
 def install(sha, prog):
     """Download the zip of `sha` and overwrite game files. prog = dict(done, total, err)."""
     base = local_version()
     if len(base) == 40:
         try:
-            install_delta(base, sha, prog)
-            with open(VERSION_FILE, "w", encoding="utf-8") as f:
-                f.write(sha)
+            if base != sha:
+                install_delta(base, sha, prog)
+            if not os.path.exists(MUSIC_MARK):
+                install_music(sha, prog)
+            _installed(sha)
             prog["finished"] = True
             return
         except Exception:  # noqa: BLE001 - fall back to the full zip below
@@ -202,8 +231,7 @@ def install(sha, prog):
                 with z.open(n) as src, open(dest + ".new", "wb") as out:
                     shutil.copyfileobj(src, out)
                 os.replace(dest + ".new", dest)
-        with open(VERSION_FILE, "w", encoding="utf-8") as f:    # last: a failed update is offered again next launch
-            f.write(sha)
+        _installed(sha)                                       # last: a failed update is offered again next launch
     except Exception as e:  # noqa: BLE001
         prog["err"] = str(e) or e.__class__.__name__
     finally:
@@ -295,7 +323,7 @@ def check(wait, music=None):
         return use_git, git_versions() if use_git else (local_version(), remote_version())
 
     use_git, (local, remote) = wait(versions)
-    if not remote or remote == local:
+    if not remote or (remote == local and (use_git or os.path.exists(MUSIC_MARK))):
         return False
     white, grey = rl.WHITE, rl.Color(170, 174, 184, 255)
     if not _prompt(local, remote, music):
