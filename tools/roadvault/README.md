@@ -24,7 +24,7 @@ It uses the same mesh and renderer as the other vault tools.
 ```
 
 The runner reads the local OSM road and area extracts under `data/osm`.
-It writes plan, oblique and lane movement renders to `output/road-candidate`,
+It writes plan, oblique, street-level and lane movement renders to `output/road-candidate`,
 along with a vertex-colour triangle mesh (`mesh.npz`) and explicit lane
 connections and swept-envelope conflicts (`network.json`). Use `--no-render`
 for headless compilation. Coordinates are metres east and south from the
@@ -45,7 +45,8 @@ follow the final asphalt outline, with openings at crossing landings.
 Both slip lanes have raised pedestrian refuge islands. The larger northern
 refuge is selected by its interior point so it can use the same surface and
 curbs, with its sharp tips rounded into the adjoining asphalt.
-At the southbound merge, the outer sidewalk also follows the final asphalt.
+Both outer slip-lane sidewalks follow continuous blends of the finished
+asphalt edge through the split and merge.
 Mapped grass selects which divided-road medians are planted. The resulting
 grass follows the generated curb enclosure. Paired zebras cut through the
 planted median at road level, with rounded openings and curb returns on
@@ -62,9 +63,17 @@ The crossing groups follow the reference imagery approximately. OSM footways
 can feed an existing sidewalk. The junction's road-owned walking surfaces
 compile independently of them. Walkable surfaces and visual curbs are
 separate polygons under `pedestrian` in the exported network.
-The candidate is a flat preview with illustrative signal heads. The world
-builder, runtime routing, traffic signals and editor would need separate
-integration. The conflict list describes overlapping vehicle envelopes,
+Each signalized approach with two or more inbound lanes gets a two-post
+portal upstream of the stop line, with one head centered over each lane
+and a roadside repeater past the zebra. The preview leaves 5.1 m under
+the suspended housings and keeps both supports outside the road and
+crossing entries. It places pedestrian heads at both ends of each of the six controlled zebra sections.
+The slip crossings use crossing signs and the slip merges use give-way signs.
+Signal-ahead warnings and keep-right signs mark the main approaches. The
+placement is a proposal anchored to the generated road and crossing geometry.
+The exported `traffic_furniture` records supports, lane heads and facing directions.
+Signal heads show a static all-red preview. World-builder integration,
+signal timing and runtime routing require separate work. The conflict list describes overlapping vehicle envelopes,
 including merges and shared lanes. It supplies no signal timing.
 
 Research references
@@ -85,3 +94,8 @@ Research references
 - Crossing approaches connect sidewalks and use cut-throughs at designated
   median refuges. [FHWA intersection design guide](https://highways.fhwa.dot.gov/sites/fhwa.dot.gov/files/2022-06/fhwasa22017.pdf),
   [FHWA pedestrian refuge islands](https://highways.fhwa.dot.gov/safety/proven-safety-countermeasures/medians-and-pedestrian-refuge-islands-urban-and-suburban-areas)
+
+- Signal faces and sign symbols use the Vienna Convention as a visual
+  reference. [UNECE Convention on Road Signs and Signals](https://unece.org/DAM/trans/conventn/Conv_road_signs_2006v_EN.pdf)
+- Overhead head placement and clearance use the signal mounting diagrams as
+  a geometric reference. [FHWA traffic control signals](https://mutcd.fhwa.dot.gov/pdfs/11th_Edition/part4.pdf)

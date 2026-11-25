@@ -75,6 +75,7 @@ def render(mesh, routes, out):
         top = dict(eye=(-1, 145, 5), tgt=(-1, 0, 5), up=(0, 0, -1), fov=146, orthographic=True)
         renderer.shot(mesh, str(out / "plan.png"), **top)
         renderer.shot(mesh, str(out / "oblique.png"), eye=(-67, 110, 83), tgt=(-1, 0, -6), fov=39)
+        renderer.shot(mesh, str(out / "street-level.png"), eye=(8, 3.8, 43), tgt=(-1, 1.8, -12), fov=53)
         for spec, line in routes:
             colour = COLOURS.get(spec["id"][:3], (250, 199, 108))
             mesh.poly(stroke(line, 0.32), 0.18, colour, lit=False)
@@ -118,7 +119,7 @@ def main():
     radius = layout["radius"]
     bounds = box(-radius, -radius, radius, radius)
     edges, walks, greens = site_inputs(layout, args.osm, bounds)
-    mesh, routes, conflicts, asphalt, pedestrian = compile_scene(edges, layout, walks, greens, bounds)
+    mesh, routes, conflicts, asphalt, furniture, pedestrian = compile_scene(edges, layout, walks, greens, bounds)
     args.out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.out / "mesh.npz", positions=np.array(mesh.P, dtype=np.float32),
                         colours=np.array(mesh.C, dtype=np.uint8))
@@ -129,6 +130,7 @@ def main():
         "movements": [{**spec, "path": list(line.coords), "length_m": round(line.length, 2)} for spec, line in routes],
         "potential_conflicts": conflicts,
         "pedestrian": pedestrian,
+        "traffic_furniture": furniture,
         "asphalt_area_m2": round(asphalt.area, 2),
     }
     (args.out / "network.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

@@ -8,6 +8,7 @@ import sys
 import numpy as np
 from shapely import make_valid
 from shapely.geometry import LineString, Point, Polygon, mapping
+from shapely.geometry.polygon import orient
 from shapely.ops import substring, unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +16,7 @@ sys.path.append(str(ROOT / "src"))
 from roadwidth import lane_bounds, lane_count, lane_turns  # noqa: E402
 
 from mesh import Mesh, polys
+from traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
 
 LANE_WIDTH = 3.25
 PAINT = (236, 233, 216)
@@ -185,7 +187,7 @@ def source_approach(source, spec):
     return points, mouth, heading
 
 
-def smooth_connector(line, fixed_start):
+def smooth_connector(line, fixed_start, passes=5, blend_length=2.5):
     """Ease local curvature changes while pinning the approach and merge anchors."""
     count = math.ceil(line.length / 0.35)
     stations = np.linspace(0, line.length, count + 1)
@@ -193,9 +195,9 @@ def smooth_connector(line, fixed_start):
     # Symmetric filtering in arclength keeps the guide shape and blends across splices.
     weights = np.array([1, 6, 15, 20, 15, 6, 1]) / 64
     pad = len(weights) // 2
-    t = np.clip(np.minimum(stations - fixed_start, line.length - stations) / 2.5, 0, 1)
+    t = np.clip(np.minimum(stations - fixed_start, line.length - stations) / blend_length, 0, 1)
     blend = t * t * (3 - 2 * t)
-    for _ in range(5):
+    for _ in range(passes):
         window = np.pad(points, ((pad, pad), (0, 0)), mode="edge")
         average = np.column_stack([np.convolve(column, weights, mode="valid") for column in window.T])
         points += (average - points) * blend[:, None]
@@ -370,6 +372,38 @@ def crossing_span(edge, station, asphalt):
     return point, heading, right, lo, hi
 
 
+def slip_edge_arc(surfaces, edges, join):
+    source, target, before, after = join
+    first, last = edges[source], edges[target]
+    start_station = first.line.length - before
+    a = Point(first.trace(1, [start_station, start_station + 0.1]).coords[0])
+    b = Point(last.trace(1, [after, after + 0.1]).coords[0])
+    index = min(range(len(surfaces)), key=lambda i: surfaces[i].exterior.distance(a) + surfaces[i].exterior.distance(b))
+    surface = orient(surfaces[index], sign=1)
+    ring = LineString(surface.exterior.coords)
+    start, end = sorted((ring.project(a), ring.project(b)))
+    between = substring(ring, start, end)
+    around = LineString(list(substring(ring, end, ring.length).coords)
+                        + list(substring(ring, 0, start).coords)[1:])
+    arc, remainder = (between, around) if between.length <= around.length else (around, between)
+    return index, arc, remainder
+
+
+def blend_slip_edges(asphalt, edges, joins):
+    """Blend each continuous outer asphalt edge, returning its sidewalk replacement zone."""
+    surfaces = polys(asphalt)
+    patches = []
+    for join in joins:
+        index, arc, remainder = slip_edge_arc(surfaces, edges, join)
+        smoothed = smooth_connector(arc, 0, passes=55, blend_length=6)
+        rebuilt = Polygon(list(smoothed.coords) + list(remainder.coords)[1:], surfaces[index].interiors)
+        if not rebuilt.is_valid:
+            raise ValueError(f"Invalid outer asphalt blend for OSM ways {join[0]} and {join[1]}")
+        surfaces[index] = rebuilt
+        patches.append(arc.buffer(-3.65, single_sided=True).union(smoothed.buffer(-3.65, single_sided=True)))
+    return unary_union(surfaces), patches
+
+
 def median_cut_through(a, b):
     """A level crossing link with flared, rounded mouths at the carriageways."""
     direction = unit(b - a)
@@ -378,7 +412,7 @@ def median_cut_through(a, b):
     return walk.union(mouths).buffer(0.4).buffer(-0.4)
 
 
-def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
+def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk_patches):
     """Build road-owned walking surfaces, then admit only attached OSM path spurs."""
     sidewalks, curbs, links, zebras, crossing_areas = [], [], [], [], []
     for way, sides in layout["road_edges"].items():
@@ -389,11 +423,7 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
                 curbs.append(edge_band(edges[int(way)], side, 0.32))
     sidewalk = unary_union(sidewalks).buffer(0.6).buffer(-0.6).intersection(bounds).difference(asphalt)
     sidewalk_outline = asphalt.buffer(2.4).difference(asphalt)
-    for first, second, radius in layout.get("sidewalk_joins", []):
-        a, b = edges[first], edges[second]
-        zone = Point(a.line.coords[-1]).buffer(radius)
-        outside = unary_union([edge_band(a, "right", 2.4), edge_band(b, "right", 2.4)]).buffer(1.25)
-        patch = zone.intersection(outside)
+    for patch in sidewalk_patches:
         sidewalk = sidewalk.difference(patch).union(sidewalk_outline.intersection(patch)).intersection(bounds)
     # Follow the final asphalt where a road edge or a median nose calls for a curb.
     # The raw section bands only classify the edge and may be covered by the apron.
@@ -472,6 +502,69 @@ def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
     return mapped.union(unary_union(planted)).difference(reserved)
 
 
+def place_traffic_furniture(edges, layout, asphalt, landings):
+    """Set poles beside the traffic lane or crosswalk, clear of the pedestrian entries."""
+    stations = dict(item for group in layout["crossings"] for item in group)
+    blocked = asphalt.buffer(0.22).union(landings.buffer(0.24))
+    devices = []
+    occupied = []
+
+    def clear(position):
+        return not blocked.covers(Point(position)) and all(
+            np.linalg.norm(position - other) >= 0.62 for other in occupied
+        )
+
+    def roadside(kind, way, station, side):
+        edge = edges[way]
+        for shift in (0, -0.6, 0.6, -1.3, 1.3):
+            p, heading, right, lo, hi = crossing_span(edge, station + shift, asphalt)
+            for offset in (0.58, 0.9, 1.25, 1.7, 2.1):
+                position = p + right * ((lo if side < 0 else hi) + side * offset)
+                if not clear(position):
+                    continue
+                facing = right * -side if kind == "pedestrian_signal" else -heading
+                devices.append(dict(kind=kind, way=way, station=round(station + shift, 2),
+                                    side="left" if side < 0 else "right",
+                                    position=position.tolist(), facing=facing.tolist()))
+                occupied.append(position)
+                return
+        raise ValueError(f"No clear pole location for {kind} on OSM way {way} at {station:.1f} m")
+
+    def gantry(way, stop):
+        edge = edges[way]
+        for shift in (-1.2, -2.0, -3.0, -0.45):
+            station = stop + shift
+            p, heading, right, lo, hi = crossing_span(edge, station, asphalt)
+            supports = [next((position for inset in (0.75, 1.05, 1.4, 1.85)
+                              if clear(position := p + right * (lateral + side * inset))), None)
+                        for lateral, side in ((lo, -1), (hi, 1))]
+            if any(point is None for point in supports):
+                continue
+            heads = [dict(lane=i, position=edge.port(station, i, 1)[0].tolist())
+                     for i in range(lane_count(edge.section))]
+            devices.append(dict(kind="vehicle_gantry", way=way, station=station, facing=(-heading).tolist(),
+                                supports=[point.tolist() for point in supports], heads=heads,
+                                clearance_m=GANTRY_CLEARANCE))
+            occupied.extend(supports)
+            return
+        raise ValueError(f"No clear gantry supports for OSM way {way}")
+
+    for way in layout["stop_lines"]:
+        stop = stations[way] - 3.4
+        if lane_count(edges[way].section) >= 2:
+            gantry(way, stop)
+        else:
+            roadside("vehicle_signal", way, stop, 1)
+        roadside("vehicle_signal", way, stations[way] + 3.3, -1)
+    for way in layout.get("pedestrian_signals", []):
+        for side in (-1, 1):
+            roadside("pedestrian_signal", way, stations[way] + 2.45, side)
+    for kind, way, at, side in layout.get("signs", []):
+        station = edges[way].line.length + at if at < 0 else at
+        roadside(kind, way, station, -1 if side == "left" else 1)
+    return devices
+
+
 def compile_scene(edges, layout, walks, greens, bounds):
     """Return mesh plus the compiled movements, their conflicts and the paved footprint."""
     by_id = {edge.id: edge for edge in edges}
@@ -506,9 +599,10 @@ def compile_scene(edges, layout, walks, greens, bounds):
         refuges = [refuge for refuge in refuges if refuge is not hole] + [rounded]
         fill.append(hole.difference(rounded))
     asphalt = asphalt.union(unary_union(fill))
+    asphalt, sidewalk_patches = blend_slip_edges(asphalt, by_id, layout.get("sidewalk_curves", []))
     refuges = unary_union(refuges)
     pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
-        by_id, layout, walks, asphalt, bounds, refuges)
+        by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches)
     reserved = unary_union([asphalt, pavement, curb, landings, cut_throughs, paths])
     grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
     marks = []
@@ -519,17 +613,13 @@ def compile_scene(edges, layout, walks, greens, bounds):
     for edge in edges:
         begin, end = clear.get(edge.id, [0.0, edge.line.length])
         marks.extend(approach_paint(edge, begin, end))
-    poles = []
     crossing_stations = dict(item for group in layout["crossings"] for item in group)
     for way in layout["stop_lines"]:
         edge = by_id[way]
         station = crossing_stations[way] - 3.4
-        p, heading, right = frame(edge.line, station)
+        p, _, right = frame(edge.line, station)
         left_edge, right_edge = edge.cross_section(station)
         marks.append(stroke(LineString([p + right * (left_edge + 0.28), p + right * (right_edge - 0.28)]), 0.34))
-        pole = p + right * (right_edge + 0.65)
-        if not asphalt.covers(Point(pole)):
-            poles.append((pole, heading))
         marks.extend(approach_arrows(edge, max(0, station - 4.5), movements))
     for way, station in layout.get("approach_arrows", []):
         edge = by_id[way]
@@ -550,13 +640,12 @@ def compile_scene(edges, layout, walks, greens, bounds):
     mesh.poly(cut_throughs, 0, (181, 175, 161))
     paint = unary_union(marks).difference(crossings.buffer(0.25))
     mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
-    for (x, y), heading in poles:
-        mesh.cyl(x, 0.1, 3.1, y, 0.09, (126, 130, 128))
-        mesh.box(x, 2.72, y, 0.27, 0.79, 0.3, (45, 47, 45))
-        face = np.array([x, y]) - heading * 0.17
-        angle = math.atan2(heading[1], heading[0])
-        for height, colour in [(3.27, (220, 65, 57)), (3.04, (100, 84, 42)), (2.81, (51, 79, 55))]:
-            mesh.box(face[0], height, face[1], 0.045, 0.14, 0.14, colour, yaw=angle)
+    furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs))
+    for device in furniture:
+        if device["kind"] == "vehicle_gantry":
+            draw_gantry(mesh, device)
+        else:
+            draw_device(mesh, device["kind"], device["position"], device["facing"])
 
     conflicts = []
     for (a, _), (b, _) in combinations(routes, 2):
@@ -567,4 +656,4 @@ def compile_scene(edges, layout, walks, greens, bounds):
                   "crossing_landings": mapping(landings.union(cut_throughs)), "crosswalks": mapping(crossings),
                   "median_cut_throughs": mapping(cut_throughs),
                   "non_walkable_curbs": mapping(curb)}
-    return mesh, routes, conflicts, asphalt, pedestrian
+    return mesh, routes, conflicts, asphalt, furniture, pedestrian

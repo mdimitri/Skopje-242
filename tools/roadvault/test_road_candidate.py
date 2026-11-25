@@ -1,6 +1,7 @@
 """Regression check for the two Partizanski / Glavinov slip-lane splits."""
 import json
 import math
+from collections import Counter
 import unittest
 
 import numpy as np
@@ -10,7 +11,7 @@ from shapely.ops import unary_union
 
 from run_candidate import HERE, ROOT, site_inputs
 from road_candidate import (approach_arrows, compile_movements, compile_scene, crossing_span, footprint,
-                            median_landscape, polys, yield_teeth)
+                            frame, median_landscape, polys, slip_edge_arc, stroke, yield_teeth)
 
 
 @unittest.skipUnless((ROOT / "data/osm/roads.json").exists() and (ROOT / "data/osm/areas.json").exists(),
@@ -24,7 +25,7 @@ class RoadCandidateTests(unittest.TestCase):
         cls.edges, cls.walks, cls.greens = site_inputs(cls.layout, ROOT / "data/osm", cls.bounds)
         cls.by_id = {edge.id: edge for edge in cls.edges}
         cls.routes = {spec["id"]: path for spec, path in compile_movements(cls.by_id, cls.layout["movements"])}
-        _, _, _, cls.asphalt, cls.pedestrian = compile_scene(cls.edges, cls.layout, cls.walks, cls.greens, cls.bounds)
+        _, _, _, cls.asphalt, cls.furniture, cls.pedestrian = compile_scene(cls.edges, cls.layout, cls.walks, cls.greens, cls.bounds)
 
     def test_slips_keep_a_full_lane_of_clearance_from_the_adjacent_movement(self):
         for slip, adjacent in (("W-S-slip", "W-N-2"), ("N-W-slip", "N-S-2")):
@@ -118,6 +119,60 @@ class RoadCandidateTests(unittest.TestCase):
                 self.assertLess(island.difference(island_surfaces).area, 0.01)
                 connected = [zebra for zebra in polys(crossings) if island.distance(zebra) < 0.04]
                 self.assertEqual(len(connected), expected_crossings)
+
+    def test_outer_slip_edges_have_gradual_curvature_and_leave_room_for_traffic(self):
+        for join in self.layout["sidewalk_curves"]:
+            with self.subTest(ways=join[:2]):
+                _, arc, _ = slip_edge_arc(polys(self.asphalt), self.by_id, join)
+                stations = np.linspace(0, arc.length, math.ceil(arc.length) + 1)
+                steps = np.diff([arc.interpolate(s).coords[0] for s in stations], axis=0)
+                headings = np.unwrap(np.arctan2(steps[:, 1], steps[:, 0]))
+                self.assertLess(np.max(np.abs(np.degrees(np.diff(headings, n=2)))), 0.75)
+        for route in self.routes.values():
+            self.assertLess(stroke(route, 2.94).difference(self.asphalt).area, 0.01)
+
+    def test_signals_and_signs_face_their_approach_and_clear_the_crossing_entries(self):
+        counts = Counter(device["kind"] for device in self.furniture)
+        self.assertEqual(counts, {"vehicle_gantry": 3, "vehicle_signal": 3, "pedestrian_signal": 12, "give_way": 2,
+                                  "crossing": 2, "signal_ahead": 3, "keep_right": 3})
+        landings = shape(self.pedestrian["crossing_landings"])
+        for device in self.furniture:
+            if device["kind"] == "vehicle_gantry":
+                continue
+            with self.subTest(kind=device["kind"], way=device["way"], side=device["side"]):
+                position = Point(device["position"])
+                self.assertGreaterEqual(self.asphalt.distance(position), 0.21)
+                self.assertGreaterEqual(landings.distance(position), 0.23)
+                edge = self.by_id[device["way"]]
+                _, heading, right = frame(edge.line, device["station"])
+                inward = right if device["side"] == "left" else -right
+                face = inward if device["kind"] == "pedestrian_signal" else -heading
+                self.assertGreater(np.dot(face, device["facing"]), 0.99)
+
+    def test_gantries_span_each_signalized_approach_and_center_heads_over_lanes(self):
+        gantries = [device for device in self.furniture if device["kind"] == "vehicle_gantry"]
+        stations = dict(item for group in self.layout["crossings"] for item in group)
+        entries = shape(self.pedestrian["crossing_landings"])
+        self.assertEqual({device["way"] for device in gantries}, set(self.layout["stop_lines"]))
+        self.assertEqual(sum(len(device["heads"]) for device in gantries), 7)
+        for device in gantries:
+            with self.subTest(way=device["way"]):
+                edge = self.by_id[device["way"]]
+                station = device["station"]
+                self.assertLess(station, stations[edge.id] - 3.4)
+                self.assertGreaterEqual(device["clearance_m"], 5.1)
+                center, heading, right = frame(edge.line, station)
+                self.assertGreater(np.dot(-heading, device["facing"]), 0.99)
+                left, right_support = np.array(device["supports"]) - center
+                self.assertLess(left @ right, 0)
+                self.assertGreater(right_support @ right, 0)
+                for position in device["supports"]:
+                    point = Point(position)
+                    self.assertGreaterEqual(self.asphalt.distance(point), 0.22)
+                    self.assertGreaterEqual(entries.distance(point), 0.24)
+                for head in device["heads"]:
+                    expected, _ = edge.port(station, head["lane"], 1)
+                    np.testing.assert_allclose(head["position"], expected)
 
     def test_southbound_merge_sidewalk_follows_the_asphalt_at_full_width(self):
         sidewalk = shape(self.pedestrian["sidewalks"])
