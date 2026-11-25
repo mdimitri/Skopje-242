@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 import numpy as np
-from shapely import make_valid
+from shapely import STRtree, make_valid
 from shapely.geometry import LineString, Point, Polygon, mapping
 from shapely.geometry.polygon import orient
 from shapely.ops import substring, unary_union
@@ -373,7 +373,7 @@ def crossing_span(edge, station, asphalt):
 
 
 def slip_edge_arc(surfaces, edges, join):
-    source, target, before, after = join
+    source, target, before, after = join[:4]
     first, last = edges[source], edges[target]
     start_station = first.line.length - before
     a = Point(first.trace(1, [start_station, start_station + 0.1]).coords[0])
@@ -389,16 +389,22 @@ def slip_edge_arc(surfaces, edges, join):
     return index, arc, remainder
 
 
-def blend_slip_edges(asphalt, edges, joins):
+def blend_slip_edges(asphalt, edges, joins, report=None):
     """Blend each continuous outer asphalt edge, returning its sidewalk replacement zone."""
     surfaces = polys(asphalt)
     patches = []
     for join in joins:
         index, arc, remainder = slip_edge_arc(surfaces, edges, join)
+        if report is not None and len(join) > 4 and arc.length > join[4]:
+            report.append(dict(kind="sidewalk_join_needs_layout", source=join[0], target=join[1]))
+            continue
         smoothed = smooth_connector(arc, 0, passes=55, blend_length=6)
         rebuilt = Polygon(list(smoothed.coords) + list(remainder.coords)[1:], surfaces[index].interiors)
         if not rebuilt.is_valid:
-            raise ValueError(f"Invalid outer asphalt blend for OSM ways {join[0]} and {join[1]}")
+            if report is None:
+                raise ValueError(f"Invalid outer asphalt blend for OSM ways {join[0]} and {join[1]}")
+            report.append(dict(kind="sidewalk_join_needs_layout", source=join[0], target=join[1]))
+            continue
         surfaces[index] = rebuilt
         patches.append(arc.buffer(-3.65, single_sided=True).union(smoothed.buffer(-3.65, single_sided=True)))
     return unary_union(surfaces), patches
@@ -502,7 +508,7 @@ def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
     return mapped.union(unary_union(planted)).difference(reserved)
 
 
-def place_traffic_furniture(edges, layout, asphalt, landings):
+def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
     """Set poles beside the traffic lane or crosswalk, clear of the pedestrian entries."""
     stations = dict(item for group in layout["crossings"] for item in group)
     blocked = asphalt.buffer(0.22).union(landings.buffer(0.24))
@@ -528,7 +534,10 @@ def place_traffic_furniture(edges, layout, asphalt, landings):
                                     position=position.tolist(), facing=facing.tolist()))
                 occupied.append(position)
                 return
-        raise ValueError(f"No clear pole location for {kind} on OSM way {way} at {station:.1f} m")
+        if report is not None:
+            report.append(dict(kind="pole_location_needs_layout", device=kind, edge=way))
+        else:
+            raise ValueError(f"No clear pole location for {kind} on OSM way {way} at {station:.1f} m")
 
     def gantry(way, stop):
         edge = edges[way]
@@ -547,7 +556,11 @@ def place_traffic_furniture(edges, layout, asphalt, landings):
                                 clearance_m=GANTRY_CLEARANCE))
             occupied.extend(supports)
             return
-        raise ValueError(f"No clear gantry supports for OSM way {way}")
+        if report is not None:
+            report.append(dict(kind="gantry_location_needs_layout", edge=way))
+            roadside("vehicle_signal", way, stop, 1)
+        else:
+            raise ValueError(f"No clear gantry supports for OSM way {way}")
 
     for way in layout["stop_lines"]:
         stop = stations[way] - 3.4
@@ -565,14 +578,15 @@ def place_traffic_furniture(edges, layout, asphalt, landings):
     return devices
 
 
-def compile_scene(edges, layout, walks, greens, bounds):
+def compile_scene(edges, layout, walks, greens, bounds, report=None):
     """Return mesh plus the compiled movements, their conflicts and the paved footprint."""
     by_id = {edge.id: edge for edge in edges}
     movements = layout["movements"]
     if len({spec["id"] for spec in movements}) != len(movements):
         raise ValueError("Movement IDs must be unique")
     routes = compile_movements(by_id, movements)
-    asphalt = unary_union([poly for edge in edges for poly in polys(footprint(edge))])
+    road_footprints = [poly for edge in edges for poly in polys(footprint(edge))]
+    asphalt = unary_union(road_footprints)
     # A routing mistake should fail review before it can pave an unmapped lot.
     safe_area = asphalt.buffer(3.5)
     for spec, line in routes:
@@ -580,7 +594,8 @@ def compile_scene(edges, layout, walks, greens, bounds):
             raise ValueError(f"Invalid or off-road movement {spec['id']}")
     # Sweep the vehicle envelope through the actual lane connectors to form the
     # apron. This leaves unmapped gaps and medians outside the sweep intact.
-    envelopes = {spec["id"]: line.buffer(1.47, cap_style="flat") for spec, line in routes}
+    envelopes = {spec["id"]: line.buffer(spec.get("sweep_width", 2.94) / 2, cap_style="flat")
+                 for spec, line in routes}
     asphalt = asphalt.union(unary_union(list(envelopes.values())))
     for x, y, radius in layout["corner_zones"]:
         zone = Point(x, y).buffer(radius)
@@ -599,7 +614,12 @@ def compile_scene(edges, layout, walks, greens, bounds):
         refuges = [refuge for refuge in refuges if refuge is not hole] + [rounded]
         fill.append(hole.difference(rounded))
     asphalt = asphalt.union(unary_union(fill))
-    asphalt, sidewalk_patches = blend_slip_edges(asphalt, by_id, layout.get("sidewalk_curves", []))
+    blended, sidewalk_patches = blend_slip_edges(asphalt, by_id, layout.get("sidewalk_curves", []), report)
+    if report is not None and sidewalk_patches and any(env.difference(blended).area > 0.01 for env in envelopes.values()):
+        report.append(dict(kind="sidewalk_join_would_reduce_lane_clearance"))
+        sidewalk_patches = []
+    else:
+        asphalt = blended
     refuges = unary_union(refuges)
     pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
         by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches)
@@ -613,6 +633,13 @@ def compile_scene(edges, layout, walks, greens, bounds):
     for edge in edges:
         begin, end = clear.get(edge.id, [0.0, edge.line.length])
         marks.extend(approach_paint(edge, begin, end))
+    if layout.get("source") == "osm-topology" and road_footprints:
+        footprint_array = np.asarray(road_footprints, dtype=object)
+        neighbors = STRtree(footprint_array).query(footprint_array, predicate="intersects")
+        overlaps = [road_footprints[i].intersection(road_footprints[j])
+                    for i, j in neighbors.T if i < j]
+        shared_pavement = unary_union([overlap for overlap in overlaps if overlap.area > 0.35])
+        marks = [unary_union(marks).difference(shared_pavement.buffer(0.6))]
     crossing_stations = dict(item for group in layout["crossings"] for item in group)
     for way in layout["stop_lines"]:
         edge = by_id[way]
@@ -640,7 +667,7 @@ def compile_scene(edges, layout, walks, greens, bounds):
     mesh.poly(cut_throughs, 0, (181, 175, 161))
     paint = unary_union(marks).difference(crossings.buffer(0.25))
     mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
-    furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs))
+    furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs), report)
     for device in furniture:
         if device["kind"] == "vehicle_gantry":
             draw_gantry(mesh, device)

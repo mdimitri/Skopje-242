@@ -166,7 +166,7 @@ These are entry points, not a promise every script is side-effect free. Read arg
 
 ## Tools and experiments
 
-`tools/` is an operational codebase of its own, not merely scripts. It includes source fetching, world generation, geometry and road design, content audits, performance capture, and screenshot workflows. `tools/trafficlab/` separates traffic simulation, parameters, exploration, batch execution, reports, tips, and UI. `tools/roadvault/` is a distinct road/interchange design and fitting toolkit. Use the local README and rules in those packages before extending them.
+`tools/` is an operational codebase of its own, not merely scripts. It includes source fetching, world generation, geometry and road design, content audits, performance capture, and screenshot workflows. `tools/trafficlab/` separates traffic simulation, parameters, exploration, batch execution, reports, tips, and UI. `tools/roadvault/` is a distinct road/interchange design and fitting toolkit. Use the local README and rules in those packages before extending them. The road candidate there shares one geometry compiler between reviewed layouts and OSM inference. See [the road vault guide](../tools/roadvault/README.md) for inputs, review diagnostics, and the Partizanski–Glavinov regression fixture.
 
 Files in `drafts/` can contain experiments or migration patches and are not automatically production guidance. Check whether a draft is referenced by shipped paths before relying on it.
 

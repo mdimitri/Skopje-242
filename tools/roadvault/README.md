@@ -76,6 +76,39 @@ Signal heads show a static all-red preview. World-builder integration,
 signal timing and runtime routing require separate work. The conflict list describes overlapping vehicle envelopes,
 including merges and shared lanes. It supplies no signal timing.
 
+### Applying the same rules to other OSM sites
+
+```powershell
+.runtime/venv/Scripts/python.exe tools/roadvault/run_candidate.py --infer 41.99815 21.42544 --radius 95 --out output/road-candidate-kliment
+```
+
+`road_inference.py` prepares a layout from the local OSM graph. The inferred
+and authored layouts use the same geometry compiler. Inferred builds export
+an editable `layout.json`, its review diagnostics, and the original OSM way
+ID for every edge. Replay the layout with `--layout <path>` and the same
+`--osm` extract. The default command builds the verified Partizanski–Glavinov
+layout, including its reviewed lane assignments, tapers, refuge geometry,
+crossing stations and furniture.
+
+| Design rule | Evidence and behavior |
+| --- | --- |
+| Connect lanes before drawing the apron | Shared OSM nodes define topology, including nodes inside a way. Directions, turn lanes and direct via-node restrictions constrain movements. Candidate curves must fit near the mapped carriageways. |
+| Keep lanes ordered through forks | When one mapped link and the mainline consume the inbound lane count, reserve the lanes on the link side. Recognized right-hand slips can share a blended outer sidewalk edge. The blend is withheld if it would cut into a swept lane. |
+| Keep sidewalks on the outside of a divided road | Opposing parallel one-way ways with matching names or refs and enough room for a median get inside curbs. Mapped grass selects planted medians. OSM footways can join the road-built sidewalk. |
+| Connect paired crossings at street level | Tagged crossing geometry supplies the crossing positions. Planned zebra pairs through a median use the same rounded, flush break as the reference junction. |
+| Tie signals to the approaches they control | Mapped one-way signal approaches with a nearby zebra can supply stop lines, pedestrian heads and portals. Other signal positions are flagged for placement review. |
+| Provide useful turn-lane storage | Lane-number changes are reported for review. The authored pocket supports the 25 m target at Partizanski–Glavinov; the inference pass needs room and traffic evidence before adding a pocket. |
+
+The input is the game's local, right-hand-traffic, at-grade preview. A combined
+`roads.json` can include OSM nodes and relations; `restrictions.json` is also
+accepted. The shipped way-only extract lacks turn relations and most tagged
+crossing nodes, so an inferred preview can differ substantially from the
+authored site. Grade separation, complex via-way or conditional restrictions,
+lane connectivity relations, and control placements without enough evidence
+are reported for review. This preview does not decide game traffic timing or
+replace the shipped city builder. The fixture remains the reference for a
+divided, signalized T with two slip lanes.
+
 Research references
 
 - Road Builder separates the editable network configuration from its
@@ -99,3 +132,8 @@ Research references
   reference. [UNECE Convention on Road Signs and Signals](https://unece.org/DAM/trans/conventn/Conv_road_signs_2006v_EN.pdf)
 - Overhead head placement and clearance use the signal mounting diagrams as
   a geometric reference. [FHWA traffic control signals](https://mutcd.fhwa.dot.gov/pdfs/11th_Edition/part4.pdf)
+
+- OSM inference follows the source distinction between connectivity, lane
+  indications and turn restrictions. [OSM turn restrictions](https://wiki.openstreetmap.org/wiki/Relation:restriction),
+  [OSM lane connectivity](https://wiki.openstreetmap.org/wiki/Relation:connectivity),
+  [SUMO OSM import and lane inference](https://sumo.dlr.de/userdoc/Networks/Import/OpenStreetMap.html)

@@ -1,5 +1,6 @@
 """Render a road candidate from the game's downloaded OSM inputs."""
 import argparse
+from collections import Counter
 import json
 import math
 from pathlib import Path
@@ -7,7 +8,7 @@ import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 from road_candidate import ROOT, compile_scene, road_edge, stroke
 
@@ -26,7 +27,7 @@ def read_elements(path):
     return json.loads(path.read_text(encoding="utf-8"))["elements"]
 
 
-def site_inputs(layout, osm, bounds):
+def site_inputs(layout, osm, bounds, road_elements=None):
     x0, y0 = project(*layout["origin"])
 
     def points(way):
@@ -34,7 +35,7 @@ def site_inputs(layout, osm, bounds):
                 (project(p["lat"], p["lon"]) for p in way.get("geometry", []))]
 
     edges, walks, greens = [], [], []
-    for way in read_elements(osm / "roads.json"):
+    for way in read_elements(osm / "roads.json") if road_elements is None else road_elements:
         tags = way.get("tags", {})
         cls = tags.get("highway", "")
         if cls.removesuffix("_link") not in DRIVE and cls not in WALK:
@@ -55,7 +56,8 @@ def site_inputs(layout, osm, bounds):
                 way_id = str(way["id"])
                 edges.append(road_edge(way, unique_xy, layout.get("tapers", {}).get(way_id, ()),
                                        layout.get("left_lane_openings", {}).get(way_id)))
-    for way in read_elements(osm / "areas.json"):
+    areas = osm / "areas.json"
+    for way in read_elements(areas) if road_elements is None or areas.exists() else []:
         tags = way.get("tags", {})
         if tags.get("landuse") != "grass" and tags.get("highway") != "traffic_island":
             continue
@@ -67,17 +69,100 @@ def site_inputs(layout, osm, bounds):
     return edges, walks, greens
 
 
-def render(mesh, routes, out):
+def infer_site(layout, osm, bounds, replay=False):
+    from road_inference import at_grade, infer_layout, normalize_ways
+
+    origin_x, origin_y = project(*layout["origin"])
+    elements = read_elements(osm / "roads.json")
+    relations = [element for element in elements if element.get("type") == "relation"]
+    restrictions = osm / "restrictions.json"
+    if restrictions.exists():
+        relations.extend(read_elements(restrictions))
+    relations = list({relation["id"]: relation for relation in relations if relation.get("type") == "relation"}.values())
+    report = []
+    if not relations and not restrictions.exists():
+        report.append(dict(kind="no_relation_data", message="The extract supplies no turn restriction relations"))
+    ways, walkways, crossing_guides, node_tags = {}, [], [], {}
+    node_uses = Counter()
+
+    def xy(lat, lon):
+        x, y = project(lat, lon)
+        return x - origin_x, y - origin_y
+
+    for element in elements:
+        tags = element.get("tags", {})
+        if element.get("type") == "node" and "lat" in element and "lon" in element:
+            point = Point(xy(element["lat"], element["lon"]))
+            if bounds.covers(point):
+                node_tags[element["id"]] = {**tags, "point": point}
+        if element.get("type") != "way":
+            continue
+        cls = tags.get("highway", "")
+        if cls.removesuffix("_link") not in DRIVE and cls not in WALK:
+            continue
+        geometry = element.get("geometry") or []
+        nodes = element.get("nodes") or []
+        if len(geometry) < 2 or len(geometry) != len(nodes):
+            report.append(dict(kind="invalid_way_geometry", way=element["id"]))
+            continue
+        line = LineString([xy(p["lat"], p["lon"]) for p in geometry])
+        grade = at_grade(tags)
+        if grade and cls not in WALK:
+            node_uses.update(set(nodes))
+        if not line.intersects(bounds):
+            continue
+        if not grade:
+            report.append(dict(kind="grade_separated_way", way=element["id"]))
+        elif cls in WALK:
+            walkways.append(element)
+            if tags.get("footway") == "crossing" and tags.get("crossing") not in {"unmarked", "no"}:
+                crossing_guides.append(line)
+        else:
+            ways[element["id"]] = element
+    shared = {node for node, count in node_uses.items() if count > 1}
+    signals = osm / "signals.json"
+    if not replay and signals.exists():
+        mapped_signals = json.loads(signals.read_text(encoding="utf-8"))
+        if isinstance(mapped_signals, list):
+            for point in mapped_signals:
+                if not isinstance(point, list) or len(point) < 2:
+                    continue
+                signal = Point(point[0] - origin_x, point[1] - origin_y)
+                if bounds.covers(signal) and not any(tags["point"].distance(signal) < 4
+                                                    for tags in node_tags.values() if tags.get("highway") == "traffic_signals"):
+                    report.append(dict(kind="signal_position_needs_layout", position=[signal.x, signal.y]))
+    normalized, originals = normalize_ways(ways.values(), shared)
+    edges, walks, greens = site_inputs(layout, osm, bounds, normalized + walkways)
+    if replay:
+        report = [item for item in layout.get("inference_diagnostics", [])
+                  if item["kind"] not in {"gantry_location_needs_layout", "pole_location_needs_layout",
+                                          "sidewalk_join_needs_layout", "sidewalk_join_would_reduce_lane_clearance"}]
+    else:
+        infer_layout(layout, edges, normalized, originals, node_tags, relations, crossing_guides, bounds, report)
+    return edges, walks, greens, originals, report
+
+
+def render(mesh, routes, out, inferred=False, radius=112):
     from render import Renderer
 
+    turn_colors = {"left": (247, 180, 87), "through": (106, 201, 240), "right": (118, 202, 164)}
     renderer = Renderer((1500, 1200))
     try:
         top = dict(eye=(-1, 145, 5), tgt=(-1, 0, 5), up=(0, 0, -1), fov=146, orthographic=True)
+        if inferred:
+            top.update(eye=(0, max(180, radius), 0), tgt=(0, 0, 0), fov=radius * 1.55)
+            renderer.shot(mesh, str(out / "oblique.png"), eye=(-0.64 * radius, 1.55 * radius, radius),
+                          tgt=(0, 0, 0), fov=48)
+        else:
+            renderer.shot(mesh, str(out / "oblique.png"), eye=(-67, 110, 83), tgt=(-1, 0, -6), fov=39)
+            renderer.shot(mesh, str(out / "street-level.png"), eye=(8, 3.8, 43), tgt=(-1, 1.8, -12), fov=53)
         renderer.shot(mesh, str(out / "plan.png"), **top)
-        renderer.shot(mesh, str(out / "oblique.png"), eye=(-67, 110, 83), tgt=(-1, 0, -6), fov=39)
-        renderer.shot(mesh, str(out / "street-level.png"), eye=(8, 3.8, 43), tgt=(-1, 1.8, -12), fov=53)
         for spec, line in routes:
-            colour = COLOURS.get(spec["id"][:3], (250, 199, 108))
+            if inferred:
+                turn = spec["turn"]
+                colour = next((value for key, value in turn_colors.items() if turn.endswith(key)), (250, 199, 108))
+            else:
+                colour = COLOURS.get(spec["id"][:3], (250, 199, 108))
             mesh.poly(stroke(line, 0.32), 0.18, colour, lit=False)
             p = np.array(line.interpolate(0.63, normalized=True).coords[0])
             front = np.array(line.interpolate(0.65, normalized=True).coords[0])
@@ -97,29 +182,52 @@ def render(mesh, routes, out):
         draw = ImageDraw.Draw(sheet)
         font = ImageFont.load_default(size=21)
         names = {"W": "West", "N": "North", "S": "South"}
-        for i, (label, colour) in enumerate(COLOURS.items()):
+        colors = turn_colors if inferred else COLOURS
+        for i, (label, colour) in enumerate(colors.items()):
             x = 39 + i * 244
             y = sheet.height - 30
-            start, end = label.split("-")
+            if inferred:
+                caption = label.title()
+            else:
+                start, end = label.split("-")
+                caption = f"{names[start]} to {names[end]}"
             draw.line((x, y, x + 33, y), fill=colour, width=4)
-            draw.text((x + 45, y), f"{names[start]} to {names[end]}", anchor="lm", font=font, fill=(237, 234, 225))
+            draw.text((x + 45, y), caption, anchor="lm", font=font, fill=(237, 234, 225))
         sheet.save(path)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--layout", type=Path, default=HERE / "partizanski_glavinov.json")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--layout", type=Path, help="Build an authored layout (default: Partizanski / Glavinov)")
+    mode.add_argument("--infer", type=float, nargs=2, metavar=("LAT", "LON"), help="Infer an OSM layout around this point")
+    parser.add_argument("--radius", type=float, default=112, help="Half-width in metres for inferred sites")
     parser.add_argument("--osm", type=Path, default=ROOT / "data" / "osm")
-    parser.add_argument("--out", type=Path, default=ROOT / "output" / "road-candidate")
+    parser.add_argument("--out", type=Path)
     parser.add_argument("--no-render", action="store_true", help="Export the compiled data without opening a graphics context")
     args = parser.parse_args()
-    layout = json.loads(args.layout.read_text(encoding="utf-8"))
+    if args.infer:
+        lat, lon = args.infer
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180 and 10 <= args.radius <= 500):
+            parser.error("Inference needs valid coordinates and a radius from 10 to 500 m")
+        layout = dict(version=1, source="osm-topology", name=f"OSM candidate at {lat:.6f}, {lon:.6f}",
+                      origin=args.infer, radius=args.radius)
+    else:
+        path = args.layout or HERE / "partizanski_glavinov.json"
+        layout = json.loads(path.read_text(encoding="utf-8"))
     if layout["version"] != 1:
         parser.error("Unsupported layout version")
     radius = layout["radius"]
     bounds = box(-radius, -radius, radius, radius)
-    edges, walks, greens = site_inputs(layout, args.osm, bounds)
-    mesh, routes, conflicts, asphalt, furniture, pedestrian = compile_scene(edges, layout, walks, greens, bounds)
+    inferred = layout.get("source") == "osm-topology"
+    if inferred:
+        edges, walks, greens, originals, report = infer_site(layout, args.osm, bounds, replay=not args.infer)
+    else:
+        edges, walks, greens = site_inputs(layout, args.osm, bounds)
+        report = None
+    if args.out is None:
+        args.out = ROOT / "output" / ("road-candidate-inferred" if inferred else "road-candidate")
+    mesh, routes, conflicts, asphalt, furniture, pedestrian = compile_scene(edges, layout, walks, greens, bounds, report)
     args.out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.out / "mesh.npz", positions=np.array(mesh.P, dtype=np.float32),
                         colours=np.array(mesh.C, dtype=np.uint8))
@@ -133,9 +241,15 @@ def main():
         "traffic_furniture": furniture,
         "asphalt_area_m2": round(asphalt.area, 2),
     }
+    if inferred:
+        for edge in result["edges"]:
+            edge["osm_way"] = originals[edge["id"]]
+        result["inference_diagnostics"] = report
+        layout["inference_diagnostics"] = report
+        (args.out / "layout.json").write_text(json.dumps(layout, indent=2) + "\n", encoding="utf-8")
     (args.out / "network.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     if not args.no_render:
-        render(mesh, routes, args.out)
+        render(mesh, routes, args.out, inferred=inferred, radius=radius)
     print(f"{len(edges)} roads, {len(routes)} lane movements, {len(conflicts)} potential conflicts -> {args.out}")
 
 
