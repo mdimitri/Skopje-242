@@ -754,10 +754,11 @@ def main():
                           draw=splash_frame)
     pre = ""                                                           # the title menu's answer, chosen before anything loads
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
+    manifest = os.path.join(ROOT, "data", "cache", "world", "manifest.json")
+    upgrade = bool(need) and os.path.isfile(manifest) and not _current_world_version(manifest, "version")
     if need and not unbuilt:
-        manifest = os.path.join(ROOT, "data", "cache", "world", "manifest.json")
-        need["build"] = not _current_world_version(manifest, "version")
-    if a.rebuild or a.refresh:
+        need["build"] = upgrade or not os.path.isfile(manifest)
+    if a.rebuild or a.refresh or upgrade:
         need["build"] = True
     elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)
         menu_mod.WORLD["built"] = not unbuilt
