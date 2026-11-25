@@ -3546,7 +3546,9 @@ void main(){
     bool foliage = leafCard > 0.5 || fragColor.g > fragColor.r;
     float family = foliage ? 10.0 : 9.0;
     vec2 uv = surfaceProjection(wp, nrm) / (foliage ? 0.8 : 1.4);
-    vec4 detail = surfaceSample(uv, wpos, family, foliage ? 0.38 : 0.72);
+    // Individual leaf sprites already depict a leaf; foliage tiles belong on crown lumps.
+    float strength = leafCard > 0.5 ? 0.0 : (foliage ? 0.38 : 0.72);
+    vec4 detail = surfaceSample(uv, wpos, family, strength);
     vec3 bumped = surfaceNormal(wp, nrm, detail.a, surfaceAmplitude(family));
     c = relight(c * detail.rgb * 2.0, nrm, bumped, 0.9, 0.7);
   }

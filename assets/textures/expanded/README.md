@@ -6,4 +6,4 @@ Built-in ImageGen created the color sources. The completed variants were generat
 
 Select **Графика → Пакет текстури → Проширени со релјеф** to use this pack in Skopje 242. The default **Стандардни** uses the original game materials and **Градски** uses the 64-texture city pack.
 
-The renderer uses the expanded tiles for terrain, roads, water, buildings, tree bark and foliage, vehicles, characters, props, and mall interiors. Material detail fades as it becomes too small to resolve on screen. Glass, lights, and text decals retain their own rendering.
+The renderer uses the expanded tiles for terrain, roads, water, buildings, tree bark and solid foliage crowns, vehicles, characters, props, and mall interiors. Individual leaf sprites use their own leaf atlas. Material detail fades as it becomes too small to resolve on screen. Glass, lights, and text decals retain their own rendering.

@@ -80,7 +80,7 @@ World interactions include locations, vendors, services, rentals, work activitie
 
 Keep resource lifecycle, coordinate conventions, draw ordering, and batching in mind. For rendering defects, find whether geometry is produced at build time or at runtime before editing. Model and screenshot helpers under `tools/` are useful for inspecting visual output without conflating editor/build behavior with gameplay.
 
-The Expanded pack shares one color and height atlas across world and object shaders. Runtime trees use bark and foliage detail over the existing tree atlas and wind animation. Mall geometry stores the atlas family in UV.x so floors, walls, fixtures and displays can share one draw while glass and lights skip surface relief. Distant geometry fades the detail to limit shimmer.
+The Expanded pack shares one color and height atlas across world and object shaders. Runtime trees use bark detail on wood and foliage detail on solid crown LODs; individual leaf sprites retain their own atlas texture. Mall geometry stores the atlas family in UV.x so floors, walls, fixtures and displays can share one draw while glass and lights skip surface relief. Distant geometry fades the detail to limit shimmer.
 
 ### Audio and voice
 
