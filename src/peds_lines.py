@@ -186,6 +186,21 @@ TYPE_HIT = {
     "Komunalec": [TXT("peds_lines.0550")], "Nevesta": [TXT("peds_lines.0551")], "Dostavuvach": [TXT("peds_lines.0552")],
 }
 
+WORK_LINES = {
+    "medic": {"hit": [TXT("peds_lines.0560"), TXT("peds_lines.0561")],
+              "fight": [TXT("peds_lines.0562"), TXT("peds_lines.0563")],
+              "ko": [TXT("peds_lines.0564")]},
+    "fire": {"hit": [TXT("peds_lines.0565"), TXT("peds_lines.0566")],
+             "fight": [TXT("peds_lines.0567"), TXT("peds_lines.0568")],
+             "ko": [TXT("peds_lines.0569")]},
+    "garbage": {"hit": [TXT("peds_lines.0570"), TXT("peds_lines.0571")],
+                "fight": [TXT("peds_lines.0572"), TXT("peds_lines.0573")],
+                "ko": [TXT("peds_lines.0574")]},
+    "road": {"hit": [TXT("peds_lines.0575"), TXT("peds_lines.0576")],
+             "fight": [TXT("peds_lines.0577"), TXT("peds_lines.0578")],
+             "ko": [TXT("peds_lines.0579")]},
+}
+
 
 def idle(arch):
     """Lines while walking around: the type's topics, plain and with a Skopje opener."""
@@ -205,6 +220,11 @@ def panic(arch):
 
 def fight(arch):
     return FIGHT + TYPE_HIT.get(arch, []) * 2
+
+
+def work(role, kind):
+    """Short shouts for workers who defend themselves when the player attacks them."""
+    return WORK_LINES.get(role, {}).get(kind, FIGHT)
 
 
 def count(arch):

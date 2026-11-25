@@ -1357,6 +1357,37 @@ peds_lines.0552 = Нарачката ми падна!
 # sentence: Леле, ⟨f'{x}'⟩
 peds_lines.0553 = Леле,\s
 
+# --- worker fight reactions · keyed by `work_role` in actors.py ---
+# used in: actors.py > Sim.attack, actors.py > Peds.update
+
+# [medic · hit / fight / KO]
+peds_lines.0560 = Еј, ние спасуваме животи!
+peds_lines.0561 = Не ја мешај работата со тепачка!
+peds_lines.0562 = Тргни се од пациентот, бре!
+peds_lines.0563 = Ќе ти треба брза помош!
+peds_lines.0564 = Колега... смени ме...
+
+# [firefighter · hit / fight / KO]
+peds_lines.0565 = Внимавај, со цревото сум!
+peds_lines.0566 = Гаснеме пожари, не се тепаме!
+peds_lines.0567 = Остави ја опремата и брани се!
+peds_lines.0568 = Ќе те изгаснам тебе!
+peds_lines.0569 = Повикајте ги колегите...
+
+# [garbage collector · hit / fight / KO]
+peds_lines.0570 = Еј, си ја работам смената!
+peds_lines.0571 = Не ми ја чепкај количката!
+peds_lines.0572 = Ѓубрето си го бараш!
+peds_lines.0573 = Ќе те соберам со отпадот!
+peds_lines.0574 = Дајте ми минутка...
+
+# [road worker · hit / fight / KO]
+peds_lines.0575 = Еј, тука има работа!
+peds_lines.0576 = Пази на конусите, бе!
+peds_lines.0577 = Ќе ти означам пат до дома!
+peds_lines.0578 = Не ми ја гази работната зона!
+peds_lines.0579 = Малку да одморам...
+
 #=============================================================================
 # SECTION: src/problems.py
 #   Пешаци со проблеми: смешни, малку избезумени реплики за ситните (и не толку ситни) маки на Скопјанците. Општите важат за секого; по тип има дополнителни. Од мен

@@ -1941,9 +1941,10 @@ def main():
             d_ = math.hypot(v.x - fx_, v.y - fy_)
             aud.loop(nm, 0.55 * siren_gain(best[nm]), doppler(v, fx_, fy_), "sfx", pan_of(v.x, fx_, d_))
         spraying = any(j.kind == "fire" and j.state == "work" and j.work_t > 3.0 and math.hypot(j.x - fx_, j.y - fy_) < 60 for j in sim.services.jobs)
-        aud.loop("spray", 0.4 if spraying else 0.0, 1.0, "sfx")
+        fire_spray = 0.4 if spraying else 0.0
         aud.loop("construction", 0.55 * max(0.0, 1.0 - sim.works.nearest(fx_, fy_) / works_mod.HEAR) ** 1.5, 1.0, "ambient")
-        sim.crews.sound(aud, fx_, fy_, rng)
+        road_spray = sim.crews.sound(aud, fx_, fy_, rng)
+        aud.loop("spray", max(fire_spray, road_spray), 1.0, "sfx")
         dk = sim.clock.dark
         amb_state["dens"] += (density_at(fx_, fy_) - amb_state["dens"]) * 0.02
         dn = amb_state["dens"]

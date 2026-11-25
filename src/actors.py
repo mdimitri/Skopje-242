@@ -1054,6 +1054,7 @@ class Ped:
         self.bump_t = 0.0
         self.far_t = 0.0             # seconds spent far from the player while chasing them
         self.pose = None             # emergency crews: "spray" (hose out) / "cpr" (kneeling over a patient)
+        self.work_role = None        # role-specific combat behavior for service, garbage and road-work crews
         self.say_t = random.uniform(4, 18)
         self.e = 0
         self.d = 1
@@ -1925,7 +1926,7 @@ class Peds:
                         p.y += dy / d * min(3.2 * dt, d - 0.9)
                     elif p.atk_cd <= 0:
                         p.atk_cd, p.atk_t = rng.uniform(0.7, 1.4), 0.3
-                        p.atk_kind = 4 if rng.random() < 0.65 else 5
+                        p.atk_kind = 4 if p.work_role or rng.random() < 0.65 else 5
                         o.hp -= vehicles.FIGHT[p.arch][2] * rng.uniform(0.6, 1.2)
                         o.vx, o.vy = dx / d * 1.5, dy / d * 1.5
                         if o.hp <= 0:
@@ -1934,7 +1935,8 @@ class Peds:
                             p.vx, p.vy = -dx / d * 3.0, -dy / d * 3.0
                             ev("shout", text=talk.react("ko", o.arch, self.sim, lines("ko", o.arch), rng), x=o.x, y=o.y, who=vehicles.ped_who(o))
                         elif rng.random() < 0.25:
-                            ev("shout", text=talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
+                            text = rng.choice(peds_lines.work(p.work_role, "fight")) if p.work_role else talk.react("fight", p.arch, self.sim, lines("fight", p.arch), rng)
+                            ev("shout", text=text, x=p.x, y=p.y, who=vehicles.ped_who(p))
                 if self._d2(p.x, p.y, fx, fy) < 320 ** 2:
                     out.append(p)
                 continue
@@ -4858,6 +4860,9 @@ class Sim:
         self.ev("hit", x=p.x, y=p.y, kick=kick)
         if p.hp <= 0:
             self._knock_out(p)
+        elif p.work_role:
+            p.mode, p.t, p.far_t = "fight", 14.0, 0.0
+            self.ev("shout", text=rng.choice(peds_lines.work(p.work_role, "hit")), x=p.x, y=p.y, who=vehicles.ped_who(p))
         elif p.mode in ("walk", "flee", "rage"):
             if rng.random() < (vehicles.FIGHT[p.arch][1] + 0.12) * (0.3, 1.0, 1.8, 3.0)[self.aggro % 4]:
                 p.mode, p.t = "fight", 14.0
@@ -4871,7 +4876,8 @@ class Sim:
         p.mode, p.t = "ko", self.rng.uniform(6.0, 9.0)
         self.stats["ko"] = self.stats.get("ko", 0) + 1
         self.ev("ko", x=p.x, y=p.y)
-        self.ev("shout", text=talk.react("ko", p.arch, self, lines("ko", p.arch), self.rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
+        text = self.rng.choice(peds_lines.work(p.work_role, "ko")) if p.work_role else talk.react("ko", p.arch, self, lines("ko", p.arch), self.rng)
+        self.ev("shout", text=text, x=p.x, y=p.y, who=vehicles.ped_who(p))
         if not p.looted:
             p.looted = True
             self.pickups.append([p.x + self.rng.uniform(-0.4, 0.4), p.y + self.rng.uniform(-0.4, 0.4), "cash", True, 0.0])

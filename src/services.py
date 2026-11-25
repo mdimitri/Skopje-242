@@ -356,6 +356,7 @@ class Services:
             p = actors.Ped()
             p.mode, p.t = "svc", 999.0
             p.arch, p.shirt, p.skin = arch, shirt, self.rng.randrange(4)
+            p.hp, p.work_role = 150.0, ("medic" if j.kind == "amb" else "fire")
             p.x, p.y = b.x + lx * 2.0 + math.cos(b.h) * (i * 1.1 - 0.5), b.y + ly * 2.0 + math.sin(b.h) * (i * 1.1 - 0.5)
             p.h = b.h
             sim.peds.list.append(p)
@@ -429,6 +430,10 @@ class Services:
             j.crew = []
             if j in self.jobs:
                 self.jobs.remove(j)
+            return
+        j.crew = [c for c in j.crew if c.mode == "svc"]
+        if j.state == "work" and not j.crew:
+            self._leave(j)
             return
         if j.state == "drive":
             if self._ctl(j, dt, 13.0, True):

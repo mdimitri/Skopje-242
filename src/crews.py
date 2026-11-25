@@ -37,7 +37,7 @@ DRY_T = 100.0                     # s the paint stays wet
 LEAVE_SPEED = 8.0
 MARKED = {"primary", "secondary", "tertiary", "trunk", "unclassified", "residential"}
 BLACK_WET, BLACK_DRY = (26, 26, 30, 255), (50, 50, 53, 236)       # a black-out band dries to dark grey, nearly opaque
-WHITE_WET, WHITE_DRY = (255, 255, 252), (247, 247, 241)
+WHITE_WET, WHITE_DRY = (255, 255, 255), (255, 255, 255)
 
 
 def spray_on(now):
@@ -171,7 +171,7 @@ class Convoy:
         p = actors.Ped()
         p.arch = vehicles.PATAR
         p.shirt, p.skin = self.cr.rng.randrange(3), self.cr.rng.randrange(4)
-        p.hp = 60.0
+        p.hp, p.work_role = 150.0, "road"
         p.mode, p.v, p.pose = "crew", 0.0, None
         x, y, h = self.pose(0, s, lat)
         p.x, p.y, p.h = x, y, h
@@ -555,7 +555,7 @@ class Crews:
         cv = min(self.convoys, key=lambda c: c.near(fx, fy), default=None)
         d = cv.near(fx, fy) if cv else 1e9
         spraying = cv is not None and cv.state == "work" and d < 90.0 and spray_on(self.now)
-        aud.loop("spray", 0.55 * (1.0 - d / 90.0) if spraying else 0.0, 0.9, "sfx")          # hiss in bursts, in step with the mist
+        spray_gain = 0.55 * (1.0 - d / 90.0) if spraying else 0.0
         for x, y, kind in self.events:
             if abs(x - fx) < 100 and abs(y - fy) < 100:
                 aud.at("metal_clank", x, y, 0.8, 1.0 if kind == "put" else 1.25, "ambient", 100.0, 8.0)
@@ -563,6 +563,7 @@ class Crews:
         if cv is not None and d < 90.0 and rng.random() < 0.012:
             b = cv.veh[1][0] if len(cv.veh) > 1 else cv.veh[0][0]
             aud.at(rng.choice(("truck_reverse_beep", "metal_clank", "metal_clank")), b.x, b.y, 0.6, 1.0, "ambient", 90.0, 10.0)
+        return spray_gain
 
     def _monitor(self, dt):
         """Once a second: how many cars stand (< 0.5 m/s) on a street with a working convoy, and for how long the worst queue lasted."""
@@ -637,7 +638,7 @@ class Crews:
                 for k in range(7):                                                   # a cone of mist from the nozzle to the line, jittering
                     a0 = 2 * math.pi * k / 7 + now * 9.0
                     a1 = a0 + 0.9
-                    r = 0.22 + 0.16 * ph + 0.05 * math.sin(now * 40 + k)
+                    r = 0.32 + 0.22 * ph + 0.07 * math.sin(now * 40 + k)
                     rl.rl_color4ub(255, 255, 255, 190)
                     rl.rl_vertex3f(gx, gy + 0.62, gz)
                     rl.rl_color4ub(250, 250, 250, 50)

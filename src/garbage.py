@@ -185,7 +185,7 @@ class Garbage:
         c = job.car
         p.mode, p.v, p.t = "play", 0.0, 0.0
         p.gz = c.gz
-        p.hp = 60.0
+        p.hp, p.work_role = 150.0, "garbage"
         p.x, p.y, p.h = c.x, c.y, c.h
         p.vx = p.vy = 0.0
         return p
@@ -302,6 +302,8 @@ class Garbage:
             self.sim.ev("gsfx", name=name, x=at[0], y=at[1], vol=vol)
 
     def _place(self, p, x, y, h, moving):
+        if p.mode != "play":
+            return
         sim = self.sim
         dx, dy = x - p.x, y - p.y
         p.x, p.y = x, y
@@ -313,6 +315,8 @@ class Garbage:
         p.vx = p.vy = 0.0
 
     def _walk(self, p, a, b, k, t):
+        if p.mode != "play":
+            return
         x, y = a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k
         moving = 0.0 < k < 1.0
         self._place(p, x, y, math.atan2(b[1] - a[1], b[0] - a[0]) if (a[0] != b[0] or a[1] != b[1]) else p.h, moving)

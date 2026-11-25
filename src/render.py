@@ -1281,6 +1281,7 @@ class Renderer:
             self._shadow_batch(sh)
         self._draw_vehicle_models(sim, cars, trailers, indicators, bus_bends, doors)
         self._draw_ped_models(peds)
+        self._service_hoses(sim, rect)
         for f in sim.chaos.fly:                                      # punched / blasted props tumbling through the air
             if self._in(f[0], f[1], rect):
                 rl.rl_push_matrix()
@@ -1304,6 +1305,48 @@ class Renderer:
             rl.draw_circle_3d(V3(mx, maz + 0.16, mz), 1.2, V3(1, 0, 0), 90.0, rl.Color(255, 240, 120, 255))
             rl.rl_draw_render_batch_active()
             rl.rl_enable_depth_test()
+
+    def _service_hoses(self, sim, rect):
+        """A fire engine feeds one main hose to the fire, with a branch to each firefighter."""
+        w = self.w
+        for j in sim.services.jobs:
+            b = j.body
+            if j.kind != "fire" or j.state != "work" or b is None or not j.crew:
+                continue
+            tgt = j.target
+            if max(rect[0], min(b.x, tgt.x)) > min(rect[2], max(b.x, tgt.x)) + 8.0 or \\
+                    max(rect[1], min(b.y, tgt.y)) > min(rect[3], max(b.y, tgt.y)) + 8.0:
+                continue
+            start = (b.x - math.cos(b.h) * vehicles.DIMS[b.kind][0] * 0.38,
+                     b.y - math.sin(b.h) * vehicles.DIMS[b.kind][0] * 0.38)
+            hub = (tgt.x, tgt.y)
+
+            truck_y = b.az if b.az is not None else w.ground_y(*start)
+            hub_y = getattr(tgt, "az", None)
+            if hub_y is None:
+                hub_y = w.level(*hub, truck_y)
+
+            def hose(a, z, height_a, height_z):
+                x0, y0 = a
+                x1, y1 = z
+                length = math.hypot(x1 - x0, y1 - y0) or 1.0
+                ox, oz = -(y1 - y0) / length * 0.035, (x1 - x0) / length * 0.035
+                for lift, col in ((0.055, rl.Color(32, 38, 44, 255)), (0.095, rl.Color(150, 157, 164, 255))):
+                    prev = None
+                    for k in range(13):
+                        u = k / 12.0
+                        x, z_ = x0 + (x1 - x0) * u + ox, y0 + (y1 - y0) * u + oz
+                        expected = height_a + (height_z - height_a) * u
+                        ground = w.level(x, z_, expected)
+                        point = V3(x, ground + lift, z_)
+                        if prev is not None:
+                            rl.draw_line_3d(prev, point, col)
+                        prev = point
+
+            hose(start, hub, truck_y, hub_y)
+            for c in j.crew:
+                worker_y = c.gz if c.gz is not None else w.level(c.x, c.y, hub_y)
+                hose(hub, (c.x, c.y), hub_y, worker_y)
 
     def _draw_vehicle_models(self, sim, cars, trailers, indicators, bus_bends, doors):
         cam = self._cam
