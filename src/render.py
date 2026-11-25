@@ -1314,7 +1314,7 @@ class Renderer:
             if j.kind != "fire" or j.state != "work" or b is None or not j.crew:
                 continue
             tgt = j.target
-            if max(rect[0], min(b.x, tgt.x)) > min(rect[2], max(b.x, tgt.x)) + 8.0 or \\
+            if max(rect[0], min(b.x, tgt.x)) > min(rect[2], max(b.x, tgt.x)) + 8.0 or \
                     max(rect[1], min(b.y, tgt.y)) > min(rect[3], max(b.y, tgt.y)) + 8.0:
                 continue
             start = (b.x - math.cos(b.h) * vehicles.DIMS[b.kind][0] * 0.38,
