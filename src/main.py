@@ -864,6 +864,7 @@ def main():
         print("[sound] no biome map:", e_)
         bio = None
     car_radio = radio_mod.Radio(aud)
+    radio_car_ = None
     import loadmusic as _lm
     radio_view = _lm.CarRadioView(car_radio)                    # the same radio button as in the menus, at the same top-left spot
     cabin_music = radio_mod.CabinMusic(aud, car_radio)
@@ -2370,6 +2371,7 @@ def main():
             for k_, d_ in ((rl.KEY_E, 1), (rl.KEY_Q, -1)):                  # Q / E: previous / next station (genre)
                 if rl.is_key_pressed(k_):
                     hud.set_banner(car_radio.step(d_), 2.0)
+                    sim.car.radio_pick = (car_radio.sel,)      # an explicit choice sticks to this vehicle
                     radio_view.poke()
                     break
             for k_, d_ in ((rl.KEY_PERIOD, 1), (rl.KEY_COMMA, -1)):         # , / .: previous / next track in the station
@@ -2377,6 +2379,14 @@ def main():
                     car_radio.skip(d_)
                     radio_view.poke()
                     break
+        if sim.mode == "car" and sim.car is not radio_car_ and not a.test:         # got into another vehicle: its own station
+            radio_car_ = sim.car
+            pick_ = getattr(radio_car_, "radio_pick", None)
+            if pick_ is not None:
+                if pick_[0] != car_radio.sel:
+                    car_radio.step((pick_[0] - car_radio.sel) % (len(car_radio.stations) + 1))
+            elif radio_car_.kind in vehicles.KAFANA_KINDS:
+                car_radio.tune("кафански")                  # taxis, minibuses, trucks, tractors, garbage and road-work trucks
         in_radio_ = sim.mode == "car" and car_radio.aud.ok
         hud.radio_line = car_radio.label() if in_radio_ else ""
         photobg.sync(cfg)                                 # the background photogrammetry follows its setting

@@ -376,6 +376,12 @@ BTR = IDS.index("BTR-80")
 CREW_TRUCKS = [IDS.index(n) for n in ("Kamion za Linii", "Kamion za Konusi")]       # two trucks: the paint truck leads, the cone truck (with the arrow board on its tail) follows
 CONE = IDS.index("Soobrakaen Konus")
 NO_MODEL = {CONE}                                               # an obstacle for the traffic AI only: crews.py draws the cones itself
+KAFANA_STYLES = ("taxi", "truck", "tractor")                 # work vehicles whose radio starts on the Кафански-лом station
+KAFANA_IDS = ("Mercedes 124 Taksist", "Kombi", "Transporter Kombe", "Sprinter Gastarbajter", "Soobrakaen Konus")
+KAFANA_NOT = ("Pozharna", "Voen Kamion")                      # fire engine and army truck keep the normal default
+KAFANA_KINDS = frozenset(i for i, n in enumerate(IDS) if (STYLE[i] in KAFANA_STYLES or n in KAFANA_IDS) and n not in KAFANA_NOT)
+
+
 ARMY_CARS = [IDS.index(n) for n in ("Voen Hamer", "Voena Niva", "Voen Kamion")]
 FUEL_MULT = {BTR: 6.0}                                          # the APC's tanks last this many times longer
 PED_ARCH_N = PED_COUNT                                          # kept for compatibility

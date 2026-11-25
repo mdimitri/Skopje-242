@@ -277,6 +277,14 @@ class Radio:
         self._burst()
         return f"{STATION_WORD}: {self.stations[self.sel][0]}"
 
+    def tune(self, key):
+        """Switch to the first station whose name contains key (case-insensitive).  Returns a banner text, '' if there is none."""
+        n = len(self.stations)
+        for i, (nm, _p) in enumerate(self.stations):
+            if key in nm.lower():
+                return "" if i == self.sel and not self.user_off else self.step((i - self.sel) % (n + 1))
+        return ""
+
     def skip(self, d):
         """Next (d=1) / previous (d=-1) track in this station's shuffled playlist.  Returns a banner text or ''."""
         if self.off or not self.orders:
