@@ -372,11 +372,11 @@ def terrain_ok(osm):
         return False
 
 
-def _current_world_pack(path):
-    """An old prebuilt world must not bypass a source checkout's world upgrade."""
+def _current_world_version(path, key):
+    """Check a baked manifest or pack against the source world's version."""
     try:
         with open(path, encoding="utf-8") as f:
-            version = json.load(f)["world_version"]
+            version = json.load(f)[key]
         import ast
         with open(os.path.join(ROOT, "tools", "build_world.py"), encoding="utf-8") as f:
             tree = ast.parse(f.read())
@@ -403,7 +403,7 @@ def plan_needs(a):
     extras = all(os.path.exists(os.path.join(osm, f)) for f in ("rail.json", "signals.json"))   # trains + real lights
     n = {"osm": a.refresh or not have or not box_ok or retry or (not extras and bool(box) and box.get("complete", True)),
          "dem": not terrain_ok(osm)}
-    if not a.refresh and not a.rebuild and _current_world_pack(os.path.join(real, "pack.json")):
+    if not a.refresh and not a.rebuild and _current_world_version(os.path.join(real, "pack.json"), "world_version"):
         return {"osm": False, "dem": False, "build": False}      # the downloaded world ships without its OSM sources: nothing to compare with
     n["build"] = n["osm"] or n["dem"] or not os.path.isdir(real) or _stale(real, osm)
     return n
@@ -509,7 +509,7 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
             loader.build_finished(record=False)
         return attempt(demo)
     if (use_pack and not refresh and not arg_world and not os.path.isdir(real)
-            and _current_world_pack(os.path.join(ROOT, "tools", "world_pack.json"))):
+            and _current_world_version(os.path.join(ROOT, "tools", "world_pack.json"), "world_version")):
         loader.ensure_stage("build", 30)
         loader.ensure_stage("pack", 1)                          # the ready-made world (one download); any failure falls back to the OSM build below
         loader.begin("pack")
@@ -755,7 +755,8 @@ def main():
     pre = ""                                                           # the title menu's answer, chosen before anything loads
     unbuilt = bool(need) and bool(need.get("osm") or need.get("dem") or not os.path.isdir(os.path.join(ROOT, "data", "cache", "world")))
     if need and not unbuilt:
-        need["build"] = False                                          # out of date is fine: rebuilt only from the menu
+        manifest = os.path.join(ROOT, "data", "cache", "world", "manifest.json")
+        need["build"] = not _current_world_version(manifest, "version")
     if a.rebuild or a.refresh:
         need["build"] = True
     elif not a.test and not a.nomenu and unbuilt:                      # no world yet: the title menu first, the build only on request (a built world loads first, then the menu)
