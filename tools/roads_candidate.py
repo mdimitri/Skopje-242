@@ -4,7 +4,7 @@ from pathlib import Path
 
 from shapely import STRtree
 from shapely.affinity import translate
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.errors import GEOSException
 from shapely.ops import unary_union
 
@@ -74,9 +74,12 @@ class Source:
                 if len(xy) >= 4 and xy[0] == xy[-1] and (poly := Polygon(xy)).is_valid:
                     self.features.append(("green", None, poly))
         signal_path = osm / "signals.json"
-        if signal_path.is_file():
+        try:
             with signal_path.open(encoding="utf-8") as stream:
                 signals = json.load(stream)
+        except (OSError, ValueError):
+            signals = []
+        if isinstance(signals, list):
             for point in signals:
                 if isinstance(point, list) and len(point) == 2:
                     self.features.append(("signal", None, Point(point)))
