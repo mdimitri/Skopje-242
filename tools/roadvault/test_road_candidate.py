@@ -5,11 +5,12 @@ import unittest
 
 import numpy as np
 
-from shapely.geometry import Point, box, shape
+from shapely.geometry import LineString, Point, box, shape
 from shapely.ops import unary_union
 
 from run_candidate import HERE, ROOT, site_inputs
-from road_candidate import approach_arrows, compile_movements, compile_scene, footprint, polys, yield_teeth
+from road_candidate import (approach_arrows, compile_movements, compile_scene, crossing_span, footprint,
+                            median_landscape, polys, yield_teeth)
 
 
 @unittest.skipUnless((ROOT / "data/osm/roads.json").exists() and (ROOT / "data/osm/areas.json").exists(),
@@ -59,7 +60,7 @@ class RoadCandidateTests(unittest.TestCase):
         approach = self.by_id[229984879]
         uphill = opening.section["left_lane_opening"]
         stop = dict(item for group in self.layout["crossings"] for item in group)[approach.id] - 3.4
-        self.assertGreaterEqual(opening.line.length - uphill + stop, 30)
+        self.assertAlmostEqual(opening.line.length - uphill + stop, 25, delta=0.5)
         self.assertAlmostEqual(np.diff(opening.cross_section(0)).item(), 6.5)
         self.assertAlmostEqual(np.diff(opening.cross_section(uphill)).item(), 9.75)
         np.testing.assert_allclose(opening.cross_section(opening.line.length), approach.cross_section(0))
@@ -74,6 +75,28 @@ class RoadCandidateTests(unittest.TestCase):
                 edge = edge.difference(walkable.buffer(0.08))
                 self.assertGreater(edge.length, 10)
                 self.assertLess(edge.difference(curb).length, 0.05)
+
+    def test_mapped_grass_fits_the_raised_median_noses(self):
+        reserved = unary_union([self.asphalt, *(shape(self.pedestrian[key])
+                                 for key in ("sidewalks", "non_walkable_curbs", "crossing_landings", "footpath_links"))])
+        mapped = unary_union(self.greens).intersection(self.bounds).difference(reserved)
+        planted = median_landscape(self.by_id, self.layout, self.greens, self.asphalt, self.bounds, reserved)
+        self.assertGreater(planted.area, mapped.area)
+        self.assertLess(planted.intersection(reserved).area, 0.01)
+        for nose in ((-3, -9), (14, -17), (5, 9)):
+            with self.subTest(nose=nose):
+                self.assertFalse(mapped.covers(Point(nose)))
+                self.assertTrue(planted.covers(Point(nose)))
+
+    def test_southbound_merge_sidewalk_follows_the_asphalt_at_full_width(self):
+        sidewalk = shape(self.pedestrian["sidewalks"])
+        slip, receiving = self.by_id[16544466], self.by_id[190303100]
+        for edge, station in ((slip, slip.line.length - 6), (slip, slip.line.length - 1),
+                              (receiving, 0), (receiving, 5), (receiving, 10)):
+            with self.subTest(way=edge.id, station=station):
+                p, _, right, _, hi = crossing_span(edge, station, self.asphalt)
+                width_probe = LineString([p + right * (hi + 0.02), p + right * (hi + 2.35)])
+                self.assertAlmostEqual(sidewalk.intersection(width_probe).length, 2.33, delta=0.05)
 
     def test_approach_arrows_and_yield_teeth_fit_clear_of_crossings(self):
         crosswalks = shape(self.pedestrian["crosswalks"])

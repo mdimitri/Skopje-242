@@ -380,6 +380,13 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
             elif feature == "curb":
                 curbs.append(edge_band(edges[int(way)], side, 0.32))
     sidewalk = unary_union(sidewalks).buffer(0.6).buffer(-0.6).intersection(bounds).difference(asphalt)
+    sidewalk_outline = asphalt.buffer(2.4).difference(asphalt)
+    for first, second, radius in layout.get("sidewalk_joins", []):
+        a, b = edges[first], edges[second]
+        zone = Point(a.line.coords[-1]).buffer(radius)
+        outside = unary_union([edge_band(a, "right", 2.4), edge_band(b, "right", 2.4)]).buffer(1.25)
+        patch = zone.intersection(outside)
+        sidewalk = sidewalk.difference(patch).union(sidewalk_outline.intersection(patch)).intersection(bounds)
     # Follow the final asphalt where a road edge or a median nose calls for a curb.
     # The raw section bands only classify the edge and may be covered by the apron.
     returns = [Point(x, y).buffer(radius) for x, y, radius in layout.get("curb_returns", [])]
@@ -423,6 +430,25 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
     return sidewalk_base.difference(landings), curb, landings, footpaths, unary_union(crossing_areas), zebras
 
 
+def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
+    """Use mapped grass to select planted medians; the carriageways set their shape."""
+    mapped = unary_union(greens).intersection(bounds)
+    planted = []
+    for near, far in layout.get("median_corridors", []):
+        sides = []
+        for chain in (near, far):
+            points = []
+            for way in chain:
+                coords = list(edges[abs(way)].line.coords)
+                points.extend(coords if way > 0 else coords[::-1])
+            sides.append(points)
+        corridor = make_valid(Polygon(sides[0] + sides[1][::-1]))
+        median = unary_union(polys(corridor.intersection(bounds).difference(asphalt)))
+        if mapped.intersection(median).area > 5:
+            planted.append(median)
+    return mapped.union(unary_union(planted)).difference(reserved)
+
+
 def compile_scene(edges, layout, walks, greens, bounds):
     """Return mesh plus the compiled movements, their conflicts and the paved footprint."""
     by_id = {edge.id: edge for edge in edges}
@@ -451,8 +477,8 @@ def compile_scene(edges, layout, walks, greens, bounds):
     refuges = unary_union([hole for hole in holes if 15 <= hole.area < 190])
     pavement, curb, landings, paths, crossings, zebras = pedestrian_geometry(
         by_id, layout, walks, asphalt, bounds, refuges)
-    grass = unary_union(greens).intersection(bounds).difference(
-        unary_union([asphalt, pavement, curb, landings, paths]))
+    reserved = unary_union([asphalt, pavement, curb, landings, paths])
+    grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
     marks = []
     clear = {}
     for way, start, end in layout["unmarked"]:
