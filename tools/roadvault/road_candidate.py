@@ -370,6 +370,14 @@ def crossing_span(edge, station, asphalt):
     return point, heading, right, lo, hi
 
 
+def median_cut_through(a, b):
+    """A level crossing link with flared, rounded mouths at the carriageways."""
+    direction = unit(b - a)
+    walk = LineString([a - 0.45 * direction, b + 0.45 * direction]).buffer(1.35)
+    mouths = unary_union([Point(a).buffer(1.65), Point(b).buffer(1.65)])
+    return walk.union(mouths).buffer(0.4).buffer(-0.4)
+
+
 def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
     """Build road-owned walking surfaces, then admit only attached OSM path spurs."""
     sidewalks, curbs, links, zebras, crossing_areas = [], [], [], [], []
@@ -395,8 +403,12 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
     curb = outline.intersection(curb_zone).intersection(bounds).difference(sidewalk)
 
     terminals = {}
+    cuts = []
+    median_pairs = {frozenset((abs(a), abs(b))) for near, far in layout.get("median_corridors", [])
+                    for a in near for b in far}
     for group in layout["crossings"]:
         last = None
+        previous_way = None
         for way, station in group:
             point, heading, right, lo, hi = crossing_span(edges[way], station, asphalt)
             ends = (point + right * lo, point + right * hi)
@@ -410,24 +422,35 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
             links.append(stroke(LineString([point + right * (lo - 2.4), point + right * (hi + 2.4)]), 2.1))
             if last is not None:
                 a, b = min(((a, b) for a in last for b in ends), key=lambda pair: np.linalg.norm(pair[1] - pair[0]))
-                links.append(stroke(LineString([a, b]), 2.1))
+                if frozenset((previous_way, way)) in median_pairs:
+                    cuts.append(median_cut_through(a, b))
+                else:
+                    links.append(stroke(LineString([a, b]), 2.1))
             last = ends
+            previous_way = way
 
     for a_way, a_side, b_way, b_side in layout.get("refuge_links", []):
         a = terminals[a_way][int(a_side == "right")]
         b = terminals[b_way][int(b_side == "right")]
         links.append(stroke(LineString([a, b]), 2.1))
-    landings = unary_union(links).intersection(bounds).difference(asphalt)
-    curb = unary_union(polys(curb.difference(landings)))
-    active_refuges = unary_union([refuge for refuge in polys(refuges) if refuge.intersection(landings).area > 0.1])
+    cut_throughs = unary_union(cuts).intersection(bounds).difference(asphalt)
+    routes = unary_union(links).intersection(bounds).difference(asphalt)
+    curb = curb.union(cut_throughs.buffer(0.32).difference(asphalt).difference(sidewalk))
+    curb = unary_union(polys(curb.difference(routes).difference(cut_throughs)))
+    active_refuges = unary_union([refuge for refuge in polys(refuges) if refuge.intersection(routes).area > 0.1])
     sidewalk_base = sidewalk.union(active_refuges).difference(asphalt).difference(curb)
+    # On an existing sidewalk or refuge, only the curb ramp needs its own mesh.
+    ramps = routes.intersection(asphalt.buffer(1.35))
+    landings = routes.difference(sidewalk_base).union(ramps).difference(cut_throughs)
     paths = []
     for line, width, _ in walks:
         clipped = stroke(line, width).intersection(bounds).difference(asphalt)
         usable = unary_union(polys(clipped)).difference(curb)
         paths.extend(part for part in polys(usable) if part.intersection(sidewalk).area > 0.12)
-    footpaths = unary_union(paths).difference(sidewalk_base).difference(landings)
-    return sidewalk_base.difference(landings), curb, landings, footpaths, unary_union(crossing_areas), zebras
+    walking_links = landings.union(cut_throughs)
+    footpaths = unary_union(paths).difference(sidewalk_base).difference(walking_links)
+    return (sidewalk_base.difference(walking_links), curb, landings, cut_throughs,
+            footpaths, unary_union(crossing_areas), zebras)
 
 
 def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
@@ -484,9 +507,9 @@ def compile_scene(edges, layout, walks, greens, bounds):
         fill.append(hole.difference(rounded))
     asphalt = asphalt.union(unary_union(fill))
     refuges = unary_union(refuges)
-    pavement, curb, landings, paths, crossings, zebras = pedestrian_geometry(
+    pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
         by_id, layout, walks, asphalt, bounds, refuges)
-    reserved = unary_union([asphalt, pavement, curb, landings, paths])
+    reserved = unary_union([asphalt, pavement, curb, landings, cut_throughs, paths])
     grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
     marks = []
     clear = {}
@@ -522,8 +545,9 @@ def compile_scene(edges, layout, walks, greens, bounds):
     mesh.prism(pavement, -0.065, 0.145, (181, 175, 161), (143, 139, 128))
     mesh.prism(curb, -0.065, 0.155, (203, 197, 181), (154, 148, 136))
     mesh.prism(paths, -0.065, 0.145, (164, 157, 143), (136, 131, 121))
-    mesh.poly(landings, lambda x, y: 0.015 + 0.13 * min(1, asphalt.distance(Point(x, y)) / 1.35),
-              (188, 167, 133))
+    mesh.poly(landings, lambda x, y: 0.145 * min(1, asphalt.distance(Point(x, y)) / 1.35),
+              (181, 175, 161))
+    mesh.poly(cut_throughs, 0, (181, 175, 161))
     paint = unary_union(marks).difference(crossings.buffer(0.25))
     mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
     for (x, y), heading in poles:
@@ -540,6 +564,7 @@ def compile_scene(edges, layout, walks, greens, bounds):
         if ae.intersection(be).area > 0.5:
             conflicts.append([a["id"], b["id"]])
     pedestrian = {"sidewalks": mapping(pavement), "footpath_links": mapping(paths),
-                  "crossing_landings": mapping(landings), "crosswalks": mapping(crossings),
+                  "crossing_landings": mapping(landings.union(cut_throughs)), "crosswalks": mapping(crossings),
+                  "median_cut_throughs": mapping(cut_throughs),
                   "non_walkable_curbs": mapping(curb)}
     return mesh, routes, conflicts, asphalt, pedestrian

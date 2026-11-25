@@ -47,8 +47,11 @@ refuge is selected by its interior point so it can use the same surface and
 curbs, with its sharp tips rounded into the adjoining asphalt.
 At the southbound merge, the outer sidewalk also follows the final asphalt.
 Mapped grass selects which divided-road medians are planted. The resulting
-grass follows the generated curb enclosure and leaves pedestrian landings clear. Only designated crossing landings open the
-median to pedestrians. Each zebra spans the paved cross-section at its
+grass follows the generated curb enclosure. Paired zebras cut through the
+planted median at road level, with rounded openings and curb returns on
+both sides. The cut-throughs are included in the network's pedestrian
+surfaces. On sidewalks and refuge islands, only curb ramps need separate
+geometry. The paved surface is continuous across internal walking routes. Each zebra spans the paved cross-section at its
 authored station, and signal stop lines are derived from those stations.
 Lane arrows use mapped turn indications with the movement graph as a fallback.
 Shark teeth mark both slip entries into the receiving carriageways. The

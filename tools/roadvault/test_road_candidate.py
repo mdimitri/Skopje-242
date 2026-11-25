@@ -45,12 +45,14 @@ class RoadCandidateTests(unittest.TestCase):
         *_, without_paths = compile_scene(self.edges, self.layout, [], self.greens, self.bounds)
         self.assertFalse(shape(with_paths["footpath_links"]).is_empty)
         self.assertTrue(shape(without_paths["footpath_links"]).is_empty)
-        for key in ("sidewalks", "crossing_landings", "crosswalks", "non_walkable_curbs"):
+        for key in ("sidewalks", "crossing_landings", "crosswalks", "non_walkable_curbs", "median_cut_throughs"):
             self.assertEqual(with_paths[key], without_paths[key])
         sidewalks, landings, crossings, curbs = (
             shape(without_paths[key]) for key in ("sidewalks", "crossing_landings", "crosswalks", "non_walkable_curbs")
         )
         walkable = unary_union([sidewalks, landings, crossings])
+        self.assertLess(shape(with_paths["footpath_links"]).intersection(walkable).area, 0.01)
+        self.assertLess(sidewalks.intersection(landings).area, 0.01)
         self.assertLess(curbs.intersection(walkable).area, 0.01)
         self.assertEqual(len(polys(crossings)), 8)
         self.assertTrue(any(component.covers(crossings) for component in polys(walkable.buffer(0.04))))
@@ -87,6 +89,20 @@ class RoadCandidateTests(unittest.TestCase):
             with self.subTest(nose=nose):
                 self.assertFalse(mapped.covers(Point(nose)))
                 self.assertTrue(planted.covers(Point(nose)))
+
+    def test_all_three_median_cut_throughs_separate_planting_and_join_zebras(self):
+        surfaces = {key: shape(value) for key, value in self.pedestrian.items()}
+        reserved = unary_union([self.asphalt, *(surfaces[key] for key in
+                               ("sidewalks", "non_walkable_curbs", "crossing_landings", "footpath_links"))])
+        grass = median_landscape(self.by_id, self.layout, self.greens, self.asphalt, self.bounds, reserved)
+        cuts = polys(surfaces["median_cut_throughs"])
+        self.assertEqual(len(cuts), 3)
+        for cut in cuts:
+            with self.subTest(cut=cut.centroid.coords[0]):
+                self.assertLess(cut.intersection(grass).area, 0.01)
+                bordering_plants = [part for part in polys(grass) if part.area > 1 and part.distance(cut) < 0.45]
+                self.assertEqual(len(bordering_plants), 2)
+                self.assertEqual(sum(part.distance(cut) < 0.04 for part in polys(surfaces["crosswalks"])), 2)
 
     def test_both_slips_have_raised_refuges_connected_to_their_crossings(self):
         sidewalks, landings, curbs, crossings = (
