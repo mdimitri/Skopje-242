@@ -8,7 +8,10 @@ from shapely.errors import GEOSException
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
-from road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
+if __package__:
+    from .road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
+else:
+    from road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
 
 SIDEWALKS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "trunk"}
 

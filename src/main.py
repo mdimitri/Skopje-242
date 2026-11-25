@@ -372,6 +372,20 @@ def terrain_ok(osm):
         return False
 
 
+def _current_world_pack(path):
+    """An old prebuilt world must not bypass a source checkout's world upgrade."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            version = json.load(f)["world_version"]
+        import ast
+        with open(os.path.join(ROOT, "tools", "build_world.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        return any(isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "VERSION" for t in node.targets)
+                   and ast.literal_eval(node.value) == version for node in tree.body)
+    except (OSError, ValueError, KeyError):
+        return False
+
+
 def plan_needs(a):
     """What has to happen before the game can start? -> {'osm': bool, 'dem': bool, 'build': bool}"""
     if a.demo or a.world:
@@ -389,7 +403,7 @@ def plan_needs(a):
     extras = all(os.path.exists(os.path.join(osm, f)) for f in ("rail.json", "signals.json"))   # trains + real lights
     n = {"osm": a.refresh or not have or not box_ok or retry or (not extras and bool(box) and box.get("complete", True)),
          "dem": not terrain_ok(osm)}
-    if os.path.exists(os.path.join(real, "pack.json")) and not a.refresh and not a.rebuild:
+    if not a.refresh and not a.rebuild and _current_world_pack(os.path.join(real, "pack.json")):
         return {"osm": False, "dem": False, "build": False}      # the downloaded world ships without its OSM sources: nothing to compare with
     n["build"] = n["osm"] or n["dem"] or not os.path.isdir(real) or _stale(real, osm)
     return n
@@ -494,7 +508,8 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
                 raise WorldError("could not build any world (see logs/game.log)")
             loader.build_finished(record=False)
         return attempt(demo)
-    if use_pack and not refresh and not arg_world and not os.path.isdir(real) and os.path.exists(os.path.join(ROOT, "tools", "world_pack.json")):
+    if (use_pack and not refresh and not arg_world and not os.path.isdir(real)
+            and _current_world_pack(os.path.join(ROOT, "tools", "world_pack.json"))):
         loader.ensure_stage("build", 30)
         loader.ensure_stage("pack", 1)                          # the ready-made world (one download); any failure falls back to the OSM build below
         loader.begin("pack")

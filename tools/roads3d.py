@@ -1485,7 +1485,7 @@ def _merge(out, packed, decks):
         out.n += len(pos)
 
 
-def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=()):
+def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=(), candidate_inputs=None, controls=None):
     """Adds all road geometry to the mesh accumulator.  -> (number of vertices, pier collision posts)."""
     global _T
     _T = T
@@ -1565,7 +1565,11 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
         for i in sorted(pier_edges):                       # the designer's decks stand on the game's piers
             if edges[i]["drive"]:
                 _piers(pout, piers, decks[edges[i]["road"]], T)
-        roads_designer.add_tiles(out, edges, lambda f: prog(0.7 + 0.2 * f, "junction designer"), decks, T)
+        source = roads_designer.roads_candidate.Source(*candidate_inputs) if candidate_inputs is not None else None
+        label = "road candidate" if source is not None else "junction designer"
+        roads_designer.add_tiles(out, edges, lambda f: prog(0.7 + 0.2 * f, label), decks, T, source, controls)
+        if source is not None:
+            junction_cores = ()  # Candidate asphalt owns its junctions and median openings.
     _TICK[0] = lambda f: prog(0.7 + 0.12 * f, "junctions")
     if not designer:
         _junctions(out, edges, plates, ribs, hulls)

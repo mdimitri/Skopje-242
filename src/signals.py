@@ -10,6 +10,7 @@ from driving import SIGNAL_STOP_BUFFER
 CYCLE = 50.0
 GREEN, YELLOW, CLEAR = 24.0, 3.0, 1.5          # green of the major group; the minor one gets the rest of the cycle
 WAVE = 12.5                                     # m/s: speed of the green wave (≈ 45 km/h)
+CANDIDATE_GREEN, WALK, WALK_CLEAR = 14.0, 8.0, 8.0
 RANK = {"motorway": 6, "trunk": 5, "primary": 4, "secondary": 3, "tertiary": 2, "unclassified": 1, "residential": 1}
 COLS = {0: rl.Color(60, 235, 100, 255), 1: rl.Color(250, 200, 40, 255), 2: rl.Color(240, 50, 40, 255)}
 
@@ -19,6 +20,8 @@ class Signals:
         self.edges = getattr(world, "edges", [])
         self.items = list(getattr(world, "signals", []) or [])
         self.w = world
+        self.heads = sorted(getattr(world, "signal_heads", ()), key=lambda head: head[2])
+        self.head_x = [head[2] for head in self.heads]
         self.by_edge = {}
         self.nodes = {}                                  # junction -> [(x, y), [signal indices]]
         rank = {}
@@ -59,6 +62,9 @@ class Signals:
         for (n, g), r in rank.items():
             crank[(self.cl[n], g)] = max(crank.get((self.cl[n], g), 0), r)
         self.major = {n: (1 if crank.get((self.cl[n], 1), 0) > crank.get((self.cl[n], 0), 0) else 0) for n in self.nodes}
+        self.candidate_groups = {node: sorted({self.items[i][3] for i in indices})
+                                 for node, (_, indices) in self.nodes.items()
+                                 if isinstance(node, tuple) and node[0] == "candidate"}
         self._order = sorted((i for i in range(len(self.items)) if self.items[i][4] == self.items[i][4]), key=lambda i: self.items[i][4])      # head-only signals (no pole: x is NaN) are never drawn, and NaN would break the sort      # by x: draw() only walks the strip in view
         self._xs = [self.items[i][4] for i in self._order]
         self._broken_count = 0
@@ -69,6 +75,22 @@ class Signals:
     def update(self, dt):
         self.t += dt
 
+    def candidate_phase(self, node):
+        groups = self.candidate_groups[node]
+        span = CANDIDATE_GREEN + YELLOW + CLEAR
+        end = len(groups) * span
+        phase = (self.t - self.anchor[node] / WAVE) % (end + WALK + WALK_CLEAR)
+        if phase >= end:
+            return None, 2, phase < end + WALK
+        index = int(phase // span)
+        elapsed = phase - index * span
+        return groups[index], (0 if elapsed < CANDIDATE_GREEN else 1 if elapsed < span - CLEAR else 2), False
+
+    def pedestrian_green(self, node):
+        pre = self.pre.get(node)
+        return (node in self.candidate_groups and (pre is None or self.t >= pre[4] + CLEAR)
+                and self.candidate_phase(node)[2])
+
     def state(self, i):
         """0 green, 1 yellow, 2 red for signal i."""
         node, _e, _end, grp, _lx, _lz, jx, _jz, *_h = self.items[i]
@@ -78,6 +100,9 @@ class Signals:
             if self.t < yellow_end:
                 return 1 if grp == clearing else 2
             return 0 if grp == active and green_start <= self.t < hold_end else 2
+        if node in self.candidate_groups:
+            active, state, _ = self.candidate_phase(node)
+            return state if grp == active else 2
         ph = (self.t - self.anchor.get(node, jx) / WAVE) % CYCLE
         g1 = GREEN + YELLOW + CLEAR                      # the major group runs first, the minor one after it
         if grp == self.major.get(node, 0):
@@ -89,6 +114,8 @@ class Signals:
         """Hold green for the approach an emergency vehicle at (x, y) heading h is driving up to (within reach m)."""
         hx, hy = math.cos(h), math.sin(h)
         for node, ((jx, jz), idx) in self.nodes.items():
+            if node in self.candidate_groups and self.candidate_phase(node)[0] is None:
+                continue  # pedestrians may still be clearing the crossing
             dx, dy = jx - x, jz - y
             if abs(dx) > reach or abs(dy) > reach:
                 continue
@@ -201,7 +228,27 @@ class Signals:
             if y0 - 5 < it[5] < y1 + 5 and not self._smashed(i, it[4], it[5], it[8] if len(it) > 8 else 2.95):
                 st = self.state(i)
                 out.append((it[4], it[5], (it[8] if len(it) > 8 else 2.95) + 0.17 + 0.30 * (2 - (2, 1, 0)[st]), st))
+        for lx, lz, ly, _, _, _, state in self._candidate_lamps(rect):
+            out.append((lx, lz, ly - self.w.ground_y(lx, lz), state))
         return out
+
+    def _candidate_lamps(self, rect):
+        import bisect
+        x0, z0, x1, z1 = rect
+        for node, edge, x, z, bottom, fx, fz in self.heads[
+                bisect.bisect_left(self.head_x, x0 - 5):bisect.bisect_right(self.head_x, x1 + 5)]:
+            if not z0 - 5 <= z <= z1 + 5:
+                continue
+            pedestrian = edge is None
+            if pedestrian:
+                state = 0 if self.pedestrian_green(node) else 2
+                height = 0 if state == 0 else 0.25
+            else:
+                state = self.state_of(edge, 1)
+                if state is None:
+                    continue
+                height = (0.19, 0.44, 0.69)[state]
+            yield x, z, self.w.th(x, z) + 0.06 + bottom + height, fx, fz, pedestrian, state
 
     def draw(self, rect, ground_y, seen=None):
         """The live lamp of every visible signal (the poles themselves are baked meshes).
@@ -222,3 +269,21 @@ class Signals:
                 a = rl.Vector3(lx - ax * 0.135, ly, lz - ay * 0.135)
                 rl.draw_cylinder_ex(a, rl.Vector3(a.x - ax * 0.03, ly, a.z - ay * 0.03), 0.105, 0.105, 10, COLS[st])
                 rl.draw_cube(rl.Vector3(lx, y + hb + 1.08, lz), 0.6, 0.05, 0.6, COLS[st])           # from the top-down camera the lamp is a dot: a bigger cap
+        for x, z, y, fx, fz, pedestrian, state in self._candidate_lamps(rect):
+            if seen is not None and not seen(x, y, z, 0.5):
+                continue
+            depth = 0.108 if pedestrian else 0.123
+            fx, fz = float(fx), float(fz)
+            if pedestrian:
+                cx, cz = x + fx * depth, z + fz * depth
+                color = COLS[state]
+                rl.draw_sphere(rl.Vector3(cx, y + 0.075, cz), 0.025, color)
+                rl.draw_line_3d(rl.Vector3(cx, y + 0.04, cz), rl.Vector3(cx, y - 0.02, cz), color)
+                for side in (-1, 1):
+                    spread = side * (0.064 if state == 0 else 0.025)
+                    rl.draw_line_3d(rl.Vector3(cx, y - 0.012, cz),
+                                    rl.Vector3(cx + fz * spread, y - 0.085, cz - fx * spread), color)
+            else:
+                a = rl.Vector3(x + fx * depth, y, z + fz * depth)
+                b = rl.Vector3(a.x + fx * 0.015, y, a.z + fz * 0.015)
+                rl.draw_cylinder_ex(a, b, 0.107, 0.107, 16, COLS[state])

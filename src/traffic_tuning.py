@@ -164,7 +164,10 @@ def make_signals_class():
             return best
 
         def state(self, i):
-            ov = self.ov.get(self.items[i][0])
+            node = self.items[i][0]
+            if node in self.candidate_groups:
+                return super().state(i)
+            ov = self.ov.get(node)
             if not ov:
                 return super().state(i)
             saved = signals.GREEN, signals.CYCLE, self.t

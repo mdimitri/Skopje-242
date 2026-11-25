@@ -37,15 +37,15 @@ GANTRY_CLEARANCE = 5.1
 HEAD_HEIGHT = 0.87
 
 
-def vehicle_head(mesh, point, heading, bottom):
+def vehicle_head(mesh, point, heading, bottom, live=False):
     x, z = point
     yaw = math.atan2(heading[1], heading[0])
     mesh.box(x, bottom, z, 0.23, HEAD_HEIGHT, 0.36, DARK, yaw=yaw)
-    for offset, color in ((0.69, (247, 77, 59)), (0.44, (99, 79, 48)), (0.19, (50, 79, 58))):
+    for offset, color in ((0.69, (79, 48, 43) if live else (247, 77, 59)), (0.44, (99, 79, 48)), (0.19, (50, 79, 58))):
         disc(mesh, point, heading, 0.12, 0, bottom + offset, 0.107, color)
 
 
-def draw_gantry(mesh, device):
+def draw_gantry(mesh, device, live=False):
     supports = np.array(device["supports"])
     left, right = supports
     span = right - left
@@ -62,10 +62,10 @@ def draw_gantry(mesh, device):
     for head in device["heads"]:
         point = np.array(head["position"])
         mesh.box(point[0], clearance + HEAD_HEIGHT, point[1], 0.11, 0.17, 0.11, DARK, yaw=yaw)
-        vehicle_head(mesh, point, heading, clearance)
+        vehicle_head(mesh, point, heading, clearance, live)
 
 
-def draw_device(mesh, kind, position, direction):
+def draw_device(mesh, kind, position, direction, live=False):
     point = np.asarray(position)
     heading = np.asarray(direction)
     x, z = point
@@ -73,10 +73,10 @@ def draw_device(mesh, kind, position, direction):
     height = 3.25 if kind == "vehicle_signal" else 2.35
     mesh.cyl(x, -0.065, height, z, 0.065, POST)
     if kind == "vehicle_signal":
-        vehicle_head(mesh, point, heading, 2.78)
+        vehicle_head(mesh, point, heading, 2.78, live)
     elif kind == "pedestrian_signal":
         mesh.box(x, 2.06, z, 0.2, 0.53, 0.31, DARK, yaw=yaw)
-        person(mesh, point, heading, 0.105, 2.45, (255, 94, 74))
+        person(mesh, point, heading, 0.105, 2.45, (79, 48, 43) if live else (255, 94, 74))
         person(mesh, point, heading, 0.105, 2.20, (52, 86, 61), walking=True)
     elif kind in {"give_way", "signal_ahead"}:
         sign = -1 if kind == "give_way" else 1

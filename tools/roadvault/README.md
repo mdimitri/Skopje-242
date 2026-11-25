@@ -105,9 +105,20 @@ accepted. The shipped way-only extract lacks turn relations and most tagged
 crossing nodes, so an inferred preview can differ substantially from the
 authored site. Grade separation, complex via-way or conditional restrictions,
 lane connectivity relations, and control placements without enough evidence
-are reported for review. This preview does not decide game traffic timing or
-replace the shipped city builder. The fixture remains the reference for a
-divided, signalized T with two slip lanes.
+are reported for review. The fixture remains the reference for a divided,
+signalized T with two slip lanes.
+
+World builds use this compiler by default for ground-road surfaces and markings.
+`tools/roads_candidate.py` feeds it the cooked road graph and mapped crossings
+and medians, then clips the result into tiles for terrain draping. A matching
+Glavinov extract uses the reviewed layout in the junction core. The candidate
+exports gantries, repeaters, pedestrian heads, signs, stop lines and crossings
+from the same layout used to draw the road. The game lights the baked heads
+through separate vehicle approach and pedestrian phases. Inferred signal
+placement depends on mapped controls and crossings that fit the layout.
+An invalid tile can fall back to
+the previous junction designer, with the tile and reason logged. The
+`SK242_DESIGNER=0` build switch still selects the original ribbon builder.
 
 Research references
 

@@ -432,7 +432,7 @@ def major_crossings(edges, inc, groups, at, roundabouts=()):
 
 
 def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=None, log=print, decks=None, add_abs=None, terrain_h=None,
-          bus_stops=None, signals=None):
+          bus_stops=None, signals=None, candidate_controls=False):
     """Returns (xwalks, posts, lamps). add(chunk, mat, pos, uv, col) puts geometry in the mesh accumulator."""
     rr = random.Random(2024)
     SIGNALS.clear()
@@ -570,7 +570,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
             far_ = e["b"] if end == 0 else e["a"]
             cont = len(inc.get(far_, ())) <= 2 or e["len"] < 20.0                    # the road simply carries on past this short link: the pole may stand beyond it
             if e["len"] < 16 and not cont and zebra is None:
-                if want_light:
+                if want_light and not candidate_controls:
                     head_only(ei, end)
                 continue
             s0 = 0.0 if end == 0 else e["len"]
@@ -587,7 +587,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 d, px, py, ax, ay, w = zebra
                 rx, ry = ay, -ax
             if not ok(px, py):
-                if want_light:
+                if want_light and not candidate_controls:
                     head_only(ei, end)
                 continue
             has_x = (lit_node and w >= 5.0 and e["len"] >= 10.0) or (w >= 6.0 and e["len"] >= 30 and rr.random() < (0.9 if (want_light and rk >= 2) else 0.5 if rk >= 2 else 0.3))     # every signalled street has its zebra
@@ -608,7 +608,7 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
                 counts["cross"] += 1
             fx, fy = ax, ay                               # signs face the approaching traffic
             lx, ly = px + ax * 3.8 + rx * (w / 2 + 1.0), py + ay * 3.8 + ry * (w / 2 + 1.0)
-            if want_light and inner(ei, end):
+            if want_light and (candidate_controls or inner(ei, end)):
                 pass
             elif want_light:                              # right kerb, further back, else the left kerb; lamps lit live
                 direction = 1 if end == 1 else -1

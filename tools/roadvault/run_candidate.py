@@ -7,12 +7,15 @@ from pathlib import Path
 import sys
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry import LineString, Point, Polygon, box
 
-from road_candidate import ROOT, compile_scene, road_edge, stroke
+if __package__:
+    from .road_candidate import ROOT, compile_scene, road_edge, stroke
+else:
+    from road_candidate import ROOT, compile_scene, road_edge, stroke
 
-sys.path.insert(1, str(ROOT / "tools"))
+if not __package__:
+    sys.path.insert(1, str(ROOT / "tools"))
 from geo import project  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -27,7 +30,7 @@ def read_elements(path):
     return json.loads(path.read_text(encoding="utf-8"))["elements"]
 
 
-def site_inputs(layout, osm, bounds, road_elements=None):
+def site_inputs(layout, osm, bounds, road_elements=None, area_elements=None):
     x0, y0 = project(*layout["origin"])
 
     def points(way):
@@ -60,7 +63,9 @@ def site_inputs(layout, osm, bounds, road_elements=None):
                     edge.section["lane_taper"] = taper
                 edges.append(edge)
     areas = osm / "areas.json"
-    for way in read_elements(areas) if road_elements is None or areas.exists() else []:
+    if area_elements is None:
+        area_elements = read_elements(areas) if road_elements is None or areas.exists() else []
+    for way in area_elements:
         tags = way.get("tags", {})
         if tags.get("landuse") != "grass" and tags.get("highway") != "traffic_island":
             continue
@@ -73,7 +78,10 @@ def site_inputs(layout, osm, bounds, road_elements=None):
 
 
 def infer_site(layout, osm, bounds, replay=False):
-    from road_inference import at_grade, infer_layout, normalize_ways
+    if __package__:
+        from .road_inference import at_grade, infer_layout, normalize_ways
+    else:
+        from road_inference import at_grade, infer_layout, normalize_ways
 
     origin_x, origin_y = project(*layout["origin"])
     elements = read_elements(osm / "roads.json")
@@ -146,6 +154,7 @@ def infer_site(layout, osm, bounds, replay=False):
 
 
 def render(mesh, routes, out, inferred=False, radius=112):
+    from PIL import Image, ImageDraw, ImageFont
     from render import Renderer
 
     turn_colors = {"left": (247, 180, 87), "through": (106, 201, 240), "right": (118, 202, 164)}

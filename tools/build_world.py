@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 79
+VERSION = 81
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2938,7 +2938,8 @@ def main():
         xwalks, posts, bridge_lamps = furniture.build(edges, roads, _is_water, _not_building, add_c, chunk_of, (HX, HY),
                                                       decks=decks, add_abs=mesh.add, terrain_h=lambda x, z: T.hs(x, z),
                                                       bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")),
-                                                      signals=_read_list(os.path.join(a.src, "signals.json")))
+                                                      signals=_read_list(os.path.join(a.src, "signals.json")),
+                                                      candidate_controls=os.environ.get("SK242_DESIGNER", "1") != "0")
         junction_cores = list(furniture.JUNCTION_CORES)
         lamps += bridge_lamps
         _st = list(__import__("furniture").STOPS)
@@ -3120,11 +3121,19 @@ def main():
     tgrid = seg_grid(tsegs)
     trees = [q for q in trees if (near_seg(tgrid, q[0], q[1]) or (1,))[0] >= 0]
     print(f"[build] trees removed from under rails / overpasses: {n_t0 - len(trees)}")
-    stage("roads3d")
+    stage("roads3d", files=("tools/roadvault/partizanski_glavinov.json",))
+    candidate_controls = {}
     try:
         phase("3D roads")
         roads3d.PIER_SKIP = lambda x, y, r: in_lane(x, y, -r) or __import__("monument").on_bridge(x, y)          # no bridge pier in a street passing underneath
-        nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks, junction_cores=junction_cores)
+        candidate_inputs = (a.src, [rd["id"] for rd in roads], {i: node for node, i in node_ids.items()
+                                                              if isinstance(node, int)})
+        nv, piers = roads3d.build(edges, xwalks, mesh.add, chunk_of, MAT_SOLID, T=T, decks=decks,
+                                  junction_cores=junction_cores, candidate_inputs=candidate_inputs,
+                                  controls=candidate_controls)
+        if candidate_controls:
+            xwalks = candidate_controls["crossings"]
+            junction_cores = []
         posts = list(posts) + piers
         roads3d_ok = True
         print(f"[build] 3D roads: {nv / 1e6:.2f} M vertices")
@@ -3134,6 +3143,7 @@ def main():
         import traceback
         traceback.print_exc()
         print(f"[build] 3D roads failed ({e}); using flat roads")
+        candidate_controls = {}
         roads3d_ok = False
     _up_posts, up_decks, up_recs = underpass.roof(upass, mesh.add, chunk_of, MAT_SOLID, T)     # roof slab, walls, roof deck
     up_decks = [terrain_mod.Deck(d_["pts"], d_["h"], d_["hw"]).pack() for d_ in up_decks]
@@ -3278,7 +3288,8 @@ def main():
         "edges": {"edges": edges},
         "buildings": {"buildings": buildings},
         "props": {"trees": trees, "lamps": lamps, "parked": parked, "posts": posts, "xwalks": xwalks, "junction_cores": junction_cores, "places": places,
-                  "signals": list(__import__("furniture").SIGNALS), "bus_stops": list(__import__("furniture").STOPS),
+                  "signals": candidate_controls.get("signals", list(__import__("furniture").SIGNALS)),
+                  "signal_heads": candidate_controls.get("heads", []), "bus_stops": list(__import__("furniture").STOPS),
                   "sites": sites, "works": works, "fuelsites": fsites, "stations": stations, "track": track},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),

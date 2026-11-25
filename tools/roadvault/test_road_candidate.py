@@ -12,6 +12,7 @@ from shapely.ops import unary_union
 from run_candidate import HERE, ROOT, site_inputs
 from road_candidate import (approach_arrows, compile_movements, compile_scene, crossing_span, footprint,
                             frame, median_landscape, polys, slip_edge_arc, stroke, yield_teeth)
+from roads_candidate import Source, build_tile
 
 
 @unittest.skipUnless((ROOT / "data/osm/roads.json").exists() and (ROOT / "data/osm/areas.json").exists(),
@@ -31,6 +32,21 @@ class RoadCandidateTests(unittest.TestCase):
         for slip, adjacent in (("W-S-slip", "W-N-2"), ("N-W-slip", "N-S-2")):
             with self.subTest(slip=slip):
                 self.assertGreaterEqual(self.routes[slip].distance(self.routes[adjacent]), 3.24)
+
+    def test_game_tiles_use_the_reviewed_layout_without_preview_ground(self):
+        source = Source(ROOT / "data/osm", [], {})
+        self.assertIsNotNone(source.reviewed)
+        _, ox, oy, _, *_ = source.reviewed
+        for side in (-1, 1):
+            with self.subTest(side=side):
+                mesh = build_tile(source, [], ox + side * 44, oy, 44)
+                positions = np.asarray(mesh.P)
+                self.assertTrue(len(positions) > 0)
+                self.assertLessEqual(abs(positions[:, 0]).max(), 44.01)
+                self.assertLessEqual(abs(positions[:, 2]).max(), 44.01)
+                self.assertGreater(positions[:, 1].min(), -0.07)
+                self.assertTrue(np.any(positions[:, 1] == 0.011))  # road paint
+                self.assertTrue(np.any(positions[:, 1] == 0.145))  # sidewalks
 
     def test_slip_heading_changes_gradually(self):
         for slip in ("W-S-slip", "N-W-slip"):

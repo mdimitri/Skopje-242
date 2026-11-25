@@ -1751,8 +1751,14 @@ class Peds:
         distance = math.hypot(dx, dy)
         move = min(distance, p.v * 1.45 * dt)
         if distance > 1e-4:
+            tx, ty = p.x + dx * move / distance, p.y + dy * move / distance
+            crossings = getattr(self.w, "crossings", None)
+            if crossings is not None and crossings.wait_for_signal(
+                    p.x, p.y, tx, ty, getattr(getattr(self, "sim", None), "lights", None)):
+                p.vx = p.vy = 0.0
+                return
             p.vx, p.vy = dx * move / (distance * dt), dy * move / (distance * dt)
-            p.x, p.y = p.x + p.vx * dt, p.y + p.vy * dt
+            p.x, p.y = tx, ty
             p.h = math.atan2(dy, dx)
             p.anim += move
         else:
@@ -2066,6 +2072,13 @@ class Peds:
             mx = (vv * 1.5 + 0.6) * dt
             if dd > mx:
                 ex, ey = ex / dd * mx, ey / dd * mx
+            if (not e["bridge"] and getattr(w, "crossings", None) is not None
+                    and w.crossings.wait_for_signal(p.x, p.y, p.x + ex, p.y + ey,
+                                                    getattr(getattr(self, "sim", None), "lights", None))):
+                p.s = max(0.0, p.s - vv * dt)
+                p.vx = p.vy = 0.0
+                out.append(p)
+                continue
             if (hasattr(w, "pedestrian_ground") and not e["bridge"]
                     and (not w.pedestrian_ground(p.x + ex, p.y + ey)
                          or crosses_wall(w, p.x, p.y, p.x + ex, p.y + ey))):

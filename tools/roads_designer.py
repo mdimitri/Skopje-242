@@ -1,15 +1,12 @@
-"""Game integration of the junction designer (tools/junction_net.py): rebuilds the ground-road surfaces of the whole
-network tile by tile (asphalt with tapered splits, kerbs, pavements, islands, lane paint, zebras) and hands the
-triangles to roads3d.Out, whose flush() then drapes them on the 10 m terrain grid like every other road piece.
-
-Tiles are clipped to their square and carry a 60 m margin of neighbouring roads, so neighbouring tiles agree on the
-shared border.  On by default; SK242_DESIGNER=0 returns to the old builder (roads3d.build)."""
+"""Tile the candidate road mesh, retain raised decks and hand both to roads3d.Out."""
 import math
 
 import numpy as np
+from shapely.errors import GEOSException
 
 import junction_net as jn
 import par
+import roads_candidate
 
 TILE = 300.0
 CH = 120.0                                               # roads3d.CHUNK
@@ -26,8 +23,9 @@ class _Abs:
 ABS = _Abs()
 
 
-def _init(edges, ctx, decks=None, T=None):
+def _init(edges, ctx, decks=None, T=None, source=None):
     _G["edges"], _G["ctx"], _G["decks"], _G["T"] = edges, ctx, decks, T
+    _G["source"] = source
     jn.RANGE = TILE / 2
 
 
@@ -129,27 +127,42 @@ def _tile_job(job):
     edges = _G["edges"]
     sub = [edges[i] for i in idx]
     dk = _decks_job(tx, ty, sub, own)
-    m = jn.build(sub, tx, ty, port=True, ctx=_G["ctx"])
+    fallback = False
+    controls = {}
+    if _G["source"] is not None:
+        try:
+            m = roads_candidate.build_tile(_G["source"], sub, tx, ty, TILE / 2, idx)
+            controls = m.controls
+        except (ValueError, GEOSException) as exc:
+            fallback = True
+            print(f"[road candidate] tile ({tx:g}, {ty:g}) uses junction designer: {exc}", flush=True)
+    if _G["source"] is None or fallback:
+        m = jn.build(sub, tx, ty, port=True, ctx=_G["ctx"])
     if not m.P:
-        return [], dk
+        return [], dk, fallback, controls
     P = np.array(m.P, np.float32).reshape(-1, 3, 3)
     C = np.array(m.C, np.uint8).reshape(-1, 3, 4)[:, 0]
-    P, C = _split(P, C)
+    if _G["source"] is None or fallback:
+        P, C = _split(P, C)
+    else:
+        P, C = _split(P, C, maxlen=18, rounds=4)
     P[:, :, 1] += 0.06                                    # the game lifts its asphalt Y_BASE above the terrain
     P[:, :, 0] += tx
     P[:, :, 2] += ty
-    return _by_chunk(P, C), dk
+    return _by_chunk(P, C), dk, fallback, controls
 
 
-def tiles(edges):
+def tiles(edges, padding=0.0):
     """-> [((tile centre x, y), [edge indices within the tile + margin])] for every tile holding a ground road."""
     ids = [i for i, e in enumerate(edges) if e["drive"] and len(e["pts"]) >= 2]        # decks too: they shape what meets them
+    if not ids:
+        return []
     lo = np.array([[min(p[0] for p in edges[i]["pts"]), min(p[1] for p in edges[i]["pts"])] for i in ids])
     hi = np.array([[max(p[0] for p in edges[i]["pts"]), max(p[1] for p in edges[i]["pts"])] for i in ids])
     ids = np.array(ids)
     reach = TILE / 2 + jn.MARGIN + 30
     cells = set()
-    for a, b in zip(lo, hi):
+    for a, b in zip(lo - padding, hi + padding):
         for gx in range(int(math.floor(a[0] / TILE)), int(math.floor(b[0] / TILE)) + 1):
             for gy in range(int(math.floor(a[1] / TILE)), int(math.floor(b[1] / TILE)) + 1):
                 cells.add((gx, gy))
@@ -162,7 +175,7 @@ def tiles(edges):
     return jobs
 
 
-def add_tiles(out, edges, prog=None, decks=None, T=None):
+def add_tiles(out, edges, prog=None, decks=None, T=None, source=None, controls=None):
     """Adds the designer's ground-road triangles to roads3d.Out `out` (heights relative to the terrain) and, with
     decks and T, its driven decks (absolute heights)."""
     feet = deck_feet(edges, decks, T) if decks is not None and T is not None else []
@@ -172,7 +185,8 @@ def add_tiles(out, edges, prog=None, decks=None, T=None):
         for nd in (f["a"], f["b"]):
             if isinstance(nd, tuple) and nd[:1] == ("foot",):
                 ctx["gdeg"][nd] = 2
-    jobs = tiles(edges)
+    padding = max((e["w"] / 2 + 3 for e in edges if e["drive"]), default=0) if source is not None else 0
+    jobs = tiles(edges, padding)
     # footways take part too (zebras where they cross a carriageway)
     walk = [i for i, e in enumerate(edges) if not e["drive"] and not e["bridge"] and e["cls"] in jn.WALK_W and len(e["pts"]) >= 2]
     if walk:
@@ -188,10 +202,13 @@ def add_tiles(out, edges, prog=None, decks=None, T=None):
             mx, my = e["pts"][len(e["pts"]) // 2]
             own.setdefault((int(math.floor(mx / TILE)), int(math.floor(my / TILE))), []).append(i)
     jobs = [(c, idx, own.get((int(math.floor(c[0] / TILE)), int(math.floor(c[1] / TILE))), [])) for c, idx in jobs]
-    n = 0
-    for k, (res, dres) in enumerate(par.pmap(_tile_job, jobs, init=(_init, (edges, ctx, decks, T)), chunk=1)):
-        if prog and k % 10 == 0:
-            prog(k / max(1, len(jobs)))
+    n = fallback_count = 0
+    on = (lambda done, total: prog(done / total) if done % 10 == 0 else None) if prog else None
+    for res, dres, fallback, tile_controls in par.pmap(_tile_job, jobs, init=(_init, (edges, ctx, decks, T, source)), chunk=1, on=on):
+        fallback_count += fallback
+        if controls is not None:
+            for kind, records in tile_controls.items():
+                controls.setdefault(kind, []).extend(records)
         for key, pos, col in res:
             e = out.d.setdefault((key, id(None)), ([], [], None, []))
             e[3].append((pos, col))
@@ -201,4 +218,5 @@ def add_tiles(out, edges, prog=None, decks=None, T=None):
             e[3].append((pos, col))
             n += len(pos)
     out.n += n
-    print(f"[designer] {len(jobs)} tiles, {n // 3} triangles")
+    builder = "road candidate" if source is not None else "designer"
+    print(f"[{builder}] {len(jobs)} tiles, {fallback_count} fallback tiles, {n // 3} triangles")

@@ -98,9 +98,9 @@ class _Code:
             if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "__import__" and n.args and isinstance(n.args[0], ast.Constant):
                 out.add("import:" + str(n.args[0].value))
             elif isinstance(n, ast.Import):
-                out |= {"import:" + a.name.split(".")[0] for a in n.names}
+                out |= {"import:" + a.name for a in n.names}
             elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
-                out.add("import:" + n.module.split(".")[0])
+                out.add("import:" + n.module)
         return out
 
     def module(self, name, seen):
@@ -109,7 +109,7 @@ class _Code:
             return []
         seen.add(name)
         for d in ("tools", "src"):
-            p = os.path.join(ROOT, d, name + ".py")
+            p = os.path.join(ROOT, d, *name.split(".")) + ".py"
             if os.path.exists(p):
                 break
         else:
@@ -118,7 +118,12 @@ class _Code:
             raw = open(p, encoding="utf-8").read()
             try:
                 t = ast.parse(raw)
-                self.mods[p] = (_unparse(t), [n[7:] for n in self._names(t) if n.startswith("import:")])
+                submodules = [n[7:] for n in self._names(t) if n.startswith("import:")]
+                package = name.rpartition(".")[0]
+                if package:
+                    submodules += [package + "." + n.module for n in ast.walk(t)
+                                   if isinstance(n, ast.ImportFrom) and n.level == 1 and n.module]
+                self.mods[p] = (_unparse(t), submodules)
             except SyntaxError:
                 self.mods[p] = (raw, [])
         text, subs = self.mods[p]
@@ -173,8 +178,10 @@ def _stat_key(src, path, version):
     import glob
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     files = sorted(glob.glob(os.path.join(root, "tools", "*.py")) + glob.glob(os.path.join(root, "src", "*.py"))
+                   + glob.glob(os.path.join(root, "tools", "roadvault", "*.py"))
+                   + glob.glob(os.path.join(root, "tools", "roadvault", "*.json"))
                    + [os.path.join(src, f) for f in (os.listdir(src) if os.path.isdir(src) else ())])
-    out = [FORMAT, os.path.abspath(path), os.path.abspath(src)]
+    out = [FORMAT, os.path.abspath(path), os.path.abspath(src), os.environ.get("SK242_DESIGNER", "1")]
     for f in files:
         try:
             st = os.stat(f)
@@ -219,6 +226,9 @@ def _fingerprints(src, path=SOURCE, version=None):
     out = []
     for name, kw, stmts in stages:
         parts = code.of(stmts + (prelude if not out else []), kw.get("mods", ())) + _data_parts(kw.get("data", ()), src, extras)
+        parts += _data_parts(kw.get("files", ()), ROOT, ())
+        if name in {"furniture", "roads3d"}:
+            parts.append(os.environ.get("SK242_DESIGNER", "1") != "0")
         out.append((name, _md5("fmt", FORMAT, name, *parts)))
     return out
 

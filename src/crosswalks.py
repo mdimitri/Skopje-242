@@ -22,9 +22,10 @@ class CrossingMap:
 
     def __init__(self, zebras=(), cores=()):
         self.zebras, self.cores = {}, {}
-        for x, y, dx, dy, width, *_ in zebras:
+        for x, y, dx, dy, width, *details in zebras:
             r = width / 2 + 2
-            self._add(self.zebras, (x, y, dx, dy, width / 2), x - r, y - r, x + r, y + r)
+            node = details[2] if len(details) > 2 else None
+            self._add(self.zebras, (x, y, dx, dy, width / 2, node), x - r, y - r, x + r, y + r)
         for ring in cores:
             xs, ys = zip(*ring)
             self._add(self.cores, ring, min(xs), min(ys), max(xs), max(ys))
@@ -34,12 +35,20 @@ class CrossingMap:
             for iy in range(int(y0 // self.CELL), int(y1 // self.CELL) + 1):
                 grid.setdefault((ix, iy), []).append(value)
 
-    def zebra(self, x, y):
-        for px, py, dx, dy, half in self.zebras.get((int(x // self.CELL), int(y // self.CELL)), ()):
+    def _zebras_at(self, x, y):
+        for px, py, dx, dy, half, node in self.zebras.get((int(x // self.CELL), int(y // self.CELL)), ()):
             ox, oy = x - px, y - py
-            if abs(ox * dx + oy * dy) <= 1.45 and abs(oy * dx - ox * dy) <= half + 1.0:
-                return True
-        return False
+            if abs(ox * dx + oy * dy) <= 1.55 and abs(oy * dx - ox * dy) <= half + 1.0:
+                yield px, py, node
+
+    def zebra(self, x, y):
+        return next(self._zebras_at(x, y), None) is not None
+
+    def wait_for_signal(self, x, y, tx, ty, lights):
+        if lights is None or self.zebra(x, y):
+            return False
+        return any(node in lights.candidate_groups and not lights.pedestrian_green(node)
+                   for _, _, node in self._zebras_at(tx, ty))
 
     def core(self, x, y):
         for ring in self.cores.get((int(x // self.CELL), int(y // self.CELL)), ()):

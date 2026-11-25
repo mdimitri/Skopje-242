@@ -15,8 +15,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT / "src"))
 from roadwidth import lane_bounds, lane_count, lane_turns  # noqa: E402
 
-from mesh import Mesh, polys
-from traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
+if __package__:
+    from .mesh import Mesh, polys
+    from .traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
+else:
+    from mesh import Mesh, polys
+    from traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
 
 LANE_WIDTH = 3.25
 PAINT = (236, 233, 216)
@@ -450,6 +454,7 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
         sidewalk = sidewalk.difference(patch).union(sidewalk_outline.intersection(patch)).intersection(bounds)
     if not divider.is_empty:
         sidewalk = sidewalk.difference(divider)
+    sidewalk = polygonal(sidewalk)
     # Follow the final asphalt where a road edge or a median nose calls for a curb.
     # The raw section bands only classify the edge and may be covered by the apron.
     returns = [Point(x, y).buffer(radius) for x, y, radius in layout.get("curb_returns", [])]
@@ -490,12 +495,12 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
         a = terminals[a_way][int(a_side == "right")]
         b = terminals[b_way][int(b_side == "right")]
         links.append(stroke(LineString([a, b]), 2.1))
-    cut_throughs = unary_union(cuts).intersection(bounds).difference(asphalt)
-    routes = unary_union(links).intersection(bounds).difference(asphalt)
+    cut_throughs = polygonal(unary_union(cuts).intersection(bounds).difference(asphalt))
+    routes = polygonal(unary_union(links).intersection(bounds).difference(asphalt))
     curb = curb.union(cut_throughs.buffer(0.32).difference(asphalt).difference(sidewalk))
     curb = unary_union(polys(curb.difference(routes).difference(cut_throughs)))
     active_refuges = unary_union([refuge for refuge in polys(refuges) if refuge.intersection(routes).area > 0.1])
-    sidewalk_base = sidewalk.union(active_refuges).difference(asphalt).difference(curb)
+    sidewalk_base = polygonal(sidewalk.union(active_refuges).difference(asphalt).difference(curb))
     # On an existing sidewalk or refuge, only the curb ramp needs its own mesh.
     ramps = routes.intersection(asphalt.buffer(1.35))
     landings = routes.difference(sidewalk_base).union(ramps).difference(cut_throughs)
@@ -506,10 +511,15 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
             clipped = clipped.difference(divider)
         usable = unary_union(polys(clipped)).difference(curb)
         paths.extend(part for part in polys(usable) if part.intersection(sidewalk).area > 0.12)
-    walking_links = landings.union(cut_throughs)
+    walking_links = polygonal(landings.union(cut_throughs))
     footpaths = unary_union(paths).difference(sidewalk_base).difference(walking_links)
     return (sidewalk_base.difference(walking_links), curb, landings, cut_throughs,
             footpaths, unary_union(crossing_areas), zebras)
+
+
+def polygonal(shape):
+    """Keep raised surfaces polygonal when an overlay also produces stray lines or points."""
+    return shape if shape.geom_type in {"Polygon", "MultiPolygon"} else unary_union(polys(shape))
 
 
 def median_corridors(edges, layout):
@@ -620,7 +630,7 @@ def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
     return devices
 
 
-def compile_scene(edges, layout, walks, greens, bounds, report=None):
+def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=None, preview=True, furniture_sink=None):
     """Return mesh plus the compiled movements, their conflicts and the paved footprint."""
     by_id = {edge.id: edge for edge in edges}
     movements = layout["movements"]
@@ -686,6 +696,8 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
         by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider)
     reserved = unary_union([asphalt, pavement, curb, landings, cut_throughs, paths])
     grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
+    if inferred and not preview:
+        grass = grass.intersection(divider.union(refuges))
     marks = []
     clear = {}
     for way, start, end in layout["unmarked"]:
@@ -719,8 +731,9 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
     for way, station in layout.get("yield_lines", []):
         marks.extend(yield_teeth(by_id[way], station))
 
-    mesh = Mesh()
-    mesh.poly(bounds, -0.075, (108, 123, 94))
+    mesh = Mesh() if mesh is None else mesh
+    if preview:
+        mesh.poly(bounds, -0.075, (108, 123, 94))
     mesh.poly(asphalt, 0, (57, 61, 66))
     mesh.prism(grass, -0.065, 0.125, (111, 137, 82), (155, 150, 129))
     mesh.prism(pavement, -0.065, 0.145, (181, 175, 161), (143, 139, 128))
@@ -731,6 +744,11 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None):
     mesh.poly(cut_throughs, 0, (181, 175, 161))
     paint = unary_union(marks).difference(crossings.buffer(0.25))
     mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
+    if not preview:
+        if furniture_sink is not None:
+            furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs), report)
+            furniture_sink(furniture, by_id, layout, asphalt)
+        return mesh
     furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs), report)
     for device in furniture:
         if device["kind"] == "vehicle_gantry":
