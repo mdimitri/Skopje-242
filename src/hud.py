@@ -516,16 +516,17 @@ class Hud:
                 self._big(f"30 мм: {getattr(c, 'ammo', 0)}", sw - 260, sh - 202, 24, rl.Color(255, 230, 140, 255))
         else:
             wk = sim.walker
-            font.draw_text(TXT("hud.0014"), sw - 190, sh - 60, 34, rl.Color(250, 220, 80, 255))
+            wx = 20
+            font.draw_text(TXT("hud.0014"), wx + 70, sh - 60, 34, rl.Color(250, 220, 80, 255))
             if wk is not None:
                 hp = max(0.0, wk.health) / 100.0
-                self._bar(sw - 260, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
+                self._bar(wx, sh - 106, 240, 16, hp, rl.Color(min(255, int(220 * (1 - hp) + 40)), min(255, int(200 * hp + 40)), 60, 255))
                 import actors as _a
                 gun = ((_a.WEAPONS[wk.weapon][0] + ("" if wk.weapon in _a.MELEE else f" {wk.ammo}")) if wk.weapon in _a.WEAPONS and wk.ammo > 0 else TXT("hud.0015")) + "  [Tab]"
-                self._big((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), sw - 260, sh - 138, 26, rl.Color(255, 255, 255, 245))
+                self._big((TXT("hud.0016") + f'{int(max(0, wk.health))}%'), wx, sh - 138, 26, rl.Color(255, 255, 255, 245))
                 gsz = 24 if font.measure_text(gun, 24) <= 250 else 19      # the long names + key hint were cut off ("[T...")
-                self._big(font.fit(gun, gsz, 250), sw - 260, sh - 232 + (24 - gsz), gsz, rl.Color(255, 230, 140, 255))
-                self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", sw - 260, sh - 196, 56)
+                self._big(font.fit(gun, gsz, 250), wx, sh - 232 + (24 - gsz), gsz, rl.Color(255, 230, 140, 255))
+                self.weapon_icon(wk.weapon if wk.weapon in _a.WEAPONS and wk.ammo > 0 else "fist", wx, sh - 196, 56)
                 if wk.hurt_t > 0:
                     rl.draw_rectangle(0, 0, sw, sh, rl.Color(200, 20, 20, int(110 * min(1.0, wk.hurt_t / 0.35))))
                 if wk.health <= 0 and wk.cause == "fight":
@@ -589,7 +590,7 @@ class Hud:
         if not show_map:
             self.sel, self._drag, self._menu_rect = None, False, None
             ms = max(130, min(300, int(sh * 0.27)))                       # 240 px at 900 p; shrinks with the render resolution
-            mx, my = 16, sh - ms - 16
+            mx, my = sw - ms - 16, sh - ms - 16
             if mpv and mpv.get("network"):
                 _draw_network(mpv["network"], mx, my - 71, max(148, min(190, ms)))
             span = 380

@@ -76,5 +76,5 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Never leave work uncommitted at the end of a task.
 - Run `git status` before bumping the build number; "Build N" commits must not leave untracked source or assets behind.
 - Start each task with `git fetch` and rebase onto `origin/main`.
-- If `git status` shows a source or asset file that is neither committed nor ignored, stop and ask.
+- If `git status` shows changes, inspect every path and always try to preserve and integrate all repository changes (source, assets, documentation, and patches) with the requested work, then commit the combined changes to `main`. Do not stop solely because the working tree is dirty. Keep the explicitly excluded user and generated state out of commits. Never discard or overwrite existing work; if a conflict or unclear ownership prevents safe integration, explain the specific blocker and ask how to proceed.
 - Never commit `settings.json`, `saves/`, `output/`, `tmp/` or built world data.

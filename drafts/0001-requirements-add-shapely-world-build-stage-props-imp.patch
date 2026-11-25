@@ -1,0 +1,23 @@
+From ff21f9dced50ea75f3435dc18265861a6ae432fb Mon Sep 17 00:00:00 2001
+From: Martin Dimitrievski <martin.dimitrievski@ugent.be>
+Date: Tue, 24 Nov 2026 22:17:16 +0100
+Subject: [PATCH] requirements: add shapely (world build stage props imports
+ it; fresh installs crashed there)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ requirements.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/requirements.txt b/requirements.txt
+index 86274b9..aa296da 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -4,3 +4,4 @@ pillow
+ mapbox-earcut
+ sounddevice
+ PyOgg; sys_platform == "win32"
++shapely>=2.0
+-- 
+2.39.0.windows.2
+

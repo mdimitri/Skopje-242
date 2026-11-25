@@ -2581,7 +2581,7 @@ def main():
                 pois.draw(sim, sw, sh)
             if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
-            if not selfie.active and sim.mode == "car":     # the radio button: the same place as everywhere else, but only while driving (it takes room otherwise)
+            if not selfie.active and sim.mode == "car" and sim.car is not None:     # the radio button: the same place as everywhere else, but only while driving (it takes room otherwise)
                 radio_view.widget(keys=False, station_keys=False)
             vs_ = spk.status()
             if vs_:
