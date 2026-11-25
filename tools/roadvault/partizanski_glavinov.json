@@ -37,6 +37,8 @@
     "173140435": ["curb", "sidewalk"]
   },
   "stop_lines": [190303102, 230981174, 229984879],
+  "approach_arrows": [[316865357, -14], [177629071, -9], [671891272, -9], [16544466, 29], [173140435, 26]],
+  "yield_lines": [[16544466, 46.5], [173140435, 57]],
   "crossings": [
     [[230981170, 12], [190303102, 40]],
     [[173140435, 34], [230981174, 31], [1361819533, 11]],
@@ -45,12 +47,12 @@
   ],
   "refuge_links": [[230981170, "right", 173140435, "left"]],
   "movements": [
-    {"id":"W-N-1","from":316865357,"from_lane":0,"to":1361819533,"to_lane":0,"via":[190303102,230981175,943537147],"setback":8,"approach_length":28,"handle":0.48,"control":"signal"},
-    {"id":"W-N-2","from":316865357,"from_lane":1,"to":1361819533,"to_lane":1,"via":[190303102,230981175,943537147],"setback":8,"approach_length":28,"handle":0.48,"control":"signal"},
-    {"id":"W-S-slip","from":316865357,"from_lane":2,"to":190303100,"to_lane":1,"via":[16544466],"setback":8,"follow_via":true,"control":"slip"},
-    {"id":"N-W-slip","from":177629071,"from_lane":2,"to":190344886,"to_lane":2,"via":[173140435],"setback":8,"follow_via":true,"control":"slip"},
-    {"id":"N-S-1","from":177629071,"from_lane":0,"to":190303100,"to_lane":0,"via":[230981174,230981173,173140429],"setback":8,"control":"signal"},
-    {"id":"N-S-2","from":177629071,"from_lane":1,"to":190303100,"to_lane":1,"via":[230981174,230981173,173140429],"setback":8,"control":"signal"},
+    {"id":"W-N-1","from":316865357,"from_lane":0,"to":1361819533,"to_lane":0,"via":[190303102,230981175,943537147],"setback":8,"approach_length":28,"handle":0.48,"control":"signal","turn":"left"},
+    {"id":"W-N-2","from":316865357,"from_lane":1,"to":1361819533,"to_lane":1,"via":[190303102,230981175,943537147],"setback":8,"approach_length":28,"handle":0.48,"control":"signal","turn":"left"},
+    {"id":"W-S-slip","from":316865357,"from_lane":2,"to":190303100,"to_lane":1,"via":[16544466],"setback":8,"follow_via":true,"control":"slip","turn":"right"},
+    {"id":"N-W-slip","from":177629071,"from_lane":2,"to":190344886,"to_lane":2,"via":[173140435],"setback":8,"follow_via":true,"control":"slip","turn":"right"},
+    {"id":"N-S-1","from":177629071,"from_lane":0,"to":190303100,"to_lane":0,"via":[230981174,230981173,173140429],"setback":8,"control":"signal","turn":"through"},
+    {"id":"N-S-2","from":177629071,"from_lane":1,"to":190303100,"to_lane":1,"via":[230981174,230981173,173140429],"setback":8,"control":"signal","turn":"through"},
     {"id":"S-W-1","from":229984879,"from_lane":0,"to":190344886,"to_lane":0,"via":[943537147,230981168,230981170],"setback":14,"handle":0.52,"control":"signal","turn":"left"},
     {"id":"S-W-2","from":229984879,"from_lane":1,"to":190344886,"to_lane":1,"via":[943537147,230981168,230981170],"setback":14,"handle":0.52,"control":"signal","turn":"left"},
     {"id":"S-N-1","from":229984879,"from_lane":1,"to":1361819533,"to_lane":1,"via":[943537147],"setback":14,"control":"signal","turn":"through"},

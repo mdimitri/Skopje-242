@@ -296,8 +296,39 @@ def turn_arrow(p, heading, turn):
     tip = p + (elbow - p if side else heading * 1.65) + right * (side * 1.05)
     base = tip - unit(tip - elbow) * 0.59
     normal = right if not side else heading
-    return stroke(LineString([stem, elbow, base]), 0.17).union(
-        Polygon([tip, base + normal * 0.31, base - normal * 0.31]))
+    return stroke(LineString([stem, elbow, base]), 0.22).union(
+        Polygon([tip, base + normal * 0.36, base - normal * 0.36]))
+
+
+def approach_arrows(edge, station, movements):
+    painted = lane_turns(edge.section)
+    inferred = [set() for _ in range(lane_count(edge.section))]
+    for movement in movements:
+        if "turn" not in movement or movement.get("from_direction", 1) != 1:
+            continue
+        if edge.id == movement["from"]:
+            inferred[movement["from_lane"]].add(movement["turn"])
+        elif movement["via"] and edge.id == movement["via"][0]:
+            lane = 0 if movement.get("follow_via") else movement["from_lane"]
+            if lane < len(inferred):
+                inferred[lane].add("through" if movement.get("follow_via") else movement["turn"])
+    arrows = []
+    for lane, fallback in enumerate(inferred):
+        kinds = (painted[lane] if painted else frozenset()) or fallback
+        p, heading = edge.port(station, lane, 1)
+        arrows.extend(turn_arrow(p, heading, kind) for kind in sorted(kinds))
+    return arrows
+
+
+def yield_teeth(edge, station):
+    p, heading, right = frame(edge.line, station)
+    lo, hi = edge.cross_section(station)
+    base = 0.43
+    pitch = 0.66
+    count = max(1, math.floor((hi - lo - 0.28 - base) / pitch) + 1)
+    centers = (lo + hi) / 2 + (np.arange(count) - (count - 1) / 2) * pitch
+    return [Polygon([p + right * (offset - base / 2), p + right * (offset + base / 2),
+                     p + right * offset - heading * (base * 1.5)]) for offset in centers]
 
 
 def edge_band(edge, side, width):
@@ -416,10 +447,14 @@ def compile_scene(edges, layout, walks, greens, bounds):
         pole = p + right * (right_edge + 0.65)
         if not asphalt.covers(Point(pole)):
             poles.append((pole, heading))
-        for lane, turns in enumerate(lane_turns(edge.section)):
-            for turn in sorted(turns):
-                pos, heading = edge.port(max(0, station - 4.5), lane, 1)
-                marks.append(turn_arrow(pos, heading, turn))
+        marks.extend(approach_arrows(edge, max(0, station - 4.5), movements))
+    for way, station in layout.get("approach_arrows", []):
+        edge = by_id[way]
+        at = edge.line.length + station if station < 0 else station
+        marks.extend(approach_arrows(edge, at, movements))
+    for way, station in layout.get("yield_lines", []):
+        marks.extend(yield_teeth(by_id[way], station))
+
     mesh = Mesh()
     mesh.poly(bounds, -0.075, (108, 123, 94))
     mesh.poly(asphalt, 0, (57, 61, 66))

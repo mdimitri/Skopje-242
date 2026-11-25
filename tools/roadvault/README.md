@@ -43,6 +43,8 @@ road strips. Carriageway edges in the layout specify 2.4 m raised outer
 sidewalks and 0.32 m median-side curbs. Only designated crossing landings open the
 median to pedestrians. Each zebra spans the paved cross-section at its
 authored station, and signal stop lines are derived from those stations.
+Lane arrows use mapped turn indications with the movement graph as a fallback.
+Shark teeth mark both slip entries into the receiving carriageways.
 The crossing groups follow the reference imagery approximately. OSM footways
 can feed an existing sidewalk. The junction's road-owned walking surfaces
 compile independently of them. Walkable surfaces and visual curbs are
