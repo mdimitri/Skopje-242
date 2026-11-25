@@ -18,11 +18,12 @@ class Renderer:
         self.size = size
         self.rt = rl.load_render_texture(*size)
 
-    def shot(self, mesh, out_png, eye, tgt, fov=40.0):
+    def shot(self, mesh, out_png, eye, tgt, fov=40.0, up=(0, 1, 0), orthographic=False):
         pos = np.array(mesh.P, np.float32)
         col = np.array(mesh.C, np.uint8)
         models = rs.model(pos, col)
-        cam = rl.Camera3D(eye, tgt, (0, 1, 0), fov, rl.CAMERA_PERSPECTIVE)
+        projection = rl.CAMERA_ORTHOGRAPHIC if orthographic else rl.CAMERA_PERSPECTIVE
+        cam = rl.Camera3D(eye, tgt, up, fov, projection)
         rl.rl_set_clip_planes(1.5, 3000.0)
         rl.begin_texture_mode(self.rt)
         rl.clear_background((190, 212, 236, 255))
