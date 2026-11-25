@@ -7,7 +7,7 @@ import sys
 
 import numpy as np
 from shapely import make_valid
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, mapping
 from shapely.ops import substring, unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,12 +76,12 @@ class Edge:
             offsets += np.array([left, right]) * t * t * (3 - 2 * t)
         return offsets
 
-    def trace(self, fraction, stations):
+    def trace(self, fraction, stations, extra=0.0):
         points = []
         for station in stations:
             p, _, right = frame(self.line, station)
             left_edge, right_edge = self.cross_section(station)
-            points.append(p + right * (left_edge + fraction * (right_edge - left_edge)))
+            points.append(p + right * (left_edge + fraction * (right_edge - left_edge) + extra))
         return LineString(points)
 
     def lane_fraction(self, lane, direction):
@@ -169,6 +169,23 @@ def source_approach(source, spec):
     return points, mouth, heading
 
 
+def smooth_connector(line, fixed_start):
+    """Ease local curvature changes while pinning the approach and merge anchors."""
+    count = math.ceil(line.length / 0.35)
+    stations = np.linspace(0, line.length, count + 1)
+    points = np.array([line.interpolate(station).coords[0] for station in stations])
+    # Symmetric filtering in arclength keeps the guide shape and blends across splices.
+    weights = np.array([1, 6, 15, 20, 15, 6, 1]) / 64
+    pad = len(weights) // 2
+    t = np.clip(np.minimum(stations - fixed_start, line.length - stations) / 2.5, 0, 1)
+    blend = t * t * (3 - 2 * t)
+    for _ in range(5):
+        window = np.pad(points, ((pad, pad), (0, 0)), mode="edge")
+        average = np.column_stack([np.convolve(column, weights, mode="valid") for column in window.T])
+        points += (average - points) * blend[:, None]
+    return LineString(points)
+
+
 def compile_movements(edges, movements):
     groups, lines = {}, {}
     for spec in movements:
@@ -195,7 +212,7 @@ def compile_movements(edges, movements):
             points += list(cubic(mouth, mouth + heading * lead, b - db * finish, b)[:-1])
             points += list(guide.trace(0.5, np.linspace(start, end, math.ceil((end - start) * 2) + 1)).coords)
             points += list(cubic(c, c + dc * tail, d - dd * tail, d)[1:])
-            lines[spec["id"]] = LineString(points)
+            lines[spec["id"]] = smooth_connector(LineString(points), LineString(approach).length)
             continue
         prefix = []
         approach_length = spec.get("approach_length", 0)
@@ -283,6 +300,73 @@ def turn_arrow(p, heading, turn):
         Polygon([tip, base + normal * 0.31, base - normal * 0.31]))
 
 
+def edge_band(edge, side, width):
+    stations = np.linspace(0, edge.line.length, math.ceil(edge.line.length * 2) + 1)
+    fraction = 0 if side == "left" else 1
+    inner = list(edge.trace(fraction, stations).coords)
+    outer = list(edge.trace(fraction, stations, -width if side == "left" else width).coords)
+    return make_valid(Polygon(inner + outer[::-1]))
+
+
+def crossing_span(edge, station, asphalt):
+    point, heading, right = frame(edge.line, station)
+    lo, hi = edge.cross_section(station)
+    probe = LineString([point + right * (lo - 3.5), point + right * (hi + 3.5)])
+    surface = probe.intersection(asphalt)
+    spans = [part for part in getattr(surface, "geoms", (surface,)) if part.geom_type == "LineString"]
+    span = min(spans, key=lambda part: part.distance(Point(point)))
+    lo, hi = sorted((np.array(span.coords[i]) - point) @ right for i in (0, -1))
+    return point, heading, right, lo, hi
+
+
+def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges):
+    """Build road-owned walking surfaces, then admit only attached OSM path spurs."""
+    sidewalks, curbs, links, zebras, crossing_areas = [], [], [], [], []
+    for way, sides in layout["road_edges"].items():
+        for side, feature in zip(("left", "right"), sides):
+            if feature == "sidewalk":
+                sidewalks.append(edge_band(edges[int(way)], side, 2.4))
+            elif feature == "curb":
+                curbs.append(edge_band(edges[int(way)], side, 0.32))
+    sidewalk = unary_union(sidewalks).buffer(0.6).buffer(-0.6).intersection(bounds).difference(asphalt)
+    curb = unary_union(curbs).intersection(bounds).difference(asphalt).difference(sidewalk)
+
+    terminals = {}
+    for group in layout["crossings"]:
+        last = None
+        for way, station in group:
+            point, heading, right, lo, hi = crossing_span(edges[way], station, asphalt)
+            ends = (point + right * lo, point + right * hi)
+            terminals[way] = ends
+            strip = stroke(LineString(ends), 3.1)
+            road = strip.intersection(asphalt)
+            crossing_areas.append(road)
+            for offset in np.arange(lo + 0.32, hi - 0.12, 0.82):
+                p = point + right * offset
+                zebras.append(stroke(LineString([p - heading * 1.55, p + heading * 1.55]), 0.44).intersection(road))
+            links.append(stroke(LineString([point + right * (lo - 2.4), point + right * (hi + 2.4)]), 2.1))
+            if last is not None:
+                a, b = min(((a, b) for a in last for b in ends), key=lambda pair: np.linalg.norm(pair[1] - pair[0]))
+                links.append(stroke(LineString([a, b]), 2.1))
+            last = ends
+
+    for a_way, a_side, b_way, b_side in layout.get("refuge_links", []):
+        a = terminals[a_way][int(a_side == "right")]
+        b = terminals[b_way][int(b_side == "right")]
+        links.append(stroke(LineString([a, b]), 2.1))
+    landings = unary_union(links).intersection(bounds).difference(asphalt)
+    curb = unary_union(polys(curb.difference(landings)))
+    active_refuges = unary_union([refuge for refuge in polys(refuges) if refuge.intersection(landings).area > 0.1])
+    sidewalk_base = sidewalk.union(active_refuges).difference(asphalt).difference(curb)
+    paths = []
+    for line, width, _ in walks:
+        clipped = stroke(line, width).intersection(bounds).difference(asphalt)
+        usable = unary_union(polys(clipped)).difference(curb)
+        paths.extend(part for part in polys(usable) if part.intersection(sidewalk).area > 0.12)
+    footpaths = unary_union(paths).difference(sidewalk_base).difference(landings)
+    return sidewalk_base.difference(landings), curb, landings, footpaths, unary_union(crossing_areas), zebras
+
+
 def compile_scene(edges, layout, walks, greens, bounds):
     """Return mesh plus the compiled movements, their conflicts and the paved footprint."""
     by_id = {edge.id: edge for edge in edges}
@@ -308,10 +392,11 @@ def compile_scene(edges, layout, walks, greens, bounds):
     holes = [Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors]
     slivers = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
     asphalt = asphalt.union(unary_union(slivers))
-    grass = unary_union(greens).intersection(bounds).difference(asphalt)
     refuges = unary_union([hole for hole in holes if 15 <= hole.area < 190])
-    pavement = unary_union([stroke(line, width) for line, width, _ in walks])
-    pavement = pavement.union(refuges).intersection(bounds).difference(asphalt).difference(grass)
+    pavement, curb, landings, paths, crossings, zebras = pedestrian_geometry(
+        by_id, layout, walks, asphalt, bounds, refuges)
+    grass = unary_union(greens).intersection(bounds).difference(
+        unary_union([asphalt, pavement, curb, landings, paths]))
     marks = []
     clear = {}
     for way, start, end in layout["unmarked"]:
@@ -321,9 +406,10 @@ def compile_scene(edges, layout, walks, greens, bounds):
         begin, end = clear.get(edge.id, [0.0, edge.line.length])
         marks.extend(approach_paint(edge, begin, end))
     poles = []
-    for way, setback in layout["stop_lines"]:
+    crossing_stations = dict(item for group in layout["crossings"] for item in group)
+    for way in layout["stop_lines"]:
         edge = by_id[way]
-        station = edge.line.length - setback
+        station = crossing_stations[way] - 3.4
         p, heading, right = frame(edge.line, station)
         left_edge, right_edge = edge.cross_section(station)
         marks.append(stroke(LineString([p + right * (left_edge + 0.28), p + right * (right_edge - 0.28)]), 0.34))
@@ -334,22 +420,17 @@ def compile_scene(edges, layout, walks, greens, bounds):
             for turn in sorted(turns):
                 pos, heading = edge.port(max(0, station - 4.5), lane, 1)
                 marks.append(turn_arrow(pos, heading, turn))
-    for crossing in layout["crossings"]:
-        line = LineString(crossing)
-        p, across, along = frame(line, line.length / 2)
-        for distance in np.arange(-line.length / 2 + 0.35, line.length / 2, 0.82):
-            centre = p + across * distance
-            marks.append(stroke(LineString([centre - along * 1.55, centre + along * 1.55]), 0.43))
-
     mesh = Mesh()
     mesh.poly(bounds, -0.075, (108, 123, 94))
     mesh.poly(asphalt, 0, (57, 61, 66))
     mesh.prism(grass, -0.065, 0.125, (111, 137, 82), (155, 150, 129))
     mesh.prism(pavement, -0.065, 0.145, (181, 175, 161), (143, 139, 128))
-    for line, width, kind in walks:
-        if kind == "cycleway":
-            mesh.poly(stroke(line, width).intersection(pavement), 0.148, (139, 157, 150))
-    mesh.poly(unary_union(marks).intersection(asphalt.buffer(-0.1)), 0.011, PAINT, lit=False)
+    mesh.prism(curb, -0.065, 0.155, (203, 197, 181), (154, 148, 136))
+    mesh.prism(paths, -0.065, 0.145, (164, 157, 143), (136, 131, 121))
+    mesh.poly(landings, lambda x, y: 0.015 + 0.13 * min(1, asphalt.distance(Point(x, y)) / 1.35),
+              (188, 167, 133))
+    paint = unary_union(marks).difference(crossings.buffer(0.25))
+    mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
     for (x, y), heading in poles:
         mesh.cyl(x, 0.1, 3.1, y, 0.09, (126, 130, 128))
         mesh.box(x, 2.72, y, 0.27, 0.79, 0.3, (45, 47, 45))
@@ -363,4 +444,7 @@ def compile_scene(edges, layout, walks, greens, bounds):
         ae, be = envelopes[a["id"]], envelopes[b["id"]]
         if ae.intersection(be).area > 0.5:
             conflicts.append([a["id"], b["id"]])
-    return mesh, routes, conflicts, asphalt
+    pedestrian = {"sidewalks": mapping(pavement), "footpath_links": mapping(paths),
+                  "crossing_landings": mapping(landings), "crosswalks": mapping(crossings),
+                  "non_walkable_curbs": mapping(curb)}
+    return mesh, routes, conflicts, asphalt, pedestrian

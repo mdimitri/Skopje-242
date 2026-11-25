@@ -34,13 +34,19 @@ The compiler builds cross-sections from lane and width tags, sweeps their
 boundaries along interpolated centre lines, and uses authored split and
 merge tapers. Movements validate the direction, lane indices and OSM node
 chain. Parallel turns share a Bézier alignment. Each slip traces its
-approach lane to the split before blending into the mapped guide. The
+approach lane to the split before blending into the mapped guide. A short
+arclength filter eases curvature changes at the guide splices. The
 approach from the west holds its inner lanes beside the slip
 until the diverging paths have clearance. Vehicle envelopes complete the central apron,
 with a bound on how far the movement centre lines can leave the mapped
-road strips. Mapped paths and grass and the footprint's enclosed refuges
-produce separate raised surfaces. The layout records the proposed movement
-assignments, stop lines and crossing locations as site-specific design inputs.
+road strips. Carriageway edges in the layout specify 2.4 m raised outer
+sidewalks and 0.32 m median-side curbs. Only designated crossing landings open the
+median to pedestrians. Each zebra spans the paved cross-section at its
+authored station, and signal stop lines are derived from those stations.
+The crossing groups follow the reference imagery approximately. OSM footways
+can feed an existing sidewalk. The junction's road-owned walking surfaces
+compile independently of them. Walkable surfaces and visual curbs are
+separate polygons under `pedestrian` in the exported network.
 The candidate is a flat preview with illustrative signal heads. The world
 builder, runtime routing, traffic signals and editor would need separate
 integration. The conflict list describes overlapping vehicle envelopes,
@@ -61,3 +67,6 @@ Research references
   [ASAM OpenDRIVE lane links](https://publications.pages.asam.net/standards/ASAM_OpenDRIVE/ASAM_OpenDRIVE_Specification/v1.8.1/specification/12_junctions/12_04_connecting_roads.html),
   [SUMO internal junction lanes and conflicts](https://sumo.dlr.de/docs/Networks/SUMO_Road_Networks.html),
   [OSM lane order and turn markings](https://wiki.openstreetmap.org/wiki/Key:turn)
+- Crossing approaches connect sidewalks and use cut-throughs at designated
+  median refuges. [FHWA intersection design guide](https://highways.fhwa.dot.gov/sites/fhwa.dot.gov/files/2022-06/fhwasa22017.pdf),
+  [FHWA pedestrian refuge islands](https://highways.fhwa.dot.gov/safety/proven-safety-countermeasures/medians-and-pedestrian-refuge-islands-urban-and-suburban-areas)

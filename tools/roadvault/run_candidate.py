@@ -17,7 +17,7 @@ from geo import project  # noqa: E402
 HERE = Path(__file__).resolve().parent
 DRIVE = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential",
          "unclassified", "service", "living_street"}
-WALK = {"footway": 2.1, "cycleway": 2.0, "path": 1.5, "steps": 1.6, "pedestrian": 3.2}
+WALK = {"footway": 2.1, "path": 1.5, "steps": 1.6, "pedestrian": 3.2}
 COLOURS = {"W-N": (247, 180, 87), "W-S": (247, 222, 120), "N-W": (118, 202, 164),
            "N-S": (106, 201, 240), "S-W": (231, 133, 173), "S-N": (185, 156, 245)}
 
@@ -47,7 +47,8 @@ def site_inputs(layout, osm, bounds):
         if not LineString(xy).intersects(bounds):
             continue
         if cls in WALK:
-            walks.append((LineString(xy), WALK[cls], cls))
+            if tags.get("footway") not in {"sidewalk", "crossing", "traffic_island"}:
+                walks.append((LineString(xy), WALK[cls], cls))
         else:
             unique_xy = [point for i, point in enumerate(xy) if not i or point != xy[i - 1]]
             if len(unique_xy) >= 2:
@@ -115,7 +116,7 @@ def main():
     radius = layout["radius"]
     bounds = box(-radius, -radius, radius, radius)
     edges, walks, greens = site_inputs(layout, args.osm, bounds)
-    mesh, routes, conflicts, asphalt = compile_scene(edges, layout, walks, greens, bounds)
+    mesh, routes, conflicts, asphalt, pedestrian = compile_scene(edges, layout, walks, greens, bounds)
     args.out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.out / "mesh.npz", positions=np.array(mesh.P, dtype=np.float32),
                         colours=np.array(mesh.C, dtype=np.uint8))
@@ -125,6 +126,7 @@ def main():
         "edges": [{"id": edge.id, "nodes": edge.nodes, "section": edge.section} for edge in edges],
         "movements": [{**spec, "path": list(line.coords), "length_m": round(line.length, 2)} for spec, line in routes],
         "potential_conflicts": conflicts,
+        "pedestrian": pedestrian,
         "asphalt_area_m2": round(asphalt.area, 2),
     }
     (args.out / "network.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
