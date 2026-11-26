@@ -102,7 +102,10 @@ class Edge:
                 _, _, side = taper
                 lanes = self.section["lanes"]
                 width = self.section["w"]
-                if side == "left":
+                if side == "both":
+                    nominal = width * (fraction - 0.5)
+                    offset = max(left_edge, min(right_edge, nominal))
+                elif side == "left":
                     divider = right_edge - width * (1 - 1 / lanes)
                     offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
                               else right_edge - width * (1 - fraction))
@@ -153,6 +156,15 @@ def road_edge(way, points, tapers=(), left_lane=None):
     default_width = 4.2 if cls == "service" and not tags.get("lanes") and not oneway else count * LANE_WIDTH
     section = dict(cls=cls, ow=oneway, lanes=count, directional_lanes=None if oneway else (forward, backward),
                    w=width if math.isfinite(width) and width > 0 else default_width, turn=turns)
+    if cls in {"primary_link", "secondary_link", "tertiary_link"} and oneway and count == 1:
+        section["w"] *= 1.5
+    cycle_sides = [side for side in ("left", "right")
+                   if tags.get("cycleway:" + side, tags.get("cycleway:both", "")) in {"lane", "opposite_lane"}]
+    if tags.get("cycleway") in {"lane", "opposite_lane"} and not cycle_sides:
+        cycle_sides = ["right"]
+    if cycle_sides:
+        section["cycle_sides"] = [("right" if side == "left" else "left") if reverse else side
+                                  for side in cycle_sides]
     if tapers:
         section["tapers"] = tapers
     if left_lane:
@@ -310,6 +322,22 @@ def approach_paint(edge, begin, end):
     stations = np.linspace(begin, end, math.ceil((end - begin) * 2) + 1)
     margin = 0.24 / section["w"]
     marks = [stroke(edge.trace(f, stations), 0.14) for f in (margin, 1 - margin)]
+    for side in section.get("cycle_sides", ()):
+        if section["w"] < 3.5:
+            continue
+        fraction = 1.5 / section["w"]
+        offset = fraction if side == "left" else 1 - fraction
+        marks.append(stroke(edge.trace(offset, stations), 0.16))
+        for station in np.arange(begin + 12, end - 3, 35):
+            center, heading, right = frame(edge.line, station)
+            lo, hi = edge.cross_section(station)
+            center += right * (lo + 0.75 if side == "left" else hi - 0.75)
+            wheels = [Point(center + heading * shift).buffer(0.28).boundary.buffer(0.045)
+                      for shift in (-0.55, 0.55)]
+            frame_line = LineString([center - heading * 0.55, center - right * 0.2,
+                                     center + heading * 0.55, center + right * 0.15,
+                                     center - heading * 0.55])
+            marks.extend([*wheels, stroke(frame_line, 0.09)])
     for direction in ((1,) if section["ow"] else (1, -1)):
         n = lane_count(section, direction)
         lo, hi = lane_bounds(section, direction)
@@ -320,7 +348,8 @@ def approach_paint(edge, begin, end):
                 paint_stations = stations[stations >= opening * 0.34]
             if taper := section.get("lane_taper"):
                 end_name, length, side = taper
-                if index == (1 if side == "left" else n - 1):
+                fading = (index in (1, n - 1) if side == "both" else index == (1 if side == "left" else n - 1))
+                if fading:
                     distance = stations if end_name == "start" else edge.line.length - stations
                     paint_stations = stations[distance >= length * 0.33]
             if len(paint_stations) > 1:
@@ -343,11 +372,11 @@ def turn_arrow(p, heading, turn):
         Polygon([tip, base + normal * 0.36, base - normal * 0.36]))
 
 
-def approach_arrows(edge, station, movements):
-    painted = lane_turns(edge.section)
-    inferred = [set() for _ in range(lane_count(edge.section))]
+def approach_arrows(edge, station, movements, direction=1):
+    painted = lane_turns(edge.section, direction)
+    inferred = [set() for _ in range(lane_count(edge.section, direction))]
     for movement in movements:
-        if "turn" not in movement or movement.get("from_direction", 1) != 1:
+        if "turn" not in movement or movement.get("from_direction", 1) != direction:
             continue
         if edge.id == movement["from"]:
             inferred[movement["from_lane"]].add(movement["turn"])
@@ -358,7 +387,7 @@ def approach_arrows(edge, station, movements):
     arrows = []
     for lane, fallback in enumerate(inferred):
         kinds = (painted[lane] if painted else frozenset()) or fallback
-        p, heading = edge.port(station, lane, 1)
+        p, heading = edge.port(station, lane, direction)
         arrows.extend(turn_arrow(p, heading, kind) for kind in sorted(kinds))
     return arrows
 
@@ -419,7 +448,7 @@ def blend_slip_edges(asphalt, edges, joins, report=None):
         if report is not None and len(join) > 4 and arc.length > join[4]:
             report.append(dict(kind="sidewalk_join_needs_layout", source=join[0], target=join[1]))
             continue
-        smoothed = smooth_connector(arc, 0, passes=55, blend_length=6)
+        smoothed = smooth_connector(arc, 0, passes=85, blend_length=7)
         rebuilt = Polygon(list(smoothed.coords) + list(remainder.coords)[1:], surfaces[index].interiors)
         if not rebuilt.is_valid:
             if report is None:
@@ -499,7 +528,11 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
     routes = polygonal(unary_union(links).intersection(bounds).difference(asphalt))
     curb = curb.union(cut_throughs.buffer(0.32).difference(asphalt).difference(sidewalk))
     curb = unary_union(polys(curb.difference(routes).difference(cut_throughs)))
-    active_refuges = unary_union([refuge for refuge in polys(refuges) if refuge.intersection(routes).area > 0.1])
+    slip_edges = unary_union([edge_band(edge, "left", 0.55) for edge in edges.values()
+                              if edge.section["cls"].endswith("_link") and edge.section["ow"]]) if layout.get("source") == "osm-topology" else Polygon()
+    active_refuges = unary_union([refuge for refuge in polys(refuges)
+                                  if refuge.intersection(routes).area > 0.1
+                                  or refuge.boundary.intersection(slip_edges.buffer(0.15)).length >= 3])
     sidewalk_base = polygonal(sidewalk.union(active_refuges).difference(asphalt).difference(curb))
     # On an existing sidewalk or refuge, only the curb ramp needs its own mesh.
     ramps = routes.intersection(asphalt.buffer(1.35))
@@ -549,7 +582,7 @@ def protected_median(edges, layout, raw_pavement, bounds):
 
 def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
     """Use mapped grass to select planted medians; the carriageways set their shape."""
-    mapped = unary_union(greens).intersection(bounds)
+    mapped = polygonal(unary_union(greens).intersection(bounds))
     planted = []
     corridors = (polys(median_corridor_geometry(edges, layout)) if layout.get("source") == "osm-topology"
                  else median_corridors(edges, layout))
@@ -557,7 +590,7 @@ def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
         median = unary_union(polys(corridor.intersection(bounds).difference(asphalt)))
         if mapped.intersection(median).area > 5:
             planted.append(median)
-    return mapped.union(unary_union(planted)).difference(reserved)
+    return polygonal(mapped.union(unary_union(planted))).difference(polygonal(reserved))
 
 
 def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
@@ -601,8 +634,10 @@ def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
                         for lateral, side in ((lo, -1), (hi, 1))]
             if any(point is None for point in supports):
                 continue
-            heads = [dict(lane=i, position=edge.port(station, i, 1)[0].tolist())
-                     for i in range(lane_count(edge.section))]
+            heads = []
+            for i in range(lane_count(edge.section)):
+                lane_point, _ = edge.port(station, i, 1)
+                heads.append(dict(lane=i, position=(p + right * ((lane_point - p) @ right)).tolist()))
             devices.append(dict(kind="vehicle_gantry", way=way, station=station, facing=(-heading).tolist(),
                                 supports=[point.tolist() for point in supports], heads=heads,
                                 clearance_m=GANTRY_CLEARANCE))
@@ -724,10 +759,12 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
         left_edge, right_edge = edge.cross_section(station)
         marks.append(stroke(LineString([p + right * (left_edge + 0.28), p + right * (right_edge - 0.28)]), 0.34))
         marks.extend(approach_arrows(edge, max(0, station - 4.5), movements))
-    for way, station in layout.get("approach_arrows", []):
+    for item in layout.get("approach_arrows", []):
+        way, station = item[:2]
+        direction = item[2] if len(item) > 2 else 1
         edge = by_id[way]
         at = edge.line.length + station if station < 0 else station
-        marks.extend(approach_arrows(edge, at, movements))
+        marks.extend(approach_arrows(edge, at, movements, direction))
     for way, station in layout.get("yield_lines", []):
         marks.extend(yield_teeth(by_id[way], station))
 

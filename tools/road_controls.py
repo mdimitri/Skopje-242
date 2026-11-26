@@ -7,17 +7,37 @@ from shapely import STRtree
 from shapely.geometry import LineString, Point
 
 from furniture import RANK, plan_lights
+from geo import project
 from roadwidth import lane_bounds, lane_count
 from roadvault.mesh import Mesh
 from roadvault.road_candidate import PAINT, frame, stroke
 from roadvault.traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
 
 
-def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
+def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, roads=(), ways=()):
     """Fill the gaps in the candidate plan using mapped lights and junction topology."""
     if not controls:
         return
     inc = defaultdict(list)
+    original_lines = {}
+    for way in ways:
+        if way.get("type") != "way" or len(way.get("geometry", ())) < 2:
+            continue
+        points = [project(point["lat"], point["lon"]) for point in way["geometry"]]
+        if len(set(points)) >= 2:
+            original_lines[way["id"]] = LineString(points)
+
+    def placement(line, station, original):
+        point, heading, right = frame(line, station)
+        if original is None:
+            return point, heading, right
+        at = original.project(Point(point))
+        raw_point, raw_heading, _ = frame(original, at)
+        if np.linalg.norm(raw_point - point) > 4 or abs(raw_heading @ heading) < 0.85:
+            return point, heading, right
+        if raw_heading @ heading < 0:
+            raw_heading = -raw_heading
+        return raw_point, raw_heading, np.array([-raw_heading[1], raw_heading[0]])
     for ei, edge in enumerate(edges):
         if edge["drive"] and not edge["bridge"] and edge["w"] > 0 and edge["cls"] in RANK:
             inc[edge["a"]].append((ei, 0))
@@ -40,8 +60,19 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
     original = tuple(controls["signals"])
     existing = {(item[1], item[2]) for item in original}
     reviewed = [(item[6], item[7]) for item in original if item[0] == ("candidate", "glavinov")]
-    reserved = {clusters.get(edges[ei]["b" if end else "a"], edges[ei]["b" if end else "a"])
-                for ei, end in existing}
+    node_map = {}
+    for item in original:
+        node, ei, end = item[:3]
+        if node == ("candidate", "glavinov"):
+            continue
+        graph_node = edges[ei]["b" if end else "a"]
+        node_map[node] = ("candidate", "city", clusters.get(graph_node, graph_node))
+    controls["signals"] = [(node_map.get(item[0], item[0]), item[1], item[2],
+                            item[1] * 2 + item[2] if item[0] in node_map else item[3], *item[4:])
+                           for item in controls["signals"]]
+    controls["heads"] = [(node_map.get(item[0], item[0]), *item[1:]) for item in controls["heads"]]
+    controls["crossings"] = [(*item[:7], node_map.get(item[7], item[7]), *item[8:]) if len(item) > 7 else item
+                             for item in controls["crossings"]]
     crossings = controls["crossings"]
     cross_points = [Point(c[:2]) for c in crossings]
     cross_index = STRtree(cross_points)
@@ -49,8 +80,6 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
     approaches = warnings = blocked = 0
     for node in sorted(lit):
         group = clusters.get(node, node)
-        if group in reserved:
-            continue
         jx, jz = locations[node]
         if any(math.hypot(x - jx, z - jz) < 55 for x, z in reviewed):
             continue
@@ -68,6 +97,7 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
             if line.length < 4 or (ei, end) in existing:
                 continue
             width = edge["w"]
+            original = original_lines.get(roads[edge["road"]]["id"]) if roads else None
             direction = 1 if end else -1
             lo, hi = lane_bounds(edge, direction)
             choices = []
@@ -80,7 +110,7 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
             cross = min(choices, default=None)
             zebra = cross[2] if cross else line.length - min(junction_width / 2 + 3.2, line.length * 0.45)
             stop = max(0.35, zebra - 3.4)
-            point, heading, right = frame(line, stop)
+            point, heading, right = placement(line, stop, original)
             mesh = Mesh()
             mesh.poly(stroke(LineString([point + right * (lo + 0.2), point + right * (hi - 0.2)]), 0.34),
                       0.011, PAINT, lit=False)
@@ -95,7 +125,7 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
                 side = None
                 for station in (stop, max(0.35, stop - 3), max(0.35, stop - 6),
                                 min(line.length - 0.35, stop + 3)):
-                    anchor, _, normal = frame(line, station)
+                    anchor, signal_heading, normal = placement(line, station, original)
                     shoulders = (anchor + normal * (sign * (width / 2 + offset))
                                  for sign in (1, -1) for offset in (1.05, 1.55, 2.05))
                     side = next((p for p in shoulders if clear(*p)), None)
@@ -103,6 +133,7 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
                         break
                 heads = [] if side is None else [side]
                 if side is not None:
+                    heading = signal_heading
                     draw_device(mesh, "vehicle_signal", side, -heading, live=True)
                 else:
                     blocked += 1
@@ -112,26 +143,19 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear):
             for x, z in heads:
                 controls["heads"].append((phase_node, (ei, end), x, z, height, *(-heading)))
             if stop >= 12:
-                p, h, r = frame(line, stop - min(18, stop - 1))
+                p, h, r = placement(line, stop - min(18, stop - 1), original)
                 sign = p + r * (width / 2 + 1.1)
                 if clear(*sign):
                     draw_device(mesh, "signal_ahead", sign, -h)
                     warnings += 1
-            # Preserve existing paint when a crossing matches. Add paint and runtime geometry together elsewhere.
-            if width >= 4.5 and (cross or line.length >= 12):
-                key = cross[1] if cross else (ei, round(zebra if end else line.length - zebra))
+            # The road compiler has already checked both walkable landings.
+            if width >= 4.5 and cross:
+                key = cross[1]
                 if key not in used_crossings:
-                    center, axis, right = frame(line, zebra)
+                    center, axis, right = placement(line, zebra, original)
                     pads = [center + right * (side * (width / 2 + 0.8)) for side in (-1, 1)]
                     if all(clear(*p) for p in pads):
-                        if cross:
-                            crossings[cross[1]] = (*crossings[cross[1]][:7], phase_node)
-                        else:
-                            for offset in np.arange(-width / 2 + 0.4, width / 2 - 0.2, 0.82):
-                                p = center + right * offset
-                                mesh.poly(stroke(LineString([p - axis * 1.55, p + axis * 1.55]), 0.44),
-                                          0.011, PAINT, lit=False)
-                            crossings.append((*center, *axis, width, 0, 0.0, phase_node))
+                        crossings[cross[1]] = (*crossings[cross[1]][:7], phase_node)
                         for side, pad in zip((-1, 1), pads):
                             facing = -side * right
                             draw_device(mesh, "pedestrian_signal", pad, facing, live=True)

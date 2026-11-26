@@ -5,11 +5,11 @@ import tempfile
 import unittest
 
 import numpy as np
-from shapely.geometry import LineString, Point, box, shape
+from shapely.geometry import LineString, Point, Polygon, box, shape
 from shapely.ops import unary_union
 
 from run_candidate import ROOT, compile_scene, infer_site
-from road_candidate import crossing_span
+from road_candidate import crossing_span, edge_band, footprint, polys
 from geo import LAT0, LON0, M_LAT, M_LON
 
 
@@ -50,6 +50,29 @@ class OsmInferenceTests(unittest.TestCase):
         self.assertEqual(sum(move["turn"] == "through" for move in movements), 2)
         result = compile_scene(self.edges, self.layout, self.walks, self.greens, self.bounds)
         self.assertTrue(result[3].is_valid)
+
+    def test_four_to_two_lane_merge_tapers_to_the_receiving_width(self):
+        self.infer([
+            way(101, [1, 2], [(-12, 0), (0, 0)], name="Boulevard", lanes="4", oneway="yes"),
+            way(102, [2, 3], [(0, 0), (35, 0)], name="Boulevard", lanes="2", oneway="yes"),
+        ])
+        wide, narrow = (next(edge for edge in self.edges if edge.id == way) for way in (101, 102))
+        self.assertAlmostEqual(np.diff(wide.cross_section(wide.line.length)).item(), narrow.section["w"])
+        self.assertAlmostEqual(np.diff(wide.cross_section(0)).item(), wide.section["w"])
+        self.assertGreaterEqual(wide.section["tapers"][0][1], 10)
+
+    def test_unmapped_major_junction_crossings_and_cycle_lane_are_drawn(self):
+        self.infer([
+            way(101, [1, 2, 3], [(-50, 0), (0, 0), (50, 0)], lanes="2", **{"cycleway:right": "lane"}),
+            way(102, [4, 2, 5], [(0, -50), (0, 0), (0, 50)], lanes="2"),
+        ])
+        self.assertGreaterEqual(len(self.layout["crossings"]), 3)
+        self.assertTrue(any(edge.section.get("cycle_sides") == ["right"] for edge in self.edges))
+        self.assertTrue(any(sign[0] == "cycleway" for sign in self.layout["signs"]))
+        _, _, _, _, furniture, pedestrian = compile_scene(
+            self.edges, self.layout, self.walks, self.greens, self.bounds, self.report)
+        self.assertTrue(any(device["kind"] == "cycleway" for device in furniture))
+        self.assertGreater(shape(pedestrian["crosswalks"]).area, 10)
 
     def test_balanced_one_way_fork_reserves_the_outer_lane_for_its_slip(self):
         movements = self.infer([
@@ -136,6 +159,33 @@ class OsmInferenceTests(unittest.TestCase):
 
 @unittest.skipUnless((ROOT / "data/osm/roads.json").exists(), "Requires the local Skopje OSM extract")
 class SkopjeInferenceTests(unittest.TestCase):
+    def test_slip_islands_have_crossings_with_walkable_landings(self):
+        for origin, island_count in [((42.0038599, 21.3902603), 4), ((42.0004324, 21.4270569), 2)]:
+            with self.subTest(origin=origin):
+                bounds = box(-115, -115, 115, 115)
+                layout = dict(origin=origin, radius=115)
+                edges, walks, greens, _, report = infer_site(layout, ROOT / "data/osm", bounds)
+                _, _, _, asphalt, _, pedestrian = compile_scene(edges, layout, walks, greens, bounds, report)
+                by_id = {edge.id: edge for edge in edges}
+                walkable = unary_union([shape(pedestrian[name]) for name in
+                                        ("sidewalks", "footpath_links", "median_cut_throughs")])
+                for group in layout["crossings"]:
+                    for way, station in group:
+                        point, _, right, lo, hi = crossing_span(by_id[way], station, asphalt)
+                        for lateral in (lo - 0.3, hi + 0.3):
+                            self.assertLessEqual(walkable.distance(Point(point + right * lateral)), 2)
+                raw = unary_union([polygon for edge in edges for polygon in polys(footprint(edge))])
+                holes = [Polygon(ring) for polygon in polys(raw) for ring in polygon.interiors
+                         if 15 <= Polygon(ring).area <= 420]
+                slips = [edge for edge in edges if edge.section["ow"] and edge.section["cls"].endswith("_link")]
+                islands = [hole for hole in holes if any(
+                    hole.boundary.intersection(edge_band(edge, "left", 0.55).buffer(1)).length >= 3 for edge in slips)]
+                self.assertEqual(len(islands), island_count)
+                crossings = shape(pedestrian["crosswalks"])
+                self.assertTrue(all(island.distance(crossings) < 0.1 for island in islands))
+                for edge in slips:
+                    self.assertAlmostEqual(edge.section["w"], 4.875)
+
     def test_boulevard_tapers_and_outer_slip_sidewalks(self):
         sites = [((41.99815, 21.42544), 95, 671715324, 233082416, [16540429, 16552477, 173142133, 173142141]),
                  ((42.00547, 21.41690), 93, 229980925, 669010521, [229986882, 229986884])]

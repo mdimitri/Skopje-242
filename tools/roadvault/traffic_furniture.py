@@ -89,6 +89,14 @@ def draw_device(mesh, kind, position, direction, live=False):
                                               (0.075, 2.64), (-0.075, 2.64)], DARK)
             for yy, cc in ((2.57, RED), (2.46, (235, 175, 54)), (2.35, (66, 150, 88))):
                 disc(mesh, point, heading, 0.025, 0, yy, 0.038, cc)
+    elif kind == "cycleway":
+        disc(mesh, point, heading, 0.019, 0, 2.35, 0.32, BLUE)
+        for x in (-0.15, 0.15):
+            disc(mesh, point, heading, 0.022, x, 2.27, 0.075, WHITE)
+            disc(mesh, point, heading, 0.024, x, 2.27, 0.048, BLUE)
+        face(mesh, point, heading, 0.026,
+             [(-0.15, 2.27), (-0.04, 2.41), (0.15, 2.27), (0.11, 2.25),
+              (-0.04, 2.36), (-0.11, 2.25)], WHITE)
     elif kind == "keep_right":
         disc(mesh, point, heading, 0.019, 0, 2.16, 0.3, BLUE)
         face(mesh, point, heading, 0.022, [(-0.18, 2.29), (-0.13, 2.34), (0.12, 2.09), (0.07, 2.04)], WHITE)

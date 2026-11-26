@@ -5,13 +5,13 @@ import math
 
 import numpy as np
 from shapely.errors import GEOSException
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
 if __package__:
-    from .road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
+    from .road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys
 else:
-    from road_candidate import compile_movements, footprint, frame, lane_count, lane_turns, protected_median, polys
+    from road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys
 
 SIDEWALKS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "trunk"}
 
@@ -261,10 +261,10 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
         name = tags_by_edge[a.id].get("name")
         if (not name or name != tags_by_edge[b.id].get("name") or not a.section["ow"] or not b.section["ow"]
                 or narrow.at_end == wide.at_end or narrow.outward @ wide.outward > -0.94
-                or b.section["lanes"] - a.section["lanes"] != 1 or b.id in profiles):
+                or b.section["lanes"] - a.section["lanes"] not in (1, 2) or b.id in profiles):
             continue
         extra = b.section["w"] - a.section["w"]
-        if not 2 <= extra <= 4.5 or b.line.length < 12:
+        if not 2 <= extra <= 7 or b.line.length < 7:
             continue
         end = "end" if wide.at_end else "start"
         length = min(25, b.line.length - 1)
@@ -273,6 +273,8 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
         turns = lane_turns(b.section)
         side = "right" if turns and any(t.endswith("right") for t in turns[-1]) and not (
             turns[0] and any(t.endswith("left") for t in turns[0])) else "left"
+        if b.section["lanes"] - a.section["lanes"] == 2:
+            side = "both"
         b.section["lane_taper"] = [end, length, side]
         profiles[b.id] = [end, length, side]
         layout.setdefault("tapers", {}).setdefault(str(b.id), []).append(entry)
@@ -435,6 +437,141 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     report.append(dict(kind="connector_needs_review", node=node, source=source.edge.id, target=target.edge.id))
     layout["unmarked"] = [[edge, start, by_id[edge].line.length - end] for edge, (start, end) in trim.items()]
     append_crossings(layout, edges, node_tags, crossing_guides, bounds, report)
+    # At substantial junctions, connect the road-owned sidewalks even where OSM
+    # contains no explicitly mapped crossing node or crossing footway.
+    used = {way for group in layout["crossings"] for way, _ in group}
+    mapped_ways = set(used)
+    crossing_points = [frame(by_id[way].line, station)[:2]
+                       for group in layout["crossings"] for way, station in group]
+    holes = [Polygon(ring) for polygon in polys(raw_pavement) for ring in polygon.interiors
+             if 15 <= Polygon(ring).area <= 420]
+    for island in holes:
+        candidates = []
+        for edge in edges:
+            if (not edge.section["ow"] or not edge.section["cls"].endswith("_link")
+                    or layout["road_edges"].get(str(edge.id), (None, None))[1] != "sidewalk"):
+                continue
+            boundary = island.boundary.intersection(edge_band(edge, "left", 0.55).buffer(1))
+            segments = [part for part in getattr(boundary, "geoms", (boundary,))
+                        if part.geom_type == "LineString" and part.length >= 3]
+            if segments:
+                segment = max(segments, key=lambda part: part.length)
+                at = edge.line.project(segment.interpolate(0.5, normalized=True))
+                if 3 <= at <= edge.line.length - 3:
+                    candidates.append((segment.length, edge, at))
+        if not candidates:
+            continue
+        if any(edge.id in used and any(way == edge.id and island.distance(edge.line.interpolate(at)) <= edge.section["w"]
+                                      for group in layout["crossings"] for way, at in group)
+               for _, edge, _ in candidates):
+            continue
+        for _, edge, station in sorted(candidates, key=lambda item: -item[0]):
+            if edge.id not in used and bounds.buffer(-2).covers(edge.line.interpolate(station)):
+                layout["crossings"].append([[edge.id, round(station, 3)]])
+                used.add(edge.id)
+                crossing_points.append(frame(edge.line, station)[:2])
+                break
+    for node, hits in sorted(relevant_nodes.items()):
+        arms = [arm for _, arm in hits if arm.edge.id not in restricted_edges]
+        if len(arms) < 3 or not bounds.buffer(-8).covers(Point(hits[0][0])):
+            continue
+        if sum(arm.edge.section["cls"].removesuffix("_link") in SIDEWALKS for arm in arms) < 2:
+            continue
+        for arm in arms:
+            edge = arm.edge
+            tags = tags_by_edge[edge.id]
+            if (edge.id in used or edge.line.length < 16
+                    or tags.get("crossing") in {"no", "unmarked"}
+                    or tags.get("foot") in {"no", "private"}
+                    or edge.section["cls"].removesuffix("_link") not in SIDEWALKS):
+                continue
+            distance = max(12, edge.section["w"] * 0.9)
+            station = edge.line.length - distance if arm.at_end else distance
+            point, heading, _ = frame(edge.line, station)
+            junction = hits[0][0]
+            def clear_crossing(other, direction):
+                delta = point - other
+                distance = np.linalg.norm(delta)
+                opposite_sides = (point - junction) @ (other - junction) < 0
+                return distance >= 8 and (distance >= 25 or opposite_sides or abs(heading @ direction) < 0.85
+                                           or abs(delta @ heading) < 4)
+            if (3 <= station <= edge.line.length - 3 and bounds.buffer(-2).covers(Point(point))
+                    and all(clear_crossing(other, direction) for other, direction in crossing_points)):
+                layout["crossings"].append([[edge.id, round(station, 3)]])
+                used.add(edge.id)
+                crossing_points.append((point, heading))
+    # A crossing of a divided boulevard should continue across the opposing
+    # carriageway and cut through the median as one pedestrian route.
+    removed_groups = set()
+    for group_index, group in enumerate(layout["crossings"]):
+        if group_index in removed_groups:
+            continue
+        if len(group) != 1:
+            continue
+        way, station = group[0]
+        partner_ids = []
+        for near, far in layout["median_corridors"]:
+            if way in map(abs, near):
+                partner_ids.extend(map(abs, far))
+            elif way in map(abs, far):
+                partner_ids.extend(map(abs, near))
+        edge = by_id[way]
+        point, heading, _ = frame(edge.line, station)
+        for partner_id in partner_ids:
+            partner = by_id[partner_id]
+            at = partner.line.project(Point(point))
+            other, direction, _ = frame(partner.line, at)
+            if (3 <= at <= partner.line.length - 3 and heading @ direction < -0.85
+                    and np.linalg.norm(other - point) < 35
+                    and bounds.buffer(-2).covers(Point(other))):
+                if partner_id in used:
+                    match = next((i for i, other_group in enumerate(layout["crossings"])
+                                  if i != group_index and i not in removed_groups and len(other_group) == 1
+                                  and other_group[0][0] == partner_id and abs(other_group[0][1] - at) <= 8), None)
+                    if match is None:
+                        continue
+                    removed_groups.add(match)
+                group.append([partner_id, round(at, 3)])
+                used.add(partner_id)
+                break
+    layout["crossings"] = [group for i, group in enumerate(layout["crossings"]) if i not in removed_groups]
+    sidewalk_bands = [edge_band(by_id[int(way)], side, 2.4)
+                      for way, sides in layout["road_edges"].items()
+                      for side, feature in zip(("left", "right"), sides) if feature == "sidewalk"]
+    walkable = unary_union([*sidewalk_bands, *holes]).difference(raw_pavement)
+    connected = []
+    for group in layout["crossings"]:
+        valid = True
+        for item in group:
+            way, station = item
+            edge = by_id[way]
+            direction = 1 if station < edge.line.length / 2 else -1
+            shifts = (0,) if way in mapped_ways or len(group) > 1 else (0, 3, 6, 9, 12, 15)
+            if edge.section["cls"].endswith("_link"):
+                shifts = (0, 1, 2)
+            found = None
+            for shift in shifts:
+                at = station + direction * shift
+                if not 3 <= at <= edge.line.length - 3 or not bounds.buffer(-2).covers(edge.line.interpolate(at)):
+                    continue
+                try:
+                    point, _, right, lo, hi = crossing_span(edge, at, raw_pavement)
+                except ValueError:
+                    continue
+                landings = [Point(point + right * lateral) for lateral in (lo - 0.25, hi + 0.25)]
+                if all(walkable.distance(landing) <= 1.5 or
+                       (len(group) > 1 and divider.distance(landing) <= 2) for landing in landings):
+                    found = round(at, 3)
+                    break
+            if found is None:
+                valid = False
+                break
+            item[1] = found
+        if valid:
+            connected.append(group)
+        else:
+            report.append(dict(kind="crossing_without_walkable_landing", ways=[way for way, _ in group]))
+    layout["crossings"] = connected
     align_paired_zebras(layout, by_id)
     stations = dict(item for group in layout["crossings"] for item in group)
     layout["pedestrian_signals"] = []
@@ -452,4 +589,37 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     covered.append(edge.id)
         if len(covered) != len(approaches) or not covered:
             report.append(dict(kind="control_needs_layout", node=node, control=control))
+    layout["approach_arrows"] = []
+    layout["yield_lines"] = []
+    layout["signs"] = []
+    seen = set()
+    for node, hits in sorted(relevant_nodes.items()):
+        arms = [arm for _, arm in hits if arm.edge.id not in restricted_edges]
+        if len(arms) < 3 or not bounds.buffer(-8).covers(Point(hits[0][0])):
+            continue
+        for arm in arms:
+            edge, direction = arm.edge, arm.arrival
+            if (edge.section["ow"] and direction != 1) or edge.line.length < 12:
+                continue
+            key = edge.id, direction
+            if key in seen:
+                continue
+            seen.add(key)
+            crossing = stations.get(edge.id)
+            setback = max(7, edge.section["w"] * 0.65)
+            station = (crossing - 8 if direction == 1 else crossing + 8) if crossing is not None else (
+                edge.line.length - setback - 5 if direction == 1 else setback + 5)
+            if 2.5 <= station <= edge.line.length - 2.5 and edge.id not in layout["stop_lines"]:
+                layout["approach_arrows"].append([edge.id, round(station, 3), direction])
+            if edge.section["cls"].endswith("_link") and edge.section["ow"] and arm.at_end:
+                at = edge.line.length - min(3, edge.line.length * 0.2)
+                layout["yield_lines"].append([edge.id, round(at, 3)])
+                layout["signs"].append(["give_way", edge.id, round(at, 3), "right"])
+        for arm in arms:
+            if arm.edge.id in stations and arm.edge.section["ow"] and arm.at_end:
+                layout["signs"].append(["crossing", arm.edge.id, round(max(1, stations[arm.edge.id] - 4), 3), "right"])
+    for edge in edges:
+        if edge.line.length >= 16:
+            for side in edge.section.get("cycle_sides", ()):
+                layout["signs"].append(["cycleway", edge.id, 5, side])
     return layout

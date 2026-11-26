@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 84
+VERSION = 85
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -3157,7 +3157,8 @@ def main():
         phase("city traffic controls")
         road_controls.build(edges, _read_list(os.path.join(a.src, "signals.json")), candidate_controls,
                             mesh.add, chunk_of, MAT_SOLID, T,
-                            lambda x, y: _not_building(x, y) and not in_lane(x, y, 0.25))
+                            lambda x, y: _not_building(x, y) and not in_lane(x, y, 0.25),
+                            roads, __import__("json").load(open(os.path.join(a.src, "roads.json"), encoding="utf-8"))["elements"])
         xwalks = candidate_controls["crossings"]
     stage("rasters")
     phase("ground rasters")

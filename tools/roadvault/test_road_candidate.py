@@ -188,7 +188,8 @@ class RoadCandidateTests(unittest.TestCase):
                     self.assertGreaterEqual(entries.distance(point), 0.24)
                 for head in device["heads"]:
                     expected, _ = edge.port(station, head["lane"], 1)
-                    np.testing.assert_allclose(head["position"], expected)
+                    np.testing.assert_allclose(head["position"], center + right * ((expected - center) @ right))
+                    self.assertAlmostEqual(np.dot(np.asarray(head["position"]) - center, heading), 0.0)
 
     def test_southbound_merge_sidewalk_follows_the_asphalt_at_full_width(self):
         sidewalk = shape(self.pedestrian["sidewalks"])
@@ -216,7 +217,7 @@ class RoadCandidateTests(unittest.TestCase):
         for way, station in self.layout["yield_lines"]:
             with self.subTest(yield_way=way):
                 teeth = yield_teeth(self.by_id[way], station)
-                self.assertEqual(len(teeth), 4)
+                self.assertEqual(len(teeth), 7)
                 self.assertTrue(all(pavement.covers(tooth) and tooth.distance(crosswalks) > 0.25 for tooth in teeth))
 
 
