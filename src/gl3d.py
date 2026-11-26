@@ -3371,8 +3371,15 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
   float crack = texture(texture2, wpos / 7.0).r * smoothstep(0.45, 0.75, texture(texture1, wpos / 29.0).b + 0.25);
   c *= 1.0 - road * crack * 0.3;
   c = wear(c, road, crack);
-  float sw = step(0.55, lum) * step(lum, 0.8) * grey * step(0.92, abs(nrm.y));   // pale flat concrete = pavement: slabs, tone, grit
-  if (sw > 0.0 && generatedSurfaces == 0) {
+  float flatSurface = step(0.92, abs(nrm.y));
+  float sw = smoothstep(0.53, 0.60, lum) * (1.0 - smoothstep(0.78, 0.83, lum))
+             * (1.0 - smoothstep(0.06, 0.14, max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b))))
+             * flatSurface;                                       // warm pale concrete: sidewalks, islands and ramps
+  float grass = smoothstep(0.05, 0.105, base.g - max(base.r, base.b)) * flatSurface;
+  vec4 grain = texture(texture1, wpos / 2.3);
+  float detailStrength = generatedSurfaces == 0 ? 1.0 : 0.65;
+  c *= 1.0 + detailStrength * ((0.24 * road + 0.34 * grass) * (grain.r - 0.5) - 0.14 * grass * grain.a);
+  if (sw > 0.0) {
     vec2 sp = wpos / vec2(0.95, 0.62) + vec2(0.0, 0.0);
     vec2 cell = floor(sp);
     float tone = h21(cell + 3.7);
@@ -3381,7 +3388,7 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     float seam = smoothstep(0.455, 0.485, max(f.x, f.y)) * (1.0 - smoothstep(0.05, 0.2, fw));
     float grit = texture(texture1, wpos / 1.7).r - 0.5;
     float stain = smoothstep(0.55, 0.8, texture(texture1, wpos / 23.0).b);
-    c *= 1.0 + sw * ((tone - 0.5) * 0.09 + grit * 0.1 - stain * 0.07 - seam * 0.16);
+    c *= 1.0 + sw * detailStrength * ((tone - 0.5) * 0.09 + grit * 0.1 - stain * 0.07 - seam * 0.16);
   }
   vec4 material = vec4(0.5);
   float materialBump = 0.0;
@@ -3389,6 +3396,11 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     float family = road >= sw ? 0.0 : 1.0;
     float weight = max(road, sw);
     vec2 uv = wpos / 3.0;
+    if (grass > weight) {
+      family = 2.0;
+      weight = grass;
+      uv = wpos / 2.7;
+    }
     if (generatedSurfaces == 2 && weight < 0.20){
       float leafy = smoothstep(0.045, 0.14, base.g - max(base.r, base.b));
       float bark = smoothstep(0.04, 0.14, base.r - base.b) *
@@ -3412,7 +3424,7 @@ SOLID_FS = DETAIL_FS[:DETAIL_FS.index("void main(){")]+ """void main(){
     vec3 nb = bumpN(wp, nrm, hb, strg);
     if (generatedSurfaces == 2) nb = surfaceNormal(wp, nb, material.a, materialBump);
     float rough = mix(0.62, 0.9, flat_);                                                     // poles, signs, car bodies of the mesh: semi-gloss; ground-level slabs: matt
-    rough = mix(rough, 0.95, road + sw);                                                     // asphalt, pavement: matt
+    rough = mix(rough, 0.95, max(max(road, sw), grass));                                      // road, pavement and grass: matt
     rough = mix(rough, 0.3, (1.0 - road) * (1.0 - sw) * (1.0 - flat_));                  // upright props (signs, billboards, lamp poles): smooth painted metal, no relief
     c = relight(c, nrm, nb, rough, fadeb);
   }
