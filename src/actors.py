@@ -556,11 +556,15 @@ def _apart(a, za, b, zb):
 
 
 def _heli_floor(p, w):
-    """Ground or the roof under the helicopter (it may land on flat roofs)."""
+    """Ground, roof or raised helipad under the helicopter."""
     g = w.ground_y(p.x, p.y)
     r = _bld_top(w, p.x, p.y)
     if r is not None and p.az is not None and g < r <= p.az + 0.7:
-        return r
+        g = r
+    if p.az is not None and getattr(w, "pg2", None):
+        h = w.plat_h(p.x, p.y, p.az)
+        if h is not None:
+            g = max(g, h)
     return g
 
 
@@ -4650,6 +4654,9 @@ class Sim:
                 elif mt is None:                              # no roof mesh to measure: stand well clear of any roof shape
                     z = hit[1] + 2.5
             self.helipads.append((x, y, z, hit[1] if roof else None))
+            surface = z + 0.18                                # top of the H marking in render.py; solid for landing and feet
+            pad = [(x + 8.0 * math.cos(i * math.tau / 28), y + 8.0 * math.sin(i * math.tau / 28)) for i in range(28)]
+            _pg2_add(self.w, (1, pad, surface, (x - 8, y - 8, x + 8, y + 8)), x - 8, y - 8, x + 8, y + 8)
             if roof:
                 deck = [(x - 8.5, y - 8.5), (x + 8.5, y - 8.5), (x + 8.5, y + 8.5), (x - 8.5, y + 8.5)]
                 _pg2_add(self.w, (1, deck, z, (x - 8.5, y - 8.5, x + 8.5, y + 8.5)), x - 8.5, y - 8.5, x + 8.5, y + 8.5)
@@ -4677,7 +4684,7 @@ class Sim:
                     self.__dict__.pop("_esc_grid", None)
             self._clear_pad(x, y)
             b = Heli(x, y, -math.pi / 2, vehicles.HELI, 0)
-            b.az = z
+            b.az = surface
             b.fuel = 1.0
             self.bodies.append(b)
 

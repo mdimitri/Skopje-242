@@ -123,6 +123,8 @@ Use these producer-to-consumer paths to locate the complete contract before edit
 | Multiplayer state desyncs | Gameplay mutation → `src/mpgame.py` serialize/apply/interpolate → `src/mp.py` session → `src/mpnet.py` transport → connection/recovery path | Packet order/tick comparison and local prediction may hide a one-sided protocol change. |
 | Rendering regression | State/data producer → `Renderer` draw path → GPU/model/texture helper → present/postprocess path | Resource lifetime, LOD, batching, coordinate transforms, and draw order are frequent causes. |
 
+Hospital helipads are runtime additions in `Sim._make_helis` (`src/actors.py`), rendered by `src/render.py`. Their circular walkable surfaces in `World.pg2` sit 0.18 m above the stored deck height to clear the H marking. Helicopters spawn there, and `_heli_floor` includes `World.plat_h` so they settle on raised decks rather than the roof below. `tools/test_helipads.py` checks all five locations for spawning, parking, landing and departure on ground and raised pads.
+
 ### World build stages at a glance
 
 Current markers in `tools/build_world.py` establish stage ownership. Recheck names and inputs in source after pipeline edits.
