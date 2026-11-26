@@ -135,6 +135,16 @@ class RoadNetworkTests(unittest.TestCase):
         self.assertEqual([traffic._mapped_lane((0, 1), i, (1, 1), 0) for i in (0, 1)], [1, 2])
         self.assertEqual([traffic._mapped_lane((2, 1), i, (3, 1), 0) for i in (1, 2)], [0, 1])
 
+    def test_slip_merge_targets_the_receiving_outer_lane(self):
+        right = edge(0, 1, (-20, 5), (0, 0), ow=True, cls="primary_link", lanes=1)
+        left = edge(2, 1, (-20, -5), (0, 0), ow=True, cls="primary_link", lanes=1)
+        receiving = edge(1, 3, (0, 0), (40, 0), ow=True, cls="primary", lanes=3, w=9.75)
+        traffic = Traffic.__new__(Traffic)
+        traffic.w = SimpleNamespace(edges=[right, left, receiving], edge_point=lambda e, s: World.edge_point(None, e, s))
+        traffic.internal_links = {}
+        self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), -0.24), 2)
+        self.assertEqual(traffic._mapped_lane((1, 1), 0, (2, 1), 0.24), 0)
+
     def test_rendered_taper_continues_across_a_graph_only_node(self):
         from geo import LAT0, LON0, M_LON
         ways = [{"type": "way", "id": i, "nodes": nodes,

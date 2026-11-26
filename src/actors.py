@@ -2591,7 +2591,16 @@ class Traffic:
         n = lane_count(road, direction)
         previous_road = self.w.edges[previous[0]]
         previous_count = lane_count(previous_road, previous[1])
-        if angle >= self.TURN_LANE or (angle > 0.20 and road["cls"].endswith("_link")):
+        if (previous_road["cls"].endswith("_link") and not road["cls"].endswith("_link")
+                and previous_road["ow"] and -1.2 < angle < 0.35):
+            along = max(0.0, previous_road["len"] - 10.0) if previous[1] == 1 else min(10.0, previous_road["len"])
+            x, y, _, _ = self.w.edge_point(previous_road, along)
+            junction = previous_road["pts"][-1 if previous[1] == 1 else 0]
+            _, _, dx, dy = self.w.edge_point(road, 0 if direction == 1 else road["len"])
+            side = direction * (dx * (y - junction[1]) - dy * (x - junction[0]))
+            if side > 0.25:
+                lane = n - 1
+        elif angle >= self.TURN_LANE or (angle > 0.20 and road["cls"].endswith("_link")):
             lane += n - previous_count
         elif abs(angle) < 0.35:
             next_taper = road.get("lane_taper", (None, None, None))
