@@ -105,7 +105,7 @@ crossing stations and furniture.
 | Keep sidewalks on the outside of a divided road | Opposing parallel one-way ways with matching names or refs and enough room for a median get inside curbs. The median is protected from inferred turn envelopes and junction rounding, and mapped grass selects planted medians. OSM footways can join the road-built sidewalk. |
 | Connect paired crossings at street level | Tagged crossings take priority. At substantial junctions, missing crossings are inferred from road-owned sidewalks and available road length. Both ends must connect to a sidewalk, refuge or median cut-through. Nearby opposing zebra stations are aligned across the median and use the same rounded, flush break as the reference junction. Enclosed slip refuges get rounded tips, a paved surface and a zebra to the outer sidewalk. |
 | Tie signals to the approaches they control | Mapped one-way signal approaches with a nearby zebra can supply stop lines, pedestrian heads and portals. Other signal positions are flagged for placement review. |
-| Provide useful turn-lane storage | A one- or two-lane width change on a clear one-way continuation gets a taper up to 25 m, limited by the available road segment. Other changes are reported for review. The authored pocket supports the 25 m target at Partizanski–Glavinov. |
+| Provide useful turn-lane storage | A one- or two-lane width change on a clear one-way continuation gets a taper up to 50 m, limited by the available road segment. Other changes are reported for review. The authored pocket supports the 25 m queue target at Partizanski–Glavinov. |
 
 The input is the game's local, right-hand-traffic, at-grade preview. A combined
 `roads.json` can include OSM nodes and relations; `restrictions.json` is also

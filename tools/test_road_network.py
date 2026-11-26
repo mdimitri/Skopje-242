@@ -90,23 +90,24 @@ class RoadNetworkTests(unittest.TestCase):
 
     def test_graph_taper_tracks_the_candidate_lane_centres(self):
         edges = [edge(0, 1, (0, 0), (40, 0), road=0, ow=True, cls="tertiary"),
-                 edge(1, 2, (40, 0), (90, 0), road=1, ow=True, cls="tertiary")]
+                 edge(1, 2, (40, 0), (110, 0), road=1, ow=True, cls="tertiary")]
         ways = [{"type": "way", "id": i, "tags": {"highway": "tertiary", "oneway": "yes", "name": "Boulevard", "lanes": str(n)}}
                 for i, n in ((7, 2), (8, 3))]
         from geo import LAT0, LON0, M_LON
-        for way, nodes, positions in zip(ways, ((0, 1), (1, 2)), ((0, 40), (40, 90))):
+        for way, nodes, positions in zip(ways, ((0, 1), (1, 2)), ((0, 40), (40, 110))):
             way["nodes"] = nodes
             way["geometry"] = [{"lat": LAT0, "lon": LON0 + x / M_LON} for x in positions]
         roads_candidate.sync_graph_sections(edges, [{"id": 7}, {"id": 8}], ways)
         wide = edges[1]
-        self.assertEqual(wide["lane_taper"], ("start", 25, "left"))
+        self.assertEqual((wide["lane_taper"][0], wide["lane_taper"][2]), ("start", "left"))
+        self.assertAlmostEqual(wide["lane_taper"][1], 50)
         self.assertAlmostEqual(2 * half_width(wide, 0), edges[0]["w"])
         from shapely.geometry import LineString
-        section = {**wide, "tapers": [["start", 25, (wide["w"] - edges[0]["w"]) / 2,
+        section = {**wide, "tapers": [["start", 50, (wide["w"] - edges[0]["w"]) / 2,
                                      -(wide["w"] - edges[0]["w"]) / 2]]}
         drawn = roads_candidate.Edge(1, (1, 2), LineString(wide["pts"]), section)
         for nominal in Traffic.lanes_of(wide):
-            for distance in (5, 15, 25):
+            for distance in (5, 15, 40):
                 actual = lane_offset(wide, 1, distance, nominal)
                 fraction = 0.5 + nominal / wide["w"]
                 self.assertAlmostEqual(drawn.trace(fraction, [distance, distance + 0.01], lane_aligned=True).coords[0][1], actual)
@@ -156,7 +157,7 @@ class RoadNetworkTests(unittest.TestCase):
                  edge(3, 2, (54, 0), (90, 0), road=1, ow=True, cls="tertiary")]
         roads_candidate.sync_graph_sections(edges, [{"id": 7}, {"id": 8}], ways)
         self.assertAlmostEqual(half_width(edges[1], 14), half_width(edges[2], 0), places=5)
-        self.assertAlmostEqual(half_width(edges[2], 11), 9.75 / 2, places=5)
+        self.assertAlmostEqual(half_width(edges[2], 35), 9.75 / 2, places=5)
 
     def test_graph_follows_the_candidate_spline_between_osm_nodes(self):
         from geo import LAT0, LON0, M_LAT, M_LON

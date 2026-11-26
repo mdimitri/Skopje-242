@@ -267,7 +267,7 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
         if not 2 <= extra <= 7 or b.line.length < 7:
             continue
         end = "end" if wide.at_end else "start"
-        length = min(25, b.line.length - 1)
+        length = min(50, b.line.length - 1)
         entry = [end, length, extra / 2, -extra / 2]
         b.section.setdefault("tapers", []).append(entry)
         turns = lane_turns(b.section)

@@ -200,7 +200,7 @@ class SkopjeInferenceTests(unittest.TestCase):
                 start = 0 if end == "start" else wide.line.length
                 finish = length if end == "start" else wide.line.length - length
                 self.assertGreater(length, 20)
-                self.assertLessEqual(length, 25)
+                self.assertLessEqual(length, 50)
                 self.assertAlmostEqual(np.diff(wide.cross_section(start)).item(), narrow.section["w"])
                 self.assertAlmostEqual(np.diff(wide.cross_section(finish)).item(), wide.section["w"])
                 self.assertEqual(wide.section["lanes"] - narrow.section["lanes"], 1)
