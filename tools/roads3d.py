@@ -1531,6 +1531,8 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
             pier_edges.add(i)
     if designer:
         order = [i for i in order if not edges[i]["drive"]]
+        if candidate_inputs is not None:
+            order = [i for i in order if edges[i]["bridge"]]
     prog(0.065, "junction plates")
     X = _prepare(edges, joints, plates, decks, T)
     prog(0.07, "streets")

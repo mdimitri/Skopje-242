@@ -1,6 +1,7 @@
 """Bake the reviewed road-vault compiler into terrain-relative game tiles."""
 import json
 import math
+from collections import Counter
 from pathlib import Path
 
 from shapely import STRtree
@@ -10,16 +11,17 @@ from shapely.errors import GEOSException
 from shapely.ops import unary_union
 
 from geo import project
-from roadvault.mesh import Mesh
-from roadvault.road_candidate import Edge, compile_scene, crossing_span, lane_count
-from roadvault.road_inference import infer_layout
-from roadvault.run_candidate import WALK, infer_site, read_elements, site_inputs
+from roadvault.mesh import Mesh, polys
+from roadvault.road_candidate import compile_scene, crossing_span, road_edge
+from roadvault.road_inference import at_grade, infer_layout, normalize_ways
+from roadvault.run_candidate import DRIVE, WALK, infer_site, read_elements, site_inputs
 from roadvault.traffic_furniture import draw_device, draw_gantry
 
 GLAVINOV = Path(__file__).with_name("roadvault") / "partizanski_glavinov.json"
 REVIEWED_RADIUS = 88
 MARGIN = 90
-REFERENCE_SITES = ((41.99815, 21.42544, 95), (42.00547, 21.4169, 93))
+REFERENCE_SITES = ((41.99815, 21.42544, 95), (42.00547, 21.4169, 93),
+                   (42.0038599, 21.3902603, 115), (42.0004324, 21.4270569, 115))
 
 
 def _optional_elements(path):
@@ -38,7 +40,8 @@ class TileMesh(Mesh):
         self.bounds = bounds
 
     def poly(self, shape, y, col, lit=True):
-        super().poly(shape.intersection(self.bounds), y, col, lit)
+        for part in polys(shape):
+            super().poly(part.intersection(self.bounds), y, col, lit)
 
     def wall_ring(self, coords, y0, y1, col):
         cut = LineString(coords).intersection(self.bounds)
@@ -55,13 +58,31 @@ class Source:
         self.road_ids = road_ids
         self.node_ids = node_ids
         self.tags = {e["id"]: e.get("tags", {}) for e in raw if e.get("type") == "way"}
-        self.way_nodes = {e["id"]: set(e.get("nodes", ())) for e in raw if e.get("type") == "way"}
         self.relations = list({e["id"]: e for e in [*raw, *_optional_elements(osm / "restrictions.json")]
                                if e.get("type") == "relation" and e.get("tags", {}).get("type") == "restriction"}.values())
         self.features = []
+        road_ways = []
+        node_uses = Counter()
+        for element in raw:
+            tags = element.get("tags", {})
+            cls = tags.get("highway", "")
+            geometry, nodes = element.get("geometry") or [], element.get("nodes") or []
+            if (element.get("type") == "way" and cls.removesuffix("_link") in DRIVE
+                    and at_grade(tags) and len(geometry) >= 2 and len(geometry) == len(nodes)):
+                road_ways.append(element)
+                node_uses.update(set(nodes))
+        normalized, self.originals = normalize_ways(road_ways, {n for n, count in node_uses.items() if count > 1})
+        for way in normalized:
+            xy = _points(way)
+            if len(set(xy)) >= 2:
+                self.features.append(("road", way, LineString(xy)))
         for e in raw:
             tags = e.get("tags", {})
             hw = tags.get("highway")
+            if (e.get("type") == "way" and hw in WALK and at_grade(tags)
+                    and tags.get("footway") not in {"sidewalk", "crossing", "traffic_island"}
+                    and len(e.get("geometry", ())) >= 2):
+                self.features.append(("walk", (WALK[hw], hw), LineString(_points(e))))
             if (e.get("type") == "node" and hw in {"crossing", "traffic_signals", "stop", "give_way"}
                     and "lat" in e and "lon" in e):
                 self.features.append(("node", (e["id"], tags), Point(project(e["lat"], e["lon"]))))
@@ -90,13 +111,11 @@ class Source:
             for lat, lon, radius in REFERENCE_SITES:
                 ox, oy = project(lat, lon)
                 window = box(ox - radius, oy - radius, ox + radius, oy + radius)
-                if not any(window.intersects(shape) for kind, _, shape in self.features if kind in {"node", "crossing"}):
-                    continue
                 layout = {"origin": (lat, lon), "source": "osm-topology"}
                 bounds = box(-radius, -radius, radius, radius)
                 try:
                     edges, walks, greens, originals, report = infer_site(layout, osm, bounds)
-                    if not layout["crossings"]:
+                    if not edges:
                         continue
                     compile_scene(edges, layout, walks, greens, bounds, report, preview=False)
                 except (KeyError, ValueError, GEOSException) as exc:
@@ -183,7 +202,7 @@ def _furniture_sink(mesh, graph, offset, controls, owns, junction=None):
 def build_tile(source, edges, tx, ty, radius, edge_ids=None):
     tile = box(-radius, -radius, radius, radius)
     bounds = tile.buffer(MARGIN, join_style="mitre")
-    node_tags, guides, greens, walks, signals = {}, [], [], [], []
+    node_tags, guides, greens, walks, signals, raw_ways = {}, [], [], [], [], []
     for i in sorted(source.index.query(translate(bounds, tx, ty), predicate="intersects")):
         kind, data, shape = source.features[i]
         local = translate(shape, -tx, -ty)
@@ -194,11 +213,14 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
             guides.append(local)
         elif kind == "signal":
             signals.append(local)
+        elif kind == "road":
+            raw_ways.append((data, local))
+        elif kind == "walk":
+            walks.append((local, *data))
         else:
             greens.append(local)
 
     candidates, ways, originals, cooked, reviewed_graph = [], [], {}, {}, {}
-    crossing_nodes = [(key, tags["point"]) for key, tags in node_tags.items() if tags["highway"] == "crossing"]
     for i, edge in enumerate(edges, 1):
         if edge["bridge"] or len(edge["pts"]) < 2 or not math.isfinite(edge["w"]) or edge["w"] <= 0:
             continue
@@ -208,30 +230,29 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
         way = source.road_ids[edge["road"]]
         tags = source.tags.get(way, {}).copy()
         if not edge["drive"]:
-            if edge["cls"] in WALK and tags.get("footway") not in {"sidewalk", "crossing", "traffic_island"}:
-                walks.append((line, WALK[edge["cls"]], edge["cls"]))
             continue
-        nodes = [source.node_ids.get(node, -10**15 - node) if isinstance(node, int)
-                 else -10**16 - node[1] * 2 - node[2] for node in (edge["a"], edge["b"])]
-        mapped_nodes = source.way_nodes.get(way, ())
-        interior = [key for key, point in crossing_nodes
-                    if key in mapped_nodes and key not in nodes and line.distance(point) < 0.85]
-        section = {key: edge[key] for key in ("cls", "ow", "w", "turn", "directional_lanes")}
-        section["lanes"] = lane_count(edge) + (0 if edge["ow"] else lane_count(edge, -1))
-        tags["highway"] = edge["cls"]
-        if tags.get("oneway") == "-1" and tags.get("sidewalk") in {"left", "right"}:
-            tags["sidewalk"] = {"left": "right", "right": "left"}[tags["sidewalk"]]
-        candidates.append(Edge(i, (nodes[0], *interior, nodes[1]), line, section))
-        ways.append({"id": i, "tags": tags})
-        originals[i] = way
         if edge_ids is not None and isinstance(edge["b"], int) and edge["ow"]:
             record = (edge_ids[i - 1], edge, translate(line, tx, ty))
-            cooked[i] = [record]
             reviewed_graph.setdefault(way, []).append(record)
         if edge["ow"]:
             end = Point(line.coords[-1])
             if any(end.distance(signal) <= 35 and line.distance(signal) <= 3 for signal in signals):
-                node_tags[nodes[1]] = {"highway": "traffic_signals", "point": end}
+                node = source.node_ids.get(edge["b"])
+                if node is not None:
+                    node_tags[node] = {"highway": "traffic_signals", "point": end}
+
+    bridge_ways = {source.road_ids[edge["road"]] for edge in edges if edge["bridge"]}
+    for way, line in raw_ways:
+        if source.originals[way["id"]] in bridge_ways:
+            continue
+        xy = [point for i, point in enumerate(line.coords) if not i or point != line.coords[i - 1]]
+        if len(xy) < 2:
+            continue
+        edge = road_edge(way, xy)
+        candidates.append(edge)
+        ways.append(way)
+        originals[edge.id] = source.originals[edge.id]
+        cooked[edge.id] = reviewed_graph.get(originals[edge.id], ())
 
     sites = list(source.references)
     if source.reviewed:
