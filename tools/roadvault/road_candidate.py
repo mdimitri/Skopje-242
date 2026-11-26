@@ -416,7 +416,10 @@ def crossing_span(edge, station, asphalt):
     lo, hi = edge.cross_section(station)
     probe = LineString([point + right * (lo - 3.5), point + right * (hi + 3.5)])
     surface = probe.intersection(asphalt)
-    spans = [part for part in getattr(surface, "geoms", (surface,)) if part.geom_type == "LineString"]
+    spans = [part for part in getattr(surface, "geoms", (surface,))
+             if part.geom_type == "LineString" and not part.is_empty and len(part.coords) >= 2]
+    if not spans:
+        raise ValueError(f"No asphalt at crossing on edge {edge.id} at {station:.2f} m")
     span = min(spans, key=lambda part: part.distance(Point(point)))
     lo, hi = sorted((np.array(span.coords[i]) - point) @ right for i in (0, -1))
     return point, heading, right, lo, hi
@@ -608,7 +611,10 @@ def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
     def roadside(kind, way, station, side):
         edge = edges[way]
         for shift in (0, -0.6, 0.6, -1.3, 1.3):
-            p, heading, right, lo, hi = crossing_span(edge, station + shift, asphalt)
+            try:
+                p, heading, right, lo, hi = crossing_span(edge, station + shift, asphalt)
+            except ValueError:
+                continue
             for offset in (0.58, 0.9, 1.25, 1.7, 2.1):
                 position = p + right * ((lo if side < 0 else hi) + side * offset)
                 if not clear(position):
@@ -628,7 +634,10 @@ def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
         edge = edges[way]
         for shift in (-1.2, -2.0, -3.0, -0.45):
             station = stop + shift
-            p, heading, right, lo, hi = crossing_span(edge, station, asphalt)
+            try:
+                p, heading, right, lo, hi = crossing_span(edge, station, asphalt)
+            except ValueError:
+                continue
             supports = [next((position for inset in (0.75, 1.05, 1.4, 1.85)
                               if clear(position := p + right * (lateral + side * inset))), None)
                         for lateral, side in ((lo, -1), (hi, 1))]
@@ -727,8 +736,46 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
     else:
         asphalt = blended
     refuges = unary_union(refuges)
-    pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
-        by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider)
+    if inferred:
+        layout = dict(layout)
+        valid_groups = []
+        for group in layout["crossings"]:
+            try:
+                for way, station in group:
+                    crossing_span(by_id[way], station, asphalt)
+            except ValueError:
+                if report is not None:
+                    report.append(dict(kind="crossing_without_asphalt", ways=[way for way, _ in group]))
+            else:
+                valid_groups.append(group)
+        layout["crossings"] = valid_groups
+    while True:
+        pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
+            by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider)
+        if not inferred:
+            break
+        walkable = unary_union([pavement, cut_throughs, paths])
+        connected = []
+        for group in layout["crossings"]:
+            valid = True
+            for way, station in group:
+                point, _, right, lo, hi = crossing_span(by_id[way], station, asphalt)
+                if any(walkable.distance(Point(point + right * lateral)) > 2
+                       for lateral in (lo - 0.3, hi + 0.3)):
+                    valid = False
+                    break
+            if valid:
+                connected.append(group)
+            elif report is not None:
+                report.append(dict(kind="crossing_without_final_landing", ways=[way for way, _ in group]))
+        if len(connected) == len(layout["crossings"]):
+            break
+        layout["crossings"] = connected
+    if inferred:
+        visible_ways = {way for group in layout["crossings"] for way, _ in group}
+        layout["stop_lines"] = [way for way in layout["stop_lines"] if way in visible_ways]
+        layout["pedestrian_signals"] = [way for way in layout.get("pedestrian_signals", []) if way in visible_ways]
+        layout["signs"] = [item for item in layout.get("signs", []) if item[0] != "crossing" or item[1] in visible_ways]
     reserved = unary_union([asphalt, pavement, curb, landings, cut_throughs, paths])
     grass = median_landscape(by_id, layout, greens, asphalt, bounds, reserved)
     if inferred and not preview:
