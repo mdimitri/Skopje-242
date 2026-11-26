@@ -181,7 +181,7 @@ def _stat_key(src, path, version):
                    + glob.glob(os.path.join(root, "tools", "roadvault", "*.py"))
                    + glob.glob(os.path.join(root, "tools", "roadvault", "*.json"))
                    + [os.path.join(src, f) for f in (os.listdir(src) if os.path.isdir(src) else ())])
-    out = [FORMAT, os.path.abspath(path), os.path.abspath(src), os.environ.get("SK242_DESIGNER", "1")]
+    out = [FORMAT, os.path.abspath(path), os.path.abspath(src)]
     for f in files:
         try:
             st = os.stat(f)
@@ -227,8 +227,6 @@ def _fingerprints(src, path=SOURCE, version=None):
     for name, kw, stmts in stages:
         parts = code.of(stmts + (prelude if not out else []), kw.get("mods", ())) + _data_parts(kw.get("data", ()), src, extras)
         parts += _data_parts(kw.get("files", ()), ROOT, ())
-        if name in {"furniture", "roads3d"}:
-            parts.append(os.environ.get("SK242_DESIGNER", "1") != "0")
         out.append((name, _md5("fmt", FORMAT, name, *parts)))
     return out
 

@@ -124,9 +124,7 @@ exports gantries, repeaters, pedestrian heads, signs, stop lines and crossings
 from the same layout used to draw the road. The game lights the baked heads
 through separate vehicle approach and pedestrian phases. Inferred signal
 placement depends on mapped controls and crossings that fit the layout.
-An invalid tile can fall back to
-the previous junction designer, with the tile and reason logged. The
-`SK242_DESIGNER=0` build switch still selects the original ribbon builder.
+World builds always use the candidate road builder. Invalid candidate tiles fail the build instead of silently switching builders.
 
 Research references
 

@@ -2404,7 +2404,7 @@ def main():
     stage("bmesh", data=("roads.json",))
     # ---- building meshes, now that the ground under them is known ------------------------------
     import roads3d as _r3
-    candidate_roads = os.environ.get("SK242_DESIGNER", "1") != "0"
+    candidate_roads = True
     roads3d_SW = 2.4 if candidate_roads else _r3.SW_W
     candidate_sections = {}
     if candidate_roads:
@@ -2528,8 +2528,6 @@ def main():
     roads = __import__("ramps").extend_to_banks(roads, T)         # bridge ends that stop down in the cut they span
     roads = __import__("ramps").detach_low_joins(roads)           # a side road joining a bridge mid-span: stops short of it
     connect_roads(roads)
-    if os.environ.get("SK242_DESIGNER", "1") == "0":
-        open_oneway_traps(roads, HX, HY)
     try:                                                        # round 29: trampled desire-line paths over open ground
         import footpaths
         worn = footpaths.generate(roads, buildings, bld, surf, rails, [q for q in _read_list(os.path.join(a.src, "map_pois.json")) if len(q) == 4],
@@ -2579,7 +2577,7 @@ def main():
     import lanefix
     print(f"[build] lane steps levelled: {lanefix.repair(edges)} edges")
     import roadclean
-    candidate_roads = os.environ.get("SK242_DESIGNER", "1") != "0"
+    candidate_roads = True
     if candidate_roads:
         import roads_candidate
         with open(os.path.join(a.src, "roads.json"), encoding="utf-8") as stream:
@@ -2728,8 +2726,7 @@ def main():
     lifted = sum(1 for d in decks.values() if max(d.h) - min(d.h) > 1.5)
     print(f"[build] bridges: {len(decks)} decks ({lifted} with a real rise)")
     spread("bridge", [roads[ri] for ri in decks], lambda r: flat(r["pts"], 30))
-    if os.environ.get("SK242_DESIGNER", "1") != "0":                # a street crossing an open cutting is its bridge deck, not a roof slab too
-        print(f"[build] underpass roof opened under {underpass.open_under_decks(upass, edges)} m of decks")
+    print(f"[build] underpass roof opened under {underpass.open_under_decks(upass, edges)} m of decks")
     if ROADS_ONLY:                                             # tools/road_audit.py reads this and stops here
         with open(ROADS_ONLY, "wb") as f_:
             pickle.dump({"roads": roads, "edges": edges, "decks": decks, "upass": upass, "T": T, "hx": HX, "hy": HY,
@@ -2989,7 +2986,7 @@ def main():
                                                       decks=decks, add_abs=mesh.add, terrain_h=lambda x, z: T.hs(x, z),
                                                       bus_stops=_read_list(os.path.join(a.src, "bus_stops.json")),
                                                       signals=_read_list(os.path.join(a.src, "signals.json")),
-                                                      candidate_controls=os.environ.get("SK242_DESIGNER", "1") != "0")
+                                                      candidate_controls=True)
         junction_cores = list(furniture.JUNCTION_CORES)
         lamps += bridge_lamps
         _st = list(__import__("furniture").STOPS)
@@ -3190,13 +3187,7 @@ def main():
         if T.q is not None:
             __import__("quays").furnish(T, edges, quay_info, mesh.add, chunk_of, MAT_SOLID)
     except Exception as e:  # noqa: BLE001 - fall back to the flat 2D roads in the ground texture
-        if os.environ.get("SK242_DESIGNER", "1") != "0":
-            raise
-        import traceback
-        traceback.print_exc()
-        print(f"[build] 3D roads failed ({e}); using flat roads")
-        candidate_controls = {}
-        roads3d_ok = False
+        raise
     _up_posts, up_decks, up_recs = underpass.roof(upass, mesh.add, chunk_of, MAT_SOLID, T)     # roof slab, walls, roof deck
     up_decks = [terrain_mod.Deck(d_["pts"], d_["h"], d_["hw"]).pack() for d_ in up_decks]
     posts = list(posts) + _up_posts

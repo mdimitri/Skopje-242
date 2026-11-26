@@ -4,7 +4,6 @@ import math
 import numpy as np
 from shapely import intersects_xy
 from shapely.geometry import LineString
-from shapely.errors import GEOSException
 
 import junction_net as jn
 import par
@@ -152,12 +151,8 @@ def _tile_job(job):
     fallback = False
     controls = {}
     if _G["source"] is not None:
-        try:
-            m = roads_candidate.build_tile(_G["source"], sub, tx, ty, TILE / 2, idx)
-            controls = m.controls
-        except (ValueError, GEOSException) as exc:
-            fallback = True
-            print(f"[road candidate] tile ({tx:g}, {ty:g}) uses junction designer: {exc}", flush=True)
+        m = roads_candidate.build_tile(_G["source"], sub, tx, ty, TILE / 2, idx)
+        controls = m.controls
     if _G["source"] is None or fallback:
         m = jn.build(sub, tx, ty, port=True, ctx=_G["ctx"])
     if not m.P:

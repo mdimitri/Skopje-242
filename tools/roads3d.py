@@ -1522,7 +1522,7 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
     piers = []
     pier_done = set()
     order = sorted(range(len(edges)), key=lambda i: (edges[i]["bridge"], rank_of(edges[i]["cls"])))
-    designer = os.environ.get("SK242_DESIGNER", "1") != "0"     # junction designer owns the road surfaces and driven decks (tools/roads_designer.py)
+    designer = True                                             # junction designer owns the road surfaces and driven decks (tools/roads_designer.py)
     pier_edges, done_ = set(), set()
     for i in order:
         e = edges[i]
