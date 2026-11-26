@@ -90,7 +90,7 @@ Keep resource lifecycle, coordinate conventions, draw ordering, and batching in 
 
 Vehicle gloss in `gl3d.CAR_FS` combines a sky/ground gradient with a seamless direction-space procedural cloud texture, Fresnel clear coat and sun/moon highlights. `gloss_frame` supplies the live day/dusk/night palette; this is a generic environment reflection, not a capture of nearby objects or the visible cloud positions. Matte material tags remain excluded. `tools/car_reflection_shot.py` checks real GPU compilation and produces before/after close-ups for all three lighting periods in `output/car_reflections/`.
 
-The helicopter far ring captures each building's own facades and roof for textured prisms, then samples the same captures on depth-correct sprites beyond 1200 m. World version 87 adds per-building mesh spans. See [building LOD rendering](building-lod.md) for capture ownership, night lighting, cache limits and verification.
+The third-person far ring captures each building's own facades and roof for textured prisms, then samples the same captures on depth-correct sprites beyond 600 m on foot/in ground vehicles or 1200 m in helicopters. World version 87 adds per-building mesh spans. See [building LOD rendering](building-lod.md) for capture ownership, range limits, night lighting, cache limits and verification.
 
 The Expanded pack shares one color and height atlas across world and object shaders. Runtime trees use bark detail on wood and foliage detail on solid crown LODs; individual leaf sprites retain their own atlas texture. Mall geometry stores the atlas family in UV.x so floors, walls, fixtures and displays can share one draw while glass and lights skip surface relief. Distant geometry fades the detail to limit shimmer.
 

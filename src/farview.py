@@ -202,7 +202,7 @@ class FarView:
         self._items = [items[i] for i in o]
         self._sp = np.asarray([sp[i] for i in o], np.float64).reshape(-1, 4)
 
-    def draw(self, rl, pos, skip, fr, far, budget_ms=3.0, cam=None, dark=0.0):
+    def draw(self, rl, pos, skip, fr, far, budget_ms=3.0, cam=None, dark=0.0, sprite_distance=1200.0):
         """Draws the far blocks round pos = (x, y) out to `far` m, leaving out chunks in `skip` (streamed meshes) and what is
         outside the frustum; builds missing ones within the time budget. Returns the number of draw calls."""
         if self.idx is None:
@@ -211,6 +211,7 @@ class FarView:
         self._plan(pos[0], pos[1], NEAR_BAND, far)
         items = self._items
         self._captured = []
+        self._sprite_distance = sprite_distance
         if not items:
             return 0
         n = 0
@@ -219,7 +220,7 @@ class FarView:
             k = items[i]
             if k in skip:
                 continue
-            if self.captures is not None and self.captures.draw(k, cam, dark):
+            if self.captures is not None and self.captures.draw(k, cam, dark, sprite_distance=sprite_distance):
                 self._captured.append(k)
                 if k not in self.tree_models:
                     self.tree_models[k] = self._build(k, trees_only=True)
@@ -247,7 +248,7 @@ class FarView:
         rl.begin_blend_mode(rl.BLEND_ADDITIVE)
         try:
             for key in self._captured:
-                self.captures.draw(key, cam, dark, glow=True)
+                self.captures.draw(key, cam, dark, glow=True, sprite_distance=self._sprite_distance)
         finally:
             rl.end_blend_mode()
             rl.rl_enable_depth_mask()

@@ -5,6 +5,7 @@ Run with the managed Python. Writes a review image under output/building_lod/.
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
@@ -52,19 +53,31 @@ def main():
     rt = rl.load_render_texture(512,512)
     frames = []
     try:
+        group = captures.groups[((0,0),0)]
+        for distance, limit, sprite in ((550,600,0),(650,600,1),(1100,1200,0),(1300,1200,1)):
+            cam = rl.Camera3D(rl.Vector3(distance,18,0),rl.Vector3(0,18,0),rl.Vector3(0,1,0),38,rl.CAMERA_PERSPECTIVE)
+            rl.rl_set_clip_planes(0.5,2600)
+            rl.begin_texture_mode(rt)
+            rl.begin_mode_3d(cam)
+            for glow in (False,True):
+                with patch.object(lod.rl,"draw_model",wraps=lod.rl.draw_model) as draw:
+                    assert captures.draw((0,0),cam,1.0,glow=glow,sprite_distance=limit)
+                    assert draw.call_args.args[0] is group["models"][sprite], (distance,limit,glow)
+            rl.end_mode_3d()
+            rl.end_texture_mode()
         for eye in ((85,65,120),(-95,55,-110),(0,100,0),(0,30,140)):
             cam = rl.Camera3D(rl.Vector3(*eye),rl.Vector3(0,18,0),
                               rl.Vector3(0,0,-1) if eye[2] == 0 else rl.Vector3(0,1,0),38,rl.CAMERA_PERSPECTIVE)
             pair = []
             for dark in (0.0,1.0):
                 for sprite in (False,True):
-                    lod.SPRITE_DISTANCE = 0 if sprite else 1e9
+                    threshold = 0 if sprite else 1e9
                     rl.rl_set_clip_planes(0.5,2600)
                     rl.begin_texture_mode(rt)
                     rl.clear_background(rl.Color(25,30,45,255))
                     rl.begin_mode_3d(cam)
                     rl.rl_disable_backface_culling()
-                    assert captures.draw((0,0),cam,dark)
+                    assert captures.draw((0,0),cam,dark,sprite_distance=threshold)
                     # A foreground object must occlude both LODs identically.
                     rl.draw_cube(rl.Vector3(0,15,12),8,15,5,rl.Color(100,50,150,255))
                     rl.end_mode_3d()
@@ -76,7 +89,7 @@ def main():
                         rl.rl_disable_backface_culling()
                         rl.rl_disable_depth_mask()
                         rl.begin_blend_mode(rl.BLEND_ADDITIVE)
-                        assert captures.draw((0,0),cam,dark,glow=True)
+                        assert captures.draw((0,0),cam,dark,glow=True,sprite_distance=threshold)
                         rl.end_blend_mode()
                         rl.rl_enable_depth_mask()
                         rl.end_mode_3d()

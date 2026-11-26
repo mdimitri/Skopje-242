@@ -774,7 +774,7 @@ class Renderer:
         S = w.chunk
         self.t = t
         gl3d.ground_time(t)
-        far_ = max(H * 4 + 400, getattr(self, "view_far", 0.0))     # helicopter street view: out to the far ring
+        far_ = max(H * 4 + 400, getattr(self, "view_far", 0.0))     # third-person street views: out to the far ring
         rl.rl_set_clip_planes(near, far_)
         self._cam, self._clip = cam, (near, far_)
         # full-model shadows for everything on screen: the frame's half diagonal on the ground (resolution x zoom setting x
@@ -816,7 +816,8 @@ class Renderer:
             fk = getattr(self, "far_keys", None)
             if fk and show_meshes and getattr(self, "farview", None) is not None:
                 self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr, self.view_far - 100,
-                                                 cam=cam, dark=sim.clock.dark)
+                                                 cam=cam, dark=sim.clock.dark,
+                                                 sprite_distance=self.far_sprite)
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:

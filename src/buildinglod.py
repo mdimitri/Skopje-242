@@ -222,7 +222,7 @@ class Captures:
             if not g["models"]:
                 self._capture(cache_key[0],g)
 
-    def draw(self, key, cam, dark, glow=False):
+    def draw(self, key, cam, dark, glow=False, sprite_distance=SPRITE_DISTANCE):
         records = self.w.chunks.get(key, {}).get("lod")
         if not records:
             return False
@@ -247,7 +247,7 @@ class Captures:
                 data = [v for r in g["records"] for v in r[ix]]
                 rl.set_shader_value_v(self.shader,self.loc[name],rl.ffi.new("float[]",data),rl.SHADER_UNIFORM_VEC3,len(g["records"]))
             center = (np.asarray(g["records"][0][0])+g["records"][0][1])*0.5
-            sprite = int(np.linalg.norm(center-eye) >= SPRITE_DISTANCE)
+            sprite = int(np.linalg.norm(center-eye) >= sprite_distance)
             rl.set_shader_value(self.shader,self.loc["sprite"],rl.ffi.new("int *",sprite),rl.SHADER_UNIFORM_INT)
             rl.set_shader_value_texture(self.shader,self.loc["texture1"],g["atlases"][1].texture)
             rl.draw_model(g["models"][sprite],rl.Vector3(0,0,0),1.0,rl.WHITE)
