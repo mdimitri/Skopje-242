@@ -2527,7 +2527,10 @@ class Traffic:
             want = min(want, lane_count(self.w.edges[c.nxt[0]], c.nxt[1]) - 1)
         permitted = movement_lanes(self.w, (c.e, c.d), c.nxt, c.turn)
         if permitted:
-            want = min(permitted, key=lambda i: (abs(i - want), abs(i - k)))
+            if abs(c.turn) >= self.TURN_LANE and k in permitted:
+                want = k                       # parallel marked turns keep their own lanes
+            else:
+                want = min(permitted, key=lambda i: (abs(i - want), abs(i - k)))
         if k == want or (rem < 20.0 and (permitted is None or k in permitted)):
             return
         k2 = k + (1 if want > k else -1)

@@ -2,6 +2,8 @@
 import math
 
 import numpy as np
+from shapely import intersects_xy
+from shapely.geometry import LineString
 from shapely.errors import GEOSException
 
 import junction_net as jn
@@ -29,11 +31,11 @@ def _init(edges, ctx, decks=None, T=None, source=None):
     jn.RANGE = TILE / 2
 
 
-def deck_feet(edges, decks, T, lift=0.12):
+def deck_feet(edges, decks, T, lift=0.02):
     """Where a driven deck still lies on the ground at a ground node, that stretch is ground road (drawn with the
-    junction it belongs to, kerbs and pavements continuing); the deck proper starts where it lifts off.  Sets
-    e["span"] = (s0, s1) on every driven bridge edge and -> the foot edges (ground copies, flat-capped at the lift-off)."""
-    from shapely.geometry import LineString
+    junction it belongs to, kerbs and pavements continuing). Retain at least a short portal at each ground
+    junction; drape_feet follows the deck there if it already rises. Sets e["span"] = (s0, s1) and returns
+    the approach copies, flat-capped at the deck seam."""
     from shapely.ops import substring
     gn = {n for e in edges if e["drive"] and not e["bridge"] for n in (e["a"], e["b"])}
     feet = []
@@ -51,12 +53,12 @@ def deck_feet(edges, decks, T, lift=0.12):
             k = 0
             while k + 1 < len(S) and dh[k + 1] < lift and S[k + 1] < 0.4 * L:
                 k += 1
-            s0 = min(max(S[k], 2.0), 0.4 * L)
+            s0 = min(max(float(S[k]), 2.0), 0.4 * L)
         if e["b"] in gn:
             k = len(S) - 1
             while k - 1 >= 0 and dh[k - 1] < lift and S[k - 1] > 0.6 * L:
                 k -= 1
-            s1 = max(min(S[k], L - 2.0), 0.6 * L)
+            s1 = max(min(float(S[k]), L - 2.0), 0.6 * L)
         if s1 - s0 < 1.0:
             continue
         e["span"] = (float(s0), float(s1))
@@ -68,6 +70,26 @@ def deck_feet(edges, decks, T, lift=0.12):
             f.pop("span", None)
             feet.append(f)
     return feet
+
+
+def drape_feet(P, edges, decks, T, tx, ty):
+    """Keep candidate bridge mouths on their deck profile, including rising portals."""
+    if decks is None or T is None:
+        return
+    points = P.reshape(-1, 3)
+    x, y = points[:, 0] + tx, points[:, 2] + ty
+    rise = np.zeros(len(points))
+    for edge in edges:
+        if not edge.get("flat") or not any(isinstance(n, tuple) and n[:1] == ("foot",) for n in (edge["a"], edge["b"])):
+            continue
+        deck = decks.get(edge["road"])
+        if deck is None:
+            continue
+        mouth = LineString(edge["pts"]).buffer(edge["w"] / 2 + 2.4, cap_style="flat")
+        ids = np.flatnonzero(intersects_xy(mouth, x, y))
+        heights = np.array([deck.at(x[i], y[i])[0] for i in ids])
+        rise[ids] = np.maximum(rise[ids], heights - T.h(x[ids], y[ids]))
+    points[:, 1] += rise
 
 
 def _split(P, C, maxlen=6.0, rounds=7):
@@ -146,6 +168,7 @@ def _tile_job(job):
         P, C = _split(P, C)
     else:
         P, C = _split(P, C, maxlen=18, rounds=4)
+    drape_feet(P, sub, _G["decks"], _G["T"], tx, ty)
     P[:, :, 1] += 0.06                                    # the game lifts its asphalt Y_BASE above the terrain
     P[:, :, 0] += tx
     P[:, :, 2] += ty

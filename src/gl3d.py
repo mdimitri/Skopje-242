@@ -2229,7 +2229,7 @@ def car_material_variant(kind, color):
 
 
 # ------------------------------------------------------------------ glossy cars: clear-coat / metallic paint and reflective glass
-# One extra shader, no extra draw calls: sky reflection (fresnel), sun/moon highlight.  Off = the default raylib shader, as before.
+# One extra shader, no extra draw calls: procedural sky/cloud reflections and sun/moon highlight.
 OBJECT_VS = """#version 330
 in vec3 vertexPosition; in vec2 vertexTexCoord; in vec4 vertexColor;
 uniform mat4 mvp; uniform mat4 matModel;
@@ -2314,7 +2314,29 @@ uniform vec3 SUNL; uniform vec3 viewPos;
 uniform vec4 gloss;              // x = strength (0 = exactly the plain look), y = light-source strength
 uniform vec3 skyZ; uniform vec3 skyH; uniform vec3 grnd; uniform vec3 lightC; uniform vec3 lightD;
 out vec4 finalColor;
-""" + surfacepack.SHADER + """void main(){
+""" + surfacepack.SHADER + """
+float cloudNoise(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec3 h = vec3(17.0, 59.0, 113.0);
+  float n = dot(i, h);
+  vec4 a = fract(sin(n + vec4(0.0, 17.0, 59.0, 76.0)) * 43758.5453);
+  vec4 b = fract(sin(n + vec4(113.0, 130.0, 172.0, 189.0)) * 43758.5453);
+  return mix(mix(mix(a.x, a.y, f.x), mix(a.z, a.w, f.x), f.y),
+             mix(mix(b.x, b.y, f.x), mix(b.z, b.w, f.x), f.y), f.z);
+}
+vec3 reflectedSky(vec3 R){
+  vec3 env = R.y > 0.0 ? mix(skyH, skyZ, sqrt(R.y)) : mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));
+  // Direction-space texture stays fixed in the world as the car or camera turns.
+  // 3D noise avoids a panorama seam and stretching at the zenith.
+  vec3 p = R * vec3(6.0, 12.0, 6.0) + vec3(3.2, 0.7, 8.1);
+  float clouds = cloudNoise(p) * 0.65 + cloudNoise(p * 2.03) * 0.25 + cloudNoise(p * 4.07) * 0.10;
+  float coverage = smoothstep(0.45, 0.67, clouds) * smoothstep(0.0, 0.16, R.y);
+  // The same live palette makes clouds white by day, warm at dusk, dim blue at night.
+  vec3 cloudColor = skyH * 0.85 + lightC * (0.25 * gloss.y);
+  return mix(env, cloudColor, coverage * 0.85);
+}
+void main(){
   vec4 base = colDiffuse * fragColor;
   vec3 N = normalize(cross(dFdx(wp), dFdy(wp)));
   if (generatedSurfaces == 2 && mat < 1.5){
@@ -2333,7 +2355,7 @@ out vec4 finalColor;
   if (dot(N, V) < 0.0) N = -N;
   float nv = clamp(dot(N, V), 0.0, 1.0);
   vec3 R = reflect(-V, N);
-  vec3 env = R.y > 0.0 ? mix(skyH, skyZ, sqrt(R.y)) : mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));
+  vec3 env = reflectedSky(R);
   float fr = pow(1.0 - nv, 5.0);
   float lit = clamp(dot(N, lightD) * 4.0, 0.0, 1.0) * gloss.y;
   vec3 spec = lightC * (pow(max(dot(R, lightD), 0.0), 220.0) * 3.0) * lit;
@@ -2342,7 +2364,7 @@ out vec4 finalColor;
     float r = clamp(k * (0.38 + 0.62 * fr), 0.0, 0.95);
     c = mix(base.rgb, env, r) + spec * k;
   } else {                                                        // paint: metallic flake tinted by the paint + clear coat
-    float r = clamp(k * (0.10 + 0.65 * fr), 0.0, 0.9);
+    float r = clamp(k * (0.32 + 0.65 * fr), 0.0, 0.95);
     vec3 flake = base.rgb * lightC * pow(max(dot(N, normalize(lightD + V)), 0.0), 24.0) * 0.55 * lit;
     c = base.rgb * (1.0 - 0.35 * r) + env * r + (flake + spec * 0.8) * k;
   }

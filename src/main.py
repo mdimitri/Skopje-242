@@ -2523,6 +2523,8 @@ def main():
         if a.test:
             guard.run("stream", streamer.update, wanted, lod, 8.0, lite_)
         if lod:
+            if not indoor_:
+                guard.run("farprep", renderer.prepare_far, cam, Hc)
             guard.run("sun", sunshadow.update, sim.clock.hour, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, sim.clock.dark)
             renderer.sun = sunshadow.L
             renderer.sun_k = sunshadow.strength / 0.92
@@ -2557,6 +2559,8 @@ def main():
                                     max(1.5, vehicles.HALF_L[o_.kind] + 0.8) if o_ is sim.car else 1.5)
             if lod and not indoor_:
                 guard.run("night", night.draw, cam, rect, ppm, sim, sim.clock.dark, t_game, sw, sh, sf_on)
+                if renderer.far_keys is not None and getattr(renderer, "farview", None) is not None:
+                    guard.run("farwindows", renderer.farview.windows, rl, cam, sim.clock.dark)
             if cfg.get("smog", 1) and not sf_on:
                 guard.run("smog", smog.draw, cam, cam_x, cam_y, ppm, sw, sh, sim.clock.hour, t_game,
                           min(1.0, sim.clock.traffic * (0.5 + 0.5 * cfg.get("pollution", 1.0))), cfg.get("smog_level", 1.0), world.ground_y(cam_x, cam_y))
@@ -2728,6 +2732,8 @@ def main():
     if sim.tproc is not None:
         sim.tproc.stop()
     renderer.close_ped_models()
+    if getattr(renderer, "farview", None) is not None:
+        renderer.farview.close()
     if night.lm is not None:
         night.lm.close()
     surfacepack.close()

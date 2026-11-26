@@ -755,6 +755,17 @@ class Renderer:
             if store.get(k) is None:
                 store[k] = gl3d.gloss_apply(gl3d.make_model(*arrs), gl3d.car_material_variant(*k))
 
+    def prepare_far(self, cam, H):
+        """Before present.begin(): capture targets must not unbind the scene target."""
+        fk = getattr(self, "far_keys", None)
+        if fk is None:
+            return
+        if getattr(self, "farview", None) is None:
+            self.farview = farview.FarView(self.w, self.st.tex.get("A"), self.st.tex)
+        far_ = max(H * 4 + 400, self.view_far)
+        fr = Frustum(cam, rl.get_render_width() / max(1, rl.get_render_height()), far_)
+        self.farview.prepare(fk, fr, self.view_far - 100)
+
     def draw(self, cam, H, rect, ppm, sim, particles, t, show_meshes=True, near=2.0, far_overview=False):
         self._built = 0
         self._collect_models()
@@ -803,10 +814,9 @@ class Renderer:
             if missing or far_overview:                    # the coarse whole-city model is only seen where a chunk is not baked yet
                 self._overview()
             fk = getattr(self, "far_keys", None)
-            if fk:                                         # helicopter: cheap building / tree blocks beyond the streamed chunks
-                if getattr(self, "farview", None) is None:
-                    self.farview = farview.FarView(w, st.tex.get("A"))
-                self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr, self.view_far - 100)
+            if fk and show_meshes and getattr(self, "farview", None) is not None:
+                self.drawn_far = self.farview.draw(rl, fk, st.meshes, fr, self.view_far - 100,
+                                                 cam=cam, dark=sim.clock.dark)
             self.drawn_chunks = drawn
             nm = 0
             if lod and show_meshes:

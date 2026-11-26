@@ -109,13 +109,48 @@ class TrafficRecoveryTest(unittest.TestCase):
             self.assertGreater(driver.v, 0.3)
         self.assertEqual(driver.e, 2)
 
-    def test_turning_lanes_are_limited_to_the_correct_outer_lane(self):
+    def test_turning_lanes_follow_all_marked_arrows(self):
         edge = road(0, 1, (0, 0), (100, 0), 10.5, ow=True, lanes=3,
                     turn=("through;left|through;left;right|through;right", ""))
         tr = setup(edge, road(1, 2, (100, 0), (100, -50), ow=True),
                    road(1, 3, (100, 0), (100, 50), ow=True))
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (1, 1), -math.pi / 2), [0, 1])
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (2, 1), math.pi / 2), [1, 2])
+        edge["turn"] = ("", "")
         self.assertEqual(movement_lanes(tr.w, (0, 1), (1, 1), -math.pi / 2), [0])
         self.assertEqual(movement_lanes(tr.w, (0, 1), (2, 1), math.pi / 2), [2])
+
+    def test_parallel_marked_turns_keep_their_lanes(self):
+        for angle, end, markings in ((-math.pi / 2, (100, -50), "left|left|through"),
+                                     (math.pi / 2, (100, 50), "through|right|right")):
+            edge = road(0, 1, (0, 0), (100, 0), 10.5, ow=True, lanes=3, turn=(markings, ""))
+            tr = setup(edge, road(1, 2, (100, 0), end, 7.0, ow=True, lanes=2))
+            for lane in movement_lanes(tr.w, (0, 1), (1, 1), angle):
+                c = approach(tr, 0, 30.0, (1, 1))
+                c.lidx, c.lcd, c.turn = lane, 0.0, angle
+                c.lane = tr.lanes_of(edge)[lane]
+                tr._lane_for_turn(c, edge, 70.0, 0.05)
+                self.assertEqual(c.lidx, lane)
+                expected = lane if angle < 0 else lane - 1
+                self.assertEqual(tr._exit_lane(c, edge, tr.w.edges[1]), expected)
+
+    def test_two_cars_complete_parallel_turns_without_merging_or_colliding(self):
+        for end, markings, lanes in (((100, -100), "left|left|through", (0, 1)),
+                                      ((100, 100), "through|right|right", (1, 2))):
+            incoming = road(0, 1, (0, 0), (100, 0), 10.5, ow=True, lanes=3, turn=(markings, ""))
+            outgoing = road(1, 2, (100, 0), end, 7.0, ow=True, lanes=2)
+            tr = setup(incoming, outgoing)
+            drivers = []
+            for lane in lanes:
+                c = approach(tr, 0, 65.0, (1, 1))
+                c.lidx, c.v = lane, 5.0
+                tr._set_lane(c, incoming)
+                c.x, c.y, c.h = tr._place(c)
+                drivers.append(c)
+            self.step(tr, 8.0)                   # checks actual vehicle boxes every frame
+            self.assertEqual([c.e for c in drivers], [1, 1])
+            self.assertEqual([c.lidx for c in drivers], [0, 1])
+            self.assertTrue(all(c.s > 20.0 for c in drivers))
 
     def test_pedestrian_reconnects_behind_a_dead_sidewalk(self):
         edge = road(0, 1, (0, 0), (150, 0))

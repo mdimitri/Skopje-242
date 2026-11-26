@@ -23,7 +23,7 @@ sys.path.insert(1, os.path.join(HERE, "..", "src"))
 import mapbox_earcut as earcut  # noqa: E402
 import junction_design as jd  # noqa: E402
 from junction_design import ASPH, GRASS, KERB, KFACE, KTOP, LW, SW, WHITE, Mesh  # noqa: E402
-from roadwidth import lane_count as lanes_per_direction, lane_turns  # noqa: E402
+from roadwidth import lane_bounds, lane_count as lanes_per_direction, lane_turns  # noqa: E402
 
 CAP = {"motorway": 3, "trunk": 3, "primary": 3, "secondary": 3, "tertiary": 3, "unclassified": 1, "residential": 1,
        "living_street": 1, "service": 1}
@@ -657,7 +657,7 @@ def _ss(t):
 
 def port_decks(B, own, cx, cy, decks, T, step=0.75):
     """Driven decks for the game port, in the designer's style: the deck surface follows the profile the cars ride on
-    (terrain.Deck), carries exactly its lanes (3.25 m standard) with the same paint as its approaches, and has an outer
+    (terrain.Deck), carries the stored directional lane counts across the carriageway width, and has an outer
     pavement with kerb and parapet.  The two carriageways of a twin bridge share one deck with a central barrier where
     they run close and part smoothly into two decks with their own parapets where they spread; no inner pavements.
     Low decks stand on solid side walls down to the ground, high ones on piers (roads3d._piers).  The metres where a
@@ -665,7 +665,7 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
     m = Mesh()
     CON, UND, WALL = (196, 194, 188), (150, 148, 142), (178, 176, 170)
     for d in own:
-        e, ln, hw, per = d["e"], d["ln"], d["hw"], d["per"]
+        e, ln, hw = d["e"], d["ln"], d["hw"]
         deck = decks.get(e["road"])
         s0, s1 = e.get("span", (0.0, ln.length))
         if deck is None or s1 - s0 < 1.0:
@@ -687,12 +687,17 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
         gap, side = np.full(n + 1, np.inf), np.zeros(n + 1)
         if e["ow"]:
             for o in B:
-                if o is d or not o["e"]["ow"] or o["ln"].distance(ln) > 30.0:
+                if o is d or o["e"]["road"] == e["road"] or not o["e"]["ow"] or o["ln"].distance(ln) > 30.0:
                     continue
                 for i, (x, y) in enumerate(P):
                     pt = Point(x, y)
                     so = o["ln"].project(pt)
                     q = o["ln"].interpolate(so)
+                    if abs((q.x - x) * F[i][1] - (q.y - y) * F[i][0]) > 2.0:
+                        continue                         # a continuation beyond the end is not a twin
+                    other_deck = decks.get(o["e"]["road"])
+                    if other_deck is None or abs(other_deck.at(q.x + cx, q.y + cy)[0] - H[i]) > 2.0:
+                        continue
                     q2 = o["ln"].interpolate(min(o["ln"].length, so + 1.0))
                     q1 = o["ln"].interpolate(max(0.0, so - 1.0))
                     ox, oy = q2.x - q1.x, q2.y - q1.y
@@ -712,7 +717,7 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
         gf = np.convolve(np.concatenate([np.full(k, gf[0]), gf, np.full(k, gf[-1])]), np.ones(2 * k + 1) / (2 * k + 1), "valid")
         sj = _ss((6.0 - gf) / 3.0) if inner else np.zeros(n + 1)          # 1: one shared deck, 0: two decks apart
         ie = np.maximum(hw + 0.3, hw + 0.55 + (np.minimum(gf, 40.0) / 2 - 0.55) * sj)
-        yA = H + 0.08
+        yA = H + 0.06
         par_ = np.minimum(1.05, KERB + 0.3 * np.maximum(0.0, H - G))     # parapets fade where the deck meets the ground
 
         def at(off):
@@ -736,7 +741,7 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
                 m.quad((A[i][0], y0[i], A[i][1]), (A[i + 1][0], y0[i + 1], A[i + 1][1]), (A[i + 1][0], y1[i + 1], A[i + 1][1]), (A[i][0], y1[i], A[i][1]), col)
         low = (H - G < 6.0)
         low = low[:-1] & low[1:]
-        strip(-hw, hw, yA, ASPH)
+        strip(-hw, hw, yA, (57, 61, 66))
         ext = {}
         for sg in (-1, 1):
             if sg == inner:                                    # shoulder, kerbed median out to the middle, half of the central barrier
@@ -754,8 +759,8 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
                 ext[sg] = ie
                 continue
             o = hw + 2.4
-            vwall(sg * hw, yA, yA + KERB, KFACE)
-            strip(sg * hw, sg * (o - 0.25), yA + KERB, KTOP)
+            vwall(sg * hw, yA, yA + 0.145, (154, 148, 136))
+            strip(sg * hw, sg * (o - 0.25), yA + 0.145, (181, 175, 161))
             vwall(sg * (o - 0.25), yA + KERB, yA + par_, CON)
             strip(sg * (o - 0.25), sg * o, yA + par_, (214, 212, 206))
             vwall(sg * o, H - 1.1, yA + par_, CON)
@@ -767,18 +772,19 @@ def port_decks(B, own, cx, cy, decks, T, step=0.75):
         dash = ((S[:-1] + S[1:]) / 2) % 9.0 < 3.0
         for sg in (-1, 1):
             strip(sg * (hw - 0.42), sg * (hw - 0.28), yP, WHITE)
-        if e["ow"]:
-            for k_ in range(1, per):
-                strip(-hw + LW * k_ - 0.075, -hw + LW * k_ + 0.075, yP, WHITE, dash)
-        else:
-            if per >= 2:
-                strip(0.085, 0.195, yP, WHITE)
-                strip(-0.195, -0.085, yP, WHITE)
+        if not e["ow"]:
+            divider = lane_bounds(e, 1)[0]
+            if max(lanes_per_direction(e, 1), lanes_per_direction(e, -1)) >= 2:
+                strip(divider + 0.085, divider + 0.195, yP, WHITE)
+                strip(divider - 0.195, divider - 0.085, yP, WHITE)
             else:
-                strip(-0.07, 0.07, yP, WHITE, dash)
-            for k_ in range(1, per):
-                for sg in (-1, 1):
-                    strip(sg * LW * k_ - 0.075, sg * LW * k_ + 0.075, yP, WHITE, dash)
+                strip(divider - 0.07, divider + 0.07, yP, WHITE, dash)
+        for direction in ((1,) if e["ow"] else (1, -1)):
+            lo, hi = lane_bounds(e, direction)
+            count = lanes_per_direction(e, direction)
+            for k_ in range(1, count):
+                offset = direction * (lo + (hi - lo) * k_ / count)
+                strip(offset - 0.075, offset + 0.075, yP, WHITE, dash)
     return m
 
 

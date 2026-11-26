@@ -168,10 +168,10 @@ def movement_lanes(world, incoming, outgoing, angle):
         curb = lane_count(edge, direction) - 1
         if lanes is None:
             return [curb]
-        return [curb] if curb in lanes or slip else []
+        return [curb] if slip else lanes
     lanes = turn_lanes(edge, direction, angle)
     if angle <= -0.5:
-        return [0] if lanes is None or 0 in lanes else []
+        return [0] if lanes is None else lanes
     if lanes is None or abs(angle) >= 0.35 or next_edge["cls"] != edge["cls"]:
         return lanes
     # Paint can describe the next junction even when an intermediate graph node splits the approach.

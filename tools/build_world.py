@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 85
+VERSION = 87
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2406,6 +2406,8 @@ def main():
     import roads3d as _r3
     roads3d_SW = _r3.SW_W
     binfo = []
+    building_lods = []
+    building_counts = {mk: sum(len(p) for p in blocks[0]) for mk, blocks in mesh.d.items()}
     bgrid = seg_grid([(a_[0], a_[1], b_[0], b_[1], rd["w"] / 2 + roads3d_SW + 0.1) for rd in roads
                       if rd["drive"] and not rd["bridge"] and not rd.get("tunnel") and rd["cls"] not in ("footway", "path", "steps", "cycleway", "pedestrian")
                       for a_, b_ in zip(rd["pts"], rd["pts"][1:])])
@@ -2444,8 +2446,18 @@ def main():
     bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
     for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T_b,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
+        adds_ = [a_ for a_ in adds_ if len(a_[1])]
+        spans_ = []
         for m_, pos_, uv_, col_ in adds_:
+            mk_ = (binf_[0], m_)
+            start_ = building_counts.get(mk_, 0)
+            spans_.append((m_, start_, len(pos_)))
+            building_counts[mk_] = start_ + len(pos_)
             mesh.add(binf_[0], m_, pos_, uv_, col_)
+        if adds_:
+            lo_ = np.min([p_.min(axis=0) for _, p_, _, _ in adds_], axis=0)
+            hi_ = np.max([p_.max(axis=0) for _, p_, _, _ in adds_], axis=0)
+            building_lods.append((binf_[0], lo_.tolist(), hi_.tolist(), spans_))
     bb_.done()
     phase("cables and ground")
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
@@ -3203,6 +3215,8 @@ def main():
         return d
 
     SKEW = 0.22
+    for key_, lo_, hi_, spans_ in building_lods:
+        slot(key_).setdefault("lod", []).append((lo_, hi_, spans_))
     for i, b in enumerate(buildings):          # (fast)
         x0, y0, x1, y1 = b["bb"]
         h = b["h"]

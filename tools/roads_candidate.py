@@ -11,8 +11,9 @@ from shapely.errors import GEOSException
 from shapely.ops import unary_union
 
 from geo import project
+from roadwidth import lane_count
 from roadvault.mesh import Mesh, polys
-from roadvault.road_candidate import compile_scene, crossing_span, road_edge
+from roadvault.road_candidate import Edge, compile_scene, crossing_span, road_edge
 from roadvault.road_inference import at_grade, infer_layout, normalize_ways
 from roadvault.run_candidate import DRIVE, WALK, infer_site, read_elements, site_inputs
 from roadvault.traffic_furniture import draw_device, draw_gantry
@@ -230,6 +231,18 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
         way = source.road_ids[edge["road"]]
         tags = source.tags.get(way, {}).copy()
         if not edge["drive"]:
+            continue
+        if edge.get("flat") and any(isinstance(n, tuple) and n[:1] == ("foot",) for n in (edge["a"], edge["b"])):
+            # These grounded bridge tails were removed from the raised deck. Keep their
+            # cooked geometry, but use OSM node IDs to join the original ground roads.
+            key = 10**15 + i
+            nodes = tuple(-10**15 - 2 * n[1] - n[2] if isinstance(n, tuple) and n[:1] == ("foot",)
+                          else source.node_ids.get(n, n) for n in (edge["a"], edge["b"]))
+            section = dict(edge)
+            section["lanes"] = lane_count(edge, 1) + (0 if edge["ow"] else lane_count(edge, -1))
+            candidates.append(Edge(key, nodes, line, section))
+            ways.append({"id": key, "nodes": nodes, "tags": tags})
+            originals[key] = way
             continue
         if edge_ids is not None and isinstance(edge["b"], int) and edge["ow"]:
             record = (edge_ids[i - 1], edge, translate(line, tx, ty))

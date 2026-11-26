@@ -1,7 +1,7 @@
-"""Far ring of the helicopter view: per 120 m chunk, one cheap merged mesh of flat-shaded building prisms (footprint walls +
-the pre-triangulated roof) and trees as small green pyramids. Drawn only for chunks beyond the streamed (full / lite)
-meshes, over the coarse whole-city ground (the overview map: roads and blocks). Built at load-free cost: lazily, a few
-chunks per frame, from world.buildings / world.trees."""
+"""Far city ring: real-building facade captures on prisms and depth-correct sprites.
+Legacy worlds and pending captures use footprint blocks. Trees retain their cheap
+pyramids. GPU captures are prepared before the main 3D pass, within a frame budget.
+"""
 import math
 import time
 
@@ -18,7 +18,7 @@ NEAR_BAND = 900.0                            # textured per-chunk blocks out to 
 
 
 class FarView:
-    def __init__(self, world, tex=None):
+    def __init__(self, world, tex=None, textures=None):
         self.w = world
         self.tex = None                          # own mipmapped copy of facade texture A (windows), tinted by the vertex colours
         if tex is not None:
@@ -35,6 +35,32 @@ class FarView:
         self.models = {}                         # chunk key -> Model or None (empty chunk)
         self.idx = None
         self.sph = {}
+        self.captures = None
+        self._captured = []
+        self.tree_models = {}
+        if textures is not None and any(c.get("lod") for c in world.chunks.values()):
+            from buildinglod import Captures
+            self.captures = Captures(world, textures)
+
+    def prepare(self, pos, fr, far):
+        """GPU captures must finish before entering the scene's 3D pass."""
+        self._plan(pos[0], pos[1], NEAR_BAND, far)
+        if self.captures is not None:
+            # Prewarm visible full-mesh chunks too, before they leave the stream.
+            keys = [self._items[i] for i in np.flatnonzero(fr.spheres(self._sp))]
+            self.captures.prepare(keys)
+
+    def close(self):
+        if self.captures is not None:
+            self.captures.close()
+        for model in self.models.values():
+            gl3d.free_model(model)
+        for model in self.tree_models.values():
+            gl3d.free_model(model)
+        self.models.clear()
+        if self.tex is not None:
+            import pyray as rl
+            rl.unload_texture(self.tex)
 
     def _index(self):
         w, S = self.w, self.w.chunk
@@ -53,7 +79,7 @@ class FarView:
                 ti[(int(ks[a, 0]), int(ks[a, 1]))] = o[a:b]
         self.idx, self.ta = (bi, ti), ta
 
-    def _build(self, key):
+    def _build(self, key, trees_only=False):
         """key: a chunk (cx, cy) -> textured blocks and trees; or a tile ("T", tx, ty) of TILE x TILE chunks -> one coarse
         merged mesh for the last band: only buildings that make the skyline (tall or big), plain walls, no trees, hazed."""
         w = self.w
@@ -67,7 +93,7 @@ class FarView:
             ids = [i for i in ids if w.buildings[i]["h"] >= 9.0 or (w.buildings[i]["bb"][2] - w.buildings[i]["bb"][0]) * (w.buildings[i]["bb"][3] - w.buildings[i]["bb"][1]) >= 600]
         else:
             ids = bi.get(key, ())
-        for i in ids:
+        for i in (() if trees_only else ids):
             b = w.buildings[i]
             ring = b["ring"]
             x0, y0, x1, y1 = b["bb"]
@@ -143,7 +169,7 @@ class FarView:
         for tx, ty, g in zip(TX.tolist(), TY.tolist(), tg.tolist()):
             if g >= far:
                 continue
-            if g >= NEAR_BAND:
+            if g >= NEAR_BAND and self.captures is None:
                 k = ("T", tx, ty)
                 v = self.sph.get(k)
                 if v is None:
@@ -161,6 +187,14 @@ class FarView:
                     if v is None:
                         cx, cz = k[0] * S + S / 2, k[1] * S + S / 2
                         v = self.sph[k] = (cx, self.w.ground_y(cx, cz) + 15, cz, S * 0.75 + 30)
+                        records = self.w.chunks.get(k, {}).get("lod", ()) if self.captures else ()
+                        if records:
+                            lo = np.min([r[0] for r in records], axis=0)
+                            hi = np.max([r[1] for r in records], axis=0)
+                            lo = np.minimum(lo, (k[0]*S,v[1]-30,k[1]*S))
+                            hi = np.maximum(hi, ((k[0]+1)*S,v[1]+30,(k[1]+1)*S))
+                            c = (lo+hi)*0.5
+                            v = self.sph[k] = (*c,float(np.linalg.norm(hi-lo)*0.5))
                     items.append(k)
                     sp.append(v)
         d2 = [(v[0] - x) ** 2 + (v[2] - y) ** 2 for v in sp]
@@ -168,7 +202,7 @@ class FarView:
         self._items = [items[i] for i in o]
         self._sp = np.asarray([sp[i] for i in o], np.float64).reshape(-1, 4)
 
-    def draw(self, rl, pos, skip, fr, far, budget_ms=3.0):
+    def draw(self, rl, pos, skip, fr, far, budget_ms=3.0, cam=None, dark=0.0):
         """Draws the far blocks round pos = (x, y) out to `far` m, leaving out chunks in `skip` (streamed meshes) and what is
         outside the frustum; builds missing ones within the time budget. Returns the number of draw calls."""
         if self.idx is None:
@@ -176,6 +210,7 @@ class FarView:
         t0 = time.perf_counter()
         self._plan(pos[0], pos[1], NEAR_BAND, far)
         items = self._items
+        self._captured = []
         if not items:
             return 0
         n = 0
@@ -183,6 +218,15 @@ class FarView:
         for i in np.flatnonzero(fr.spheres(self._sp)).tolist():
             k = items[i]
             if k in skip:
+                continue
+            if self.captures is not None and self.captures.draw(k, cam, dark):
+                self._captured.append(k)
+                if k not in self.tree_models:
+                    self.tree_models[k] = self._build(k, trees_only=True)
+                trees = self.tree_models[k]
+                if trees is not None:
+                    rl.draw_model(trees, zero, 1.0, white)
+                n += 1
                 continue
             m = self.models.get(k, 0)
             if m == 0:
@@ -193,3 +237,18 @@ class FarView:
                 rl.draw_model(m, zero, 1.0, white)
                 n += 1
         return n
+
+    def windows(self, rl, cam, dark):
+        if self.captures is None or dark <= 0.02:
+            return
+        rl.begin_mode_3d(cam)
+        rl.rl_disable_backface_culling()
+        rl.rl_disable_depth_mask()
+        rl.begin_blend_mode(rl.BLEND_ADDITIVE)
+        try:
+            for key in self._captured:
+                self.captures.draw(key, cam, dark, glow=True)
+        finally:
+            rl.end_blend_mode()
+            rl.rl_enable_depth_mask()
+            rl.end_mode_3d()

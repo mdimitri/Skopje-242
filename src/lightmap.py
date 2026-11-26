@@ -16,6 +16,7 @@ GRID = 28                        # the overlay is a GRID x GRID mesh draped over
 LIFT = 0.28                      # metres above the ground: above the 0.16 m pavements
 WIN_R = 90.0                     # windows glow within this distance of the view centre (top-down); STREET_WIN_R in street view
 STREET_WIN_R = 190.0             # the street view sees far down the street: all those facades get lit windows too
+BUILDING_WIN_R = 2600.0          # full meshes and captured building LODs share one night-light fade
 SKIP_MATS = (3, 6, 20, 21, 22)              # trees (leaf sprites are dark green: they glowed as windows), road surface meshes and graffiti decals have no windows (the decal's transparent texels would glow as a lit pane)
 
 WIN_VS = """#version 330
@@ -233,6 +234,8 @@ class LightMap:
             return
         sh, loc, wcl = self.win
         R = STREET_WIN_R if self.street else WIN_R
+        if self.street and getattr(self.w, "version", 0) >= 87:
+            R = BUILDING_WIN_R
         rl.set_shader_value(sh, wcl, rl.ffi.new("float[3]", [self.cx, self.cz, R]), rl.SHADER_UNIFORM_VEC3)
         rl.set_shader_value(sh, loc, rl.ffi.new("float *", min(1.0, dark * 1.4) * 0.95), rl.SHADER_UNIFORM_FLOAT)
         S, st = self.w.chunk, self.st
