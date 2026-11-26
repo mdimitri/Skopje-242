@@ -7,7 +7,7 @@ import os
 import random
 import zlib
 
-VERSION = 5
+VERSION = 6
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # vendor: (title, [5 purchasable items], [2 free / money items])
@@ -77,7 +77,7 @@ V = {
         (TXT("poi_vendors.0233"), 500, 0, 0, TXT("poi_vendors.0234")), (TXT("poi_vendors.0235"), 200, 0, 0, TXT("poi_vendors.0236"))],
         [(TXT("poi_vendors.0237"), 0, 0, 500, TXT("poi_vendors.0238")), (TXT("poi_vendors.0239"), 0, 0, 100, TXT("poi_vendors.0240"))]),
     "bencin": (TXT("poi_vendors.0241"), [
-        (TXT("poi_vendors.0242"), 1200, 0, 0, TXT("poi_vendors.0243")), (TXT("poi_vendors.0244"), 100, 10, 0, TXT("poi_vendors.0245")), (TXT("poi_vendors.0246"), 200, 0, 0, TXT("poi_vendors.0247")),
+        (TXT("poi_vendors.0242"), 0, 0, 0, TXT("poi_vendors.0243")), (TXT("poi_vendors.0244"), 100, 10, 0, TXT("poi_vendors.0245")), (TXT("poi_vendors.0246"), 200, 0, 0, TXT("poi_vendors.0247")),
         (TXT("poi_vendors.0248"), 120, 14, 0, TXT("poi_vendors.0249")), (TXT("poi_vendors.0250"), 50, 6, 0, TXT("poi_vendors.0251"))],
         [(TXT("poi_vendors.0252"), 0, 0, 0, TXT("poi_vendors.0253")), (TXT("poi_vendors.0254"), 0, -1, 30, TXT("poi_vendors.0255"))]),
     "gradezen": (TXT("poi_vendors.0256"), [

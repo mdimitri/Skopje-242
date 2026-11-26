@@ -30,7 +30,7 @@ def main():
     assert shader.id != rl.rl_get_shader_id_default(), "car shader failed to compile"
     old_fs = gl3d.CAR_FS.replace("vec3 env = reflectedSky(R);",
         "vec3 env = R.y > 0.0 ? mix(skyH, skyZ, sqrt(R.y)) : mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));")
-    old_fs = old_fs.replace("k * (0.32 + 0.65 * fr), 0.0, 0.95", "k * (0.10 + 0.65 * fr), 0.0, 0.9")
+    old_fs = old_fs.replace("k * (0.18 + 0.65 * fr)", "k * (0.10 + 0.65 * fr)")
     old = rl.load_shader_from_memory(gl3d.CAR_VS, old_fs)
     assert old.id != rl.rl_get_shader_id_default(), "comparison shader failed to compile"
     old_loc = {n: rl.get_shader_location(old, n) for n in gl3d._gloss["loc"]}

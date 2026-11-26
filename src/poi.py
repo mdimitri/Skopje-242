@@ -20,7 +20,7 @@ MENU = {
     "school": [(TXT("poi.0017"), 40, 0, 0, TXT("poi.0018")), (TXT("poi.0019"), 0, 3, 0, TXT("poi.0020")), (TXT("poi.0021"), 0, 0, 0, TXT("poi.0022")), (TXT("poi.0023"), 50, 0, 0, TXT("poi.0024"))],
     "health": [(TXT("poi.0025"), 70, 15, 0, TXT("poi.0026")), (TXT("poi.0027"), 150, 25, 0, TXT("poi.0028")), (TXT("poi.0029"), 300, 60, 0, TXT("poi.0030")), (TXT("poi.0031"), 0, 5, 0, TXT("poi.0032"))],
     "worship": [(TXT("poi.0033"), 20, 5, 0, TXT("poi.0034")), (TXT("poi.0035"), 0, 10, 0, TXT("poi.0036")), (TXT("poi.0037"), 100, 3, 0, TXT("poi.0038")), (TXT("poi.0039"), 0, 6, 0, TXT("poi.0040"))],
-    "fuel": [(TXT("poi.0041"), 1200, 0, 0, TXT("poi.0042")), (TXT("poi.0043"), 100, 10, 0, TXT("poi.0044")), (TXT("poi.0045"), 200, 0, 0, TXT("poi.0046")), (TXT("poi.0047"), 0, 0, 0, TXT("poi.0048"))],
+    "fuel": [(TXT("poi.0041"), 0, 0, 0, TXT("poi.0042")), (TXT("poi.0043"), 100, 10, 0, TXT("poi.0044")), (TXT("poi.0045"), 200, 0, 0, TXT("poi.0046")), (TXT("poi.0047"), 0, 0, 0, TXT("poi.0048"))],
     "money": [(TXT("poi.0049"), 0, 0, 500, TXT("poi.0050")), (TXT("poi.0051"), 0, 0, 1000, TXT("poi.0052")), (TXT("poi.0053"), 0, 0, 100, TXT("poi.0054")), (TXT("poi.0055"), 0, 0, 300, TXT("poi.0056"))],
     "market": [(TXT("poi.0057"), 120, 15, 0, TXT("poi.0058")), (TXT("poi.0059"), 180, 20, 0, TXT("poi.0060")), (TXT("poi.0061"), 220, 18, 0, TXT("poi.0062")), (TXT("poi.0063"), 0, 5, 40, TXT("poi.0064"))],
     "police": [(TXT("poi.0065"), 0, 0, 0, TXT("poi.0066")), (TXT("poi.0067"), 0, 0, 0, TXT("poi.0068")), (TXT("poi.0069"), 300, 0, 0, TXT("poi.0070")), (TXT("poi.0071"), 60, 0, 0, TXT("poi.0072"))],

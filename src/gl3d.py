@@ -2364,7 +2364,7 @@ void main(){
     float r = clamp(k * (0.38 + 0.62 * fr), 0.0, 0.95);
     c = mix(base.rgb, env, r) + spec * k;
   } else {                                                        // paint: metallic flake tinted by the paint + clear coat
-    float r = clamp(k * (0.32 + 0.65 * fr), 0.0, 0.95);
+    float r = clamp(k * (0.18 + 0.65 * fr), 0.0, 0.9);
     vec3 flake = base.rgb * lightC * pow(max(dot(N, normalize(lightD + V)), 0.0), 24.0) * 0.55 * lit;
     c = base.rgb * (1.0 - 0.35 * r) + env * r + (flake + spec * 0.8) * k;
   }

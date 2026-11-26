@@ -82,6 +82,8 @@ Traffic simulation has a separation boundary. `src/trafficproc.py` runs traffic 
 
 World interactions include locations, vendors, services, rentals, work activities, compounds, mall interiors, graffiti, garbage, and breakable chaos. Start from `places.py`, `poi.py`, `poi_vendors.py`, `services.py`, `rentals.py`, `works.py`, `compounds.py`, `mall.py`, or `chaos.py` depending on the feature, then trace main's integration.
 
+New hero wallets use the profile's base amount times ten plus a 3,000-denar floor contribution. Loading restores the saved wallet as-is. The solo HUD shows a 10,000,000-denar cash target. Pump refueling charges for the missing fraction of a representative 45 L tank; the pedestrian fuel POI only offers directions, since the actual refuel is handled by the station interaction. The companion book's campaign multipliers and net-worth ledger are design proposals.
+
 ### Rendering, presentation, and world art
 
 `src/render.py` and its imported rendering modules form the runtime drawing stack. `gfx.py`, `gl3d.py`, and `fastrl.py` provide graphics abstractions and optimized native bindings. `src/bake.py` prepares reusable visual data; `src/surfacepack.py`, `src/lightmap.py`, `src/sunshadow.py`, `src/night.py`, `src/smog.py`, and `src/fx.py` cover visual effects or environment behavior. Procedural building and compound helpers include `archkit.py`, `archlib.py`, `facade.py`, `compoundart.py`, and `treegen.py`.

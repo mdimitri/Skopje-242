@@ -9,6 +9,10 @@ SUSP_REACT = ((20, "„Ај терај, пријатно.“"), (40, "„Доб�
 
 import hero_stories
 
+STARTING_CASH_FLOOR = 3_000
+STARTING_CASH_SCALE = 10
+DEFAULT_STARTING_CASH = STARTING_CASH_FLOOR + STARTING_CASH_SCALE * 250
+
 # id: (role, money, stats, quote, story, goal, ability_name, ability, weakness)
 _P = {
 "kumplung": ("Возач / Уличен ветеран", 250, (60, 0, 60, 100, 40, 100, 80, 60),
@@ -161,7 +165,8 @@ _P = {
 def profile(hid):
     r = _P[hid]
     title, story, quote = hero_stories.S[hid]
-    return dict(title=title, role=r[0], money=r[1], stats=dict(zip(STAT_KEYS, r[2])), quote=quote, story=story, goal=r[5],
+    money = STARTING_CASH_FLOOR + STARTING_CASH_SCALE * r[1]
+    return dict(title=title, role=r[0], money=money, stats=dict(zip(STAT_KEYS, r[2])), quote=quote, story=story, goal=r[5],
                 ability_name=r[6], ability=r[7], weakness=r[8])
 
 

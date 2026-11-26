@@ -432,7 +432,7 @@ _FIGHT_NAME = {"Chichko": (45, 0.45, 7), "Baba": (28, 0.2, 5), "Biznismen": (40,
                "Komunalec": (46, 0.35, 6), "Nevesta": (32, 0.3, 5), "Dostavuvach": (40, 0.2, 5), "Jogger": (40, 0.2, 5),
                "Vojnik": (260, 1.0, 16), "Paramedik": (45, 0.1, 4), "Patar": (55, 0.5, 8)}
 FIGHT = [_FIGHT_NAME.get(n, (30, 0.0, 3)) for n in PED_IDS]       # riders and the player fall back to the default
-KIOSK_MENU = [(TXT("vehicles.0246"), 70, 30), (TXT("vehicles.0247"), 40, 15), (TXT("vehicles.0248"), 130, 50), (TXT("vehicles.0249"), 90, 35)]
+KIOSK_MENU = [(TXT("vehicles.0246"), 120, 30), (TXT("vehicles.0247"), 45, 15), (TXT("vehicles.0248"), 220, 50), (TXT("vehicles.0249"), 110, 35)]
 
 
 # ---------------------------------------------------------------- sound profiles (see audio.py)

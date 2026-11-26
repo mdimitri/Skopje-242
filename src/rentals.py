@@ -6,7 +6,7 @@ import math
 
 import vehicles
 
-FARE = 30
+FARE = 60
 KIND = vehicles.IDS.index("E-Trotinet")
 
 

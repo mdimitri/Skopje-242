@@ -15,6 +15,8 @@ import vehicles
 from actors import CAR_NAMES, WEAPONS
 from geo import project
 
+WEALTH_GOAL = 10_000_000
+
 _A = 110                             # faint
 POI_COL = {"shop": rl.Color(180, 90, 200, _A), "food": rl.Color(240, 140, 40, _A), "cafe": rl.Color(150, 100, 60, _A),
            "sight": rl.Color(220, 60, 120, _A), "money": rl.Color(60, 160, 80, _A), "health": rl.Color(230, 40, 40, _A),
@@ -487,9 +489,17 @@ class Hud:
             font.draw_text(TXT("hud.0003"), x + 150, 42, 18, rl.Color(150, 170, 255, 255))
         pz = getattr(sim, "money_pulse", 0.0)                          # swells when flying денари land
         mpv = getattr(sim, "mp_view", None)
-        self._big((f'{sim.money}' + TXT("hud.0004")), x, 12 - int(pz * 3), 32 + int(pz * 8), rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
+        wallet = f"{sim.money:,}".replace(",", " ") + TXT("hud.0004")
+        wallet_size = 32 + int(pz * 8)
+        wallet_width = font.measure_text(wallet, wallet_size)
+        if wallet_width > 144:
+            wallet_size = max(12, wallet_size * 144 // wallet_width)
+        self._big(wallet, x, 12 - int(pz * 3), wallet_size, rl.Color(130 + int(pz * 120), 230, 140 - int(pz * 80), 255))
         if mpv:                                                        # multiplayer: the team's money (everybody's added up)
             self._big("Тим: %d" % mpv["team"], x, 48, 22, rl.Color(120, 200, 255, 255))
+        else:
+            goal = TXT("hud.0022") if sim.money < WEALTH_GOAL else TXT("hud.0023")
+            font.draw_text(goal, x, 43, 14, rl.Color(225, 200, 120, 255))
         for i, (lbl, val) in enumerate(((TXT("hud.0005"), st["burek"]), (TXT("hud.0006"), st["peds"]), (TXT("hud.0007"), st.get("ko", 0)),
                                        (TXT("hud.0008"), st["stolen"]), (TXT("hud.0009"), st["boom"]), (TXT("hud.0010"), st["deaths"]))):
             i += 2.1

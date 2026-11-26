@@ -12,6 +12,7 @@ from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, brake_speed, corr
                      follow_speed, movement_lanes, turn_angle, turn_indicator, turn_lanes)
 import escride
 import garbage
+from hero_profiles import DEFAULT_STARTING_CASH
 from laneassist import LaneAssist
 import peds_lines
 import talk
@@ -4604,7 +4605,7 @@ class Sim:
         self.safe_z = None
         self.respawn_t = 0.0
         self.pickups = []
-        self.money = 250
+        self.money = DEFAULT_STARTING_CASH
         self.jack = None                     # carjack in progress (see _start_jack)
         self.esc = None                      # fire-escape ride in progress (escride.py)
         self.esc_prompt = ""

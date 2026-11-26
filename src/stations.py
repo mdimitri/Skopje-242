@@ -13,8 +13,8 @@ import vehicles
 import clock
 import garbage
 
-FILL_PRICE = 1200          # ден. for a tank filled from empty
-WASH_PRICE, RESPRAY_PRICE = 150, 1500
+FILL_PRICE = 45 * 82       # representative 45 L tank, 82 ден./L (23 Nov 2026 retail reference)
+WASH_PRICE, RESPRAY_PRICE = 300, 24_000
 FUEL_R, WASH_R = 9.0, 10.0  # how close the player's car must stand to the stop point (m)
 GARBAGE_P = 0.6                # chance a garbage truck stops at a container it passes
 ENTER_P = {0: 0.30, 1: 0.18}   # chance a car takes the entrance of a station it passes
