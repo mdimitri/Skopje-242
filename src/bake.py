@@ -505,6 +505,13 @@ class Streamer:
                 continue                                     # facade relief / clutter (src/archkit.py TIER): detail setting, far ring
             if self.world.broken or getattr(self.world, "broken_extra", None):
                 pos = self.world.hide_broken(pos, ch.get("bb"))
+            if mat == 3 and getattr(self.world, "roads3d", False):
+                # Candidate paint and asphalt use different triangulations on the terrain.
+                # Keep the paint above local asphalt humps in already baked worlds too.
+                paint = (col[:, 0] == 236) & (col[:, 1] == 233) & (col[:, 2] == 216)
+                if paint.any():
+                    pos = pos.copy()
+                    pos[paint, 1] += 0.075
             m = gl3d.make_model(pos, uv, col)
             if m is not None:
                 names = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")

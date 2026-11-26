@@ -76,6 +76,12 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
     crossings = controls["crossings"]
     cross_points = [Point(c[:2]) for c in crossings]
     cross_index = STRtree(cross_points)
+    zebra_areas = []
+    for x, z, dx, dz, width, *_ in crossings:
+        center = np.array([x, z])
+        across = np.array([-dz, dx]) * (width / 2 + 0.25)
+        zebra_areas.append(stroke(LineString([center - across, center + across]), 3.5))
+    zebra_index = STRtree(zebra_areas)
     used_crossings = set()
     approaches = warnings = blocked = 0
     for node in sorted(lit):
@@ -112,8 +118,9 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
             stop = max(0.35, zebra - 3.4)
             point, heading, right = placement(line, stop, original)
             mesh = Mesh()
-            mesh.poly(stroke(LineString([point + right * (lo + 0.2), point + right * (hi - 0.2)]), 0.34),
-                      0.011, PAINT, lit=False)
+            stop_line = stroke(LineString([point + right * (lo + 0.2), point + right * (hi - 0.2)]), 0.34)
+            if not len(zebra_index.query(stop_line, predicate="intersects")):
+                mesh.poly(stop_line, 0.011, PAINT, lit=False)
             count = lane_count(edge, direction)
             supports = [point + right * (side * (width / 2 + 1.05)) for side in (-1, 1)]
             if count >= 2 and all(clear(*p) for p in supports):
