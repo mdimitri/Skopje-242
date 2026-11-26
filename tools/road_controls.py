@@ -122,9 +122,19 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
             if not len(zebra_index.query(stop_line, predicate="intersects")):
                 mesh.poly(stop_line, 0.011, PAINT, lit=False)
             count = lane_count(edge, direction)
-            supports = [point + right * (side * (width / 2 + 1.05)) for side in (-1, 1)]
-            if count >= 2 and all(clear(*p) for p in supports):
-                heads = [point + right * (lo + (hi - lo) * (lane + 0.5) / count) for lane in range(count)]
+            gantry = None
+            if count >= 2:
+                for station in (stop, stop - 3, stop - 6, stop - 9, stop - 12):
+                    if station < 0.35:
+                        continue
+                    anchor, axis, normal = placement(line, station, original)
+                    supports = [anchor + normal * (side * (width / 2 + 1.05)) for side in (-1, 1)]
+                    if all(clear(*p) for p in supports):
+                        gantry = (anchor, axis, normal, supports)
+                        break
+            if gantry:
+                anchor, heading, normal, supports = gantry
+                heads = [anchor + normal * (lo + (hi - lo) * (lane + 0.5) / count) for lane in range(count)]
                 draw_gantry(mesh, dict(supports=supports, heads=[{"position": p} for p in heads],
                                        clearance_m=GANTRY_CLEARANCE, facing=-heading), live=True)
                 height = GANTRY_CLEARANCE

@@ -132,8 +132,10 @@ def harmonize(edges, short=300.0):
                             src = (a, k - 1) if wa >= wb else (b, j + 1)
                         if src:
                             for q, i in enumerate(run):
+                                if edges[i].get("lanes_tagged") or edges[i].get("width_tagged"):
+                                    continue
                                 _copy_profile(edges, i, src[0], fwd[k + q] == fwd[src[1]])
-                            moved += len(run)
+                                moved += 1
                 k = j + 1
         changed += moved
         if not moved:
@@ -170,8 +172,10 @@ def _level_steps(edges, max_step=3.6, max_run=400.0):
                             best = (dw, q)
                 if best and sum(edges[ch[i]]["len"] for i in range(k, j + 1)) <= max_run:
                     for i in range(k, j + 1):
+                        if edges[ch[i]].get("lanes_tagged") or edges[ch[i]].get("width_tagged"):
+                            continue
                         _copy_profile(edges, ch[i], ch[best[1]], fwd[i] == fwd[best[1]])
-                    moved += j - k + 1
+                        moved += 1
         changed += moved
         if not moved:
             break
@@ -190,6 +194,8 @@ def repair(edges):
         for ids, lvl in d:
             for i in ids:
                 e = edges[i]
+                if e.get("lanes_tagged") or e.get("width_tagged"):
+                    continue
                 e["lanes"] = lvl if e["ow"] else lvl * 2
                 e["w"] = max(e["w"], e["lanes"] * 3.5)
                 changed += 1

@@ -151,11 +151,26 @@ def _slip_bypasses(world):
     return banned
 
 
+def right_slip(world, incoming, outgoing, angle):
+    """A right-hand link can leave at a shallow angle beside the main road."""
+    edge = world.edges[outgoing[0]]
+    if not edge["ow"] or not edge["cls"].endswith("_link"):
+        return False
+    if angle > 0.20:
+        return True
+    source = world.edges[incoming[0]]
+    node = source["b" if incoming[1] == 1 else "a"]
+    other = [turn_angle(world.edges, incoming, move) for move in world.out.get(node, ())
+             if move[0] not in (incoming[0], outgoing[0])
+             and not world.edges[move[0]]["cls"].endswith("_link")]
+    return -0.35 < angle <= 0.20 and any(abs(a) < 0.35 and angle - a > 0.05 for a in other)
+
+
 def movement_lanes(world, incoming, outgoing, angle):
     """Legal lane indices for a graph movement, including the slip-road bypass rule."""
     edge, direction = world.edges[incoming[0]], incoming[1]
     next_edge = world.edges[outgoing[0]]
-    slip = angle > 0.20 and next_edge["ow"] and next_edge["cls"].endswith("_link")
+    slip = right_slip(world, incoming, outgoing, angle)
     if abs(angle) > 2.2:
         return [0]
     if angle >= 0.5 or slip:

@@ -240,6 +240,16 @@ class TrafficRecoveryTest(unittest.TestCase):
         self.step(tr, 8)
         self.assertIn(c.e, (1, 5))
 
+    def test_shallow_right_slip_uses_outer_lane(self):
+        edges = [road(0, 1, (-60, 0), (0, 0), 9, True, lanes=3),
+                 road(1, 2, (0, 0), (80, 0), 9, True, lanes=3),
+                 road(1, 3, (0, 0), (60, 6), 4, True, lanes=1)]
+        edges[2]["cls"] = "tertiary_link"
+        tr = setup(*edges)
+        angle = turn_angle(edges, (0, 1), (2, 1))
+        self.assertLess(angle, 0.2)
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (2, 1), angle), [2])
+
     def test_no_lane_change_starts_inside_a_junction(self):
         edges = [road(0, 1, (-60, 0), (0, 0), 14, ow=True, lanes=2),
                  road(1, 2, (0, 0), (120, 0), 14, ow=True, lanes=2),

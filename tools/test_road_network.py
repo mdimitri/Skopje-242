@@ -5,12 +5,14 @@ import random
 import sys
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_world import collapse_short_road_links, connect_roads
 import lanefix
 import numpy as np
 import roads3d
+import road_controls
 import signals
 from transit import Transit
 import vehicles
@@ -60,6 +62,27 @@ class RoadNetworkTests(unittest.TestCase):
                  edge(2, 3, (130, 0), (230, 0), **wide)]
         self.assertEqual(lanefix.harmonize(edges), 1)
         self.assertEqual((edges[1]["w"], edges[1]["directional_lanes"]), (14.0, (2, 2)))
+
+    def test_explicit_three_lane_approach_is_not_widened_by_graph_cleanup(self):
+        edges = [edge(0, 1, (0, 0), (100, 0), w=13.0, lanes=4, ow=True, lanes_tagged=True),
+                 edge(1, 2, (100, 0), (130, 0), w=9.75, lanes=3, ow=True, lanes_tagged=True),
+                 edge(2, 3, (130, 0), (230, 0), w=13.0, lanes=4, ow=True, lanes_tagged=True)]
+        lanefix.repair(edges)
+        self.assertEqual((edges[1]["w"], edges[1]["lanes"]), (9.75, 3))
+
+    def test_gantry_moves_upstream_when_its_first_supports_are_blocked(self):
+        edges = [edge(0, 1, (-80, 0), (0, 0), w=6.5, lanes=2, ow=True, cls="tertiary"),
+                 edge(1, 2, (0, 0), (80, 0), w=6.5, lanes=2, ow=True, cls="tertiary"),
+                 edge(1, 3, (0, 0), (0, 60), w=6.5, lanes=2, ow=True, cls="tertiary")]
+        controls = {"signals": [], "heads": [], "crossings": []}
+        with patch.object(road_controls, "plan_lights", return_value=({1}, {1: 1})), \
+             patch.object(road_controls, "draw_gantry") as draw, patch.object(road_controls, "_bake"):
+            road_controls.build(edges, [], controls, None, None, None, None,
+                                lambda x, z: x < -10)
+        self.assertEqual(draw.call_count, 1)
+        device = draw.call_args.args[1]
+        self.assertTrue(all(p[0] < -10 for p in device["supports"]))
+        self.assertAlmostEqual(device["supports"][0][0], device["supports"][1][0])
 
     def test_submetre_links_weld_without_merging_elevations(self):
         main = road((0, 1, 2, 3), ((0, 0), (10, 0), (10.7, 0), (20, 0)))
