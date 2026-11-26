@@ -6,6 +6,8 @@ import pyray as rl
 
 import clock
 import vehicles
+import gl3d
+import carbody
 from lightmap import LightMap
 
 V3 = rl.Vector3
@@ -147,14 +149,19 @@ class Night:
             if not on:
                 continue
             ph = int(t * 6.0) & 1
-            hl = vehicles.DIMS[kind][0] * 0.05                       # light bar on this vehicle's own roof
-            top = vehicles.DIMS[kind][4] + 0.12
+            L, _, _, _, roof = gl3d.visual_dims(kind)
+            if vehicles.STYLE[kind] == "truck":
+                hl = L / 2 - min(2.85, 0.40 * L) / 2
+            else:
+                layout = carbody.layout(vehicles.IDS[kind], L)
+                hl = layout["cx"] + (layout["cl"] * 0.35 if vehicles.EXTRA[kind] == "ambulance" else 0.0)
+            top = roof + 0.14
             ca, sa = math.cos(h), math.sin(h)
             a = 235 * max(0.55, dark)
-            for side, col in ((-1, (255, 30, 30)), (1, (40, 80, 255))):
+            for side, col in ((-1, (40, 80, 255) if vehicles.EXTRA[kind] == "ambulance" else (255, 30, 30)), (1, (40, 80, 255))):
                 lit = (ph == 0) == (side < 0)
                 if lit:
-                    px, py = x + ca * hl - sa * 0.5 * side, y + sa * hl + ca * 0.5 * side
+                    px, py = x + ca * hl - sa * 0.3 * side, y + sa * hl + ca * 0.3 * side
                     self._glow(cam, px, py, top, 6.5 * ppm, col, a)
                     self._glow(cam, px, py, top, 2.2 * ppm, (255, 255, 255), a * 0.6)
         crews = getattr(sim, "crews", None)
