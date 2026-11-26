@@ -709,9 +709,10 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
     rounded_tips = []
     if inferred:
         slip_inside = unary_union([edge_band(edge, "left", 0.55) for edge in edges
-                                  if edge.section["cls"].endswith("_link") and edge.section["ow"]])
+                                  if edge.section["cls"] in {"primary_link", "secondary_link", "tertiary_link"}
+                                  and edge.section["ow"]])
         for hole in holes:
-            if (15 <= hole.area <= 420 and hole.intersection(divider).area < hole.area * 0.2
+            if (hole.area >= 15 and hole.intersection(divider).area < hole.area * 0.2
                     and hole.boundary.intersection(slip_inside.buffer(0.12)).length >= 5):
                 seed = hole.representative_point()
                 rounding.append([seed.x, seed.y, 1])

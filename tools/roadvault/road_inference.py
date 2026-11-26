@@ -444,11 +444,12 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
     crossing_points = [frame(by_id[way].line, station)[:2]
                        for group in layout["crossings"] for way, station in group]
     holes = [Polygon(ring) for polygon in polys(raw_pavement) for ring in polygon.interiors
-             if 15 <= Polygon(ring).area <= 420]
+             if Polygon(ring).area >= 15]
+    slip_islands = []
     for island in holes:
         candidates = []
         for edge in edges:
-            if (not edge.section["ow"] or not edge.section["cls"].endswith("_link")
+            if (not edge.section["ow"] or edge.section["cls"] not in {"primary_link", "secondary_link", "tertiary_link"}
                     or layout["road_edges"].get(str(edge.id), (None, None))[1] != "sidewalk"):
                 continue
             boundary = island.boundary.intersection(edge_band(edge, "left", 0.55).buffer(1))
@@ -461,6 +462,7 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                     candidates.append((segment.length, edge, at))
         if not candidates:
             continue
+        slip_islands.append(island)
         if any(edge.id in used and any(way == edge.id and island.distance(edge.line.interpolate(at)) <= edge.section["w"]
                                       for group in layout["crossings"] for way, at in group)
                for _, edge, _ in candidates):
@@ -538,7 +540,8 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
     sidewalk_bands = [edge_band(by_id[int(way)], side, 2.4)
                       for way, sides in layout["road_edges"].items()
                       for side, feature in zip(("left", "right"), sides) if feature == "sidewalk"]
-    walkable = unary_union([*sidewalk_bands, *holes]).difference(raw_pavement)
+    walkable = unary_union([*sidewalk_bands, *[hole for hole in holes if hole.area < 190],
+                            *slip_islands]).difference(raw_pavement)
     connected = []
     for group in layout["crossings"]:
         valid = True
