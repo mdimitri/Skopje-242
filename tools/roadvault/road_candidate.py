@@ -750,28 +750,53 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
             else:
                 valid_groups.append(group)
         layout["crossings"] = valid_groups
+    crossing_retries = set()
     while True:
         pavement, curb, landings, cut_throughs, paths, crossings, zebras = pedestrian_geometry(
             by_id, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider)
         if not inferred:
             break
         walkable = unary_union([pavement, cut_throughs, paths])
-        connected = []
+        invalid = []
+        shifted = False
         for group in layout["crossings"]:
-            valid = True
+            gap = 0.0
             for way, station in group:
                 point, _, right, lo, hi = crossing_span(by_id[way], station, asphalt)
-                if any(walkable.distance(Point(point + right * lateral)) > 2
-                       for lateral in (lo - 0.3, hi + 0.3)):
-                    valid = False
-                    break
-            if valid:
-                connected.append(group)
-            elif report is not None:
-                report.append(dict(kind="crossing_without_final_landing", ways=[way for way, _ in group]))
-        if len(connected) == len(layout["crossings"]):
+                gap = max(gap, *(walkable.distance(Point(point + right * lateral))
+                                 for lateral in (lo - 0.3, hi + 0.3)))
+            if gap <= 2:
+                continue
+            if len(group) == 1 and group[0][0] not in crossing_retries:
+                way, station = group[0]
+                crossing_retries.add(way)
+                edge = by_id[way]
+                for shift in (2, -2, 4, -4, 6, -6):
+                    at = station + shift
+                    if not 3 <= at <= edge.line.length - 3:
+                        continue
+                    try:
+                        point, _, right, lo, hi = crossing_span(edge, at, asphalt)
+                    except ValueError:
+                        continue
+                    if (bounds.buffer(-2).covers(Point(point)) and
+                            all(walkable.distance(Point(point + right * lateral)) <= 2
+                                for lateral in (lo - 0.3, hi + 0.3))):
+                        group[0][1] = round(at, 3)
+                        shifted = True
+                        break
+                else:
+                    invalid.append((gap, group))
+            else:
+                invalid.append((gap, group))
+        if shifted:
+            continue
+        if not invalid:
             break
-        layout["crossings"] = connected
+        _, remove = max(invalid, key=lambda item: item[0])
+        if report is not None:
+            report.append(dict(kind="crossing_without_final_landing", ways=[way for way, _ in remove]))
+        layout["crossings"] = [group for group in layout["crossings"] if group is not remove]
     if inferred:
         visible_ways = {way for group in layout["crossings"] for way, _ in group}
         layout["stop_lines"] = [way for way in layout["stop_lines"] if way in visible_ways]

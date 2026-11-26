@@ -549,9 +549,9 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
             way, station = item
             edge = by_id[way]
             direction = 1 if station < edge.line.length / 2 else -1
-            shifts = (0,) if way in mapped_ways or len(group) > 1 else (0, 3, 6, 9, 12, 15)
+            shifts = (0,) if len(group) > 1 else (0, 2, -2, 4, -4) if way in mapped_ways else (0, 3, -3, 6, -6, 9, -9, 12, 15)
             if edge.section["cls"].endswith("_link"):
-                shifts = (0, 1, 2)
+                shifts = (0, 1, -1, 2, -2, 3, -3, 4, -4)
             found = None
             for shift in shifts:
                 at = station + direction * shift

@@ -460,7 +460,11 @@ def standardise(edges):
     return n
 
 
-def repair(edges):
+def repair(edges, preserve_geometry=False):
+    if preserve_geometry:
+        print(f"[build] bridge lane standard applied to {standardise([e for e in edges if e['bridge']])} edges")
+        bridge_lanes(edges)
+        return 0, 0
     print(f"[build] lane standard applied to {standardise(edges)} edges")
     print(f"[build] boulevard carriageways raised to 3 lanes: {boulevard_floor(edges)}")
     cut = dual_carriageways(edges)

@@ -2401,24 +2401,47 @@ def main():
     frac(1.0, "quays")
     del lakes, ld
 
-    stage("bmesh")
+    stage("bmesh", data=("roads.json",))
     # ---- building meshes, now that the ground under them is known ------------------------------
     import roads3d as _r3
-    roads3d_SW = _r3.SW_W
+    candidate_roads = os.environ.get("SK242_DESIGNER", "1") != "0"
+    roads3d_SW = 2.4 if candidate_roads else _r3.SW_W
+    candidate_sections = {}
+    if candidate_roads:
+        import roads_candidate
+        with open(os.path.join(a.src, "roads.json"), encoding="utf-8") as stream:
+            candidate_sections = roads_candidate.osm_sections(json.load(stream)["elements"])[0]
     binfo = []
     building_lods = []
     building_counts = {mk: sum(len(p) for p in blocks[0]) for mk, blocks in mesh.d.items()}
-    bgrid = seg_grid([(a_[0], a_[1], b_[0], b_[1], rd["w"] / 2 + roads3d_SW + 0.1) for rd in roads
+    bgrid = seg_grid([(a_[0], a_[1], b_[0], b_[1], candidate_sections.get(rd["id"], rd)["w"] / 2 + roads3d_SW + 0.1) for rd in roads
                       if rd["drive"] and not rd["bridge"] and not rd.get("tunnel") and rd["cls"] not in ("footway", "path", "steps", "cycleway", "pedestrian")
                       for a_, b_ in zip(rd["pts"], rd["pts"][1:])])
     bmap = {id(b_["ring"]): b_ for b_ in buildings}
-    n_clip = n_drop = 0
+    import building_move
+    mover = building_move.BuildingMoves(buildings, bgrid, water_a, HX, HY, CELL)
+    building_index = {id(b_): i for i, b_ in enumerate(buildings)}
+    n_clip = n_drop = n_moved = 0
     jobs_ = []
     for (key, mat, outer, holes, verts, tri, h, wallc, roofc, ar, small, rooftop, fit) in each(pending, "building meshes on terrain", feed=("bmesh", None, lambda it: list(it[2][0]))):
         o2 = clip_ring(outer, bgrid)
+        bi_ = bmap.get(id(outer))
+        if o2 is not outer and bi_ and not ((fit or {}).get("arch") or (fit or {}).get("worship")):
+            move_ = mover.move(building_index[id(bi_)])
+            if move_:
+                dx_, dy_ = move_
+                outer = [(x + dx_, y + dy_) for x, y in outer]
+                holes = [[(x + dx_, y + dy_) for x, y in hole] for hole in holes]
+                verts, tri = triangulate(outer, holes)
+                rooftop = [(x + dx_, y + dy_, *rest) for x, y, *rest in rooftop]
+                xs_, ys_ = [p[0] for p in outer], [p[1] for p in outer]
+                bb_ = (min(xs_), min(ys_), max(xs_), max(ys_))
+                key = chunk_of((bb_[0] + bb_[2]) / 2, (bb_[1] + bb_[3]) / 2)
+                bi_.update(ring=outer, v=verts, tri=tri, bb=bb_)
+                o2 = outer
+                n_moved += 1
         if o2 is not outer:
             n_clip += 1
-            bi_ = bmap.get(id(outer))
             tri2 = None
             if len(o2) >= 3 and abs(shoelace(o2)) >= 8:
                 if shoelace(o2) < 0:
@@ -2461,7 +2484,14 @@ def main():
     bb_.done()
     phase("cables and ground")
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
-    print(f"[build] buildings clipped off roads/pavements: {n_clip} trimmed, {n_drop} dropped")
+    del mover, building_index, candidate_sections
+    bld = Image.new("L", (NCX, NCY), 0)
+    occ = Image.new("L", (NCX, NCY), 0)
+    bd, od = ImageDraw.Draw(bld), ImageDraw.Draw(occ)
+    for b_ in buildings:
+        bd.polygon(cells(b_["ring"]), fill=255)
+        od.polygon(cells(b_["ring"]), fill=255)
+    print(f"[build] buildings beside roads: {n_moved} moved, {n_clip} trimmed, {n_drop} dropped")
     if binfo:                                                  # TV / phone cables from block to block
         tall = [b for b in binfo if b[4] > 10]
         gx = {}
@@ -2492,13 +2522,14 @@ def main():
         od.line(cells(rd["pts"]), fill=255, width=wpx)
     roads.sort(key=lambda q: (q["bridge"], q["layer"], -q["w"]))
     print(f"[build] roads: {len(roads)}")
-    stage("graph", data=("map_pois.json", "bus_stops.json"))
+    stage("graph", data=("map_pois.json", "bus_stops.json", "roads.json"))
     phase("graph")
 
     roads = __import__("ramps").extend_to_banks(roads, T)         # bridge ends that stop down in the cut they span
     roads = __import__("ramps").detach_low_joins(roads)           # a side road joining a bridge mid-span: stops short of it
     connect_roads(roads)
-    open_oneway_traps(roads, HX, HY)
+    if os.environ.get("SK242_DESIGNER", "1") == "0":
+        open_oneway_traps(roads, HX, HY)
     try:                                                        # round 29: trampled desire-line paths over open ground
         import footpaths
         worn = footpaths.generate(roads, buildings, bld, surf, rails, [q for q in _read_list(os.path.join(a.src, "map_pois.json")) if len(q) == 4],
@@ -2548,10 +2579,17 @@ def main():
     import lanefix
     print(f"[build] lane steps levelled: {lanefix.repair(edges)} edges")
     import roadclean
-    cut_, harm_ = roadclean.repair(edges)
+    candidate_roads = os.environ.get("SK242_DESIGNER", "1") != "0"
+    if candidate_roads:
+        import roads_candidate
+        with open(os.path.join(a.src, "roads.json"), encoding="utf-8") as stream:
+            road_elements = json.load(stream)["elements"]
+        print(f"[build] traffic cross-sections matched to OSM road builder: {roads_candidate.sync_graph_sections(edges, roads, road_elements)} edges")
+        del road_elements
+    cut_, harm_ = roadclean.repair(edges, preserve_geometry=candidate_roads)
     print(f"[build] road clean-up: {cut_} carriageways narrowed to leave a median, {harm_} short segments matched to their neighbours")
     import roads3d
-    roads3d.smooth_edges(edges)                  # rounded corners; junction end points stay put
+    roads3d.smooth_edges([e for e in edges if e["bridge"]] if candidate_roads else edges)
     frac(0.95, "rounded corners")
     print(f"[build] graph: {len(node_ids)} nodes, {len(edges)} edges ({sum(1 for e in edges if e['drive'])} drivable)")
     spread("graph", edges, lambda e: flat(e["pts"], 60))

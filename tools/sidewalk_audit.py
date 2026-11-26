@@ -57,7 +57,7 @@ def local_tris(world, cx, cy, r):
 
 def is_pavement(col):
     c = col.astype(int)
-    return (c[:, 0] - c[:, 2] >= 8) & (c[:, 0] - c[:, 2] <= 18) & (c[:, 0] >= 120) & (c[:, 0] <= 215) & (abs(c[:, 0] - c[:, 1]) <= 8)
+    return (c[:, 0] - c[:, 2] >= 6) & (c[:, 0] - c[:, 2] <= 18) & (c[:, 0] >= 120) & (c[:, 0] <= 215) & (abs(c[:, 0] - c[:, 1]) <= 8)
 
 
 def is_asphalt(col):
@@ -97,16 +97,14 @@ def raster(tris, cols, cx, cy, n):
             continue
         hh = l1 * a[1] + l2 * b[1] + l3 * c[1]
         sl = (slice(z0, z1), slice(x0, x1))
-        up = nrm_y[t] > 0
-        if up:
-            cov[sl] |= ins
-            if pav[t]:
-                HP[sl] = np.where(ins, np.maximum(HP[sl], hh), HP[sl])
-            if asp[t]:
-                HA[sl] = np.where(ins, np.maximum(HA[sl], hh), HA[sl])
-            better = ins & (hh >= H[sl])
-            H[sl] = np.where(better, hh, H[sl])
-            img[sl][better] = cols[t]
+        cov[sl] |= ins
+        if pav[t]:
+            HP[sl] = np.where(ins, np.maximum(HP[sl], hh), HP[sl])
+        if asp[t]:
+            HA[sl] = np.where(ins, np.maximum(HA[sl], hh), HA[sl])
+        better = ins & (hh >= H[sl])
+        H[sl] = np.where(better, hh, H[sl])
+        img[sl][better] = cols[t]
     return H, HP, HA, cov, img
 
 

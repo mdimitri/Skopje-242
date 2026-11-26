@@ -54,6 +54,11 @@ def _ease(t):
 
 def half_width(edge, distance):
     base = edge["w"] / 2
+    if profile := edge.get("candidate_taper"):
+        end, length, start, scale, total, amount = profile
+        station = start + scale * distance
+        remaining = station if end == "start" else total - station
+        return base - amount * _ease(1.0 - max(0.0, remaining) / length)
     start, end = edge.get("taper", (None, None))
     width = base
     if start:
@@ -63,3 +68,35 @@ def half_width(edge, distance):
         length, target = end
         width += (target - base) * _ease(1.0 - max(0.0, edge["len"] - distance) / length)
     return width
+
+
+def lane_offset(edge, direction, distance, offset):
+    """Follow the candidate's lane alignment as a one-way carriageway tapers."""
+    taper = edge.get("lane_taper")
+    if not taper or not edge.get("taper") or direction != 1 or not edge["ow"]:
+        return offset * (2 * half_width(edge, distance) / edge["w"]) if edge.get("taper") else offset
+    width, count = edge["w"], lane_count(edge, direction)
+    half = half_width(edge, distance)
+    left, right = -half, half
+    fraction = 0.5 + offset / width
+    side = taper[2]
+    if side == "both":
+        return max(left, min(right, offset))
+    if side == "left":
+        divider = right - width * (1 - 1 / count)
+        return left + (divider - left) * fraction * count if fraction < 1 / count else right - width * (1 - fraction)
+    divider = left + width * (1 - 1 / count)
+    return left + width * fraction if fraction <= 1 - 1 / count else divider + (right - divider) * (fraction - (1 - 1 / count)) * count
+
+
+def nominal_offset(edge, direction, distance, offset):
+    if not edge.get("lane_taper"):
+        return offset * edge["w"] / (2 * half_width(edge, distance)) if edge.get("taper") else offset
+    lo, hi = -edge["w"], edge["w"]
+    for _ in range(24):
+        mid = (lo + hi) / 2
+        if lane_offset(edge, direction, distance, mid) < offset:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2

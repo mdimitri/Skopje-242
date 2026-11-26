@@ -8,13 +8,13 @@ from shapely import STRtree
 from shapely.affinity import translate
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.errors import GEOSException
-from shapely.ops import unary_union
+from shapely.ops import substring, unary_union
 
 from geo import project
 from roadwidth import lane_count
 from roadvault.mesh import Mesh, polys
 from roadvault.road_candidate import Edge, compile_scene, crossing_span, road_edge
-from roadvault.road_inference import at_grade, infer_layout, normalize_ways
+from roadvault.road_inference import at_grade, infer_layout, normalize_ways, road_arms, lane_transition_profiles
 from roadvault.run_candidate import DRIVE, WALK, infer_site, read_elements, site_inputs
 from roadvault.traffic_furniture import draw_device, draw_gantry
 
@@ -23,6 +23,80 @@ REVIEWED_RADIUS = 88
 MARGIN = 90
 REFERENCE_SITES = ((41.99815, 21.42544, 95), (42.00547, 21.4169, 93),
                    (42.0038599, 21.3902603, 115), (42.0004324, 21.4270569, 115))
+
+
+def osm_sections(elements):
+    """Read the same ground-road sections consumed by the candidate builder."""
+    sections, raw_ways, node_uses = {}, [], Counter()
+    for way in elements:
+        tags = way.get("tags", {})
+        cls = tags.get("highway", "")
+        if way.get("type") != "way" or cls.removesuffix("_link") not in DRIVE or not at_grade(tags):
+            continue
+        tags = dict(tags)
+        if cls == "motorway" and "oneway" not in tags:
+            tags["oneway"] = "yes"
+        if tags.get("junction") == "roundabout" and tags.get("oneway") in {"no", "0", "false"}:
+            tags.pop("junction")
+        sections[way["id"]] = road_edge({"id": way["id"], "tags": tags, "nodes": [0, 1]},
+                                        [(0, 0), (1, 0)]).section
+        geometry, nodes = way.get("geometry", ()), way.get("nodes", ())
+        if len(geometry) >= 2 and len(geometry) == len(nodes):
+            raw_ways.append({**way, "tags": tags})
+            node_uses.update(set(nodes))
+    return sections, raw_ways, node_uses
+
+
+def sync_graph_sections(edges, roads, elements):
+    """Use the same OSM cross-sections for ground traffic and candidate asphalt."""
+    sections, raw_ways, node_uses = osm_sections(elements)
+    normalized, originals = normalize_ways(raw_ways, {n for n, count in node_uses.items() if count > 1})
+    candidates, tags_by_edge = [], {}
+    for way in normalized:
+        points = _points(way)
+        points = [point for i, point in enumerate(points) if not i or point != points[i - 1]]
+        if len(points) < 2:
+            continue
+        item = road_edge(way, points)
+        candidates.append(item)
+        tags_by_edge[item.id] = way["tags"]
+    profiles = lane_transition_profiles(road_arms(candidates), tags_by_edge, box(-1e9, -1e9, 1e9, 1e9), {})
+    by_way = {}
+    for item in candidates:
+        by_way.setdefault(originals[item.id], []).append(item)
+    count = 0
+    for edge in edges:
+        if not edge["drive"] or edge["bridge"]:
+            continue
+        section = sections.get(roads[edge["road"]]["id"])
+        if section is None or bool(section["ow"]) != bool(edge["ow"]):
+            continue
+        for key in ("w", "lanes", "directional_lanes"):
+            edge[key] = section[key]
+        first, last = Point(edge["pts"][0]), Point(edge["pts"][-1])
+        choices = by_way.get(roads[edge["road"]]["id"], ())
+        matches = [(item.line.distance(first) + item.line.distance(last), item) for item in choices]
+        if matches:
+            error, item = min(matches, key=lambda pair: pair[0])
+            start, finish = item.line.project(first), item.line.project(last)
+            if error < 0.4 and finish > start + 0.5:
+                part = substring(item.line, start, finish)
+                points = list(part.coords)
+                points[0], points[-1] = edge["pts"][0], edge["pts"][-1]
+                cum = [0.0]
+                for a, b in zip(points, points[1:]):
+                    cum.append(cum[-1] + math.dist(a, b))
+                edge["pts"], edge["cum"], edge["len"] = points, cum, cum[-1]
+            if item.id in profiles and error < 3 and finish > start and edge["len"] > 0:
+                end, length, side = profiles[item.id]
+                distance = start if end == "start" else item.line.length - finish
+                if distance < length:
+                    amount = item.section["tapers"][-1][2]
+                    edge["candidate_taper"] = (end, length, start, (finish - start) / edge["len"], item.line.length, amount)
+                    edge["taper"] = (None, None)
+                    edge["lane_taper"] = (end, length, side)
+        count += 1
+    return count
 
 
 def _optional_elements(path):

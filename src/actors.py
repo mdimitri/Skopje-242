@@ -18,7 +18,7 @@ import peds_lines
 import talk
 import trains
 import projectiles
-from roadwidth import half_width, lane_bounds, lane_count
+from roadwidth import half_width, lane_bounds, lane_count, lane_offset, nominal_offset
 import slang
 import vehicles
 
@@ -2319,6 +2319,32 @@ class Traffic:
             return [max(1.3, hi / 2)]
         return [lo + (k + 0.5) * (hi - lo) / n for k in range(n)]
 
+    @staticmethod
+    def _lanes_fit(e, direction, along, clearance=1.0):
+        lanes = Traffic.lanes_of(e, direction)
+        limit = max(0.0, half_width(e, along) - clearance)
+        return [i for i, lane in enumerate(lanes) if abs(lane_offset(e, direction, along, lane)) <= limit + 1e-6]
+
+    @staticmethod
+    def _taper_stop(c, e):
+        if not e.get("lane_taper") or e["lane_taper"][0] != "end" or c.d != 1:
+            return None
+        clearance = vehicles.HALF_W[c.kind] + 0.1
+        def fits(station):
+            return abs(lane_offset(e, 1, station, c.lane)) + clearance <= half_width(e, station)
+        if fits(e["len"]):
+            return None
+        lo, hi = c.s, e["len"]
+        if not fits(lo):
+            return 0.0
+        for _ in range(16):
+            mid = (lo + hi) / 2
+            if fits(mid):
+                lo = mid
+            else:
+                hi = mid
+        return max(0.0, lo - c.s - vehicles.HALF_L[c.kind] - 1.0)
+
     def _set_lane(self, c, e):
         ls = self.lanes_of(e, c.d)
         c.lidx = min(c.lidx, len(ls) - 1)
@@ -2328,8 +2354,7 @@ class Traffic:
         """Point at distance s along the edge and lateral offset in its nominal cross-section, plus heading."""
         along = s if d == 1 else e["len"] - s
         x, y, dx, dy = self.w.edge_point(e, along)
-        if e.get("taper"):
-            off *= 2 * half_width(e, along) / e["w"]
+        off = lane_offset(e, d, along, off)
         if d == -1:
             dx, dy = -dx, -dy
         return x - dy * off, y + dx * off, math.atan2(dy, dx)
@@ -2529,14 +2554,27 @@ class Traffic:
                 distance += self.w.edges[move[0]]["len"]
         want = len(ls) - 1 if t >= self.TURN_LANE else 0 if t <= -self.TURN_LANE else k
         if abs(c.turn) < self.TURN_LANE:
-            want = min(want, lane_count(self.w.edges[c.nxt[0]], c.nxt[1]) - 1)
+            next_count = lane_count(self.w.edges[c.nxt[0]], c.nxt[1])
+            taper = e.get("lane_taper", (None, None, None))
+            if taper[0] == "end" and taper[2] == "left" and len(ls) == next_count + 1:
+                want = max(1, want)
+            else:
+                want = min(want, next_count - 1)
         permitted = movement_lanes(self.w, (c.e, c.d), c.nxt, c.turn)
         if permitted:
             if abs(c.turn) >= self.TURN_LANE and k in permitted:
                 want = k                       # parallel marked turns keep their own lanes
             else:
                 want = min(permitted, key=lambda i: (abs(i - want), abs(i - k)))
-        if k == want or (rem < 20.0 and (permitted is None or k in permitted)):
+        must_merge = False
+        if e.get("lane_taper") and c.d == 1:
+            ahead = min(e["len"], c.s + max(25.0, c.v * 3.0))
+            fits = set(self._lanes_fit(e, c.d, c.s, vehicles.HALF_W[c.kind] + 0.1)) & set(
+                self._lanes_fit(e, c.d, ahead, vehicles.HALF_W[c.kind] + 0.1))
+            if fits:
+                must_merge = k not in fits
+                want = min(fits, key=lambda i: (abs(i - want), abs(i - k)))
+        if k == want or (not must_merge and rem < 20.0 and (permitted is None or k in permitted)):
             return
         k2 = k + (1 if want > k else -1)
         if self._lane_room(c, e, ls[k2], 12.0, behind=7.0 + c.v):
@@ -2551,8 +2589,19 @@ class Traffic:
         ei, direction = move
         road = self.w.edges[ei]
         n = lane_count(road, direction)
+        previous_road = self.w.edges[previous[0]]
+        previous_count = lane_count(previous_road, previous[1])
         if angle >= self.TURN_LANE or (angle > 0.20 and road["cls"].endswith("_link")):
-            lane += n - lane_count(self.w.edges[previous[0]], previous[1])
+            lane += n - previous_count
+        elif abs(angle) < 0.35:
+            next_taper = road.get("lane_taper", (None, None, None))
+            previous_taper = previous_road.get("lane_taper", (None, None, None))
+            if (next_taper[0] == "start" and next_taper[2] == "left"
+                    and n == previous_count + 1):
+                lane += 1
+            elif (previous_taper[0] == "end" and previous_taper[2] == "left"
+                  and previous_count == n + 1):
+                lane -= 1
         if abs(angle) > self.UTURN:
             lane = 0
         lane = max(0, min(n - 1, lane))
@@ -2562,6 +2611,11 @@ class Traffic:
                 lane = min(permitted, key=lambda idx: abs(idx - lane))
             elif permitted is None and abs(following) >= self.TURN_LANE:
                 lane = 0 if following < 0.0 else n - 1
+        if road.get("lane_taper"):
+            along = 0.0 if direction == 1 else road["len"]
+            fits = self._lanes_fit(road, direction, along)
+            if fits:
+                lane = min(fits, key=lambda i: abs(i - lane))
         return lane
 
     def _exit_lane(self, c, e, e2):
@@ -2625,6 +2679,12 @@ class Traffic:
             c.kind = garbage.truck_kind()                                   # garbage trucks go round the streets that have containers
         if vehicles.LARGE[c.kind] and e["w"] < (7 if c.kind in vehicles.HEAVY else 5.5 if c.kind == garbage.truck_kind() else 8):
             c.kind = 1
+        if e.get("lane_taper"):
+            fits = self._lanes_fit(e, c.d, c.s if c.d == 1 else e["len"] - c.s, vehicles.HALF_W[c.kind] + 0.1)
+            if not fits:
+                return
+            c.lidx = rng.choice(fits)
+            self._set_lane(c, e)
         c.color = rng.randrange(vehicles.N_COLORS)
         c.pace = rng.uniform(0.85, TRAFFIC_SPEED_FACTOR) * vehicles.SPEED[c.kind]
         c.v = 0.0
@@ -2672,8 +2732,7 @@ class Traffic:
         c.s = s_ if c.d == 1 else e["len"] - s_
         x, y, dx, dy = w.edge_point(e, s_)
         off = c.d * (-dy * (c.x - x) + dx * (c.y - y))
-        if e.get("taper"):
-            off *= e["w"] / (2 * half_width(e, s_))
+        off = nominal_offset(e, c.d, s_, off)
         lanes = self.lanes_of(e, c.d)
         c.lidx = min(range(len(lanes)), key=lambda i: abs(lanes[i] - off))
         lane = lanes[c.lidx]
@@ -4329,6 +4388,10 @@ class Traffic:
                 c.rev_box = False
             if c.nxt is not None and L - c.s < 120.0 and c.rev <= 0 and not c.shift:
                 self._lane_for_turn(c, e, L - c.s, dt)
+            taper_stop = self._taper_stop(c, e)
+            if taper_stop is not None:
+                stop = taper_stop if stop is None else min(stop, taper_stop)
+                vlim, at_red = min(vlim, brake_speed(stop, 3.5)), True
             remaining = L - c.s
             lane_stop = None
             if c.nxt is not None and not carried and remaining < 25.0:

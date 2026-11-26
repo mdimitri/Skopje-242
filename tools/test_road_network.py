@@ -13,13 +13,16 @@ import lanefix
 import numpy as np
 import roads3d
 import road_controls
+import roadclean
+import roads_candidate
+import building_move
 import signals
 from transit import Transit
 import vehicles
 from actors import Body, Car, Traffic, drive, fly, turn_radius_factor
 from crosswalks import CrossingMap, walk_path
 from driving import fastest_route, follow_speed, road_control_speed, turn_lanes
-from roadwidth import half_width
+from roadwidth import half_width, lane_offset, nominal_offset
 from sidewalk_audit import raster
 from world import World
 
@@ -69,6 +72,114 @@ class RoadNetworkTests(unittest.TestCase):
                  edge(2, 3, (130, 0), (230, 0), w=13.0, lanes=4, ow=True, lanes_tagged=True)]
         lanefix.repair(edges)
         self.assertEqual((edges[1]["w"], edges[1]["lanes"]), (9.75, 3))
+
+    def test_candidate_graph_keeps_original_junction_nodes(self):
+        edges = [edge(0, 1, (-30, 0), (0, 0)), edge(1, 2, (0, 0), (12, 0)),
+                 edge(2, 3, (12, 0), (40, 0)), edge(1, 4, (0, 0), (0, 30)),
+                 edge(2, 5, (12, 0), (12, -30))]
+        before = [(e["a"], e["b"], list(e["pts"])) for e in edges]
+        roadclean.repair(edges, preserve_geometry=True)
+        self.assertEqual([(e["a"], e["b"], list(e["pts"])) for e in edges], before)
+
+    def test_candidate_graph_uses_the_rendered_slip_cross_section(self):
+        e = edge(0, 1, (0, 0), (30, 0), road=0, ow=True, cls="tertiary_link", w=3.25, lanes=1)
+        way = {"type": "way", "id": 7, "tags": {"highway": "tertiary_link", "oneway": "yes", "lanes": "1"}}
+        self.assertEqual(roads_candidate.sync_graph_sections([e], [{"id": 7}], [way]), 1)
+        self.assertAlmostEqual(e["w"], 4.875)
+        self.assertEqual(e["lanes"], 1)
+
+    def test_graph_taper_tracks_the_candidate_lane_centres(self):
+        edges = [edge(0, 1, (0, 0), (40, 0), road=0, ow=True, cls="tertiary"),
+                 edge(1, 2, (40, 0), (90, 0), road=1, ow=True, cls="tertiary")]
+        ways = [{"type": "way", "id": i, "tags": {"highway": "tertiary", "oneway": "yes", "name": "Boulevard", "lanes": str(n)}}
+                for i, n in ((7, 2), (8, 3))]
+        from geo import LAT0, LON0, M_LON
+        for way, nodes, positions in zip(ways, ((0, 1), (1, 2)), ((0, 40), (40, 90))):
+            way["nodes"] = nodes
+            way["geometry"] = [{"lat": LAT0, "lon": LON0 + x / M_LON} for x in positions]
+        roads_candidate.sync_graph_sections(edges, [{"id": 7}, {"id": 8}], ways)
+        wide = edges[1]
+        self.assertEqual(wide["lane_taper"], ("start", 25, "left"))
+        self.assertAlmostEqual(2 * half_width(wide, 0), edges[0]["w"])
+        from shapely.geometry import LineString
+        section = {**wide, "tapers": [["start", 25, (wide["w"] - edges[0]["w"]) / 2,
+                                     -(wide["w"] - edges[0]["w"]) / 2]]}
+        drawn = roads_candidate.Edge(1, (1, 2), LineString(wide["pts"]), section)
+        for nominal in Traffic.lanes_of(wide):
+            for distance in (5, 15, 25):
+                actual = lane_offset(wide, 1, distance, nominal)
+                fraction = 0.5 + nominal / wide["w"]
+                self.assertAlmostEqual(drawn.trace(fraction, [distance, distance + 0.01], lane_aligned=True).coords[0][1], actual)
+                self.assertAlmostEqual(nominal_offset(wide, 1, distance, actual), nominal, places=5)
+
+    def test_traffic_waits_and_merges_before_a_lane_closes(self):
+        wide = edge(0, 1, (0, 0), (50, 0), w=9.75, lanes=3, ow=True,
+                    taper=(None, (25, 3.25)), lane_taper=("end", 25, "left"))
+        self.assertEqual(Traffic._lanes_fit(wide, 1, 50, 1), [1, 2])
+        c = Car()
+        c.kind, c.d, c.s, c.lane = 1, 1, 20.0, Traffic.lanes_of(wide)[0]
+        self.assertIsNotNone(Traffic._taper_stop(c, wide))
+        c.lane = Traffic.lanes_of(wide)[1]
+        self.assertIsNone(Traffic._taper_stop(c, wide))
+
+    def test_lane_mapping_preserves_both_through_lanes_at_a_left_taper(self):
+        narrow = edge(0, 1, (0, 0), (50, 0), w=6.5, lanes=2, ow=True)
+        opening = edge(1, 2, (50, 0), (100, 0), w=9.75, lanes=3, ow=True,
+                       taper=((25, 3.25), None), lane_taper=("start", 25, "left"))
+        closing = edge(2, 3, (100, 0), (150, 0), w=9.75, lanes=3, ow=True,
+                       taper=(None, (25, 3.25)), lane_taper=("end", 25, "left"))
+        after = edge(3, 4, (150, 0), (200, 0), w=6.5, lanes=2, ow=True)
+        traffic = Traffic.__new__(Traffic)
+        traffic.w = SimpleNamespace(edges=[narrow, opening, closing, after])
+        traffic.internal_links = {}
+        self.assertEqual([traffic._mapped_lane((0, 1), i, (1, 1), 0) for i in (0, 1)], [1, 2])
+        self.assertEqual([traffic._mapped_lane((2, 1), i, (3, 1), 0) for i in (1, 2)], [0, 1])
+
+    def test_rendered_taper_continues_across_a_graph_only_node(self):
+        from geo import LAT0, LON0, M_LON
+        ways = [{"type": "way", "id": i, "nodes": nodes,
+                 "geometry": [{"lat": LAT0, "lon": LON0 + x / M_LON} for x in positions],
+                 "tags": {"highway": "tertiary", "oneway": "yes", "name": "Boulevard", "lanes": str(n)}}
+                for i, n, nodes, positions in ((7, 2, [0, 1], [0, 40]), (8, 3, [1, 2], [40, 90]))]
+        edges = [edge(0, 1, (0, 0), (40, 0), road=0, ow=True, cls="tertiary"),
+                 edge(1, 3, (40, 0), (54, 0), road=1, ow=True, cls="tertiary"),
+                 edge(3, 2, (54, 0), (90, 0), road=1, ow=True, cls="tertiary")]
+        roads_candidate.sync_graph_sections(edges, [{"id": 7}, {"id": 8}], ways)
+        self.assertAlmostEqual(half_width(edges[1], 14), half_width(edges[2], 0), places=5)
+        self.assertAlmostEqual(half_width(edges[2], 11), 9.75 / 2, places=5)
+
+    def test_graph_follows_the_candidate_spline_between_osm_nodes(self):
+        from geo import LAT0, LON0, M_LAT, M_LON
+        from shapely.geometry import LineString
+        points = [(0, 0), (20, 5), (40, 0)]
+        way = {"type": "way", "id": 7, "nodes": [0, 1, 2],
+               "geometry": [{"lat": LAT0 - y / M_LAT, "lon": LON0 + x / M_LON} for x, y in points],
+               "tags": {"highway": "tertiary", "oneway": "yes", "lanes": "2"}}
+        e = edge(0, 2, points[0], points[-1], road=0, ow=True, cls="tertiary")
+        e["pts"] = points
+        roads_candidate.sync_graph_sections([e], [{"id": 7}], [way])
+        rendered = roads_candidate.road_edge(way, points).line
+        self.assertLess(LineString(e["pts"]).hausdorff_distance(rendered), 0.001)
+
+    def test_road_overlapping_building_moves_within_half_its_width(self):
+        ring = [(-5, 2), (5, 2), (5, 8), (-5, 8)]
+        grid = {(x, y): [(-30, 0, 30, 0, 3)] for x in (-1, 0) for y in (-1, 0)}
+        mover = building_move.BuildingMoves([{"ring": ring}], grid, np.zeros((100, 100), bool), 50, 50, 1)
+        dx, dy = mover.move(0)
+        self.assertLessEqual(math.hypot(dx, dy), 3.01)
+        self.assertGreater(dy, 1)
+
+    def test_building_move_respects_neighbours_and_water(self):
+        ring = [(-5, 2), (5, 2), (5, 8), (-5, 8)]
+        neighbour = [(-20, 8.1), (20, 8.1), (20, 30), (-20, 30)]
+        grid = {(x, y): [(-30, 0, 30, 0, 3)] for x in (-1, 0) for y in (-1, 0)}
+        mover = building_move.BuildingMoves([{"ring": ring}, {"ring": neighbour}], grid,
+                                            np.zeros((100, 100), bool), 50, 50, 1)
+        self.assertIsNone(mover.move(0))
+        water = np.zeros((100, 100), bool)
+        water[58:, :] = True
+        mover = building_move.BuildingMoves([{"ring": ring}], grid, water, 50, 50, 1)
+        self.assertIsNone(mover.move(0))
 
     def test_gantry_moves_upstream_when_its_first_supports_are_blocked(self):
         edges = [edge(0, 1, (-80, 0), (0, 0), w=6.5, lanes=2, ow=True, cls="tertiary"),
