@@ -20,7 +20,7 @@ CAPTURE_SCALE = 4.0 / 3.0                    # eight transparent border pixels p
 NAMES = ("A", "B", "roof", "white", "panel", "house", "graf", "brick", "conc", "concg", "cream", "mix") + gl3d.SURF_NAMES + ("glaz", "glaz")
 # Camera forward, screen right and screen up for the four walls and roof.
 VIEWS = (((-1, 0, 0), (0, 0, -1), (0, 1, 0)),
-         ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
+         ((1, 0, 0), (0, 0, -1), (0, 1, 0)),
          ((0, 0, -1), (1, 0, 0), (0, 1, 0)),
          ((0, 0, 1), (-1, 0, 0), (0, 1, 0)),
          ((0, -1, 0), (1, 0, 0), (0, 0, -1)))
