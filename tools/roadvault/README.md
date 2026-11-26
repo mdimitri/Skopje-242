@@ -1,5 +1,13 @@
 # Road vault
 
+## User road-network constraints
+
+Before every road-network build or algorithm adaptation, consult the canonical
+constraints in [`../../RoadNet rulebook/RoadNet rulebook.txt`](../../RoadNet%20rulebook/RoadNet%20rulebook.txt).
+Check each applicable rule in the resulting geometry and behavior. If a rule
+fails, adjust the algorithm and recheck; report any rule that remains unmet
+after reasonable attempts, including what was tried and the remaining issue.
+
 Parametric library of road pieces, built fresh (not on junction_net/roads3d).
 
 - `engine.py`: Scene/Arm/Ring -> mesh (asphalt, kerbed pavements, islands, slip lanes, paint, signals, cars, shadows)

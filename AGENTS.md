@@ -8,6 +8,10 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 - Answer from the technical context when it is sufficient. For edits, verify the target code or data and the interfaces the change relies on. If you need more evidence, follow the closest source pointers and widen the search only as needed. Current source takes precedence.
 - Before finishing any game change, review the affected technical context and refresh its facts, source pointers, or durable design decisions in the same change when needed. Keep the index short and put detail in the relevant page. Changes that leave the context accurate need no documentation edit.
 
+## Road network rulebook
+
+For every road-network build or algorithm adaptation, read and apply the user constraints in [`RoadNet rulebook/RoadNet rulebook.txt`](RoadNet%20rulebook/RoadNet%20rulebook.txt). Treat them as acceptance limits for road surfaces, markings, raised pedestrian areas, medians, traffic furniture, gantries, crossings, and vehicle behavior. Check the generated or adapted result against every applicable rule. When a rule is violated, attempt to adjust the algorithm and recheck. If it remains unsatisfied after reasonable attempts, report the specific rule, what was attempted, and the remaining limitation to the user; do not silently accept or claim compliance. Keep the rulebook as the canonical wording and update this instruction if its location changes.
+
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
 ## 1. Think Before Coding

@@ -1,0 +1,9 @@
+asphalt is always rendered above the ground surface
+road markings are always rendered above the asphalt
+sidewalks are always raised above the asphalt and people and vehicle climb on this raised surface
+medians are always raised 2x the sidewalks above the asphalt and are drivable if approached fast enough
+traffic islands are always raised above the asphalt the same height as sidewalks and people and vehicles climb on this raised surface
+traffic light gantries are always perpendicular to the direction of the road leading into an intersection or crossing
+zebra crossings are always perpendicular to the lane(s) and always connect two walkable areas such as sidewalks or islands or footpaths
+traffic signs and individual traffic light poles and street lighting poles are never placed over asphalt, they can be placed on sidewalks or medians
+traffic never drives over non-asphalt surfaces, unless when trying to solve a jam or smartly avoiding traffic where it can swerve over on a sidewalk but never with more than 70% of its body width
