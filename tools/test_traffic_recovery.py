@@ -266,12 +266,15 @@ class TrafficRecoveryTest(unittest.TestCase):
         tr._lane_for_turn(c, edges[1], 80.0, 0.05)
         self.assertEqual(c.lidx, 1)                            # further on it moves over for the right turn
 
-    def test_leftmost_left_turn_lane_also_carries_straight_traffic(self):
+    def test_left_turn_lanes_do_not_cross_straight_lanes(self):
         e = road(0, 1, (-60, 0), (0, 0), 10.5, True, lanes=3, turn=("left|through|through;right", ""))
-        self.assertEqual(turn_lanes(e, 1, 0.0), [0, 1, 2])
+        self.assertEqual(turn_lanes(e, 1, 0.0), [1, 2])
         self.assertEqual(turn_lanes(e, 1, 1.5), [2])
         e = road(0, 1, (-60, 0), (0, 0), 10.5, True, lanes=3, turn=("left|through|right", ""))
-        self.assertEqual(turn_lanes(e, 1, 0.0), [0, 1])
+        self.assertEqual(turn_lanes(e, 1, 0.0), [1])
+        e["turn"] = ("through|left|through", "")
+        tr = setup(e, road(1, 2, (0, 0), (0, -60), ow=True))
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (1, 1), -math.pi / 2), [])
 
     def test_dead_end_uturn_starts_before_node_from_leftmost_lane(self):
         e = road(0, 1, (0, 0), (100, 0), 12, lanes=4)

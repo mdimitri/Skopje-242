@@ -86,8 +86,6 @@ def turn_lanes(edge, direction, angle):
     move = "reverse" if abs(angle) > 2.2 else "right" if angle >= 0.5 else "left" if angle <= -0.5 else "through"
     lanes = [i for i, kinds in enumerate(marked) if not kinds or move in kinds or "slight_" + move in kinds
              or "sharp_" + move in kinds or (move == "through" and bool(kinds & {"merge_to_left", "merge_to_right"}))]
-    if move == "through" and 0 not in lanes and marked[0] <= {"left", "slight_left", "sharp_left", "reverse"}:
-        lanes.insert(0, 0)                    # the leftmost lane may turn left and still carries on straight: it keeps its lane
     return lanes
 
 
@@ -186,7 +184,14 @@ def movement_lanes(world, incoming, outgoing, angle):
         return [curb] if slip else lanes
     lanes = turn_lanes(edge, direction, angle)
     if angle <= -0.5:
-        return [0] if lanes is None else lanes
+        if lanes is None:
+            return [0]
+        contiguous = []
+        for lane in lanes:
+            if lane != len(contiguous):
+                break
+            contiguous.append(lane)
+        return contiguous
     if lanes is None or abs(angle) >= 0.35 or next_edge["cls"] != edge["cls"]:
         return lanes
     # Paint can describe the next junction even when an intermediate graph node splits the approach.
