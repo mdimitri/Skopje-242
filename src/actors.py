@@ -18,7 +18,7 @@ import peds_lines
 import talk
 import trains
 import projectiles
-from roadwidth import center_shift, half_width, lane_bounds, lane_count, lane_offset, nominal_offset
+from roadwidth import center_shift, half_width, has_sidewalk, lane_bounds, lane_count, lane_offset, nominal_offset
 import slang
 import vehicles
 
@@ -3163,7 +3163,7 @@ class Traffic:
         return False
 
     def _junction_turnaround(self, c, e, wb, remaining):
-        """Fit a left-hand U-turn between the two lane centers before advancing past the node."""
+        """Fit a left-hand U-turn into the nearest reachable receiving lane before passing the node."""
         if c.lidx != 0 or c.kind in vehicles.HEAVY or c.kind == vehicles.ARTIC_BUS or c.shift or c.v > 3.5:
             return False
         ei, direction = c.nxt
@@ -3174,6 +3174,9 @@ class Traffic:
             return False
         minimum = wb * turn_radius_factor(2.2, c.kind) / math.tan(self.LOCK_WAY)
         hl, hw = vehicles.HALF_L[c.kind], vehicles.HALF_W[c.kind]
+        lo, hi = lane_bounds(road, direction)
+        lane_half_width = (hi - lo) / (2 * lane_count(road, direction))
+        landing_margin = min(0.35, max(0.0, lane_half_width - hw - 0.15))
         blocked = False
         for lane in self.lanes_of(road, direction):
             tx, ty, th = self._ref(road, direction, 0.0, lane)
@@ -3182,6 +3185,9 @@ class Traffic:
             radius = ((ty - c.y) * math.cos(c.h) - (tx - c.x) * math.sin(c.h)) * 0.5
             if radius > -minimum:
                 continue
+            # Land slightly inside the receiving lane to shorten the sweep, within steering and body clearance.
+            if not (road.get("taper") or road.get("candidate_taper")):
+                radius = min(-minimum, radius + landing_margin * 0.5)
             # Begin as soon as the nose can sweep around the end of the approach.
             edge_allowance = 0.6 if ei == c.e else min(e["w"], road["w"]) * 0.5
             if remaining > abs(radius) + hl + 0.8 or remaining < abs(radius) + hl - edge_allowance:
@@ -3452,11 +3458,13 @@ class Traffic:
                             obs.append((lat, wid, g_ if fwd > 0.1 else 1e9))   # beside us already: keeps the lateral room, no braking
             if obs:
                 base = (bx - c.x) * math.sin(road_h) + (c.y - by) * math.cos(road_h)
-                ext = 0.8 if tight else 0.0                       # a kerb may be mounted a little when held up
+                ext = 0.0
+                if tight and not e["bridge"] and has_sidewalk(e, c.d):
+                    ext = min(0.8, 0.7 * 2 * hwc)
                 if c.shift:                                      # keep the lane chosen by recovery until it can merge back
                     tmin = tmax = c.lane + c.shift
                 elif e["ow"]:
-                    tmin, tmax = -e["w"] / 2 + hwc + 0.2 - ext, e["w"] / 2 - hwc - 0.2 + ext
+                    tmin, tmax = -e["w"] / 2 + hwc + 0.2, e["w"] / 2 - hwc - 0.2 + ext
                 else:
                     divider, _ = lane_bounds(e, c.d)
                     tmin = divider + hwc + 0.15

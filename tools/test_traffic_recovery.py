@@ -529,6 +529,23 @@ class TrafficRecoveryTest(unittest.TestCase):
         self.assertIn(ready, tr.exit_claims)
         self.assertNotIn(waiting, tr.exit_claims)
 
+    def test_curb_pass_requires_a_right_sidewalk_and_uses_partial_width(self):
+        for sides, obstacle_y, may_pass in (((False, True), -0.65, True),
+                                             ((False, False), -0.65, False),
+                                             ((True, False), 0.65, False)):
+            e = road(0, 1, (0, 0), (100, 0), width=3.5, ow=True, sidewalk_sides=sides)
+            tr = setup(e)
+            driver = car(tr, 40.0, 0.0)
+            driver.stuck = 3.0
+            width = vehicles.HALF_W[driver.kind]
+            obstacle = (45.0, obstacle_y, 0.7, 1.5, 0.0, None)
+            tr._courtesy(driver, e, 8.0, (), {(2, int(obstacle_y // 16)): [obstacle]}, 1.0)
+            if may_pass:
+                self.assertGreater(driver.avoid, 0.0)
+            else:
+                self.assertEqual(driver.avoid, 0.0)
+            self.assertLessEqual(max(0.0, driver.avoid + width - e["w"] / 2), 1.4 * width)
+
     def test_parked_obstacle_before_red_can_be_passed(self):
         tr = setup(road(0, 1, (0, 0), (150, 0), 14.0, directional_lanes=(2, 2)))
         tr.signals = SimpleNamespace(state_of=lambda *_: 2, stopd={(0, 1): 10.0})

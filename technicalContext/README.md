@@ -92,6 +92,8 @@ Traffic simulation has a separation boundary. `src/trafficproc.py` runs traffic 
 
 When a junction has a left exit and another marked through lane, `driving.movement_lanes` reserves a shared leftmost lane for left turns. A shared lane can carry straight traffic when it is the only marked through lane or the node has no left exit.
 
+For an eligible junction U-turn on an untapered receiving road, the intersection arc can land slightly inside the receiving lane if steering radius and body clearance allow it. Parked-obstacle avoidance can extend onto the right sidewalk of a ground road after a delay. It caps the extension at 0.8 m or 70% of vehicle width, whichever is smaller.
+
 The traffic worker builds the curb-height lookup index before reporting ready. This keeps the one-time citywide indexing work outside the per-frame reply deadline.
 
 ### People, story, and interaction
