@@ -1057,6 +1057,9 @@ class Ped:
         self.bumps = 0               # times the player walked into them (they cuss, then fight)
         self.bump_cd = 0.0
         self.bump_t = 0.0
+        self.encounter = 0.0
+        self.encounter_cd = 0.0
+        self.encounter_spoke = False
         self.far_t = 0.0             # seconds spent far from the player while chasing them
         self.pose = None             # emergency crews: "spray" (hose out) / "cpr" (kneeling over a patient)
         self.work_role = None        # role-specific combat behavior for service, garbage and road-work crews
@@ -1436,10 +1439,8 @@ class Peds:
         rng = self.rng
         p.bumps += 1
         p.bump_cd, p.bump_t = 1.4, 0.0
-        aggro = getattr(self.sim, "aggro", 1) if self.sim else 1
         lang = getattr(self.sim, "lang", 1) if self.sim else 1
-        temper = vehicles.FIGHT[p.arch][1]
-        limit = max(3, (5 if temper < 0.3 else 4) + (1, 0, -1, -1)[aggro % 4])
+        limit = 3
         kid = vehicles.FIGHT[p.arch][0] <= 16
         stage = min(2, p.bumps - 1) if p.bumps < limit else 3
         dx, dy = wk.x - p.x, wk.y - p.y
@@ -1451,6 +1452,8 @@ class Peds:
         if not talk.allowed(text, lang):
             text = bump_lines.line(vehicles.PED_IDS[p.arch], stage, rng)
         ev("shout", text=text, x=p.x, y=p.y, who=vehicles.ped_who(p))
+        p.encounter = 0.0
+        p.encounter_cd = 30.0
         if stage == 3:
             if kid:                                               # children shout, then run to mama
                 p.mode, p.t = "flee", 4.0
@@ -2042,6 +2045,42 @@ class Peds:
                         p.bumps = 0
                 if p.bump_cd <= 0 and wk_.z < 0.5 and wk_.speed > 1.0 and (wk_.x - p.x) ** 2 + (wk_.y - p.y) ** 2 < 0.85 ** 2:
                     self._bumped(p, wk_, ev)
+            if p.mode != "walk":
+                p.encounter = 0.0
+                out.append(p)
+                continue
+            elif wk_ is not None and wk_.health > 0 and wk_.z < 0.5:
+                p.encounter_cd = max(0.0, p.encounter_cd - dt)
+                dx, dy = wk_.x - p.x, wk_.y - p.y
+                distance = math.hypot(dx, dy)
+                same_level = p.gz is None or wk_.az is None or abs(p.gz - wk_.az) < 2.0
+                if not p.encounter and p.encounter_cd <= 0 and 1.2 < distance < 4.0 and same_level:
+                    p.encounter_cd = 30.0
+                    if rng.random() < 0.25:
+                        p.encounter, p.encounter_spoke = 5.0, False
+                if p.encounter:
+                    if distance > 5.0 or not same_level:
+                        p.encounter = 0.0
+                    else:
+                        p.encounter = max(0.0, p.encounter - dt)
+                        p.h = math.atan2(dy, dx)
+                        step = min(max(0.0, distance - 1.25), dt * 1.0)
+                        nx, ny = p.x + dx / max(distance, 1e-6) * step, p.y + dy / max(distance, 1e-6) * step
+                        if step and (not hasattr(w, "pedestrian_ground") or w.pedestrian_ground(nx, ny)) and not crosses_wall(w, p.x, p.y, nx, ny):
+                            p.vx, p.vy = (nx - p.x) / dt, (ny - p.y) / dt
+                            p.x, p.y = nx, ny
+                            p.anim += step
+                        else:
+                            p.vx = p.vy = 0.0
+                        if not p.encounter_spoke and (distance <= 1.5 or p.encounter < 2.5):
+                            ev("shout", text=talk.encounter_line("open", rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
+                            p.encounter_spoke = True
+                        if p.encounter <= 0 and p.encounter_spoke and rng.random() < 0.4:
+                            ev("shout", text=talk.encounter_line("leave", rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
+                        out.append(p)
+                        continue
+            else:
+                p.encounter = 0.0
             # ------------- walking along the graph
             e = w.edges[p.e]
             if p.walk_route:

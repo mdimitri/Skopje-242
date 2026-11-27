@@ -240,6 +240,17 @@ def wchoice(lines, rng=random, gamma=0.6):
     return rng.choices(lines, weights=w)[0]
 
 
+def encounter_line(kind, rng=random):
+    """Short, conversational lines for a pedestrian encounter."""
+    lines = {
+        "open": (TXT("encounter.0001"), TXT("encounter.0002"), TXT("encounter.0003")),
+        "friendly": (TXT("encounter.0004"), TXT("encounter.0005")),
+        "challenge": (TXT("encounter.0006"), TXT("encounter.0007")),
+        "leave": (TXT("encounter.0008"), TXT("encounter.0009")),
+    }
+    return rng.choice(lines[kind])
+
+
 def say(p, sim, rng=random):
     """An idle line for pedestrian p: personality, type, district, time of day, Skopje/politics/jokes, insults by aggression."""
     import vehicles

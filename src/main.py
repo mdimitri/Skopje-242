@@ -1192,6 +1192,8 @@ def main():
     tip_t = 25.0
     want_menu = False
     want_chars = False
+    encounter_menu = None
+    encounter_reply = None
 
     def hero_who():
         return characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][1]
@@ -2337,6 +2339,40 @@ def main():
             if not inp.get("move", (0, 0))[0]:
                 sim.walker.h += rl.get_mouse_delta().x * 0.003 * cfg["mouse_sens"]
             inp["attack"] = inp.get("attack") or rl.is_mouse_button_down(rl.MOUSE_BUTTON_LEFT)
+        wk_talk = sim.walker if sim.mode == "foot" else None
+        if encounter_menu is not None:
+            p = encounter_menu
+            if (wk_talk is None or wk_talk.health <= 0 or p not in sim.peds.list or p.mode != "walk"
+                    or p.encounter <= 0 or inp.get("attack") or math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) > 3.5):
+                encounter_menu = None
+            else:
+                p.encounter = max(p.encounter, 1.0)
+                choice = inp.get("buy")
+                if choice in (0, 1, 2):
+                    line = (TXT("encounter.0015"), TXT("encounter.0016"), TXT("encounter.0017"))[choice]
+                    popups.add(line, wk_talk.x, wk_talk.y, 2.5, 2.2, (200, 230, 255), 20)
+                    say(line, wk_talk.x, wk_talk.y, hero_who(), True)
+                    encounter_reply = (p, choice, t_game + 2.0)
+                    p.encounter = 3.0
+                    encounter_menu = None
+                inp["buy"] = None
+                if enter_pressed:
+                    encounter_menu = None
+                    enter_pressed = False
+        if encounter_reply is not None and t_game < encounter_reply[2]:
+            p = encounter_reply[0]
+            if p.mode == "walk" and p.encounter > 0:
+                p.encounter = max(p.encounter, 1.0)
+        if encounter_reply is not None and t_game >= encounter_reply[2]:
+            p, choice, _ = encounter_reply
+            encounter_reply = None
+            if (wk_talk is not None and wk_talk.health > 0 and p in sim.peds.list and p.mode == "walk" and p.encounter > 0
+                    and math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) < 5.0):
+                kind = ("friendly", "challenge", "leave")[choice]
+                sim.ev("shout", text=talk.encounter_line(kind, rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
+                p.encounter = 0.0
+                if choice == 1 and vehicles.FIGHT[p.arch][0] > 16 and rng.random() < 0.35:
+                    p.mode, p.t, p.atk_cd, p.far_t = "fight", 14.0, 0.4, 0.0
         busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                           lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active
         if busy_:                                            # inside a shop / posing: the controls are off
@@ -2349,6 +2385,13 @@ def main():
             pass                                             # Enter / F at a GTC door: through it
         elif enter_pressed and escride.start(sim):
             pass                                             # F at a fire escape: the ride starts (or stops)
+        elif enter_pressed and wk_talk is not None and not sim.client and encounter_reply is None:
+            nearby = [p for p in sim.peds.list if p.mode == "walk" and p.encounter > 0 and p.encounter_spoke
+                      and math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) < 3.5]
+            if nearby:
+                encounter_menu = min(nearby, key=lambda p: (p.x - wk_talk.x) ** 2 + (p.y - wk_talk.y) ** 2)
+            else:
+                guard.run("enter", sim.try_enter)
         elif enter_pressed:
             if sim.mode == "car":
                 sim.exit_car()
@@ -2600,14 +2643,24 @@ def main():
                 prompt = sim.stations.prompt
             if sim.esc_prompt:
                 prompt = sim.esc_prompt
+            if (encounter_menu is None and encounter_reply is None and wk_talk is not None and not sim.client
+                    and any(p.mode == "walk" and p.encounter > 0 and p.encounter_spoke
+                            and math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) < 3.5 for p in sim.peds.list)):
+                prompt = TXT("encounter.0010")
             if sim.mode == "foot" and sim.walker and sim.walker.health <= 0 and sim.walker.cause != "fight":
                 prompt = TXT("main.0048")
             pending = sum(1 for k_ in wanted[:30] if k_ not in streamer.ground)
             present.ui_layer()                          # from here on the HUD: its own layer, never shifted
             if sf_on and selfie.active:
                 selfie.overlay(sw, sh)
-            else:
+            elif encounter_menu is None:
                 pois.draw(sim, sw, sh)
+            if encounter_menu is not None and not selfie.active:
+                x, y = sw // 2 - 235, sh - 320
+                rl.draw_rectangle_rounded(rl.Rectangle(x, y, 470, 138), 0.08, 6, rl.Color(10, 10, 14, 225))
+                font.draw_text(TXT("encounter.0011"), x + 14, y + 8, 22, rl.Color(250, 214, 80, 255))
+                for i, label in enumerate((TXT("encounter.0012"), TXT("encounter.0013"), TXT("encounter.0014"))):
+                    font.draw_text(label, x + 14, y + 40 + i * 28, 20, rl.Color(235, 235, 235, 255))
             if not selfie.active:                       # the chase view keeps the HUD, so M opens the map there too
                 guard.run("hud", hud.draw, sim, sw, sh, show_map, prompt, (len(wanted[:30]) - pending, len(wanted[:30])) if wanted else None, ppm)
             if not selfie.active and sim.mode == "car" and sim.car is not None:     # the radio button: the same place as everywhere else, but only while driving (it takes room otherwise)
