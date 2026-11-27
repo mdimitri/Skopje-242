@@ -144,6 +144,7 @@ class RoadNetworkTests(unittest.TestCase):
         traffic.w = SimpleNamespace(edges=[right, left, receiving], edge_point=lambda e, s: World.edge_point(None, e, s))
         traffic.internal_links = {}
         self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), -0.24), 2)
+        self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), 0.48), 2)
         self.assertEqual(traffic._mapped_lane((1, 1), 0, (2, 1), 0.24), 0)
 
     def test_rendered_taper_continues_across_a_graph_only_node(self):

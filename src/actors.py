@@ -2592,7 +2592,7 @@ class Traffic:
         previous_road = self.w.edges[previous[0]]
         previous_count = lane_count(previous_road, previous[1])
         if (previous_road["cls"].endswith("_link") and not road["cls"].endswith("_link")
-                and previous_road["ow"] and -1.2 < angle < 0.35):
+                and previous_road["ow"] and -1.2 < angle < self.TURN_LANE):
             along = max(0.0, previous_road["len"] - 10.0) if previous[1] == 1 else min(10.0, previous_road["len"])
             x, y, _, _ = self.w.edge_point(previous_road, along)
             junction = previous_road["pts"][-1 if previous[1] == 1 else 0]
