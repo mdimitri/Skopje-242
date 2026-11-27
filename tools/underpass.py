@@ -17,6 +17,8 @@ quays overlay exists; roof() adds the meshes / posts / decks."""
 import math
 
 import numpy as np
+from shapely import STRtree
+from shapely.geometry import LineString
 
 DEPTH = 5.4            # street level -> tunnel floor (4.4 m headroom, 1.0 m roof)
 ROOF = 1.0
@@ -30,6 +32,23 @@ BRIDGE_DEPTH = 3.5     # an open cutting at least this deep is crossed on a brid
 
 def _key(p):
     return (round(p[0], 1), round(p[1], 1))
+
+
+def infer_layered_underpasses(roads):
+    """Use an explicit negative layer and a crossing upper deck as evidence of a lower carriageway."""
+    bridges = [rd for rd in roads if rd["bridge"] and rd["drive"] and len(rd["pts"]) >= 2]
+    index = STRtree([LineString(rd["pts"]) for rd in bridges])
+    for rd in roads:
+        if (rd["bridge"] or not rd["drive"] or rd.get("tunnel") or rd.get("layer", 0) >= 0
+                or len(rd["pts"]) < 2 or len(rd["nodes"]) != len(rd["pts"])):
+            continue
+        path = LineString(rd["pts"])
+        nodes = set(rd["nodes"])
+        if path.length >= 8.0 and any(
+            bridges[i].get("layer", 1) > rd["layer"] and not nodes.intersection(bridges[i]["nodes"])
+            for i in index.query(path, predicate="crosses")
+        ):
+            rd["tunnel"] = True
 
 
 def _resample(pts, step=1.0):

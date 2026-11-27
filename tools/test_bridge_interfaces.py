@@ -11,6 +11,7 @@ from shapely.ops import unary_union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import junction_net as jn
+import underpass
 from roads_candidate import build_tile
 from roads_designer import deck_feet, drape_feet
 
@@ -22,6 +23,16 @@ def edge(a, b, points, **tags):
 
 
 class BridgeInterfaces(unittest.TestCase):
+    def test_explicit_lower_layer_becomes_underpass_only_below_crossing_deck(self):
+        bridge = dict(bridge=True, drive=True, layer=2, nodes=[1, 2], pts=[(-10, 0), (10, 0)])
+        lower = dict(bridge=False, drive=True, layer=-1, nodes=[3, 4], pts=[(0, -8), (0, 8)])
+        untagged = dict(lower, layer=0)
+        nearby = dict(lower, pts=[(15, -8), (15, 8)])
+        shared_junction = dict(lower, nodes=[1, 4])
+        underpass.infer_layered_underpasses([bridge, lower, untagged, nearby, shared_junction])
+        self.assertTrue(lower["tunnel"])
+        self.assertFalse(any(road.get("tunnel") for road in (untagged, nearby, shared_junction)))
+
     def test_candidate_draws_grounded_bridge_approach(self):
         ground = edge(0, 1, [(-30, 0), (0, 0)])
         ground.update(bridge=False, road=1)

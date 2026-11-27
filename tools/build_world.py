@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 90
+VERSION = 91
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2385,6 +2385,7 @@ def main():
     roads = __import__("ramps").level_minor_bridges(roads)        # a field track "bridge" sitting on a street: level crossing
     roads = __import__("ramps").ground_bridge_tails(roads, T)     # a bridge way running on along the bank past a side road
     roads = __import__("ramps").sink_under_interchanges(roads, T)    # a ramp cluster over a boulevard: ramps at grade, boulevard sunk
+    underpass.infer_layered_underpasses(roads)
     upass = underpass.plan(roads, T)                         # road tunnels are dug in (ramps, roof): see tools/underpass.py
     roads = lift_over_tunnels(roads, extra=underpass.bridge_lines(upass))
     roads = __import__("ramps").extend_footbridges(roads)         # footbridge spans get room for their stairs
