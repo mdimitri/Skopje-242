@@ -887,12 +887,17 @@ class World:
                 continue
             sides = tuple(has_sidewalk(e, side) for side in (-1, 1))
             sw = e.get("sw", self.KERB_W) if any(sides) else 0.0
+            taper = e.get("taper", (None, None))
+            base = e["w"] / 2
+            fixed_width = None if e.get("candidate_taper") or any(taper) else base
             for i, ((ax, ay), (bx, by)) in enumerate(zip(e["pts"], e["pts"][1:])):
                 s0, s1 = e["cum"][i:i + 2]
-                rr = max(e["w"] / 2, half_width(e, s0), half_width(e, s1)) + sw + 1
+                rr = (max(base, half_width(e, s0), half_width(e, s1)) if fixed_width is None else base) + sw + 1
+                dx, dy = bx - ax, by - ay
+                segment = (ax, ay, dx, dy, dx * dx + dy * dy or 1e-9, e, s0, s1 - s0, fixed_width, sides, sw)
                 for cx in range(int((min(ax, bx) - rr) // 16), int((max(ax, bx) + rr) // 16) + 1):
                     for cy in range(int((min(ay, by) - rr) // 16), int((max(ay, by) + rr) // 16) + 1):
-                        g.setdefault((cx, cy), []).append((ax, ay, bx, by, e, s0, s1 - s0, sides, sw))
+                        g.setdefault((cx, cy), []).append(segment)
         self._kg = g
 
     def kerb(self, x, y):
@@ -906,19 +911,19 @@ class World:
         if getattr(self, "_kg", None) is None:
             self._kerb_grid()
         on = False
-        for ax, ay, bx, by, e, s0, length, sides, sw in self._kg.get((int(x // 16), int(y // 16)), ()):
-            dx, dy = bx - ax, by - ay
-            l2 = dx * dx + dy * dy or 1e-9
+        for ax, ay, dx, dy, l2, e, s0, length, fixed_width, sides, sw in self._kg.get((int(x // 16), int(y // 16)), ()):
             t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
             d = math.hypot(x - ax - dx * t, y - ay - dy * t)
-            hw = half_width(e, s0 + t * length)
+            hw = half_width(e, s0 + t * length) if fixed_width is None else fixed_width
             if d < hw:
                 return False                           # asphalt of some road wins (junctions)
+            if on or d >= hw + sw or not sides[int(dx * (y - ay) > dy * (x - ax))]:
+                continue
             if sw > self.KERB_W:
                 px, py = ax + dx * t, ay + dy * t
                 edge_end = min(math.hypot(px - qx, py - qy) for qx, qy in (e["pts"][0], e["pts"][-1]))
                 sw = self.KERB_W + (sw - self.KERB_W) * min(1.0, max(0.0, (edge_end - 10.0) / 6.0))
-            if sides[int(dx * (y - ay) > dy * (x - ax))] and d < hw + sw:
+            if d < hw + sw:
                 on = True
         return on
 

@@ -703,6 +703,22 @@ class TrafficRecoveryTest(unittest.TestCase):
 
 
 class PedestrianTrafficTest(unittest.TestCase):
+    def test_stopped_traffic_only_checks_pavement_near_the_vehicle_nose(self):
+        tr, driver, peds, p = self.clinch()
+        driver.v = 0.0
+        _, _, _, length, _ = parts(driver)[0]
+        reads = []
+        tr.w.surface = lambda x, y: reads.append((x, y)) or 3
+        tr.w.kerb = lambda *_: True
+        p.x = driver.x + length + 8.0
+        self.assertIsNone(peds._traffic_danger(p, [driver]))
+        self.assertEqual(reads, [])
+        p.x = driver.x + length + 1.0
+        self.assertIsNone(peds._traffic_danger(p, [driver, driver]))
+        self.assertEqual(len(reads), 1)
+        tr.w.kerb = lambda *_: False
+        self.assertIs(peds._traffic_danger(p, [driver])[5], driver)
+
     def clinch(self, walls=()):
         tr = setup(road(0, 1, (0, 0), (200, 0)))
         tr.w.kerb = lambda *_: False

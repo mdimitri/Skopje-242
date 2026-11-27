@@ -1466,6 +1466,8 @@ class Peds:
     def _traffic_danger(self, p, nearby):
         best = None
         forecasts = getattr(self, "traffic_forecasts", {})
+        radius = _PED_R(p)
+        on_road = None
         for b in nearby:
             if isinstance(b, Car):
                 speed = -2.2 if b.rev > 0 else b.v
@@ -1484,7 +1486,7 @@ class Peds:
                     hx, hy = math.cos(heading), math.sin(heading)
                     dx, dy = p.x + p.vx * t - x, p.y + p.vy * t - y
                     side = dy * hx - dx * hy
-                    half = width + _PED_R(p) + 0.35
+                    half = width + radius + 0.35
                     if abs(dx * hx + dy * hy) < length + 0.6 and abs(side) < half:
                         exposed = abs((p.y - y) * hx - (p.x - x) * hy) < half
                         best = (t, -hy, hx, side, exposed, None)
@@ -1495,19 +1497,23 @@ class Peds:
             dx, dy = p.x - b.x, p.y - b.y
             fwd, side = dx * hx + dy * hy, -dx * hy + dy * hx
             hl, hw = vehicles.HALF_L[b.kind], vehicles.HALF_W[b.kind]
-            half = hw + _PED_R(p) + 0.3
+            half = hw + radius + 0.3
             if slow:
                 driven = isinstance(b, Car) or b.ctl is not None or b.player_car
                 if driven and (best is None or best[0] > 1.3):
-                    road = self.w.surface(p.x, p.y) in (2, 3) and not self.w.kerb(p.x, p.y)
                     for x, y, heading, length, width in parts(b):
                         hx, hy = math.cos(heading), math.sin(heading)
                         dx, dy = p.x - x, p.y - y
                         forward, lateral = dx * hx + dy * hy, -dx * hy + dy * hx
-                        if (-length - 0.45 < forward < length + (3.0 if road else 0.55)
-                                and abs(lateral) < width + _PED_R(p) + 0.3):
-                            best = (1.3, -hy, hx, lateral, True, b)
-                            break
+                        if not (-length - 0.45 < forward < length + 3.0 and abs(lateral) < width + radius + 0.3):
+                            continue
+                        if forward >= length + 0.55:
+                            if on_road is None:
+                                on_road = self.w.surface(p.x, p.y) in (2, 3) and not self.w.kerb(p.x, p.y)
+                            if not on_road:
+                                continue
+                        best = (1.3, -hy, hx, lateral, True, b)
+                        break
                 continue
             if fwd < -hl - 0.6 or fwd > hl + 2.5 * speed:
                 continue
