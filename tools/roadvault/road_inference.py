@@ -252,18 +252,20 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
         if len(main) != 2:
             continue
         narrow, wide = sorted(main, key=lambda arm: arm.edge.section["lanes"])
+        branch_lanes = 0
         if len(hits) == 3:
             branch = next(arm for _, arm in hits if arm.edge.section["cls"].endswith("_link"))
-            # The extra lane in a balanced split or merge already belongs to the link.
             if branch.at_end != wide.at_end:
-                continue
+                branch_lanes = lane_count(branch.edge.section, branch.arrival if branch.at_end else branch.departure)
+                if wide.edge.section["lanes"] - narrow.edge.section["lanes"] == branch_lanes:
+                    continue
         a, b = narrow.edge, wide.edge
         name = tags_by_edge[a.id].get("name")
         if (not name or name != tags_by_edge[b.id].get("name") or not a.section["ow"] or not b.section["ow"]
                 or narrow.at_end == wide.at_end or narrow.outward @ wide.outward > -0.94
                 or b.section["lanes"] - a.section["lanes"] not in (1, 2) or b.id in profiles):
             continue
-        extra = b.section["w"] - a.section["w"]
+        extra = b.section["w"] - a.section["w"] - branch_lanes * b.section["w"] / b.section["lanes"]
         if not 2 <= extra <= 7 or b.line.length < 7:
             continue
         end = "end" if wide.at_end else "start"
@@ -273,7 +275,7 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
         turns = lane_turns(b.section)
         side = "right" if turns and any(t.endswith("right") for t in turns[-1]) and not (
             turns[0] and any(t.endswith("left") for t in turns[0])) else "left"
-        if b.section["lanes"] - a.section["lanes"] == 2:
+        if b.section["lanes"] - a.section["lanes"] - branch_lanes == 2:
             side = "both"
         b.section["lane_taper"] = [end, length, side]
         profiles[b.id] = [end, length, side]

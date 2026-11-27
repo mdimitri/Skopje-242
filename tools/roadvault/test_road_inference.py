@@ -61,6 +61,16 @@ class OsmInferenceTests(unittest.TestCase):
         self.assertAlmostEqual(np.diff(wide.cross_section(0)).item(), wide.section["w"])
         self.assertGreaterEqual(wide.section["tapers"][0][1], 10)
 
+    def test_slip_merge_does_not_hide_additional_widening(self):
+        self.infer([
+            way(101, [1, 2], [(-60, 0), (0, 0)], name="Boulevard", lanes="2", oneway="yes"),
+            way(102, [2, 3], [(0, 0), (65, 0)], name="Boulevard", lanes="4", oneway="yes"),
+            way(103, [4, 2], [(-40, 15), (0, 0)], highway="tertiary_link", lanes="1", oneway="yes"),
+        ])
+        wide = next(edge for edge in self.edges if edge.id == 102)
+        self.assertAlmostEqual(np.diff(wide.cross_section(0)).item(), wide.section["w"] * 3 / 4)
+        self.assertAlmostEqual(np.diff(wide.cross_section(50)).item(), wide.section["w"])
+
     def test_unmapped_major_junction_crossings_and_cycle_lane_are_drawn(self):
         self.infer([
             way(101, [1, 2, 3], [(-50, 0), (0, 0), (50, 0)], lanes="2", **{"cycleway:right": "lane"}),

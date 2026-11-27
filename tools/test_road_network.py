@@ -145,7 +145,10 @@ class RoadNetworkTests(unittest.TestCase):
         traffic.internal_links = {}
         self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), -0.24), 2)
         self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), 0.48), 2)
-        self.assertEqual(traffic._mapped_lane((1, 1), 0, (2, 1), 0.24), 0)
+        self.assertEqual(traffic._mapped_lane((1, 1), 0, (2, 1), 0.24), 2)
+        self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), 0.9), 2)
+        traffic.internal_links = {2: 1}
+        self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), 3.0, following=-1), 2)
 
     def test_rendered_taper_continues_across_a_graph_only_node(self):
         from geo import LAT0, LON0, M_LON

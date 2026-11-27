@@ -2591,15 +2591,9 @@ class Traffic:
         n = lane_count(road, direction)
         previous_road = self.w.edges[previous[0]]
         previous_count = lane_count(previous_road, previous[1])
-        if (previous_road["cls"].endswith("_link") and not road["cls"].endswith("_link")
-                and previous_road["ow"] and -1.2 < angle < self.TURN_LANE):
-            along = max(0.0, previous_road["len"] - 10.0) if previous[1] == 1 else min(10.0, previous_road["len"])
-            x, y, _, _ = self.w.edge_point(previous_road, along)
-            junction = previous_road["pts"][-1 if previous[1] == 1 else 0]
-            _, _, dx, dy = self.w.edge_point(road, 0 if direction == 1 else road["len"])
-            side = direction * (dx * (y - junction[1]) - dy * (x - junction[0]))
-            if side > 0.25:
-                lane = n - 1
+        slip_merge = previous_road["cls"].endswith("_link") and not road["cls"].endswith("_link") and previous_road["ow"]
+        if slip_merge:
+            lane = n - 1
         elif angle >= self.TURN_LANE or (angle > 0.20 and road["cls"].endswith("_link")):
             lane += n - previous_count
         elif abs(angle) < 0.35:
@@ -2611,10 +2605,10 @@ class Traffic:
             elif (previous_taper[0] == "end" and previous_taper[2] == "left"
                   and previous_count == n + 1):
                 lane -= 1
-        if abs(angle) > self.UTURN:
+        if abs(angle) > self.UTURN and not slip_merge:
             lane = 0
         lane = max(0, min(n - 1, lane))
-        if ei in self.internal_links:
+        if ei in self.internal_links and not slip_merge:
             permitted = turn_lanes(road, direction, following)
             if permitted:
                 lane = min(permitted, key=lambda idx: abs(idx - lane))
