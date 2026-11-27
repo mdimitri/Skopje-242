@@ -88,7 +88,7 @@ _sinit = settings_mod.Settings.__init__
 effective_settings = {}
 def _settings(self, *x, **kw):
     _sinit(self, *x, **kw)
-    self["debug_chase"] = a.view == "chase"          # in memory only, settings.json is not written
+    self["debug_chase"] = a.view in ("chase", "heli")  # in memory only, settings.json is not written
     if a.stress:
         self["traffic"] = self["peds"] = len(settings_mod.DENSITY) - 1
     if a.windowed:

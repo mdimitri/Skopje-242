@@ -5508,7 +5508,7 @@ class Sim:
             if c.ammo == 0:
                 self.ev("btr_empty")
 
-    def exit_car(self):
+    def exit_car(self, force=False):
         if self.mode != "car":
             return
         b = self.car
@@ -5521,7 +5521,7 @@ class Sim:
             self.mode = "foot"
             self.ev("alight")
             return
-        if b.kind in vehicles.FLY and b.az is not None and b.az - self.w.ground_y(b.x, b.y) > 1.0:
+        if not force and b.kind in vehicles.FLY and b.az is not None and b.az - self.w.ground_y(b.x, b.y) > 1.0:
             self.ev("heli_land")                                   # not in mid-air: land first
             return
         b.empty = True
@@ -5673,7 +5673,7 @@ class Sim:
                 if c.drown > 1.3 and c is self.car and self.mode == "car":
                     ev("splash", x=c.x, y=c.y, big=True)             # the car sinks with you in it
                     ev("walker_dead", cause="drown")
-                    self.exit_car()
+                    self.exit_car(force=True)
                     self.walker.health = 0
                     self.walker.cause = "drown"
                     c.drown = 0.0
@@ -5893,7 +5893,7 @@ class Sim:
                                 o.dirty = True
                     if b is self.car and self.mode == "car":
                         ev("walker_dead", cause="explosion")
-                        self.exit_car()
+                        self.exit_car(force=True)
                         self.walker.health = 0
                     b.dirty = True
         # body <-> body

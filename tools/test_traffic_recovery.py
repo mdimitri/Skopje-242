@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from actors import HERO, Body, Car, Ped, Peds, Sim, Traffic, Walker, _corners, _sat, drive, parts, tow, turn_radius_factor
+import vehicles
 from driving import fastest_route, movement_lanes, turn_angle, turn_lanes
 from vehicles import ARTIC_BUS, ARTIC_HINGE, ARTIC_JACK, ARTIC_REAR_AXLE, BUS, DIMS, IDS
 from world import World
@@ -844,6 +845,19 @@ class PedestrianTrafficTest(unittest.TestCase):
 
 
 class PlayerHandlingTest(unittest.TestCase):
+    def test_destroyed_aircraft_can_eject_its_occupant(self):
+        world = SimpleNamespace(ground_y=lambda *_: 0.0, edges_near=lambda *_: ())
+        sim = Sim.__new__(Sim)
+        sim.mode, sim.w, sim.riding = "car", world, None
+        sim.car = Body(0.0, 0.0, 0.0, vehicles.HELI, 0)
+        sim.car.az = 20.0
+        sim.ev = lambda *_args, **_kwargs: None
+        sim.exit_car()
+        self.assertEqual(sim.mode, "car")
+        sim.exit_car(force=True)
+        self.assertEqual(sim.mode, "foot")
+        self.assertEqual(sim.walker.az, 20.0)
+
     def test_manual_steering_response_and_bus_radius(self):
         world = SimpleNamespace(hilly=False, ground_y=lambda *_: 0.0, surface=lambda *_: 3)
         b = Body(0, 0, 0, 0, 0)
