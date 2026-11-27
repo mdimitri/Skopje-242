@@ -288,9 +288,9 @@ class Guard:
 
 
 # ----------------------------------------------------------------------- world loading with fallbacks
-def run_tool(args, loader, stage, max_sec=3600):
+def run_tool(args, loader, stage, max_sec=3600, *, idle_timeout=False):
     """Run a python tool in a subprocess; its `@@{json}` lines drive the splash screen (map, speed, bar).
-    Returns the exit code (0 ok, 2 partial result, 124 killed because it overran `max_sec`)."""
+    Returns 124 for a timeout. For a world bake, the limit applies to time without output."""
     q = queue.Queue()
     env = dict(os.environ, SK242_EVENTS="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     proc = subprocess.Popen([sys.executable] + args, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
@@ -305,11 +305,12 @@ def run_tool(args, loader, stage, max_sec=3600):
     th = threading.Thread(target=reader, daemon=True)
     th.start()
     try:
-        t0 = time.time()
+        t0 = last_output = time.monotonic()
         killed = False
         while True:
             try:
                 line = q.get(timeout=0.01)
+                last_output = time.monotonic()
                 at = line.find("@@")                  # a text progress bar may precede the event on the same line
                 if at >= 0:
                     try:
@@ -321,9 +322,11 @@ def run_tool(args, loader, stage, max_sec=3600):
                 loader.draw()                        # a steady stream of lines must not starve the window of redraws and input
             except queue.Empty:
                 loader.draw()
-            if proc.poll() is None and time.time() - t0 > max_sec and not killed:
+            limit_start = last_output if idle_timeout else t0
+            if proc.poll() is None and time.monotonic() - limit_start > max_sec and not killed:
                 killed = True
-                log(f"[tool] {args[0]} overran {max_sec}s - stopping it")
+                reason = "without output" if idle_timeout else "total runtime"
+                log(f"[tool] {args[0]} exceeded {max_sec}s of {reason} - stopping it")
                 proc.kill()
             if proc.poll() is not None and not th.is_alive() and q.empty():
                 break
@@ -331,7 +334,7 @@ def run_tool(args, loader, stage, max_sec=3600):
         if proc.poll() is None:
             proc.kill()
     rc = 124 if killed else proc.returncode
-    log(f"[tool] {args[0]} exit {rc} after {time.time() - t0:.0f}s")
+    log(f"[tool] {args[0]} exit {rc} after {time.monotonic() - t0:.0f}s")
     return rc
 
 
@@ -570,7 +573,7 @@ def ensure_world(arg_world, loader, demo_only=False, refresh=False, need=None, u
     if need.get("build") or not os.path.isdir(real) or need.get("osm") or need.get("dem"):
         loader.ensure_stage("build", 30)
         loader.begin("build")
-        if run_tool(["tools/build_world.py", "--src", osm, "--out", real], loader, "build", max_sec=3600) != 0:
+        if run_tool(["tools/build_world.py", "--src", osm, "--out", real], loader, "build", idle_timeout=True) != 0:
             raise DownloadError(T.BUILD_FAILED)
         loader.build_finished()
         import photobg

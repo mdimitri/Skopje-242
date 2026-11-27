@@ -27,6 +27,8 @@ Quick path map:
 
 `run.bat` is the supported launch path. It creates or uses the managed Python environment, installs requirements as needed, and enters the game startup. `src/main.py` first establishes logging and an early splash path, optionally checks for updates, imports the broad runtime system set, parses launch arguments, ensures the selected world exists and is usable, then constructs the runtime systems and enters interactive play. Startup paths include demo world, custom world, refresh/build, menu, and multiplayer host/join. Confirm exact flags and sequencing in current source.
 
+The launcher monitors full city bakes for an hour without output. Download limits still apply to total elapsed time. The launcher passes UTF-8 to its tools so Macedonian build messages also work in redirected logs.
+
 `main.py` is deliberately large as the integration/composition point. Feature logic should normally live in an appropriate focused module and be passed the needed state from main. Before changing initialization order, search constructors and update/draw call sites in main because a subsystem may rely on another subsystem already existing.
 
 Frame ownership is split between game state and presentation. Simulation systems update entities and world state. Renderer and UI functions consume that state to draw. The `render.py` / `present.py` / `gfx.py` / `gl3d.py` division is a useful first map, but verify concrete ownership from imports and calls before touching a rendering path. Window and GPU operations generally belong on the main thread. Startup helpers such as `loading_task` keep the window responsive while CPU or I/O work runs off-thread.
