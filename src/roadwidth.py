@@ -72,25 +72,32 @@ def half_width(edge, distance):
 
 def lane_offset(edge, direction, distance, offset):
     """Follow the candidate's lane alignment as a one-way carriageway tapers."""
+    shift = 0.0
+    if direction == 1 and (profile := edge.get("candidate_shifts")):
+        start, scale, total, shifts = profile
+        station = start + scale * distance
+        for end, length, amount in shifts:
+            remaining = station if end == "start" else total - station
+            shift += amount * _ease(1 - remaining / length)
     taper = edge.get("lane_taper")
     if not taper or not edge.get("taper") or direction != 1 or not edge["ow"]:
-        return offset * (2 * half_width(edge, distance) / edge["w"]) if edge.get("taper") else offset
+        return shift + (offset * (2 * half_width(edge, distance) / edge["w"]) if edge.get("taper") else offset)
     width, count = edge["w"], lane_count(edge, direction)
     half = half_width(edge, distance)
     left, right = -half, half
     fraction = 0.5 + offset / width
     side = taper[2]
     if side == "both":
-        return max(left, min(right, offset))
+        return shift + max(left, min(right, offset))
     if side == "left":
         divider = right - width * (1 - 1 / count)
-        return left + (divider - left) * fraction * count if fraction < 1 / count else right - width * (1 - fraction)
+        return shift + (left + (divider - left) * fraction * count if fraction < 1 / count else right - width * (1 - fraction))
     divider = left + width * (1 - 1 / count)
-    return left + width * fraction if fraction <= 1 - 1 / count else divider + (right - divider) * (fraction - (1 - 1 / count)) * count
+    return shift + (left + width * fraction if fraction <= 1 - 1 / count else divider + (right - divider) * (fraction - (1 - 1 / count)) * count)
 
 
 def nominal_offset(edge, direction, distance, offset):
-    if not edge.get("lane_taper"):
+    if not edge.get("lane_taper") and not edge.get("candidate_shifts"):
         return offset * edge["w"] / (2 * half_width(edge, distance)) if edge.get("taper") else offset
     lo, hi = -edge["w"], edge["w"]
     for _ in range(24):

@@ -70,6 +70,10 @@ class OsmInferenceTests(unittest.TestCase):
         wide = next(edge for edge in self.edges if edge.id == 102)
         self.assertAlmostEqual(np.diff(wide.cross_section(0)).item(), wide.section["w"] * 3 / 4)
         self.assertAlmostEqual(np.diff(wide.cross_section(50)).item(), wide.section["w"])
+        main = next(edge for edge in self.edges if edge.id == 101)
+        slip = next(edge for edge in self.edges if edge.id == 103)
+        self.assertAlmostEqual(main.cross_section(main.line.length)[0], wide.cross_section(0)[0], places=5)
+        self.assertGreater(slip.cross_section(slip.line.length).mean(), 2)
 
     def test_unmapped_major_junction_crossings_and_cycle_lane_are_drawn(self):
         self.infer([
@@ -92,6 +96,19 @@ class OsmInferenceTests(unittest.TestCase):
         ])
         self.assertEqual({(m["from"], m["from_direction"], m["from_lane"], m["to"]) for m in movements},
                          {(101, 1, 0, 102), (101, 1, 1, 102), (101, 1, 2, 103)})
+
+    def test_balanced_right_fork_aligns_main_and_slip_lanes(self):
+        self.infer([
+            way(101, [1, 2], [(-60, 0), (0, 0)], lanes="4", oneway="yes"),
+            way(102, [2, 3], [(0, 0), (60, 0)], lanes="3", oneway="yes"),
+            way(103, [2, 4], [(0, 0), (60, 15)], highway="tertiary_link", lanes="1", oneway="yes"),
+        ])
+        source, main, slip = (next(e for e in self.edges if e.id == i) for i in (101, 102, 103))
+        self.assertAlmostEqual(source.cross_section(source.line.length)[0], main.cross_section(0)[0], places=5)
+        source_lane, _ = source.port(source.line.length, 3, 1)
+        slip_lane, _ = slip.port(0, 0, 1)
+        self.assertLess(np.linalg.norm(source_lane - slip_lane), 1.5)
+        self.assertAlmostEqual(main.cross_section(25)[0], -main.section["w"] / 2, places=5)
 
     def test_turn_restrictions_and_lane_marks_constrain_the_crossroads(self):
         movements = self.infer([

@@ -80,6 +80,10 @@ class Edge:
             distance = max(0, distance - (hold[0] if hold else 0))
             t = max(0, 1 - distance / length)
             offsets += np.array([left, right]) * t * t * (3 - 2 * t)
+        for end, length, shift in self.section.get("fork_shifts", []):
+            distance = station if end == "start" else self.line.length - station
+            t = max(0, min(1, 1 - distance / length))
+            offsets += shift * t * t * (3 - 2 * t)
         if opening := self.section.get("left_lane_opening"):
             lane_width = self.section["w"] / self.section["lanes"]
             t = min(1, station / opening)

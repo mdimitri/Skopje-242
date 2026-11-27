@@ -150,6 +150,25 @@ class RoadNetworkTests(unittest.TestCase):
         traffic.internal_links = {2: 1}
         self.assertEqual(traffic._mapped_lane((0, 1), 0, (2, 1), 3.0, following=-1), 2)
 
+    def test_traffic_lane_offset_follows_split_slip_alignment(self):
+        from geo import LAT0, LON0, M_LAT, M_LON
+        ways = []
+        for way_id, nodes, points, lanes, cls in ((1, [1, 2], [(-60, 0), (0, 0)], "4", "tertiary"),
+                                                  (2, [2, 3], [(0, 0), (60, 0)], "3", "tertiary"),
+                                                  (3, [2, 4], [(0, 0), (60, 15)], "1", "tertiary_link")):
+            ways.append({"type": "way", "id": way_id, "nodes": nodes,
+                         "geometry": [{"lat": LAT0 - y / M_LAT, "lon": LON0 + x / M_LON} for x, y in points],
+                         "tags": {"highway": cls, "oneway": "yes", "lanes": lanes}})
+        edges = [edge(1, 2, (-60, 0), (0, 0), road=0, ow=True),
+                 edge(2, 3, (0, 0), (60, 0), road=1, ow=True),
+                 edge(2, 4, (0, 0), (60, 15), road=2, ow=True)]
+        roads_candidate.sync_graph_sections(edges, [{"id": i} for i in (1, 2, 3)], ways)
+        self.assertAlmostEqual(lane_offset(edges[1], 1, 0, Traffic.lanes_of(edges[1])[0]),
+                               Traffic.lanes_of(edges[0])[0], places=5)
+        slip_offset = lane_offset(edges[2], 1, 0, Traffic.lanes_of(edges[2])[0])
+        self.assertGreater(slip_offset, 3)
+        self.assertAlmostEqual(nominal_offset(edges[2], 1, 0, slip_offset), Traffic.lanes_of(edges[2])[0], places=5)
+
     def test_rendered_taper_continues_across_a_graph_only_node(self):
         from geo import LAT0, LON0, M_LON
         ways = [{"type": "way", "id": i, "nodes": nodes,

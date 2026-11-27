@@ -14,7 +14,7 @@ from geo import project
 from roadwidth import lane_count
 from roadvault.mesh import Mesh, polys
 from roadvault.road_candidate import Edge, compile_scene, crossing_span, road_edge
-from roadvault.road_inference import at_grade, infer_layout, normalize_ways, road_arms, lane_transition_profiles
+from roadvault.road_inference import at_grade, infer_layout, normalize_ways, road_arms, lane_transition_profiles, align_slip_forks
 from roadvault.run_candidate import DRIVE, WALK, infer_site, read_elements, site_inputs
 from roadvault.traffic_furniture import draw_device, draw_gantry
 
@@ -60,7 +60,9 @@ def sync_graph_sections(edges, roads, elements):
         item = road_edge(way, points)
         candidates.append(item)
         tags_by_edge[item.id] = way["tags"]
-    profiles = lane_transition_profiles(road_arms(candidates), tags_by_edge, box(-1e9, -1e9, 1e9, 1e9), {})
+    arms = road_arms(candidates)
+    profiles = lane_transition_profiles(arms, tags_by_edge, box(-1e9, -1e9, 1e9, 1e9), {})
+    align_slip_forks(arms)
     by_way = {}
     for item in candidates:
         by_way.setdefault(originals[item.id], []).append(item)
@@ -79,6 +81,8 @@ def sync_graph_sections(edges, roads, elements):
         if matches:
             error, item = min(matches, key=lambda pair: pair[0])
             start, finish = item.line.project(first), item.line.project(last)
+            if error < 3 and finish > start and edge["len"] > 0 and item.section.get("fork_shifts"):
+                edge["candidate_shifts"] = (start, (finish - start) / edge["len"], item.line.length, item.section["fork_shifts"])
             if error < 0.4 and finish > start + 0.5:
                 part = substring(item.line, start, finish)
                 points = list(part.coords)

@@ -284,6 +284,41 @@ def lane_transition_profiles(node_arms, tags_by_edge, bounds, layout):
     return profiles
 
 
+def align_slip_forks(node_arms):
+    """Align right-hand slip lanes at their shared OSM nodes."""
+    for hits in node_arms.values():
+        if len(hits) != 3:
+            continue
+        arms = [arm for _, arm in hits]
+        links = [arm for arm in arms if arm.edge.section["cls"].endswith("_link")]
+        if len(links) != 1 or any(not arm.edge.section["ow"] for arm in arms):
+            continue
+        link = links[0]
+        main = [arm for arm in arms if arm is not link]
+        narrow, wide = sorted(main, key=lambda arm: lane_count(arm.edge.section, 1))
+        if (wide.at_end == link.at_end or narrow.at_end != link.at_end
+                or lane_count(wide.edge.section, 1) < lane_count(narrow.edge.section, 1) + lane_count(link.edge.section, 1)
+                or narrow.outward @ wide.outward > -0.94):
+            continue
+        wide_edge, narrow_edge, slip = wide.edge, narrow.edge, link.edge
+        _, _, wide_right = frame(wide_edge.line, wide_edge.line.length if wide.at_end else 0)
+        _, _, main_right = frame(narrow_edge.line, narrow_edge.line.length if narrow.at_end else 0)
+        _, _, slip_right = frame(slip.line, slip.line.length if link.at_end else 0)
+        near = min(6, slip.line.length / 2)
+        branch_point = np.array(slip.line.interpolate(slip.line.length - near if link.at_end else near).coords[0])
+        node_point = np.array(slip.line.interpolate(slip.line.length if link.at_end else 0).coords[0])
+        if (branch_point - node_point) @ wide_right <= 0:
+            continue
+        left, right = wide_edge.cross_section(wide_edge.line.length if wide.at_end else 0)
+        half_narrow = narrow_edge.section["w"] / 2
+        main_shift = float((left * wide_right + half_narrow * main_right) @ main_right)
+        slip_shift = float((right - wide_edge.section["w"] / (2 * lane_count(wide_edge.section, 1))) * (wide_right @ slip_right))
+        for arm, shift in ((narrow, main_shift), (link, slip_shift)):
+            length = min(25, arm.edge.line.length - 1)
+            if length >= 8:
+                arm.edge.section.setdefault("fork_shifts", []).append(("end" if arm.at_end else "start", length, shift))
+
+
 def align_paired_zebras(layout, by_id):
     pairs = {frozenset((abs(a), abs(b))) for near, far in layout["median_corridors"] for a in near for b in far}
     for group in layout["crossings"]:
@@ -345,6 +380,7 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
                   corner_zones=[], unmarked=[], crossings=[], stop_lines=[], movements=[])
     relevant_nodes = road_arms(edges)
     profiles = lane_transition_profiles(relevant_nodes, tags_by_edge, bounds, layout)
+    align_slip_forks(relevant_nodes)
     layout["median_corridors"] = paired_medians(edges, tags_by_edge, layout["road_edges"])
     for edge, tags in tags_by_edge.items():
         if tags["highway"] in {"primary_link", "secondary_link", "tertiary_link"} and by_id[edge].section["ow"]:
