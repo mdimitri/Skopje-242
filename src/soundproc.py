@@ -1,6 +1,6 @@
 """v2.1 load-time quality control for the AI-generated library: reject broken versions, find trim points, clean and shape the rest.
 
-analyse()  -> facts about one decoded file (or why it is rejected); results are cached in library/.soundcache.json
+analyse()  -> facts about one decoded file (or why it is rejected); results are cached in logs/soundcache.json
 decide()   -> drops versions that do not look like their siblings
 Processor  -> background thread that does both for the whole library, then publishes the good files to Audio.lib
 prepare()  -> the per-load clean-up (rumble filter, trim, fades, loop crossfade, optional 'far' low-pass), numpy only"""
@@ -301,7 +301,7 @@ class Processor:
 
     def __init__(self, audio, lib_root, raw, log_dir):
         self.a, self.root, self.raw, self.log = audio, lib_root, raw, log_dir
-        self.cache_fn = os.path.join(lib_root, ".soundcache.json")
+        self.cache_fn = os.path.join(log_dir, "soundcache.json")
         self.done = False
 
     def start(self, wait=False):
@@ -320,7 +320,9 @@ class Processor:
     def _run(self):
         t0 = time.time()
         try:
-            cache = json.load(open(self.cache_fn, encoding="utf-8"))
+            path = self.cache_fn if os.path.isfile(self.cache_fn) else os.path.join(self.root, ".soundcache.json")
+            with open(path, encoding="utf-8") as f:
+                cache = json.load(f)
         except Exception:  # noqa: BLE001
             cache = {}
         rejects, n_ok, fresh = [], 0, 0
@@ -353,10 +355,10 @@ class Processor:
             if good:
                 self.a.lib[key] = good                                   # published: the game switches to it from now on
         try:
+            os.makedirs(self.log, exist_ok=True)
             tmp = self.cache_fn + ".tmp"
             json.dump(cache, open(tmp, "w", encoding="utf-8"))
             os.replace(tmp, self.cache_fn)
-            os.makedirs(self.log, exist_ok=True)
             with open(os.path.join(self.log, "sound_rejects.txt"), "w", encoding="utf-8") as f:
                 f.write("\n".join(rejects) + "\n")
         except Exception:  # noqa: BLE001
