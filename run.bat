@@ -24,7 +24,7 @@ if exist ".runtime\python.txt" if exist ".runtime\stamp_req.txt" if exist ".runt
 REM Even on the fast path, verify the libraries really import (a stale stamp must not hide a missing package); if not, setup installs them.
 if defined FASTOK (
     set /p PY=<".runtime\python.txt"
-    "%PY%" -c "import pyray, numpy, PIL, mapbox_earcut, sounddevice, pyogg" >nul 2>&1 || (set FASTOK=& echo Missing libraries detected - installing them automatically ...)
+    "%PY%" -c "import pyray, numpy, PIL, mapbox_earcut, shapely, sounddevice, pyogg" >nul 2>&1 || (set FASTOK=& echo Missing libraries detected - installing them automatically ...)
 )
 if /I "%~1"=="setup" (set FASTOK=& shift)
 if /I "%~1"=="aivoice" set FASTOK=
@@ -81,4 +81,4 @@ if not exist "%PY%" (
 )
 "%PY%" "src\main.py" %GAMEARGS% %1 %2 %3 %4 %5 %6 %7 %8 %9
 REM The window always closes with the game, even after a crash; errors are in logs\crash.log
-endlocal
+endlocal & exit /b %ERRORLEVEL%
