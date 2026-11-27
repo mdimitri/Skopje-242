@@ -1061,6 +1061,7 @@ class Ped:
         self.encounter = 0.0
         self.encounter_cd = 0.0
         self.encounter_spoke = False
+        self.encounter_turn = self.encounter_heat = 0
         self.far_t = 0.0             # seconds spent far from the player while chasing them
         self.pose = None             # emergency crews: "spray" (hose out) / "cpr" (kneeling over a patient)
         self.work_role = None        # role-specific combat behavior for service, garbage and road-work crews
@@ -1469,14 +1470,15 @@ class Peds:
         radius = _PED_R(p)
         on_road = None
         for b in nearby:
-            if isinstance(b, Car):
-                speed = -2.2 if b.rev > 0 else b.v
-                vx, vy = speed * math.cos(b.h), speed * math.sin(b.h)
+            ambient = isinstance(b, Car)
+            if ambient:
+                signed_speed = -2.2 if b.rev > 0 else b.v
+                speed = abs(signed_speed)
                 z = b.gz
             else:
                 if b.exploded:
                     continue
-                vx, vy, z = b.vx, b.vy, b.az
+                speed, z = math.hypot(b.vx, b.vy), b.az
             if z is not None and p.gz is not None and abs(z - p.gz) > 2.2:
                 continue
             for t, footprint in forecasts.get(b, ()):
@@ -1491,15 +1493,8 @@ class Peds:
                         exposed = abs((p.y - y) * hx - (p.x - x) * hy) < half
                         best = (t, -hy, hx, side, exposed, None)
                         break
-            speed = math.hypot(vx, vy)
-            slow = speed < 1.4
-            hx, hy = (math.cos(b.h), math.sin(b.h)) if slow else (vx / speed, vy / speed)
-            dx, dy = p.x - b.x, p.y - b.y
-            fwd, side = dx * hx + dy * hy, -dx * hy + dy * hx
-            hl, hw = vehicles.HALF_L[b.kind], vehicles.HALF_W[b.kind]
-            half = hw + radius + 0.3
-            if slow:
-                driven = isinstance(b, Car) or b.ctl is not None or b.player_car
+            if speed < 1.4:
+                driven = ambient or b.ctl is not None or b.player_car
                 if driven and (best is None or best[0] > 1.3):
                     for x, y, heading, length, width in parts(b):
                         hx, hy = math.cos(heading), math.sin(heading)
@@ -1515,8 +1510,17 @@ class Peds:
                         best = (1.3, -hy, hx, lateral, True, b)
                         break
                 continue
+            if ambient:
+                direction = -1.0 if signed_speed < 0.0 else 1.0
+                hx, hy = direction * math.cos(b.h), direction * math.sin(b.h)
+            else:
+                hx, hy = b.vx / speed, b.vy / speed
+            dx, dy = p.x - b.x, p.y - b.y
+            fwd, side = dx * hx + dy * hy, -dx * hy + dy * hx
+            hl = vehicles.HALF_L[b.kind]
             if fwd < -hl - 0.6 or fwd > hl + 2.5 * speed:
                 continue
+            half = vehicles.HALF_W[b.kind] + radius + 0.3
             t = corridor_entry(fwd, side, p.vx * hx + p.vy * hy - speed, -p.vx * hy + p.vy * hx,
                                hl + 0.6, half, 2.5)
             if t is not None and (best is None or t < best[0]):
@@ -2065,6 +2069,7 @@ class Peds:
                     p.encounter_cd = 30.0
                     if rng.random() < 0.25:
                         p.encounter, p.encounter_spoke = 5.0, False
+                        p.encounter_turn = p.encounter_heat = 0
                 if p.encounter:
                     if distance > 5.0 or not same_level:
                         p.encounter = 0.0

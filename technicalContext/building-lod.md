@@ -39,6 +39,10 @@ prism remain approximations of the original geometry. Captures use the source
 textures and baked vertex lighting; near-only procedural surface relief is not
 re-evaluated on the stand-ins.
 
+The renderer caches bounds per atlas group and uploads camera uniforms when the
+camera or render pass changes. The day pass samples the color atlas. The glow
+pass also samples the window-emission atlas.
+
 The day pass writes the captured albedo. After `Night.draw` applies ambient tint,
 `FarView.windows` adds captured emission with depth testing and no depth writes.
 Backface culling prevents hidden prism faces from adding emission twice. New

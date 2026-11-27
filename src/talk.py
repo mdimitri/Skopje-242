@@ -251,6 +251,36 @@ def encounter_line(kind, rng=random):
     return rng.choice(lines[kind])
 
 
+def _encounter_topics(text):
+    return dict(row.split("|", 1) for row in text.splitlines())
+
+
+_HERO_TOPICS = _encounter_topics(TXT("encounter.0018"))
+_PED_TOPICS = _encounter_topics(TXT("encounter.0019"))
+_FRIENDLY_STEPS = tuple(tuple(row.split("|")) for row in TXT("encounter.0020").splitlines())
+_TENSE_STEPS = tuple(tuple(row.split("|")) for row in TXT("encounter.0021").splitlines())
+_HERO_TENSE = tuple(tuple(row.split("|")) for row in TXT("encounter.0022").splitlines())
+
+
+def encounter_answer(kind, turn, lang, rng, hero=None, arch=None):
+    """Choose dialogue by speaker and stage. Confrontation banks have explicit language tiers."""
+    turn = min(turn, len(_FRIENDLY_STEPS) - 1)
+    if kind == "leave":
+        return TXT("encounter.0017") if hero else encounter_line("leave", rng)
+    if kind == "challenge":
+        bank = _HERO_TENSE if hero else _TENSE_STEPS
+        if hero and turn == 0 and lang >= 1:
+            return rng.choice((bank[turn][0], TXT("encounter.0016")))
+        return bank[turn][min(turn, lang)]
+    if hero:
+        topic = _HERO_TOPICS[hero]
+        if turn == 0 and lang >= 1 and rng.random() < 0.2:
+            return TXT("encounter.0015")
+    else:
+        topic = _PED_TOPICS.get(arch, _PED_TOPICS[bible_lines.style_of(arch)])
+    return rng.choice(_FRIENDLY_STEPS[turn]).format(topic=topic)
+
+
 def say(p, sim, rng=random):
     """An idle line for pedestrian p: personality, type, district, time of day, Skopje/politics/jokes, insults by aggression."""
     import vehicles

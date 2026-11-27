@@ -53,6 +53,7 @@ if a.stress:
     os.environ["SK242_TEST_BOOM"] = str(a.warm + max(1, (a.frames - a.warm) // 3))
 
 game = ["main.py", "--test", str(a.frames)]
+os.environ["SK242_PERF_KEEP_MODE"] = "1"
 if not a.audio:
     game.append("--mute")
 if a.size:
@@ -104,17 +105,34 @@ settings_mod.Settings.__init__ = _settings
 
 import main as M  # noqa: E402
 
-if a.view == "heli":
-    from vehicles import HELI
-    _sim_update = M.Sim.update
-    def _heli_update(self, dt, inp, steps):
+from vehicles import HELI
+
+_sim_update = M.Sim.update
+population = {}
+
+
+def _scenario_update(self, dt, inp, steps):
+    if a.view == "heli":
         if self.mode == "car" and self.car.kind != HELI:
             car = self.car
             car.kind = HELI
             car.az = self.w.ground_y(car.x, car.y) + 85
+            car.vx = car.vy = 0.0
             car.vz, car.rpm = 0.0, 1.0
-        return _sim_update(self, dt, dict(inp, throttle=0.35, steer=0.1, run=False, handbrake=False), steps)
-    M.Sim.update = _heli_update
+        # Hover over the same traffic catchment and keep the normal chase camera.
+        inp = dict(inp, throttle=0.0, steer=0.0, run=False, handbrake=False)
+    elif a.mode == "foot" and a.view == "chase":
+        inp = dict(inp, run=True)
+    result = _sim_update(self, dt, inp, steps)
+    population.update(cars=len(self.traffic.cars), car_target=self.traffic.target,
+                      pedestrians=len(self.peds.list), pedestrian_target=self.peds.target)
+    cur["scenario"] = dict(population, mode=self.mode,
+                           airborne=a.view == "heli" and self.mode == "car"
+                           and self.car.kind == HELI and self.car.alive and self.car.air)
+    return result
+
+
+M.Sim.update = _scenario_update
 
 frames, cur = [], {}
 exclusive, span_path, scopes = {}, [], []
@@ -343,6 +361,13 @@ cpu = state["c1"] - state["c0"]
 keys = sorted({k for f in F for k in f if isinstance(f[k], (int, float)) and k != "frame"})
 sub = {k: round(sum(f.get(k, 0.0) for f in F) / max(1, len(F)), 2) for k in keys}
 q = sorted(ft)
+vehicle_mode = a.mode == "car" or a.view == "heli"
+expected_mode = "car" if vehicle_mode else "foot"
+scene_frames = [f["scenario"] for f in F if "scenario" in f]
+valid_scene = len(scene_frames) == len(F) and all(
+    scene["mode"] == expected_mode and (a.view != "heli" or scene["airborne"]) for scene in scene_frames)
+if not valid_scene:
+    errors["scenario"] = "The requested player mode or airborne helicopter did not persist for the capture"
 out = dict(tag=tag, mode=a.mode, view=a.view, size=a.size or "settings",
            settings=effective_settings, world=a.world, frames=len(F), hour=a.hour, audio=a.audio,
            startup_s=round(state["startup_s"], 2), complete=len(F) >= a.frames - a.warm and not exit_code,
@@ -350,6 +375,9 @@ out = dict(tag=tag, mode=a.mode, view=a.view, size=a.size or "settings",
                          p95=round(q[int(len(q) * 0.95) - 1], 2), worst=round(q[-1], 2)),
            fps=round(1000.0 / statistics.mean(ft), 1), cores_busy=round(cpu / wall, 2) if wall > 0 else None,
            cpu_count=os.cpu_count(), errors=errors, per_frame=sub)
+if scene_frames:
+    out["population"] = {key: [min(s[key] for s in scene_frames), max(s[key] for s in scene_frames)]
+                         for key in population}
 if a.trace or a.gpu:
     out.update(warm=a.warm, arguments=game[1:], gpu_error=gpu_error, samples=F)
 med = statistics.median(ft)

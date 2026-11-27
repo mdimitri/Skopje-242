@@ -1176,6 +1176,7 @@ def main():
     mouse_grab = False
     mouse_steer = 0.0
     show_dbg = a.test > 0
+    perf_capture = bool(a.test and os.environ.get("SK242_PERF_KEEP_MODE"))
     shake = 0.0
     frame = 0
     t_game = 0.0
@@ -2106,6 +2107,7 @@ def main():
             thr = 1.0 if (frame // 400) % 2 == 0 else (-1.0 if frame % 400 > 330 else 0.0)
             inp = {"throttle": thr, "steer": 0.55 * math.sin(t * 0.7), "handbrake": (frame % 300) > 250, "horn": frame % 200 == 150,
                    "move": (0.5 * math.sin(t), 1.0), "run": frame % 120 > 60}
+        if a.test and not perf_capture:
             if frame == 240:
                 enter_pressed = True                       # step out
             if 245 < frame < 330:
@@ -2195,7 +2197,7 @@ def main():
                 enter_pressed = True                       # hijack a traffic car
             if frame == 700 and sim.mode == "car":
                 sim.car.health = 0                           # test: burn + explode
-        else:
+        elif not a.test:
             down = rl.is_key_down
             inp = {
                 "throttle": (down(rl.KEY_W) or down(rl.KEY_UP)) - (down(rl.KEY_S) or down(rl.KEY_DOWN)),
@@ -2352,7 +2354,10 @@ def main():
                 p.encounter = max(p.encounter, 1.0)
                 choice = inp.get("buy")
                 if choice in (0, 1, 2):
-                    line = (TXT("encounter.0015"), TXT("encounter.0016"), TXT("encounter.0017"))[choice]
+                    kind = ("friendly", "challenge", "leave")[choice]
+                    stage = p.encounter_heat if choice == 1 else p.encounter_turn
+                    hero = characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0]
+                    line = talk.encounter_answer(kind, stage, sim.lang, rng, hero=hero)
                     popups.add(line, wk_talk.x, wk_talk.y, 2.5, 2.2, (200, 230, 255), 20)
                     say(line, wk_talk.x, wk_talk.y, hero_who(), True)
                     encounter_reply = (p, choice, t_game + 2.0)
@@ -2370,11 +2375,16 @@ def main():
             p, choice, _ = encounter_reply
             encounter_reply = None
             if (wk_talk is not None and wk_talk.health > 0 and p in sim.peds.list and p.mode == "walk" and p.encounter > 0
-                    and math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) < 5.0):
+                    and not inp.get("attack") and math.hypot(p.x - wk_talk.x, p.y - wk_talk.y) < 5.0):
                 kind = ("friendly", "challenge", "leave")[choice]
-                sim.ev("shout", text=talk.encounter_line(kind, rng), x=p.x, y=p.y, who=vehicles.ped_who(p))
-                p.encounter = 0.0
-                if choice == 1 and vehicles.FIGHT[p.arch][0] > 16 and rng.random() < 0.35:
+                stage = p.encounter_heat if choice == 1 else p.encounter_turn
+                lang = sim.lang if vehicles.FIGHT[p.arch][0] > 16 else 0
+                line = talk.encounter_answer(kind, stage, lang, rng, arch=vehicles.PED_IDS[p.arch])
+                sim.ev("shout", text=line, x=p.x, y=p.y, who=vehicles.ped_who(p))
+                p.encounter_turn += 1
+                p.encounter_heat = p.encounter_heat + 1 if choice == 1 else 0
+                p.encounter = 0.0 if choice == 2 or p.encounter_turn >= 3 else 7.0
+                if p.encounter_heat >= 3 and vehicles.FIGHT[p.arch][0] > 16 and rng.random() < 0.35:
                     p.mode, p.t, p.atk_cd, p.far_t = "fight", 14.0, 0.4, 0.0
         busy_ = guard.run("poi", pois.update, dt, sim, t_game, inp.get("buy"), characters.LIKOVI[getattr(sim, "lik", 0) % len(characters.LIKOVI)][0],
                           lambda l_, x_, y_: say(l_, x_, y_, hero_who(), True), popups) or selfie.active

@@ -192,15 +192,26 @@ def movement_lanes(world, incoming, outgoing, angle):
                 break
             contiguous.append(lane)
         return contiguous
-    if lanes is None or abs(angle) >= 0.35 or next_edge["cls"] != edge["cls"]:
+    if lanes is None:
+        return lanes
+    node = edge["b" if direction == 1 else "a"]
+    marked = lane_turns(edge, direction)
+    left_marks = {"left", "slight_left", "sharp_left"}
+    reserve_left = len(lanes) > 1 and 0 in lanes and bool(marked[0] & left_marks)
+    continuation = abs(angle) < 0.35 and next_edge["cls"] == edge["cls"]
+    if not (reserve_left or continuation):
+        return lanes
+    options = [turn_angle(world.edges, incoming, move) for move in world.out.get(node, ()) if move[0] != incoming[0]]
+    has_left = any(-2.2 <= a <= -0.5 for a in options)
+    if reserve_left and has_left:
+        lanes.remove(0)
+    if not continuation:
         return lanes
     # Paint can describe the next junction even when an intermediate graph node splits the approach.
-    node = edge["b" if direction == 1 else "a"]
-    options = [turn_angle(world.edges, incoming, move) for move in world.out.get(node, ()) if move[0] != incoming[0]]
-    for i, kinds in enumerate(lane_turns(edge, direction)):
+    for i, kinds in enumerate(marked):
         if i in lanes or not kinds:
             continue
-        if (kinds <= {"left", "slight_left", "sharp_left"} and not any(-2.2 <= a <= -0.5 for a in options)
+        if (kinds <= left_marks and not has_left
                 or kinds <= {"right", "slight_right", "sharp_right"} and not any(0.5 <= a <= 2.2 for a in options)):
             lanes.append(i)
     return sorted(lanes)

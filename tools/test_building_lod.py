@@ -45,6 +45,7 @@ def main():
     world = SimpleNamespace(chunks={(0,0):{"lod":records,"m":{0:(0,len(arrays[0]))}}},mesh_arrays=lambda off,n:arrays)
     captures = lod.Captures(world,{"A":tex})
     for _ in records:
+        captures.next_capture = 0.0
         captures.prepare([(0,0)],1000)
     assert captures.groups[((0,0),0)]["models"], "capture never completed"
     emission = pixels(captures.groups[((0,0),0)]["atlases"][1])

@@ -90,13 +90,15 @@ Avoid bypassing the stage runner or editing generated cache files as a fix. Chan
 
 Traffic simulation has a separation boundary. `src/trafficproc.py` runs traffic work in a worker process and reconstructs a deliberately reduced simulation/world view. It communicates state through process connections and serializable values. Changes to live simulation types or road graph fields must be checked against the worker reconstruction/serialization protocol, startup/shutdown logic, and recovery paths. `src/traffic_tuning.py` stores tuning. `src/signals.py`, `src/transit.py`, `src/trains.py`, and `src/stations.py` cover traffic control and transport systems.
 
+When a junction has a left exit and another marked through lane, `driving.movement_lanes` reserves a shared leftmost lane for left turns. A shared lane can carry straight traffic when it is the only marked through lane or the node has no left exit.
+
 The traffic worker builds the curb-height lookup index before reporting ready. This keeps the one-time citywide indexing work outside the per-frame reply deadline.
 
 ### People, story, and interaction
 
 `src/characters.py` coordinates character identity and behavior. Character-specific assets and presentation live in `characterart.py`, `faces.py`, `facerig.py`, and supporting art modules. Story/dialogue content is split by role and content type across `hero_lines.py`, `hood_lines.py`, `peds_lines.py`, `dog_lines.py`, `bible_lines.py`, `hero_stories.py`, `hero_profiles.py`, `hero_names.py`, `slang.py`, `texts.py`, and `strings.py`. `src/talk.py` is a runtime interaction point. Read `text/README.md`, `docs/Skopje_slang_bible.txt`, and `docs/TEXT_SOURCES.md` before changing language conventions or sourced text.
 
-In `src/actors.py`, some walking pedestrians briefly approach and address a nearby player, occasionally adding a follow-up before returning to their route. `src/main.py` offers F and numbered responses during these encounters, with matched Macedonian lines from `src/talk.py` and `text/09_pedestrian_encounters.txt`; a confrontational response can start a fight. Leaving or attacking interrupts the encounter. Bumps use the existing escalating speech and trigger a fight on the third bump; children flee instead.
+In `src/actors.py`, some walking pedestrians briefly approach and address a nearby player. `src/main.py` offers F and numbered responses for up to three exchanges. `src/talk.py` selects friendly lines from hero and pedestrian topics in `text/09_pedestrian_encounters.txt`; three consecutive challenges can start a fight. Challenge lines are selected by escalation and the menu's language tier. Leaving or attacking interrupts the encounter. Bumps use separate escalating speech and trigger a fight on the third bump; children flee instead.
 
 World interactions include locations, vendors, services, rentals, work activities, compounds, mall interiors, graffiti, garbage, and breakable chaos. Start from `places.py`, `poi.py`, `poi_vendors.py`, `services.py`, `rentals.py`, `works.py`, `compounds.py`, `mall.py`, or `chaos.py` depending on the feature, then trace main's integration.
 
@@ -108,7 +110,9 @@ New hero wallets use the profile's base amount times ten plus a 3,000-denar floo
 
 Keep resource lifecycle, coordinate conventions, draw ordering, and batching in mind. For rendering defects, find whether geometry is produced at build time or at runtime before editing. Model and screenshot helpers under `tools/` are useful for inspecting visual output without conflating editor/build behavior with gameplay.
 
-Vehicle gloss in `gl3d.CAR_FS` combines a sky/ground gradient with a seamless direction-space procedural cloud texture, Fresnel clear coat and sun/moon highlights. `gloss_frame` supplies the live day/dusk/night palette; this is a generic environment reflection, not a capture of nearby objects or the visible cloud positions. Matte material tags remain excluded. `tools/car_reflection_shot.py` checks real GPU compilation and produces before/after close-ups for all three lighting periods in `output/car_reflections/`.
+Vehicle gloss in `gl3d.CAR_FS` combines a sky/ground gradient with two layers of directional cloud noise, Fresnel clear coat and sun/moon highlights. Ground-facing reflection rays skip the cloud calculation. `gloss_frame` supplies the live day/dusk/night palette for this procedural environment reflection. Matte material tags are excluded. `tools/car_reflection_shot.py` checks real GPU compilation and produces before/after close-ups for all three lighting periods in `output/car_reflections/`.
+
+`tools/perf.py` uses the normal chase camera for the airborne helicopter and runs third-person foot tests with sprint input. It reports active and target population ranges during the measured frames. A change out of the requested player mode invalidates the capture.
 
 The third-person far ring captures each building's own facades and roof for textured prisms, then samples the same captures on depth-correct sprites beyond 600 m on foot/in ground vehicles or 1200 m in helicopters. World version 87 adds per-building mesh spans. See [building LOD rendering](building-lod.md) for capture ownership, range limits, night lighting, cache limits and verification.
 

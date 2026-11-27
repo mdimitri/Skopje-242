@@ -3,6 +3,7 @@
 Captures run outside the main 3D pass, one building at a time. Atlas groups are
 bounded and contain only geometry identified by the world's per-building spans.
 """
+import math
 import time
 from collections import OrderedDict
 
@@ -85,9 +86,13 @@ void main(){
   float level=clamp(log2(max(footprint,1.0)),0.0,3.0);
   vec4 day=textureLod(texture0,uv,level);
   if(day.a < 0.15) discard;
-  vec3 glow=textureLod(texture1,uv,level).rgb*1.1*min(1.0,darkness*1.4)*0.95;
-  glow *= 1.0-smoothstep(lightCenter.z*0.75,lightCenter.z,length(p.xz-lightCenter.xy));
-  finalColor=vec4(glowPass == 1 ? glow : day.rgb,1.0);
+  if(glowPass == 1){
+    vec3 glow=textureLod(texture1,uv,level).rgb*1.1*min(1.0,darkness*1.4)*0.95;
+    glow *= 1.0-smoothstep(lightCenter.z*0.75,lightCenter.z,length(p.xz-lightCenter.xy));
+    finalColor=vec4(glow,1.0);
+  }else{
+    finalColor=vec4(day.rgb,1.0);
+  }
   vec4 clip=mvp*vec4(p,1.0);
   gl_FragDepth=clip.z/clip.w*0.5+0.5;
 }"""
@@ -109,6 +114,7 @@ class Captures:
         self.w, self.textures = world, textures
         self.groups = OrderedDict()
         self.next_capture = 0.0
+        self.view_uniforms = None
         self.tile = rl.load_render_texture(SIZE, SIZE)
         self.shader = rl.load_shader_from_memory(VS, FS)
         # Unlike the additive runtime pass, black non-window fragments must write
@@ -128,7 +134,11 @@ class Captures:
             rl.end_texture_mode()
             rl.set_texture_filter(rt.texture, rl.TEXTURE_FILTER_BILINEAR)
             rl.set_texture_wrap(rt.texture, rl.TEXTURE_WRAP_CLAMP)
-        return {"records": records, "atlases": atlases, "done": 0, "models": []}
+        bounds = tuple(rl.ffi.new("float[]", [value for record in records for value in record[index]])
+                       for index in (0, 1))
+        center = tuple((a + b) * 0.5 for a, b in zip(records[0][0], records[0][1]))
+        return {"records": records, "atlases": atlases, "done": 0, "models": [],
+                "bounds": bounds, "center": center}
 
     def _capture(self, key, group):
         row = group["done"]
@@ -231,6 +241,23 @@ class Captures:
                 self.next_capture = now + min(0.25, max(0.012, 4 * (now - start_time)))
                 break
 
+    def _set_view(self, eye, target, camera_up, dark, glow):
+        view = (eye, target, camera_up, dark, glow)
+        if view == self.view_uniforms:
+            return
+        self.view_uniforms = view
+        forward = np.asarray(target, np.float32) - np.asarray(eye, np.float32)
+        forward /= np.linalg.norm(forward)
+        right = np.cross(forward, camera_up)
+        right /= np.linalg.norm(right)
+        up = np.cross(right,forward)
+        for name, v in (("eye",eye),("right",right),("up",up)):
+            rl.set_shader_value(self.shader,self.loc[name],rl.ffi.new("float[3]",list(v)),rl.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(self.shader,self.loc["darkness"],rl.ffi.new("float *",dark),rl.SHADER_UNIFORM_FLOAT)
+        rl.set_shader_value(self.shader,self.loc["glowPass"],rl.ffi.new("int *",int(glow)),rl.SHADER_UNIFORM_INT)
+        rl.set_shader_value(self.shader,self.loc["lightCenter"],
+                            rl.ffi.new("float[3]",[target[0],target[2],BUILDING_WIN_R]),rl.SHADER_UNIFORM_VEC3)
+
     def draw(self, key, cam, dark, glow=False, sprite_distance=SPRITE_DISTANCE):
         records = self.w.chunks.get(key, {}).get("lod")
         if not records:
@@ -238,27 +265,16 @@ class Captures:
         groups = [self.groups.get((key,s)) for s in range(0,len(records),GROUP)]
         if any(g is None or not g["models"] for g in groups):
             return False
-        eye = np.array([cam.position.x,cam.position.y,cam.position.z],np.float32)
-        forward = np.array([cam.target.x,cam.target.y,cam.target.z],np.float32)-eye
-        forward /= np.linalg.norm(forward)
-        right = np.cross(forward,np.array([cam.up.x,cam.up.y,cam.up.z]))
-        right /= np.linalg.norm(right)
-        up = np.cross(right,forward)
-        for name, v in (("eye",eye),("right",right),("up",up)):
-            rl.set_shader_value(self.shader,self.loc[name],rl.ffi.new("float[3]",v.tolist()),rl.SHADER_UNIFORM_VEC3)
-        rl.set_shader_value(self.shader,self.loc["darkness"],rl.ffi.new("float *",dark),rl.SHADER_UNIFORM_FLOAT)
-        rl.set_shader_value(self.shader,self.loc["glowPass"],rl.ffi.new("int *",int(glow)),rl.SHADER_UNIFORM_INT)
-        rl.set_shader_value(self.shader,self.loc["lightCenter"],
-                            rl.ffi.new("float[3]",[cam.target.x,cam.target.z,BUILDING_WIN_R]),rl.SHADER_UNIFORM_VEC3)
+        eye = (cam.position.x, cam.position.y, cam.position.z)
+        self._set_view(eye, (cam.target.x, cam.target.y, cam.target.z), (cam.up.x, cam.up.y, cam.up.z), dark, glow)
         rl.rl_enable_backface_culling()
         for g in groups:
-            for name, ix in (("low",0),("high",1)):
-                data = [v for r in g["records"] for v in r[ix]]
-                rl.set_shader_value_v(self.shader,self.loc[name],rl.ffi.new("float[]",data),rl.SHADER_UNIFORM_VEC3,len(g["records"]))
-            center = (np.asarray(g["records"][0][0])+g["records"][0][1])*0.5
-            sprite = int(np.linalg.norm(center-eye) >= sprite_distance)
+            for name, data in zip(("low", "high"), g["bounds"]):
+                rl.set_shader_value_v(self.shader,self.loc[name],data,rl.SHADER_UNIFORM_VEC3,len(g["records"]))
+            sprite = int(math.dist(g["center"], eye) >= sprite_distance)
             rl.set_shader_value(self.shader,self.loc["sprite"],rl.ffi.new("int *",sprite),rl.SHADER_UNIFORM_INT)
-            rl.set_shader_value_texture(self.shader,self.loc["texture1"],g["atlases"][1].texture)
+            if glow:
+                rl.set_shader_value_texture(self.shader,self.loc["texture1"],g["atlases"][1].texture)
             rl.draw_model(g["models"][sprite],rl.Vector3(0,0,0),1.0,rl.WHITE)
         rl.rl_disable_backface_culling()
         return True

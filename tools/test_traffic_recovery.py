@@ -277,6 +277,17 @@ class TrafficRecoveryTest(unittest.TestCase):
         tr = setup(e, road(1, 2, (0, 0), (0, -60), ow=True))
         self.assertEqual(movement_lanes(tr.w, (0, 1), (1, 1), -math.pi / 2), [])
 
+    def test_straight_traffic_leaves_shared_left_lane_for_turning(self):
+        e = road(0, 1, (-60, 0), (0, 0), 10.5, True, lanes=3, turn=("left;through|through|right", ""))
+        straight = road(1, 2, (0, 0), (60, 0), ow=True)
+        left = road(1, 3, (0, 0), (0, -60), ow=True)
+        right = road(1, 4, (0, 0), (0, 60), ow=True)
+        tr = setup(e, straight, left, right)
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (1, 1), 0.0), [1])
+        self.assertEqual(movement_lanes(tr.w, (0, 1), (2, 1), -math.pi / 2), [0])
+        tr = setup(e, straight)
+        self.assertIn(0, movement_lanes(tr.w, (0, 1), (1, 1), 0.0))
+
     def test_dead_end_uturn_starts_before_node_from_leftmost_lane(self):
         e = road(0, 1, (0, 0), (100, 0), 12, lanes=4)
         tr = setup(e)

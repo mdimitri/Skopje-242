@@ -2326,15 +2326,16 @@ float cloudNoise(vec3 p){
              mix(mix(b.x, b.y, f.x), mix(b.z, b.w, f.x), f.y), f.z);
 }
 vec3 reflectedSky(vec3 R){
-  vec3 env = R.y > 0.0 ? mix(skyH, skyZ, sqrt(R.y)) : mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));
+  if (R.y <= 0.0) return mix(skyH * 0.7, grnd, clamp(-R.y * 4.0, 0.0, 1.0));
+  vec3 env = mix(skyH, skyZ, sqrt(R.y));
   // Direction-space texture stays fixed in the world as the car or camera turns.
   // 3D noise avoids a panorama seam and stretching at the zenith.
   vec3 p = R * vec3(6.0, 12.0, 6.0) + vec3(3.2, 0.7, 8.1);
-  float clouds = cloudNoise(p) * 0.65 + cloudNoise(p * 2.03) * 0.25 + cloudNoise(p * 4.07) * 0.10;
-  float coverage = smoothstep(0.45, 0.67, clouds) * smoothstep(0.0, 0.16, R.y);
+  float clouds = cloudNoise(p) * 0.75 + cloudNoise(p * 2.03) * 0.25;
+  float coverage = smoothstep(0.44, 0.60, clouds) * smoothstep(0.0, 0.16, R.y);
   // The same live palette makes clouds white by day, warm at dusk, dim blue at night.
-  vec3 cloudColor = skyH * 0.85 + lightC * (0.25 * gloss.y);
-  return mix(env, cloudColor, coverage * 0.85);
+  vec3 cloudColor = skyH * 0.95 + lightC * (0.35 * gloss.y);
+  return mix(env, cloudColor, coverage);
 }
 void main(){
   vec4 base = colDiffuse * fragColor;
@@ -2364,7 +2365,7 @@ void main(){
     float r = clamp(k * (0.38 + 0.62 * fr), 0.0, 0.95);
     c = mix(base.rgb, env, r) + spec * k;
   } else {                                                        // paint: metallic flake tinted by the paint + clear coat
-    float r = clamp(k * (0.18 + 0.65 * fr), 0.0, 0.9);
+    float r = clamp(k * (0.26 + 0.65 * fr), 0.0, 0.9);
     vec3 flake = base.rgb * lightC * pow(max(dot(N, normalize(lightD + V)), 0.0), 24.0) * 0.55 * lit;
     c = base.rgb * (1.0 - 0.35 * r) + env * r + (flake + spec * 0.8) * k;
   }
