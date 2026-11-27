@@ -110,6 +110,18 @@ class OsmInferenceTests(unittest.TestCase):
         self.assertLess(np.linalg.norm(source_lane - slip_lane), 1.5)
         self.assertAlmostEqual(main.cross_section(25)[0], -main.section["w"] / 2, places=5)
 
+    def test_right_slip_joins_the_outer_lane_without_adding_a_lane(self):
+        self.infer([
+            way(101, [1, 2], [(-60, 0), (0, 0)], lanes="3", oneway="yes"),
+            way(102, [2, 3], [(0, 0), (60, 0)], lanes="3", oneway="yes"),
+            way(103, [4, 2], [(-60, 15), (0, 0)], highway="tertiary_link", lanes="1", oneway="yes"),
+        ])
+        main, receiving, slip = (next(e for e in self.edges if e.id == i) for i in (101, 102, 103))
+        np.testing.assert_allclose(main.cross_section(main.line.length), receiving.cross_section(0))
+        slip_lane, _ = slip.port(slip.line.length, 0, 1)
+        outside, _ = receiving.port(0, 2, 1)
+        self.assertLess(np.linalg.norm(slip_lane - outside), 0.9)
+
     def test_turn_restrictions_and_lane_marks_constrain_the_crossroads(self):
         movements = self.infer([
             way(101, [1, 2], [(-40, 0), (0, 0)], lanes="2", oneway="yes", **{"turn:lanes": "left|through;right"}),

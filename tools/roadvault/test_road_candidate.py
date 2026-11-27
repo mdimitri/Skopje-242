@@ -175,7 +175,7 @@ class RoadCandidateTests(unittest.TestCase):
             with self.subTest(way=device["way"]):
                 edge = self.by_id[device["way"]]
                 station = device["station"]
-                self.assertLess(station, stations[edge.id] - 3.4)
+                self.assertAlmostEqual(station, stations[edge.id] - 3.4)
                 self.assertGreaterEqual(device["clearance_m"], 5.1)
                 center, heading, right = frame(edge.line, station)
                 self.assertGreater(np.dot(-heading, device["facing"]), 0.99)

@@ -167,6 +167,7 @@ class RoadNetworkTests(unittest.TestCase):
                                Traffic.lanes_of(edges[0])[0], places=5)
         slip_offset = lane_offset(edges[2], 1, 0, Traffic.lanes_of(edges[2])[0])
         self.assertGreater(slip_offset, 3)
+        self.assertEqual(Traffic._lanes_fit(edges[2], 1, 0), [0])
         self.assertAlmostEqual(nominal_offset(edges[2], 1, 0, slip_offset), Traffic.lanes_of(edges[2])[0], places=5)
 
     def test_rendered_taper_continues_across_a_graph_only_node(self):
@@ -215,7 +216,7 @@ class RoadNetworkTests(unittest.TestCase):
         mover = building_move.BuildingMoves([{"ring": ring}], grid, water, 50, 50, 1)
         self.assertIsNone(mover.move(0))
 
-    def test_gantry_moves_upstream_when_its_first_supports_are_blocked(self):
+    def test_gantry_widens_at_the_stop_line_when_its_first_supports_are_blocked(self):
         edges = [edge(0, 1, (-80, 0), (0, 0), w=6.5, lanes=2, ow=True, cls="tertiary"),
                  edge(1, 2, (0, 0), (80, 0), w=6.5, lanes=2, ow=True, cls="tertiary"),
                  edge(1, 3, (0, 0), (0, 60), w=6.5, lanes=2, ow=True, cls="tertiary")]
@@ -223,11 +224,42 @@ class RoadNetworkTests(unittest.TestCase):
         with patch.object(road_controls, "plan_lights", return_value=({1}, {1: 1})), \
              patch.object(road_controls, "draw_gantry") as draw, patch.object(road_controls, "_bake"):
             road_controls.build(edges, [], controls, None, None, None, None,
-                                lambda x, z: x < -10)
+                                lambda x, z: abs(z) > 4.4)
         self.assertEqual(draw.call_count, 1)
         device = draw.call_args.args[1]
-        self.assertTrue(all(p[0] < -10 for p in device["supports"]))
+        self.assertTrue(all(abs(p[1]) > 4.4 for p in device["supports"]))
+        self.assertAlmostEqual(device["supports"][0][0], -controls["signals"][0][9])
         self.assertAlmostEqual(device["supports"][0][0], device["supports"][1][0])
+
+    def test_signal_spacing_follows_the_same_direction_across_graph_edges(self):
+        from collections import defaultdict
+        edges = [edge(0, 1, (-40, 0), (0, 0), ow=True),
+                 edge(1, 2, (0, 0), (80, 0), ow=True),
+                 edge(1, 3, (0, 0), (0, 40), ow=True)]
+        inc = defaultdict(list)
+        for i, e in enumerate(edges):
+            inc[e["a"]].append((i, 0))
+            inc[e["b"]].append((i, 1))
+        self.assertTrue(road_controls.nearby_stop(edges, inc, {(1, 1): [20]}, 0, 1, 20))
+        self.assertTrue(road_controls.nearby_stop(edges, inc, {(0, 1): [20]}, 1, 1, 20))
+        self.assertFalse(road_controls.nearby_stop(edges, inc, {(1, -1): [20], (2, 1): [5]}, 0, 1, 20))
+        self.assertFalse(road_controls.nearby_stop(edges, inc, {(1, 1): [30]}, 0, 1, 20))
+
+    def test_baked_kerb_uses_the_pavement_polygon_and_keeps_its_asphalt_hole(self):
+        import zlib
+        from PIL import Image
+        from shapely.geometry import box
+        mesh = roads_candidate.TileMesh(box(0, 0, 300, 300))
+        mesh.surface = Image.new("L", (600, 600))
+        mesh.surface_origin = (0, 0)
+        mesh.poly(box(2, 2, 8, 8), 0, (57, 61, 66))
+        mesh.poly(box(0, 0, 10, 10).difference(box(2, 2, 8, 8)), 0.145, (181, 175, 161))
+        world = World.__new__(World)
+        world.road_surface_tiles = {(0, 0): zlib.compress(mesh.surface.tobytes())}
+        self.assertEqual(world._road_surface_height(5, 5), 6)
+        self.assertFalse(world.kerb(5, 5))
+        self.assertEqual(world._road_surface_height(1, 1), 20)
+        self.assertTrue(world.kerb(1, 1))
 
     def test_submetre_links_weld_without_merging_elevations(self):
         main = road((0, 1, 2, 3), ((0, 0), (10, 0), (10.7, 0), (20, 0)))

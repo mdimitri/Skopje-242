@@ -463,6 +463,10 @@ class World:
         t = a + (b - a) * ty
         if self.qidx is not None:
             t += self.quay_cut(x, y)
+        if getattr(self, "road_surface_tiles", None):
+            height = self._road_surface_height(x, y)
+            if height:
+                return t + height / 100
         if self.hgt is None:
             return t
         fx, fy = dx / self.cell, dy / self.cell
@@ -858,6 +862,24 @@ class World:
                 "primary_link", "secondary_link", "tertiary_link", "trunk_link"}
     KERB_W, KERB_H = 2.0, 0.16                     # pavement width / height, same as tools/roads3d.py
 
+    def _road_surface_height(self, x, y):
+        ix, iy = math.floor(x * 2), math.floor(y * 2)
+        tx, px = divmod(ix, 600)
+        ty, py = divmod(iy, 600)
+        key = tx, ty
+        data = self.road_surface_tiles.get(key)
+        if data is None:
+            return None
+        cache = getattr(self, "_road_surface_cache", None)
+        if cache is None:
+            cache = self._road_surface_cache = {}
+        tile = cache.get(key)
+        if tile is None:
+            if len(cache) >= 64:
+                cache.pop(next(iter(cache)))
+            tile = cache[key] = zlib.decompress(data)
+        return tile[py * 600 + px]
+
     def _kerb_grid(self):
         g = {}
         for e in self.edges:
@@ -875,6 +897,10 @@ class World:
 
     def kerb(self, x, y):
         """True when (x, y) is on a raised pavement beside a city street (and not on any road's asphalt)."""
+        if getattr(self, "road_surface_tiles", None):
+            height = self._road_surface_height(x, y)
+            if height is not None:
+                return height > 10
         if self.crossings.cores and self.crossings.core(x, y):
             return False
         if getattr(self, "_kg", None) is None:

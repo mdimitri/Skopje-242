@@ -7,11 +7,46 @@ from shapely import STRtree
 from shapely.geometry import LineString, Point
 
 from furniture import RANK, plan_lights
+from driving import turn_angle
 from geo import project
 from roadwidth import lane_bounds, lane_count
 from roadvault.mesh import Mesh
 from roadvault.road_candidate import PAINT, frame, stroke
 from roadvault.traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
+
+
+def nearby_stop(edges, inc, stops, ei, end, station):
+    """Find another stop along the same directed through lane within 50 m."""
+    direction = 1 if end else -1
+    for downstream in (True, False):
+        move = (ei, direction)
+        offset = station
+        remaining = 50.0
+        seen = set()
+        while remaining > 0 and move not in seen:
+            seen.add(move)
+            index, d = move
+            current = edges[index]
+            for at in stops.get(move, ()):
+                gap = at - offset if downstream else offset - at
+                if 0 <= gap < remaining:
+                    return True
+            node_end = int((d == 1) == downstream)
+            remaining -= current["len"] - offset if downstream else offset
+            options = []
+            for candidate, candidate_end in inc[current["b" if node_end else "a"]]:
+                road = edges[candidate]
+                travel = (candidate, 1 if bool(candidate_end) != downstream else -1)
+                if candidate == index or (road["ow"] and travel[1] == -1) or current["cls"].endswith("_link") != road["cls"].endswith("_link"):
+                    continue
+                bend = turn_angle(edges, move, travel) if downstream else turn_angle(edges, travel, move)
+                if abs(bend) < 0.35:
+                    options.append((abs(bend), travel))
+            if not options:
+                break
+            move = min(options)[1]
+            offset = 0.0 if downstream else edges[move[0]]["len"]
+    return False
 
 
 def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, roads=(), ways=()):
@@ -58,6 +93,10 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
     lit.update(node for node in nodes if clusters.get(node, node) in mapped_clusters)
 
     original = tuple(controls["signals"])
+    stops = defaultdict(list)
+    for record in original:
+        ei, end = record[1:3]
+        stops[ei, 1 if end else -1].append(edges[ei]["len"] - record[9])
     existing = {(item[1], item[2]) for item in original}
     reviewed = [(item[6], item[7]) for item in original if item[0] == ("candidate", "glavinov")]
     node_map = {}
@@ -116,6 +155,8 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
             cross = min(choices, default=None)
             zebra = cross[2] if cross else line.length - min(junction_width / 2 + 3.2, line.length * 0.45)
             stop = max(0.35, zebra - 3.4)
+            if nearby_stop(edges, inc, stops, ei, end, stop):
+                continue
             point, heading, right = placement(line, stop, original)
             mesh = Mesh()
             stop_line = stroke(LineString([point + right * (lo + 0.2), point + right * (hi - 0.2)]), 0.34)
@@ -124,14 +165,11 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
             count = lane_count(edge, direction)
             gantry = None
             if count >= 2:
-                for station in (stop, stop - 3, stop - 6, stop - 9, stop - 12):
-                    if station < 0.35:
-                        continue
-                    anchor, axis, normal = placement(line, station, original)
-                    supports = [anchor + normal * (side * (width / 2 + 1.05)) for side in (-1, 1)]
-                    if all(clear(*p) for p in supports):
-                        gantry = (anchor, axis, normal, supports)
-                        break
+                supports = [next((pad for inset in (0.75, 1.05, 1.55, 2.05, 2.55, 3.05)
+                                  if clear(*(pad := point + right * (side * (width / 2 + inset))))), None)
+                            for side in (-1, 1)]
+                if all(p is not None for p in supports):
+                    gantry = (point, heading, right, supports)
             if gantry:
                 anchor, heading, normal, supports = gantry
                 heads = [anchor + normal * (lo + (hi - lo) * (lane + 0.5) / count) for lane in range(count)]
@@ -157,6 +195,7 @@ def build(edges, mapped, controls, add, chunk_of, material, terrain, clear, road
                 height = 2.78
             controls["signals"].append((phase_node, ei, end, ei * 2 + end, math.nan, math.nan,
                                         jx, jz, 0, line.length - stop))
+            stops[ei, direction].append(stop)
             for x, z in heads:
                 controls["heads"].append((phase_node, (ei, end), x, z, height, *(-heading)))
             if stop >= 12:

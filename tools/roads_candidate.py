@@ -1,8 +1,10 @@
 """Bake the reviewed road-vault compiler into terrain-relative game tiles."""
 import json
 import math
+import zlib
 from collections import Counter
 from pathlib import Path
+from PIL import Image, ImageDraw
 
 from shapely import STRtree
 from shapely.affinity import translate
@@ -120,7 +122,23 @@ class TileMesh(Mesh):
 
     def poly(self, shape, y, col, lit=True):
         for part in polys(shape):
-            super().poly(part.intersection(self.bounds), y, col, lit)
+            clipped = part.intersection(self.bounds)
+            super().poly(clipped, y, col, lit)
+            if hasattr(self, "surface") and y in (0, 0.125, 0.145, 0.155):
+                height = round((y + 0.06) * 100)
+                ox, oy = self.surface_origin
+                def pixels(ring):
+                    return [(int((x - ox) * 2), int((z - oy) * 2)) for x, z in ring.coords]
+                for polygon in polys(clipped):
+                    outer = pixels(polygon.exterior)
+                    x0, y0 = map(min, zip(*outer))
+                    x1, y1 = map(max, zip(*outer))
+                    mask = Image.new("1", (x1 - x0 + 1, y1 - y0 + 1))
+                    draw = ImageDraw.Draw(mask)
+                    draw.polygon([(x - x0, z - y0) for x, z in outer], fill=1)
+                    for hole in polygon.interiors:
+                        draw.polygon([(x - x0, z - y0) for x, z in pixels(hole)], fill=0)
+                    self.surface.paste(height, (x0, y0, x1 + 1, y1 + 1), mask)
 
     def wall_ring(self, coords, y0, y1, col):
         cut = LineString(coords).intersection(self.bounds)
@@ -352,6 +370,9 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
     covered = unary_union([patch for patch, _ in patches])
     mesh = TileMesh(tile.difference(covered))
     mesh.controls = {"signals": [], "heads": [], "crossings": []}
+    size = round(radius * 4)
+    mesh.surface = Image.new("L", (size, size))
+    mesh.surface_origin = (-radius, -radius)
 
     def owns(point, x=0, y=0):
         return -radius <= point.x + x < radius and -radius <= point.y + y < radius
@@ -367,6 +388,8 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
             continue
         _, ox, oy, review_bounds, review_edges, layout, review_walks, review_greens, originals, report = site
         reviewed_mesh = TileMesh(translate(patch, tx - ox, ty - oy))
+        reviewed_mesh.surface = mesh.surface
+        reviewed_mesh.surface_origin = (tx - ox - radius, ty - oy - radius)
         bindings = ({way: reviewed_graph.get(osm_way, ()) for way, osm_way in originals.items()}
                     if originals is not None else reviewed_graph)
         junction = ("candidate", "glavinov") if originals is None else None
@@ -380,4 +403,6 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
             point[2] += oy - ty
         mesh.P.extend(reviewed_mesh.P)
         mesh.C.extend(reviewed_mesh.C)
+    mesh.controls["surface_tiles"] = [((math.floor(tx / (2 * radius)), math.floor(ty / (2 * radius))),
+                                       zlib.compress(mesh.surface.tobytes(), 1))]
     return mesh

@@ -636,22 +636,20 @@ def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
 
     def gantry(way, stop):
         edge = edges[way]
-        for shift in (-1.2, -2.0, -3.0, -0.45):
-            station = stop + shift
-            try:
-                p, heading, right, lo, hi = crossing_span(edge, station, asphalt)
-            except ValueError:
-                continue
-            supports = [next((position for inset in (0.75, 1.05, 1.4, 1.85)
+        try:
+            p, heading, right, lo, hi = crossing_span(edge, stop, asphalt)
+        except ValueError:
+            supports = [None]
+        else:
+            supports = [next((position for inset in (0.75, 1.05, 1.4, 1.85, 2.55, 3.05)
                               if clear(position := p + right * (lateral + side * inset))), None)
                         for lateral, side in ((lo, -1), (hi, 1))]
-            if any(point is None for point in supports):
-                continue
+        if all(point is not None for point in supports):
             heads = []
             for i in range(lane_count(edge.section)):
-                lane_point, _ = edge.port(station, i, 1)
+                lane_point, _ = edge.port(stop, i, 1)
                 heads.append(dict(lane=i, position=(p + right * ((lane_point - p) @ right)).tolist()))
-            devices.append(dict(kind="vehicle_gantry", way=way, station=station, facing=(-heading).tolist(),
+            devices.append(dict(kind="vehicle_gantry", way=way, station=stop, facing=(-heading).tolist(),
                                 supports=[point.tolist() for point in supports], heads=heads,
                                 clearance_m=GANTRY_CLEARANCE))
             occupied.extend(supports)
@@ -699,7 +697,9 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
     # apron. This leaves unmapped gaps and medians outside the sweep intact.
     envelopes = {spec["id"]: line.buffer(spec.get("sweep_width", 2.94) / 2, cap_style="flat")
                  for spec, line in routes}
-    asphalt = asphalt.union(unary_union(list(envelopes.values())))
+    swept = unary_union(list(envelopes.values()))
+    divider = divider.difference(swept)
+    asphalt = asphalt.union(swept)
     for x, y, radius in layout["corner_zones"]:
         zone = Point(x, y).buffer(radius)
         local = asphalt.intersection(zone.buffer(4))

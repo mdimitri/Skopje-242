@@ -70,8 +70,7 @@ def half_width(edge, distance):
     return width
 
 
-def lane_offset(edge, direction, distance, offset):
-    """Follow the candidate's lane alignment as a one-way carriageway tapers."""
+def center_shift(edge, direction, distance):
     shift = 0.0
     if direction == 1 and (profile := edge.get("candidate_shifts")):
         start, scale, total, shifts = profile
@@ -79,6 +78,12 @@ def lane_offset(edge, direction, distance, offset):
         for end, length, amount in shifts:
             remaining = station if end == "start" else total - station
             shift += amount * _ease(1 - remaining / length)
+    return shift
+
+
+def lane_offset(edge, direction, distance, offset):
+    """Follow the candidate's lane alignment as a one-way carriageway tapers."""
+    shift = center_shift(edge, direction, distance)
     taper = edge.get("lane_taper")
     if not taper or not edge.get("taper") or direction != 1 or not edge["ow"]:
         return shift + (offset * (2 * half_width(edge, distance) / edge["w"]) if edge.get("taper") else offset)

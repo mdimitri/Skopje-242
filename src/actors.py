@@ -18,7 +18,7 @@ import peds_lines
 import talk
 import trains
 import projectiles
-from roadwidth import half_width, lane_bounds, lane_count, lane_offset, nominal_offset
+from roadwidth import center_shift, half_width, lane_bounds, lane_count, lane_offset, nominal_offset
 import slang
 import vehicles
 
@@ -730,9 +730,10 @@ def settle(b, w, dt, ev=None):
         n = sum(on)
         if n:
             H = w.KERB_H
-            pt += math.atan2(H * ((on[0] + on[1]) - (on[2] + on[3])) / 2, 2 * wb)
-            rl_ += math.atan2(H * ((on[1] + on[3]) - (on[0] + on[2])) / 2, 2 * W2)
-            lift = H * n / 4
+            if not getattr(w, "road_surface_tiles", None):
+                pt += math.atan2(H * ((on[0] + on[1]) - (on[2] + on[3])) / 2, 2 * wb)
+                rl_ += math.atan2(H * ((on[1] + on[3]) - (on[0] + on[2])) / 2, 2 * W2)
+                lift = H * n / 4
             f = math.exp(-0.5 * n * dt)
             b.vx *= f
             b.vy *= f
@@ -2362,7 +2363,8 @@ class Traffic:
     def _lanes_fit(e, direction, along, clearance=1.0):
         lanes = Traffic.lanes_of(e, direction)
         limit = max(0.0, half_width(e, along) - clearance)
-        return [i for i, lane in enumerate(lanes) if abs(lane_offset(e, direction, along, lane)) <= limit + 1e-6]
+        shift = center_shift(e, direction, along)
+        return [i for i, lane in enumerate(lanes) if abs(lane_offset(e, direction, along, lane) - shift) <= limit + 1e-6]
 
     @staticmethod
     def _taper_stop(c, e):
@@ -2370,7 +2372,8 @@ class Traffic:
             return None
         clearance = vehicles.HALF_W[c.kind] + 0.1
         def fits(station):
-            return abs(lane_offset(e, 1, station, c.lane)) + clearance <= half_width(e, station)
+            shift = center_shift(e, 1, station)
+            return abs(lane_offset(e, 1, station, c.lane) - shift) + clearance <= half_width(e, station)
         if fits(e["len"]):
             return None
         lo, hi = c.s, e["len"]

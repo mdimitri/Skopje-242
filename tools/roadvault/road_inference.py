@@ -9,9 +9,9 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
 if __package__:
-    from .road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys
+    from .road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys, yield_teeth
 else:
-    from road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys
+    from road_candidate import compile_movements, crossing_span, edge_band, footprint, frame, lane_count, lane_turns, protected_median, polys, yield_teeth
 
 SIDEWALKS = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "trunk"}
 
@@ -294,11 +294,16 @@ def align_slip_forks(node_arms):
         if len(links) != 1 or any(not arm.edge.section["ow"] for arm in arms):
             continue
         link = links[0]
-        main = [arm for arm in arms if arm is not link]
-        narrow, wide = sorted(main, key=lambda arm: lane_count(arm.edge.section, 1))
-        if (wide.at_end == link.at_end or narrow.at_end != link.at_end
-                or lane_count(wide.edge.section, 1) < lane_count(narrow.edge.section, 1) + lane_count(link.edge.section, 1)
-                or narrow.outward @ wide.outward > -0.94):
+        main = [arm for arm in arms if arm is not link and arm.at_end == link.at_end]
+        receiving = [arm for arm in arms if arm is not link and arm.at_end != link.at_end]
+        if len(main) != 1 or len(receiving) != 1:
+            continue
+        narrow, wide = main[0], receiving[0]
+        if narrow.outward @ wide.outward > -0.94:
+            continue
+        narrow_lanes = lane_count(narrow.edge.section, 1)
+        wide_lanes = lane_count(wide.edge.section, 1)
+        if wide_lanes < narrow_lanes:
             continue
         wide_edge, narrow_edge, slip = wide.edge, narrow.edge, link.edge
         _, _, wide_right = frame(wide_edge.line, wide_edge.line.length if wide.at_end else 0)
@@ -313,7 +318,10 @@ def align_slip_forks(node_arms):
         half_narrow = narrow_edge.section["w"] / 2
         main_shift = float((left * wide_right + half_narrow * main_right) @ main_right)
         slip_shift = float((right - wide_edge.section["w"] / (2 * lane_count(wide_edge.section, 1))) * (wide_right @ slip_right))
-        for arm, shift in ((narrow, main_shift), (link, slip_shift)):
+        shifts = [(link, slip_shift)]
+        if wide_lanes >= narrow_lanes + lane_count(slip.section, 1):
+            shifts.append((narrow, main_shift))
+        for arm, shift in shifts:
             length = min(25, arm.edge.line.length - 1)
             if length >= 8:
                 arm.edge.section.setdefault("fork_shifts", []).append(("end" if arm.at_end else "start", length, shift))
@@ -653,9 +661,19 @@ def infer_layout(layout, edges, ways, originals, node_tags, relations, crossing_
             if 2.5 <= station <= edge.line.length - 2.5 and edge.id not in layout["stop_lines"]:
                 layout["approach_arrows"].append([edge.id, round(station, 3), direction])
             if edge.section["cls"].endswith("_link") and edge.section["ow"] and arm.at_end:
-                at = edge.line.length - min(3, edge.line.length * 0.2)
-                layout["yield_lines"].append([edge.id, round(at, 3)])
-                layout["signs"].append(["give_way", edge.id, round(at, 3), "right"])
+                main_asphalt = unary_union([footprint(other.edge) for other in arms
+                                            if not other.edge.section["cls"].endswith("_link")])
+                for back in (3, 5, 7, 9, 11, 13, 15):
+                    at = edge.line.length - back
+                    if at < 2 or (crossing is not None and abs(at - crossing) < 2.5):
+                        continue
+                    if any(main_asphalt.intersects(tooth) for tooth in yield_teeth(edge, at)):
+                        continue
+                    layout["yield_lines"].append([edge.id, round(at, 3)])
+                    layout["signs"].append(["give_way", edge.id, round(at, 3), "right"])
+                    break
+                else:
+                    report.append(dict(kind="yield_location_needs_layout", edge=edge.id))
         for arm in arms:
             if arm.edge.id in stations and arm.edge.section["ow"] and arm.at_end:
                 layout["signs"].append(["crossing", arm.edge.id, round(max(1, stations[arm.edge.id] - 4), 3), "right"])

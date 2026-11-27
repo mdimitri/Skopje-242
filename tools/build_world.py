@@ -27,7 +27,7 @@ import arch as arch_mod
 import worship
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = 89
+VERSION = 90
 CHUNK = 120.0
 MARGIN = 4.0
 CELL = 2.0                     # surface-mask resolution (m)
@@ -2570,6 +2570,7 @@ def main():
                     edges.append({"a": nid(ns[start]), "b": nid(ns[i]), "pts": seg, "cum": cum, "len": cum[-1],
                                   "cls": rd["cls"], "speed": rd["speed"], "drive": rd["drive"], "walk": rd["walk"],
                                   "ow": rd["ow"], "w": rd["w"], "road": ri, "bridge": rd["bridge"], "lanes": rd.get("lanes", 0),
+                                  "tunnel": rd.get("tunnel", False),
                                   "worn": rd.get("worn", ""), "turn": (fwd if i == len(ps) - 1 else "", bwd if start == 0 else ""),
                                   "directional_lanes": rd.get("directional_lanes"), "lanes_tagged": rd.get("lanes_tagged", False),
                                   "width_tagged": rd.get("width_tagged", False), "sidewalk_sides": rd.get("sidewalk_sides")})
@@ -3347,7 +3348,8 @@ def main():
                   "sites": sites, "works": works, "fuelsites": fsites, "stations": stations, "track": track},
         "chunks": {"chunks": chunks},
         "surf": {"surf": zlib.compress(np.asarray(surf, dtype=np.uint8).tobytes(), 6),
-                 "hgt": zlib.compress(hg_arr.tobytes(), 6)},
+                 "hgt": zlib.compress(hg_arr.tobytes(), 6),
+                 "road_surface_tiles": dict(candidate_controls.get("surface_tiles", ()))},
         "terrain": {"terrain": {"grid": np.asarray(T.g, np.float32).tobytes(), "nx": T.nx, "ny": T.ny, "step": terrain_mod.STEP,
                                 "real": bool(real_terrain), "quay": T.q.pack() if T.q is not None else None},
                     "decks": [d.pack() for d in decks.values()] + up_decks, "plats": plats, "esc": esc_info,

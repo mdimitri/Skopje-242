@@ -1530,9 +1530,10 @@ def build(edges, xwalks, add, chunk_of, mat, T=None, decks=None, junction_cores=
             done_.add(e["road"])
             pier_edges.add(i)
     if designer:
-        order = [i for i in order if not edges[i]["drive"]]
         if candidate_inputs is not None:
-            order = [i for i in order if edges[i]["bridge"]]
+            order = [i for i in order if edges[i].get("tunnel") or (not edges[i]["drive"] and edges[i]["bridge"])]
+        else:
+            order = [i for i in order if not edges[i]["drive"]]
     prog(0.065, "junction plates")
     X = _prepare(edges, joints, plates, decks, T)
     prog(0.07, "streets")
