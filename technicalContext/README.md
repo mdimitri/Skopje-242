@@ -90,6 +90,8 @@ Avoid bypassing the stage runner or editing generated cache files as a fix. Chan
 
 Traffic simulation has a separation boundary. `src/trafficproc.py` runs traffic work in a worker process and reconstructs a deliberately reduced simulation/world view. It communicates state through process connections and serializable values. Changes to live simulation types or road graph fields must be checked against the worker reconstruction/serialization protocol, startup/shutdown logic, and recovery paths. `src/traffic_tuning.py` stores tuning. `src/signals.py`, `src/transit.py`, `src/trains.py`, and `src/stations.py` cover traffic control and transport systems.
 
+The traffic worker builds the curb-height lookup index before reporting ready. This keeps the one-time citywide indexing work outside the per-frame reply deadline.
+
 ### People, story, and interaction
 
 `src/characters.py` coordinates character identity and behavior. Character-specific assets and presentation live in `characterart.py`, `faces.py`, `facerig.py`, and supporting art modules. Story/dialogue content is split by role and content type across `hero_lines.py`, `hood_lines.py`, `peds_lines.py`, `dog_lines.py`, `bible_lines.py`, `hero_stories.py`, `hero_profiles.py`, `hero_names.py`, `slang.py`, `texts.py`, and `strings.py`. `src/talk.py` is a runtime interaction point. Read `text/README.md`, `docs/Skopje_slang_bible.txt`, and `docs/TEXT_SOURCES.md` before changing language conventions or sourced text.
