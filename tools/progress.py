@@ -49,6 +49,36 @@ def geo(layer, flat_lines):
         sys.stdout.flush()
 
 
+def tile_plan(label, size, keys, origin=(0, 0)):
+    if EVENTS:
+        print("@@" + json.dumps(dict(t="tile_plan", label=label, size=size, keys=keys, origin=origin)), flush=True)
+
+
+def tile_state(key, state):
+    if EVENTS:
+        line = "@@" + json.dumps(dict(t="tile_state", key=key, state=state)) + "\n"
+        os.write(sys.stdout.fileno(), line.encode("ascii"))
+
+
+def tile_items(items, label, size, key_of):
+    """Track sorted chunk jobs, including chunks with several material writes."""
+    if not EVENTS:
+        yield from items
+        return
+    pending = None
+    tile_plan(label, size, list(dict.fromkeys(map(key_of, items))))
+    for item in items:
+        key = key_of(item)
+        if key != pending:
+            if pending is not None:
+                tile_state(pending, "done")
+            tile_state(key, "active")
+            pending = key
+        yield item
+    if pending is not None:
+        tile_state(pending, "done")
+
+
 def spread(layer, items, fn, slices=25):
     """A phase that cannot report while it runs: when it is over, send what it made in `slices` parts, so the map fills in steps."""
     if not EVENTS:

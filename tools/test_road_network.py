@@ -21,7 +21,7 @@ from transit import Transit
 import vehicles
 from actors import Body, Car, Traffic, drive, fly, turn_radius_factor
 from crosswalks import CrossingMap, walk_path
-from driving import fastest_route, follow_speed, road_control_speed, turn_lanes
+from driving import approach_lane, fastest_route, follow_speed, road_control_speed, turn_lanes
 from roadwidth import half_width, lane_offset, nominal_offset
 from sidewalk_audit import raster
 from world import World
@@ -39,6 +39,11 @@ def edge(a, b, p, q, **tags):
 
 
 class RoadNetworkTests(unittest.TestCase):
+    def test_approach_lane_uses_open_legal_lane_without_skipping_lanes(self):
+        traffic = [(0, 30, 0), (0, 36, 0), (1, 60, 12)]
+        self.assertEqual(approach_lane(0, (0, 1, 2), traffic, 20, 60, 12), 1)
+        self.assertEqual(approach_lane(0, (0, 2), traffic, 20, 60, 12), 0)
+        self.assertEqual(approach_lane(0, (0, 1), [(0, 70, 0)], 20, 60, 12), 0)
     def test_snap_on_long_segment_and_share_nearby_insertions(self):
         main = road((1, 2), ((0, 0), (100, 0)))
         a = road((3, 4), ((10, -20), (10, 0)))

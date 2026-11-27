@@ -207,6 +207,20 @@ def edge_seconds(edge, direction, speed_cap, queue):
     return base + 4.0 * queue / lane_count(edge, direction) if queue else base
 
 
+def approach_lane(current, allowed, traffic, station, reach, speed):
+    """Pick a legal neighbouring lane only when it saves more than a change costs."""
+    candidates = [lane for lane in allowed if abs(lane - current) <= 1]
+    if current not in candidates:
+        return current
+    delay = dict.fromkeys(candidates, 0.0)
+    for lane, at, velocity in traffic:
+        distance = at - station
+        if lane in delay and 0 < distance < reach:
+            speed_loss = max(0.0, 1 - velocity / max(4.0, speed))
+            delay[lane] += 3.5 * speed_loss * (1 - distance / reach)
+    return min(candidates, key=lambda lane: (delay[lane] + (1.8 if lane != current else 0), lane != current, lane))
+
+
 def fastest_route(world, start, goal, goal_xy, *, incoming=None, delay=None, speed_cap=27.0, budget=None,
                   first=None, main_only=False, outgoing=None):
     """A* in travel seconds over directed edges, retaining the approach for turn costs."""

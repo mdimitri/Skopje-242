@@ -78,6 +78,8 @@ When investigating stale or incorrect output:
 3. Check stage fingerprint, cached state, and output digest logic in `tools/stages.py`.
 4. Use the project rebuild controls documented in those source files when a forced rebuild is genuinely needed.
 
+The splash map consumes tile plans and start/finish events from road and quay workers, mesh writes, and startup chunk preparation. `src/ui.py` batches map changes into one overlay texture and keeps the latest counts visible between tile phases.
+
 Avoid bypassing the stage runner or editing generated cache files as a fix. Changes to output schema may also require a cache format or world version update. `build_world.VERSION` and the stage cache format serve distinct compatibility purposes, so inspect their comments and callers before changing them.
 
 ## Subsystem map

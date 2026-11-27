@@ -134,6 +134,14 @@ class Loader:
         self.radio_line = ""                # progress of the background radio download
         self.warn = ""                      # a fixed information line set by the caller
         self.cells = {}
+        self.tile_size = 0
+        self.tile_label = ""
+        self.tiles = {}
+        self.tile_counts = [0, 0, 0, 0]
+        self.tile_tex = None
+        self.tile_dirty = False
+        self.tile_drawn = 0.0
+        self.tile_view = None
         self.box = [-geo.HX, -geo.HY, geo.HX, geo.HY]
         self.bytes_by_id = {}
         self.bps = 0.0
@@ -198,6 +206,10 @@ class Loader:
             self.f[k] = 1.0
         self.say("✓ " + T.TITLE)
         self.draw(force=True)
+        if self.tile_tex is not None:
+            rl.unload_texture(self.tile_tex)
+            self.tile_tex = None
+            self.tile_view = None
 
     def tick(self, frac, note=None):
         if self.cur:
@@ -229,6 +241,12 @@ class Loader:
     # ---------------------------------------------------------------- events from the download / build tools
     def event(self, key, ev):
         t = ev.get("t")
+        if t == "tile_plan":
+            self.plan_tiles(ev["label"], ev["size"], ev["keys"], ev.get("origin", (0, 0)))
+            return
+        if t == "tile_state":
+            self.tile_state(ev["key"], ev["state"])
+            return
         now = time.time()
         if t == "plan":
             for c in ev.get("cells", []):
@@ -462,6 +480,8 @@ class Loader:
         if self.cv_tex is not None:                                     # everything that has arrived so far, one pixel each
             rl.draw_texture_pro(self.cv_tex, rl.Rectangle(0, 0, self.cv_tex.width, self.cv_tex.height), rl.Rectangle(x, y, mw, mh),
                                 rl.Vector2(0, 0), 0.0, rl.WHITE)
+        if self.tiles:
+            self._draw_tiles(x, y, mw, mh)
         pulse = 0.5 + 0.5 * ((time.time() * 2.2) % 1.0)
         for c in self.cells.values():                                   # download tiles: only the ones in flight or in trouble are framed
             if c["st"] in ("done", "cached"):
@@ -484,6 +504,17 @@ class Loader:
                     taken.append((px, py))
                     font.draw_text(name, px + 5, py - 6, 11, rl.Color(255, 255, 255, 215))
         ly = y + mh + 4                                                 # legend: what each colour is
+        if self.tiles:
+            font.draw_text(self._tr(self.tile_label), x, ly, 12, WHITE)
+            lx = x
+            for i, label in enumerate(("Чекаат", "Се градат", "Готови", "Грешка")):
+                if i == 3 and not self.tile_counts[i]:
+                    continue
+                text = f"{label} {self.tile_counts[i]}"
+                rl.draw_rectangle(lx, ly + 18, 8, 8, rl.Color(*self.TILE_COLORS[i + 1]))
+                font.draw_text(text, lx + 11, ly + 16, 12, GREY)
+                lx += font.measure_text(text, 12) + 19
+            return ly + 32
         lx = x
         for k in ("roads", "buildings", "areas", "water", "trees", "parked", "props", "pois"):
             c = MAP_COL[k]
@@ -498,6 +529,53 @@ class Loader:
     # ---------------------------------------------------------------- the live map: one pixel per thing that arrived
     GEO_W = 1000
     map_w = 500
+    TILE_COLORS = ((0, 0, 0, 0), (143, 151, 170, 90), (255, 190, 70, 240),
+                   (76, 213, 140, 170), (245, 87, 80, 230))
+
+    def plan_tiles(self, label, size, keys, origin=(0, 0)):
+        self.tile_label, self.tile_size = label, size
+        self.tile_origin = tuple(origin)
+        self.tiles = dict.fromkeys(map(tuple, keys), 1)
+        self.tile_counts = [len(self.tiles), 0, 0, 0]
+        self.tile_dirty = True
+
+    def tile_state(self, key, state):
+        key = tuple(key)
+        old = self.tiles.get(key)
+        new = {"active": 2, "done": 3, "fail": 4}[state]
+        if old is not None and old < new:
+            self.tiles[key] = new
+            self.tile_counts[old - 1] -= 1
+            self.tile_counts[new - 1] += 1
+            self.tile_dirty = True
+
+    def _draw_tiles(self, x, y, w, h):
+        now = time.monotonic()
+        view = (w, h, *self.box, self.tile_size, *self.tile_origin)
+        if view != self.tile_view or (self.tile_dirty and now - self.tile_drawn >= 0.12):
+            x0, y0, x1, y1 = self.box
+            ox, oy = self.tile_origin
+            columns = (x0 - ox + (np.arange(w) + 0.5) * (x1 - x0) / w) / self.tile_size
+            rows = (y0 - oy + (np.arange(h) + 0.5) * (y1 - y0) / h) / self.tile_size
+            tx, ty = np.floor(columns).astype(int), np.floor(rows).astype(int)
+            grid = np.zeros((ty[-1] - ty[0] + 1, tx[-1] - tx[0] + 1), np.uint8)
+            for (cx, cy), state in self.tiles.items():
+                if tx[0] <= cx <= tx[-1] and ty[0] <= cy <= ty[-1]:
+                    grid[cy - ty[0], cx - tx[0]] = state
+            pixels = np.asarray(self.TILE_COLORS, dtype=np.uint8)[grid[np.ix_(ty - ty[0], tx - tx[0])]]
+            if self.tile_size * w / (x1 - x0) >= 4:
+                pixels[np.r_[False, ty[1:] != ty[:-1]], :, 3] = 0
+                pixels[:, np.r_[False, tx[1:] != tx[:-1]], 3] = 0
+            ptr = rl.ffi.cast("void *", rl.ffi.from_buffer(pixels))
+            if self.tile_tex is None or (self.tile_tex.width, self.tile_tex.height) != (w, h):
+                if self.tile_tex is not None:
+                    rl.unload_texture(self.tile_tex)
+                img = rl.Image(ptr, w, h, 1, rl.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
+                self.tile_tex = rl.load_texture_from_image(img)
+            else:
+                rl.update_texture(self.tile_tex, ptr)
+            self.tile_view, self.tile_dirty, self.tile_drawn = view, False, now
+        rl.draw_texture(self.tile_tex, x, y, rl.WHITE)
 
     def set_box(self, hx, hy):
         """The map covers the world box; called once the real extent is known (a different box starts the picture afresh)."""

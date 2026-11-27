@@ -1087,13 +1087,16 @@ def main():
         loader.skip("site_meshes")
     loader.begin("chunks")
     first = want_list(sx, sy, 7.0, W, H, 30)[:40]
+    loader.plan_tiles(T.STAGE["chunks"], S, first)
     for i, key in enumerate(first):
+        loader.tile_state(key, "active")
         loader.tick(i / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
         while True:
             streamer.update([key], True, 4.0)
             if key in streamer.bad or (key in streamer.ground and (key not in world.chunks or key in streamer.meshes)):
                 break
             loader.draw()
+        loader.tile_state(key, "fail" if key in streamer.bad else "done")
         loader.tick((i + 1) / len(first), f"chunk {i + 1}/{len(first)}  ({key[0]},{key[1]})")
     keep_window_alive(False)
     gc.collect(0)

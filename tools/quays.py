@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 import par
-from progress import frac
+from progress import frac, tile_plan, tile_state
 
 QSTEP = 1.0
 TILE = 32                       # posts per tile side (tiles store TILE + 1 posts so a lookup never leaves its tile)
@@ -308,7 +308,10 @@ def _worker_init(args):
 
 
 def _tile_job(t_):
-    return _W["tile"](t_)
+    tile_state(t_, "active")
+    result = _W["tile"](t_)
+    tile_state(t_, "done")
+    return result
 
 
 def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, log=print, _worker=False):
@@ -739,6 +742,7 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         _W["tile"] = one_tile
         return None, {}
     tiles = sorted(want)
+    tile_plan("quays", TILE * QSTEP, tiles, (-hx, -hy))
 
     def got(k_):
         if k_ % 8 == 0:
@@ -752,7 +756,9 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         res = []
         for k_, t_ in enumerate(tiles):
             got(k_)
+            tile_state(t_, "active")
             res.append(one_tile(t_))
+            tile_state(t_, "done")
     for t_, r_ in zip(tiles, res):                      # in tile order: the same overlay however many cores ran it
         if r_ is not None:
             idx[t_[1], t_[0]] = len(Ds)

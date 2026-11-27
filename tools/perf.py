@@ -31,7 +31,8 @@ ap.add_argument("--frames", type=int, default=600)
 ap.add_argument("--warm", type=int, default=120, help="first frames left out of the statistics (loading, first streaming)")
 ap.add_argument("--world", default="")
 ap.add_argument("--size", default="", help="window size; default: the resolution in settings.json")
-ap.add_argument("--view", default="top", choices=("top", "chase"), help="top-down or 3rd-person (chase) camera")
+ap.add_argument("--view", default="top", choices=("top", "chase", "heli"), help="top-down, chase, or airborne helicopter")
+ap.add_argument("--stress", action="store_true", help="1080p by default, maximum traffic and pedestrians, widest zoom, explosion during capture")
 ap.add_argument("--hour", default="")
 ap.add_argument("--dof", type=float, default=0.0, help="depth of field strength (1 = 100%%) in the chase view; 0 = off")
 ap.add_argument("--no-dof", action="store_true", help="turn off depth of field for a matched graphics diagnostic")
@@ -46,7 +47,10 @@ a = ap.parse_args()
 a.trace = a.trace or a.gpu
 if not 1 <= a.warm < a.frames:
     ap.error("--warm must be at least 1 and smaller than --frames")
-tag = a.tag or (a.mode + ("_chase" if a.view == "chase" else ""))
+tag = a.tag or (a.mode + ("_" + a.view if a.view != "top" else ""))
+if a.stress:
+    a.size = a.size or "1920x1080"
+    os.environ["SK242_TEST_BOOM"] = str(a.warm + max(1, (a.frames - a.warm) // 3))
 
 game = ["main.py", "--test", str(a.frames)]
 if not a.audio:
@@ -57,10 +61,12 @@ if a.world:
     game += ["--world", a.world]
 if a.hour:
     game += ["--hour", a.hour]
-if a.mode == "car":
+if a.mode == "car" or a.view == "heli":
     game += ["--car"]
 else:
     game += ["--walker"]
+if a.stress:
+    game += ["--zoom", "0.35"]
 game += a.extra
 sys.argv = game
 os.chdir(ROOT)
@@ -83,6 +89,8 @@ effective_settings = {}
 def _settings(self, *x, **kw):
     _sinit(self, *x, **kw)
     self["debug_chase"] = a.view == "chase"          # in memory only, settings.json is not written
+    if a.stress:
+        self["traffic"] = self["peds"] = len(settings_mod.DENSITY) - 1
     if a.windowed:
         self["fullscreen"] = False
     if a.no_dof:
@@ -95,6 +103,18 @@ def _settings(self, *x, **kw):
 settings_mod.Settings.__init__ = _settings
 
 import main as M  # noqa: E402
+
+if a.view == "heli":
+    from vehicles import HELI
+    _sim_update = M.Sim.update
+    def _heli_update(self, dt, inp, steps):
+        if self.mode == "car" and self.car.kind != HELI:
+            car = self.car
+            car.kind = HELI
+            car.az = self.w.ground_y(car.x, car.y) + 85
+            car.vz, car.rpm = 0.0, 1.0
+        return _sim_update(self, dt, dict(inp, throttle=0.35, steer=0.1, run=False, handbrake=False), steps)
+    M.Sim.update = _heli_update
 
 frames, cur = [], {}
 exclusive, span_path, scopes = {}, [], []

@@ -8,7 +8,7 @@ import bible_lines
 import bump_lines
 import clock
 from crosswalks import begin_frame, crosses_wall, over_budget, walk_path
-from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, brake_speed, corridor_entry, fastest_route,
+from driving import (SIGNAL_STOP_BUFFER, TRAFFIC_SPEED_FACTOR, approach_lane, brake_speed, corridor_entry, fastest_route,
                      follow_speed, movement_lanes, turn_angle, turn_indicator, turn_lanes)
 import escride
 import garbage
@@ -2595,8 +2595,8 @@ class Traffic:
                     break
                 distance += self.w.edges[move[0]]["len"]
         want = len(ls) - 1 if t >= self.TURN_LANE else 0 if t <= -self.TURN_LANE else k
+        next_count = lane_count(self.w.edges[c.nxt[0]], c.nxt[1])
         if abs(c.turn) < self.TURN_LANE:
-            next_count = lane_count(self.w.edges[c.nxt[0]], c.nxt[1])
             taper = e.get("lane_taper", (None, None, None))
             if taper[0] == "end" and taper[2] == "left" and len(ls) == next_count + 1:
                 want = max(1, want)
@@ -2608,6 +2608,14 @@ class Traffic:
                 want = k                       # parallel marked turns keep their own lanes
             else:
                 want = min(permitted, key=lambda i: (abs(i - want), abs(i - k)))
+        balancing = False
+        if (abs(t) < self.TURN_LANE and want == k and next_count > 1 and not e.get("lane_taper")
+                and rem > max(30.0, c.v * 4.0) and not c.shift):
+            legal = range(next_count) if permitted is None else permitted
+            lane_load = getattr(self, "_lane_load", {})
+            want = approach_lane(k, (i for i in legal if i < min(next_count, len(ls))),
+                                 lane_load.get((c.e, c.d), ()), c.s, min(rem, 80.0), c.v)
+            balancing = want != k
         must_merge = False
         if e.get("lane_taper") and c.d == 1:
             ahead = min(e["len"], c.s + max(25.0, c.v * 3.0))
@@ -2619,7 +2627,8 @@ class Traffic:
         if k == want or (not must_merge and rem < 20.0 and (permitted is None or k in permitted)):
             return
         k2 = k + (1 if want > k else -1)
-        if self._lane_room(c, e, ls[k2], 12.0, behind=7.0 + c.v):
+        if self._lane_room(c, e, ls[k2], min(24.0, max(12.0, c.v * 2.0)) if balancing else 12.0,
+                           behind=7.0 + c.v):
             c.lidx = k2
         c.lcd = 1.0
 
@@ -4059,7 +4068,7 @@ class Traffic:
         if c.rev or c.shift or c.turnaround or c.kind in vehicles.HEAVY:
             return
         planned = [c.nxt] + [move for move, _ in (c.nx2 or ())[:1]]
-        pressure = max(self.queue_history.get(move, 0.0) / lane_count(self.w.edges[move[0]], move[1]) for move in planned)
+        pressure = max(self._queue_pressure(move) for move in planned)
         if pressure < 1.6:
             return
         c.rerouted = self.t + self.rng.uniform(5.0, 9.0)
@@ -4249,7 +4258,9 @@ class Traffic:
         if self.audit_stops is not None:
             self.audit_stops.clear()
         h = {}
+        lane_load = {}
         for c in self.cars:
+            lane_load.setdefault((c.e, c.d), []).append((c.lidx, c.s, c.v))
             if c.kind in (vehicles.SEMI, vehicles.ARTIC_BUS):
                 for x_, y_, h_, l_, w_ in parts(c):
                     h.setdefault((int(x_ // 16), int(y_ // 16)), []).append((x_, y_, w_, l_, c, h_, c.gz))
@@ -4270,7 +4281,7 @@ class Traffic:
                 h.setdefault((int(p.x // 16), int(p.y // 16)), []).append((p.x, p.y, _PED_R(p), 0.3, p, None, p.gz))
         if walker is not None and walker.health > 0:          # traffic brakes for the player on foot too
             h.setdefault((int(walker.x // 16), int(walker.y // 16)), []).append((walker.x, walker.y, 0.38, 0.3, walker, None, walker.az))
-        self.hash, self.ph = h, ph
+        self.hash, self.ph, self._lane_load = h, ph, lane_load
         blk = {}                                                  # the vehicles again, by 4 x 4 cells: the crossing check looks
         for (ix, iy), lst in h.items():                           # 50 m round, and most of its 16 m cells are empty
             v_ = [o for o in lst if o[5] is not None]

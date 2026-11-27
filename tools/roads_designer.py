@@ -143,6 +143,16 @@ def _by_chunk(P, C):
     return out
 
 
+def _tracked_tile_job(job):
+    from progress import tile_state
+    tx, ty = job[0]
+    key = math.floor(tx / TILE), math.floor(ty / TILE)
+    tile_state(key, "active")
+    result = _tile_job(job)
+    tile_state(key, "done")
+    return result
+
+
 def _tile_job(job):
     (tx, ty), idx, own = job
     edges = _G["edges"]
@@ -222,7 +232,10 @@ def add_tiles(out, edges, prog=None, decks=None, T=None, source=None, controls=N
     jobs = [(c, idx, own.get((int(math.floor(c[0] / TILE)), int(math.floor(c[1] / TILE))), [])) for c, idx in jobs]
     n = fallback_count = 0
     on = (lambda done, total: prog(done / total) if done % 10 == 0 else None) if prog else None
-    for res, dres, fallback, tile_controls in par.pmap(_tile_job, jobs, init=(_init, (edges, ctx, decks, T, source)), chunk=1, on=on):
+    from progress import EVENTS, tile_plan
+    tile_plan("3D roads", TILE, [(math.floor(c[0] / TILE), math.floor(c[1] / TILE)) for c, _, _ in jobs])
+    job = _tracked_tile_job if EVENTS else _tile_job
+    for res, dres, fallback, tile_controls in par.pmap(job, jobs, init=(_init, (edges, ctx, decks, T, source)), chunk=1, on=on):
         fallback_count += fallback
         if controls is not None:
             for kind, records in tile_controls.items():

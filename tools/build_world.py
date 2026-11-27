@@ -20,7 +20,7 @@ import mapbox_earcut as earcut
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from geo import HX, HY, project
-from progress import Bar, each, phase, spread, flat, frac, span
+from progress import Bar, each, phase, spread, flat, frac, span, tile_items
 import par
 import terrain as terrain_mod
 import arch as arch_mod
@@ -3316,8 +3316,9 @@ def main():
     off = 0
     nverts_total = 0
     with open(os.path.join(tmp, "meshes.bin"), "wb") as f:
-        for (key, mat), (P, U, C) in each(sorted(mesh.d.items()), "write mesh blob",
-                                         feed=("chunk", None, lambda it: [(it[0][0][0] + 0.5) * CHUNK, (it[0][0][1] + 0.5) * CHUNK])):
+        mesh_items = sorted(mesh.d.items())
+        mesh_bar = Bar("write mesh blob", len(mesh_items))
+        for (key, mat), (P, U, C) in tile_items(mesh_items, "write mesh blob", CHUNK, lambda item: item[0][0]):
             pos = np.concatenate(P).astype(np.float32)
             uv = np.concatenate(U).astype(np.float32)
             col = np.concatenate(C).astype(np.uint8)
@@ -3333,6 +3334,8 @@ def main():
                 min(bb[0], float(lo[0])), min(bb[1], float(lo[2])), max(bb[2], float(hi[0])), max(bb[3], float(hi[2])), max(bb[4], float(hi[1])))
             off += n * (12 + 8 + 4)
             nverts_total += n
+            mesh_bar.step()
+        mesh_bar.done()
     print(f"[build] meshes: {nverts_total / 1e6:.2f} M vertices, {off / 1e6:.1f} MB")
 
     parts = {

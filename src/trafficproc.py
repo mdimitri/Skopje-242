@@ -99,6 +99,9 @@ def _serve(conn, path, seed, gsites=None):
         sim.traffic = tr
         tr.signals = traffic_tuning.signals_for(w)
         tr.stn = stations.Stations(sim, extra=gsites)
+        # Build the static turn restrictions before the frame reply deadline starts.
+        from driving import _slip_bypasses
+        w._slip_bypasses = _slip_bypasses(w)
         conn.send(("ready", os.getpid()))
     except Exception:  # noqa: BLE001
         conn.send(("err", traceback.format_exc()))

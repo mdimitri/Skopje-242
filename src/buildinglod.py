@@ -108,6 +108,7 @@ class Captures:
     def __init__(self, world, textures):
         self.w, self.textures = world, textures
         self.groups = OrderedDict()
+        self.next_capture = 0.0
         self.tile = rl.load_render_texture(SIZE, SIZE)
         self.shader = rl.load_shader_from_memory(VS, FS)
         # Unlike the additive runtime pass, black non-window fragments must write
@@ -199,7 +200,10 @@ class Captures:
                 group["models"].append(m)
 
     def prepare(self, keys, budget_ms=3.0):
-        deadline = time.perf_counter()+budget_ms/1000
+        start_time = time.perf_counter()
+        if start_time < self.next_capture:
+            return
+        deadline = start_time + budget_ms / 1000
         jobs = []
         for key in keys:
             records = self.w.chunks.get(key, {}).get("lod", ())
@@ -221,6 +225,11 @@ class Captures:
             self.groups.move_to_end(cache_key)
             if not g["models"]:
                 self._capture(cache_key[0],g)
+                # A capture is indivisible. Spread expensive captures out over
+                # later frames so submitting their GPU work doesn't starve play.
+                now = time.perf_counter()
+                self.next_capture = now + min(0.25, max(0.012, 4 * (now - start_time)))
+                break
 
     def draw(self, key, cam, dark, glow=False, sprite_distance=SPRITE_DISTANCE):
         records = self.w.chunks.get(key, {}).get("lod")
