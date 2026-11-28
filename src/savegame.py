@@ -18,6 +18,7 @@ def capture(sim, cfg):
     c, wk = sim.car, sim.walker
     d = {"v": VERSION, "t": time.time(), "mode": sim.mode, "lik": getattr(sim, "lik", 0), "money": sim.money,
          "hour": sim.clock.hour, "stats": dict(sim.stats), "gone": sorted(sim.gone),
+         "weapon": wk.weapon if wk is not None else sim.weapon, "guns": dict(wk.guns if wk is not None else sim.guns),
          "pickups": [list(p) for p in sim.pickups],
          "car": {"x": c.x, "y": c.y, "h": c.h, "kind": c.kind, "color": c.color, "health": c.health,
                  "fuel": getattr(c, "fuel", 1.0)}}
@@ -66,6 +67,7 @@ def restore(sim, cfg, d):
     sim.clock.hour = cfg["hour"] = float(d["hour"])
     sim.stats.update(d.get("stats", {}))
     sim.gone = set(d.get("gone", []))
+    sim.weapon, sim.guns = d.get("weapon", "fist"), dict(d.get("guns", {}))
     if d.get("pickups"):
         sim.pickups = [list(p) for p in d["pickups"]]
     for b in sim.bodies:
@@ -88,6 +90,7 @@ def restore(sim, cfg, d):
         wk.guns.pop("sniper", None)                     # the sniper rifle was removed from the game
         if wk.weapon == "sniper":
             wk.weapon = "fist"
+        sim.weapon, sim.guns = wk.weapon, wk.guns
         sim.walker = wk
         sim.mode = "foot"
         c.empty, c.player_car = True, False
@@ -133,6 +136,7 @@ def reset_world(sim, seed):
         if b is not c:
             b.player_car = False
     sim.walker, sim.mode = None, "car"
+    sim.weapon, sim.guns = "fist", {}
     sim.jack = sim.riding = sim.train_ride = None
     sim.respawn_t = 0.0
     sim.safe, sim.safe_z = (sx, sy, sh), None

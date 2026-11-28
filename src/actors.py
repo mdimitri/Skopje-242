@@ -4727,6 +4727,7 @@ class Sim:
         self.car.player_car, self.car.empty, self.car.name = True, False, PLAYER_NAME
         self.bodies = [self.car]
         self.walker = None
+        self.weapon, self.guns = "fist", {}
         self.mode = "car"
         self.traffic = Traffic(world, rng, n_cars)
         self.peds = Peds(world, rng, n_peds)
@@ -5313,6 +5314,7 @@ class Sim:
             return True
         elif getattr(b_ := best, "bus_line", None) and not b_.empty and ((getattr(self, "transit", None) is not None
                 and any(bus.body is b_ for bus in self.transit.buses)) or getattr(b_, "puppet", False)):
+            self.weapon, self.guns = self.walker.weapon, self.walker.guns
             self.riding = b_                                       # hop on as a passenger: the driver keeps driving
             self.car = b_
             self.mode = "car"
@@ -5465,6 +5467,8 @@ class Sim:
             self._board(b)
 
     def _board(self, b):
+        if self.walker is not None:
+            self.weapon, self.guns = self.walker.weapon, self.walker.guns
         if self.car is not None and self.car is not b:
             self.car.player_car = False
         self.car = b
@@ -5529,6 +5533,7 @@ class Sim:
             self.riding = None
             x, y = door_point(b, 1.0, -1)
             self.walker = Walker(x, y, b.h)
+            self.walker.weapon, self.walker.guns = self.weapon, self.guns
             self.walker.az = b.az
             self.car = None
             self.mode = "foot"
@@ -5547,6 +5552,7 @@ class Sim:
             if not any(True for _ in self.w.edges_near(x, y, 0.5)):
                 break
         self.walker = Walker(x, y, b.h)
+        self.walker.weapon, self.walker.guns = self.weapon, self.guns
         self.walker.az = b.az
         self.mode = "foot"
 
