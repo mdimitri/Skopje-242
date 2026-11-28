@@ -752,7 +752,7 @@ strings.0037 = Знаменитости
 strings.0038 = Населби
 
 # [dem]
-strings.0039 = Висини (рељеф)
+strings.0039 = Висини (релјеф)
 
 # --- module level · data `STAGE` (7 texts) ---
 # used in: ui.py > Loader.draw
@@ -761,7 +761,7 @@ strings.0039 = Висини (рељеф)
 strings.0040 = Преземање на мапата (OpenStreetMap)
 
 # [dem]
-strings.0041 = Преземање на висините (рељеф)
+strings.0041 = Преземање на висините (релјеф)
 
 # [build]
 strings.0042 = Градење на светот
@@ -795,7 +795,7 @@ strings.0049 = Површини, води и пруга
 strings.0050 = Патишта
 
 # [building meshes on terrain]
-strings.0051 = Згради на рељефот
+strings.0051 = Згради на релјефот
 
 # [graph]
 strings.0052 = Сообраќајна мрежа

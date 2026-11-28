@@ -148,14 +148,14 @@ def ask_folder(music=None):
             ok = n in marks
             font.draw_text(("↑  " if n == ".." else "▶  ") + n, px + 30, y + 5, 18, LOOK_COL["photo"] if ok else INK)
             if ok:
-                font.draw_text("manifest ✓", px + pw - 140, y + 6, 15, LOOK_COL["photo"])
+                font.draw_text("список ✓", px + pw - 140, y + 6, 15, LOOK_COL["photo"])
             if hot and rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT) and armed:
                 go_to = n
         if len(listing) > rows:
             font.draw_text(f"{scroll + 1}-{min(len(listing), scroll + rows)} / {len(listing)}  (тркало)", px + 20, ly + rows * rh + 2, 14, DIM)
         # status + buttons
         by = py + ph - 56
-        st = (f"оваа папка: manifest ✓, {n_img} слики" if here else f"оваа папка нема manifest.csv ({n_img} слики)")
+        st = (f"оваа папка: список ✓, {n_img} слики" if here else f"оваа папка нема manifest.csv ({n_img} слики)")
         font.draw_text(st, px + 20, by - 26, 16, LOOK_COL["photo"] if here else DIM)
         if _button(px + pw - 440, by, 260, 40, "ИЗБЕРИ ОВАА ПАПКА", here, 20) and armed and here:
             pick = True

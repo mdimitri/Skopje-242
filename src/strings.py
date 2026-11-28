@@ -64,6 +64,7 @@ BUILD = {
     "procedural trees in parks/woods": TXT("strings.0056"),
     "street trees, lamps, parked cars": TXT("strings.0057"),
     "3D roads": TXT("strings.0058"),
+    "city traffic controls": "Градски семафори и премини",
     "ground rasters": TXT("strings.0059"),
     "tree meshes": TXT("strings.0060"),
     "lamp meshes": TXT("strings.0061"),
@@ -79,14 +80,14 @@ BUILD = {
     "carriageway cleanup": "Чистење на коловозите",
     "railway": "Железница",
     "parked cars": "Паркирани коли",
-    "cables and ground": "Кабли и патишта на земјата",
+    "cables and ground": "Кабли и површини на земјата",
     "saving the stage": "Го зачувувам направеното",
     "loading saved stages": "Го вчитувам зачуваното",
     "downloading the world": "Го преземам светот",
     "unpacking the world": "Го распакувам светот",
     "fire escapes and roof jumps": "Пожарни скали и скокови меѓу покриви",
     "monument": "Го кревам споменикот на плоштад",
-    "petrol stations and car washes": "Бензинки и перална за коли",
+    "petrol stations and car washes": "Бензински пумпи и пералници за коли",
 }
 
 # warnings by failure kind (tools/net.py)

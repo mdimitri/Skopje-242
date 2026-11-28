@@ -2,6 +2,10 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Version 4.0
+
+- Official version 4.0 includes the current game and world-building improvements.
+
 ## Faster world build
 
 - The world build is several times faster (1 × 1 km sample on a 20-thread laptop: 182 s -> about 30 s). One worker pool serves the whole build, road tiles are compiled and their meshes cleaned and draped in parallel, and the slowest single-threaded steps were rewritten.
@@ -9,6 +13,10 @@ All notable changes to Скопје · 242. Newest first.
 - `python tools/build_world.py --tile 1000` builds only a 1 x 1 km square around the centre (own output folder), for quick tests.
 - Road tiles are cached: an unchanged tile is loaded instead of compiled (`<world>.stages/roadtiles`).
 - Setup installs the libraries with `uv` (pip remains the fallback); the map readers skip unneeded objects and terrain tiles download in parallel.
+- Faster single-core steps (roads over tunnels, building moves, street furniture, clean-up), fire escapes meshed on all cores, and the stage cache saves fewer snapshots.
+- No more thin see-through lines on large road surfaces: edges are split so neighbouring triangles always agree.
+- Worn footpaths are generated per place, so editing the map only changes the paths (and rebuilds the road tiles) nearby. Their layout differs from before.
+- Fixed: restarting the build from a middle stage could add bridge piers on the Stone Bridge.
 
 ## Traffic: dodge a standing car
 

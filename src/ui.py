@@ -46,12 +46,12 @@ MK_LEG = {"roads": "Патишта", "buildings": "Згради", "areas": "Зе
           "trees": "Дрвја", "parked": "Паркирани коли", "chunk": "Делови на градот", "props": "Опрема"}
 MK_PART = {"meta": "основни податоци", "areas": "површини и води", "roads": "патишта", "edges": "сообраќајни врски",
            "buildings": "згради", "props": "дрвја, лампи и коли", "chunks": "делови на градот", "surf": "површини на земјата",
-           "terrain": "рељеф"}
+           "terrain": "релјеф"}
 MK_NOTE = {"textures": "Текстури", "overview mesh": "Мрежа за прегледната мапа", "car & pedestrian models": "Модели на возила и пешаци",
            "your character": "Те облекувам тебе, јунаку", "pickups & weapons": "Предмети и оружје", "simulation": "Го палам градот",
            "pavement grid": "Мрежа на тротоарите", "traffic lights": "Ги палам семафорите", "sound": "Го вклучувам озвучувањето", "collision ready": "Судирите се подготвени",
            "routing graph": "Сообраќајна мрежа", "cached": "од кешот", "land use & parks": "Паркови и површини", "rivers": "Реки",
-           "roads": "Патишта", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја", "saving the map": "Ја сеирам и зачувувам мапата"}
+           "roads": "Улици", "bridges": "Мостови", "buildings": "Згради", "trees": "Дрвја", "saving the map": "Ја зачувувам мапата"}
 MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам {MK_PART.get(m[1], m[1])}: {m[2]}/{m[3]} {T.MB}"),
          (re.compile(r"^(\w+): unpacking$"), lambda m: f"Распакувам {MK_PART.get(m[1], m[1])}"),
          (re.compile(r"^(\w+): ok$"), lambda m: ""),
@@ -62,7 +62,7 @@ MK_RE = [(re.compile(r"^(\w+): reading (\d+)/(\d+) MB$"), lambda m: f"Читам
 # what the running build step is making now (progress.span / Bar notes of the build tools)
 MK_SUB = {"geometry": "геометрија", "checking what changed": "проверувам што е сменето", "saving": "запишувам на диск", "cables": "кабли меѓу згради", "road paint": "боење на патиштата", "reading the map": "ја читам мапата", "monument": "споменик", "statues": "статуи", "meshes into the map": "ги ставам моделите во градот", "car parks": "паркинзи", "parked cars": "паркирани коли", "worn paths": "утрвени пешачки патеки", "tree meshes": "модели на дрвја", "lamp meshes": "модели на улични светилки", "rivers": "реки", "fire escapes": "пожарни скали",
           "roof jumps": "скокови меѓу покриви", "bridges over tunnels": "мостови над тунели", "quays": "кеј покрај реките", "roads joined": "спојувам улици", "junctions": "крстосници", "edges": "сообраќајни врски", "rounded corners": "заоблени агли",
-          "ways under bridges": "патишта под мостовите", "decks": "палуби на мостовите", "neighbourhoods": "населби",
+          "ways under bridges": "патишта под мостовите", "decks": "коловози на мостовите", "neighbourhoods": "населби",
           "trees and lamps from the map": "дрвја и светилки од мапата", "lane grid": "мрежа на лентите", "lamps": "светилки",
           "trees": "дрвја", "posts": "столбчиња", "pavements": "тротоари", "asphalt": "асфалт", "collision posts": "судири со столбчиња",
           "areas": "површини", "rivers and rails": "реки и пруги", "road grid": "мрежа на улиците",
@@ -75,7 +75,7 @@ MK_SUB = {"geometry": "геометрија", "checking what changed": "пров
           "crossings": "пешачки премини", "mesh": "мрежа", "parks and squares": "паркови и плоштади", "trees on the lots": "дрвја на плацевите",
           "replacing the old world": "го заменувам стариот свет", "done": "готово", "checking": "проверувам",
           "meta": "основни податоци", "props": "дрвја, лампи и коли",
-          "buildings": "згради", "chunks": "делови на градот", "surf": "површини на земјата", "terrain": "рељеф", "roads": "патишта"}
+          "buildings": "згради", "chunks": "делови на градот", "surf": "површини на земјата", "terrain": "релјеф", "roads": "улици"}
 # map pixel colours per kind of thing
 MAP_COL = {"roads": (225, 225, 230), "buildings": (240, 200, 60), "areas": (70, 160, 90), "water": (86, 146, 198), "pois": (235, 90, 80),
            "places": (255, 255, 255), "trees": (45, 110, 60), "parked": (255, 140, 50), "chunk": (120, 220, 255),
@@ -226,6 +226,10 @@ class Loader:
         """Notes of world.py / bake.py / main.py are English; the player reads Macedonian."""
         if note in MK_NOTE:
             return MK_NOTE[note]
+        if note in T.BUILD:
+            return T.BUILD[note]
+        if note in MK_SUB:
+            return MK_SUB[note]
         for rx_, fn in MK_RE:
             m = rx_.match(note)
             if m:

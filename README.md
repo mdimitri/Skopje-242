@@ -184,7 +184,7 @@ library/  звучна библиотека      music/  твоја музика
 - **Тест без екран:** `python src/main.py --demo --test 300 --mute` (на Linux со `xvfb-run`).
 - **Брзина:** `tools/perf.py`, `perf_gl.py`, `perf_report.py`.
 - **Ревизии:** `road_audit.py`, `ride_audit.py`, `z_audit.py`, `sidewalk_audit.py`, `traffic_audit.py`.
-- **Верзија:** v`<MAJOR>`.`<број на кумит>`; GitHub Action го пишува `src/build.txt` и додава кумит „Build N“, па пред push секогаш `git pull --rebase`.
+- **Верзија:** Играта ја прикажува верзијата од `GAME_VERSION` во `src/updater.py`. GitHub Action го запишува бројот на изработка во `src/build.txt` и додава кумит „Build N“. Пред push изврши `git pull --rebase`.
 - **Ажурирање:** играта ги симнува само променетите датотеки; сејвовите, поставките, музиката и светот не се допираат.
 - **Придонес:** работа директно на `main`, мали и целни измени ([CLAUDE.md](CLAUDE.md)). Текстовите ги уредува јазичен уредник, па `text/` не се менува од код; по уредување: `python tools/check_text.py`. Грешки и идеи: GitHub Issues.
 - **Историја:** [CHANGELOG.md](CHANGELOG.md).

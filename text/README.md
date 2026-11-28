@@ -1,8 +1,8 @@
 # text/ — all Macedonian text of the game (for the human editor)
 
-Every Cyrillic string the game shows or speaks is in these files. The code contains no Cyrillic text:
-it asks for a text by key (`TXT("talk.0042")`) and `src/texts.py` loads **every `*.txt` file in this
-folder** at start-up. Edit, save, start the game — nothing else to do.
+Many strings the game shows or speaks are in these files, but some user-facing text is still in the
+code (including loading-screen labels). Code can ask for text by key (`TXT("talk.0042")`), and
+`src/texts.py` loads **every `*.txt` file in this folder** at start-up.
 
 | File | What is in it |
 |------|---------------|
@@ -38,7 +38,8 @@ talk.0042 = Добар ден!                       <- key = text   (edit only 
 ```
 python tools/check_text.py
 ```
-It checks the syntax and that every key used in the code exists (and vice versa). Then run the game
+It checks syntax and literal key references. Dynamically constructed keys can be reported as unused;
+inspect their callers before removing them. Then run the game
 (`run.bat demo` for a quick look).
 
 ## Notes for developers

@@ -149,7 +149,8 @@ foreach ($m in @('osmium', 'comtypes', 'pyworld', 'scipy')) { & $py -c "import $
 if ($want.Count) {
     Say "Installing libraries ..."
     & $py -m pip install --disable-pip-version-check --no-warn-script-location --prefer-binary uv 2>&1 | Out-Host
-    if ($LASTEXITCODE -eq 0) { & $py -m uv pip install --python $py --compile-bytecode @want 2>&1 | Out-Host }
+    # (uv reports its progress on stderr: turned into plain text, or PowerShell paints it as errors)
+    if ($LASTEXITCODE -eq 0) { & $py -m uv pip install --python $py --compile-bytecode @want 2>&1 | ForEach-Object { "$_" } | Out-Host }
 }
 $libErr = & $py -c $libTest 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) {

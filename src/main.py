@@ -152,10 +152,11 @@ def _early_splash():
         keep_window_alive(True)
         import poster
         poster.start_splash()
+        font.load()
         rl.begin_drawing()
         poster.draw_splash(W, H)
-        rl.draw_text("Skopje 242", W // 2 - 100, H // 2 - 20, 40, rl.WHITE)
-        rl.draw_text("Loading...", W // 2 - 65, H - 50, 20, rl.WHITE)
+        font.draw_text("Скопје 242", W // 2 - 100, H // 2 - 20, 40, rl.WHITE)
+        font.draw_text("Се вчитува...", W // 2 - 65, H - 50, 20, rl.WHITE)
         rl.end_drawing()
         return cfg
     except Exception:  # noqa: BLE001 - the normal path in main() opens the window if this failed

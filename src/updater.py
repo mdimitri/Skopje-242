@@ -23,19 +23,7 @@ import font
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_FILE = os.path.join(ROOT, ".version")       # commit sha of the installed copy (what the update check compares)
 MUSIC_MARK = os.path.join(ROOT, ".music_synced")     # present once a zip install has the radio stations the game ships with
-MAJOR = "3"
-
-
-def _minor():
-    """Minor version = commit count on main, written into src/build.txt by .github/workflows/build-number.yml on every push."""
-    try:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "build.txt"), "r", encoding="utf-8") as f:
-            return f.read().strip() or "0"
-    except OSError:
-        return "0"
-
-
-GAME_VERSION = MAJOR + "." + _minor()               # the player-facing major.minor version (splash and every menu)
+GAME_VERSION = "4.0"                                # release version shown on the splash screen and menus
 REPO = "mdimitri/skopje-242"
 API_URL = f"https://api.github.com/repos/{REPO}/commits/main"
 ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/main"

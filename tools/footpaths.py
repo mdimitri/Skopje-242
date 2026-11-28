@@ -7,6 +7,7 @@ left off the minimap / map, no benches or lamps):
   poi     a spur from a map POI standing on open ground to the nearest walkable road
 Ends are joined onto the existing roads with new junction nodes, so pedestrians can use them.
 """
+import hashlib
 import heapq
 import math
 import random
@@ -25,8 +26,14 @@ def _walkable(rd):
             and len(rd["nodes"]) == len(rd["pts"]) and len(rd["pts"]) >= 2)
 
 
+def _number(*what):
+    """A fixed pseudo-random 56-bit number for a thing on the map (the same wherever else the map changes)."""
+    return int.from_bytes(hashlib.blake2b(repr(what).encode(), digest_size=7).digest(), "big")
+
+
 def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy, cell, seed=242):
-    rnd = random.Random(seed)
+    """Every sample point, building and POI draws from its own random sequence, so an edit of the map only moves the worn
+    paths around it (one shared sequence moved them all over the city, and with them the junctions on every street)."""
     nx, ny = bld_img.size
 
     def cells(pts):
@@ -115,6 +122,7 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
     def reach(a, b, limit):
         """True when the road network joins sample a to sample b within `limit` metres."""
         best = {a: 0.0}
+        tx, ty = S[b][0], S[b][1]
         h = [(0.0, a)]
         while h:
             d, u = heapq.heappop(h)
@@ -124,13 +132,13 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
                 continue
             for v, w in adj[u]:
                 nd = d + w
-                if nd <= limit and nd < best.get(v, 1e18):
+                if nd <= limit and nd < best.get(v, 1e18) and nd + math.hypot(S[v][0] - tx, S[v][1] - ty) <= limit + 1e-6:
                     best[v] = nd
                     heapq.heappush(h, (nd, v))
         return False
 
     # ---- a path polyline: gentle meander, then checked against everything it must not cross -----------------
-    def route(p0, p1, door):
+    def route(p0, p1, door, rnd):
         L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
         n = max(2, int(L / 5.0))
         ux, uy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
@@ -164,13 +172,17 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         return pl if slope < 0.4 else None
 
     inserts = {}                                 # road -> [(seg, t, node id, point)]
-    fresh = [FRESH]
+    taken = set()
     out = []
     used = set()
 
-    def new_id():
-        fresh[0] -= 1
-        return fresh[0]
+    def new_id(x, y):
+        """A node id from the place, so it does not shift when paths are added elsewhere."""
+        n = FRESH - 1 - _number(round(x, 3), round(y, 3))
+        while n in taken:
+            n -= 1
+        taken.add(n)
+        return n
 
     def join(si):
         """Node id for the road point of sample si: an existing vertex when we are on one, else a new junction."""
@@ -180,22 +192,22 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
             return rd["nodes"][k], (rd["pts"][k])
         if t > 0.88:
             return rd["nodes"][k + 1], (rd["pts"][k + 1])
-        nid_ = new_id()
+        nid_ = new_id(x, y)
         inserts.setdefault(ri, []).append((k, t, nid_, (x, y)))
         return nid_, (x, y)
 
     def emit(pl, a_si, b_si, w, kind):
         na, pa = join(a_si)
         pts = [pa] + pl[1:-1]
-        nodes = [na] + [new_id() for _ in pl[1:-1]]
+        nodes = [na] + [new_id(*p) for p in pl[1:-1]]
         if b_si is not None:
             nb, pb = join(b_si)
         else:
-            nb, pb = new_id(), pl[-1]
+            nb, pb = new_id(*pl[-1]), pl[-1]
         pts.append(pb)
         nodes.append(nb)
         out.append({"pts": pts, "w": w, "cls": "path", "speed": 0, "drive": 0, "walk": 1, "ow": 0, "bridge": False, "layer": 0,
-                    "nodes": nodes, "id": -len(out) - 1, "name": "", "lanes": 0, "tunnel": False, "worn": kind})
+                    "nodes": nodes, "id": -1 - _number("path", round(pts[0][0], 3), round(pts[0][1], 3), round(pts[-1][0], 3), round(pts[-1][1], 3)), "name": "", "lanes": 0, "tunnel": False, "worn": kind})
         used.add(a_si)
         if b_si is not None:
             used.add(b_si)
@@ -232,8 +244,11 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         if footed[i] is None:
             footed[i] = by_foot(S[i][0], S[i][1])
         return footed[i]
-    order = list(range(len(S)))
-    rnd.shuffle(order)
+    def key(i):                                  # a sample: its road and place along it
+        x, y, ri, k, t = S[i]
+        return roads[ri]["id"], round(x, 2), round(y, 2)
+    mine = [_number(seed, "cut", *key(i)) for i in range(len(S))]
+    order = sorted(range(len(S)), key=lambda i: mine[i])
     nc = 0
     for oi_, a in enumerate(order):
         if oi_ % 512 == 0:
@@ -243,6 +258,7 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         ax, ay, ra = S[a][0], S[a][1], S[a][2]
         if foot(a):
             continue
+        rnd = random.Random(mine[a])
         cands = [(d, b) for d, b in near(ax, ay, 22.0, 80.0) if S[b][2] != ra and b not in used and not foot(b)]
         rnd.shuffle(cands)
         for d, b in cands[:10]:
@@ -253,7 +269,7 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
                 continue
             if reach(a, b, 3.0 * d + 20):
                 continue                                            # the walk round is short: nobody would trample a shortcut
-            pl = route((ax, ay), (bx, by), False)
+            pl = route((ax, ay), (bx, by), False, rnd)
             if pl is None:
                 continue
             emit(pl, a, b, rnd.uniform(1.3, 1.9), "cut")
@@ -266,9 +282,10 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
     for bi_, b in enumerate(buildings):
         if bi_ % 512 == 0:
             frac(0.18 + 0.01 * bi_ / max(1, len(buildings)), "worn paths")
+        ring = b["ring"]
+        rnd = random.Random(_number(seed, "door", round(ring[0][0], 2), round(ring[0][1], 2), len(ring)))
         if b["area"] < 120 or rnd.random() > 0.12:
             continue
-        ring = b["ring"]
         cx, cy = sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
         best = None
         for p, q in zip(ring, ring[1:] + ring[:1]):
@@ -288,7 +305,7 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         d, si, dx_, dy_ = best
         if near(dx_, dy_, 0.0, 5.5):
             continue                                                # a real path already passes the door
-        pl = route((dx_, dy_), (S[si][0], S[si][1]), True)
+        pl = route((dx_, dy_), (S[si][0], S[si][1]), True, rnd)
         if pl is None:
             continue
         emit(pl[::-1], si, None, rnd.uniform(1.0, 1.5), "door")
@@ -298,13 +315,14 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
     npoi = 0
     for q in pois:
         x, y = q[0], q[1]
+        rnd = random.Random(_number(seed, "poi", round(x, 2), round(y, 2)))
         if at(bld_d, x, y) or at(road_m, x, y) or at(hard, x, y) or rnd.random() > 0.35:
             continue
         c = [(d, si) for d, si in near(x, y, 7.0, 55.0) if si not in used]
         if not c:
             continue
         d, si = min(c)
-        pl = route((x, y), (S[si][0], S[si][1]), False)
+        pl = route((x, y), (S[si][0], S[si][1]), False, rnd)
         if pl is None:
             continue
         emit(pl[::-1], si, None, rnd.uniform(1.2, 1.7), "poi")

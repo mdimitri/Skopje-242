@@ -1,4 +1,4 @@
-# Every push to main bumps the minor version shown in the game: src/build.txt = number of commits on main.
+# Record the number of commits on main in src/build.txt after each push.
 name: build-number
 on:
   push:

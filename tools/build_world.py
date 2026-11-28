@@ -79,6 +79,10 @@ def lift_over_tunnels(roads, margin=8.0, extra=()):
         return t if 0 < t < 1 and 0 < u < 1 else None
 
     fresh = [-1_000_000_000]                     # node ids of the cut ends: a range of their own (connect_roads counts down from -2)
+    def box_of(pts):
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        return min(xs), min(ys), max(xs), max(ys)
+    tun = [(tr, box_of(tr["pts"]), set(tr["nodes"])) for tr in tun]
     out = []
     for rd in roads:
         if rd.get("tunnel") or rd["bridge"] or not (rd["drive"] or rd["walk"]) or len(rd["nodes"]) != len(rd["pts"]) or rd["layer"] < 0:
@@ -89,9 +93,10 @@ def lift_over_tunnels(roads, margin=8.0, extra=()):
         cum = [0.0]
         for k in range(len(pts) - 1):
             cum.append(cum[-1] + math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1]))
-        for tr in tun:
-            if set(tr["nodes"]) & set(nodes):
-                continue                         # meets the tunnel at a shared node: a junction, not a crossing
+        x0, y0, x1, y1 = box_of(pts)
+        for tr, (a0, b0, a1, b1), tr_nodes in tun:
+            if a0 > x1 or a1 < x0 or b0 > y1 or b1 < y0 or not tr_nodes.isdisjoint(nodes):
+                continue                         # apart, or meets the tunnel at a shared node (a junction, not a crossing)
             for k in range(len(pts) - 1):
                 for j in range(len(tr["pts"]) - 1):
                     t = cross(pts[k], pts[k + 1], tr["pts"][j], tr["pts"][j + 1])
@@ -2968,7 +2973,7 @@ def main():
     parked = [q for q in parked if random.Random(int(q[0] * 7.0) * 100003 + int(q[1] * 13.0)).random() < 0.5]     # round 27: half as many everywhere, the centre-to-suburb gradient stays
     print(f"[build] trees {len(trees)}  lamps {len(lamps)}  parked cars {len(parked)}")
 
-    stage("furniture", data=("bus_stops.json", "signals.json"))
+    stage("furniture", data=("bus_stops.json", "signals.json"), join=True)
     phase("furniture")
     import furniture
 
@@ -3005,7 +3010,7 @@ def main():
     except Exception as e:  # noqa: BLE001 - furniture is decoration, never fatal
         print(f"[build] furniture skipped: {e}")
         xwalks, posts = [], []
-    stage("leisure", data=("map_pois.json",))
+    stage("leisure", data=("map_pois.json",), join=True)
     phase("leisure")
     sites = []
     try:                                                        # round 13: bushes, playgrounds, pitches, school yards
@@ -3020,7 +3025,7 @@ def main():
         traceback.print_exc()
         print(f"[build] leisure skipped: {e}")
 
-    stage("monument")
+    stage("monument", join=True)
     phase("monument")
     frac(0.05, "monument")
     try:                                                        # round 32: Warrior on a Horse in the Macedonia Square fountain
@@ -3039,7 +3044,7 @@ def main():
         traceback.print_exc()
         print(f"[build] monument skipped: {e}")
 
-    stage("construction")
+    stage("construction", join=True)
     phase("construction sites")
     works = []
     try:                                                        # round 20: fenced building sites on empty lots in built-up areas
@@ -3072,7 +3077,7 @@ def main():
         traceback.print_exc()
         print(f"[build] construction skipped: {e}")
 
-    stage("stations", data=("map_pois.json", "buildings.json"))
+    stage("stations", data=("map_pois.json", "buildings.json"), join=True)
     phase("petrol stations and car washes")
     frac(0.01, "reading the map")
     fsites = []
@@ -3092,7 +3097,7 @@ def main():
         traceback.print_exc()
         print(f"[build] stations skipped: {e}")
 
-    stage("fill")
+    stage("fill", join=True)
     phase("fill: gardens, scrub, boulders")
     try:                                                        # round 29: open ground gets gardens, scrub, boulders, vines
         import fill
@@ -3116,22 +3121,18 @@ def main():
     # ---- leftovers on the carriageway: lamps, trees and collision posts that stand inside a drivable lane (OSM street_lamp
     # nodes on the centre line, links, bridge lamps above a road, fence panels of a site that overlaps a street) block
     # cars and turns for good, so they go; posts up on a bridge deck are left alone
-    stage("cleanup")
+    stage("cleanup", join=True)
     phase("carriageway cleanup")
     from crosswalks import CrossingMap
     junction_map = CrossingMap(cores=junction_cores)
-    cgrid_ = {}
-    for e_ in span(edges, 0.0, 0.3, "lane grid"):
-        if e_["drive"]:
-            for (ax_, ay_), (bx_, by_) in zip(e_["pts"], e_["pts"][1:]):
-                for gx_ in range(int(min(ax_, bx_) // 20) - 1, int(max(ax_, bx_) // 20) + 2):
-                    for gy_ in range(int(min(ay_, by_) // 20) - 1, int(max(ay_, by_) // 20) + 2):
-                        cgrid_.setdefault((gx_, gy_), []).append((ax_, ay_, bx_, by_, e_["w"] / 2 - 0.2))
+    import segindex
+    lane_index = segindex.SegIndex([(ax_, ay_, bx_, by_, e_["w"] / 2 - 0.2) for e_ in span(edges, 0.0, 0.3, "lane grid") if e_["drive"]
+                                    for (ax_, ay_), (bx_, by_) in zip(e_["pts"], e_["pts"][1:])])
 
     def in_lane(x, y, r=0.0):
         if junction_map.core(x, y):
             return True
-        for ax_, ay_, bx_, by_, hw_ in cgrid_.get((int(x // 20), int(y // 20)), ()):
+        for ax_, ay_, bx_, by_, hw_ in lane_index.near(x, y, r):
             dx_, dy_ = bx_ - ax_, by_ - ay_
             t_ = max(0.0, min(1.0, ((x - ax_) * dx_ + (y - ay_) * dy_) / (dx_ * dx_ + dy_ * dy_ or 1e-9)))
             if math.hypot(x - ax_ - dx_ * t_, y - ay_ - dy_ * t_) < hw_ + r:
@@ -3145,7 +3146,7 @@ def main():
     parked = [q for q in parked if not junction_map.core(q[0], q[1])]
     print(f"[build] cleared from the carriageways: {n_l - len(lamps)} lamps, {n_t - len(trees)} trees, {n_p - len(posts)} posts")
 
-    stage("rail", data=("rail.json",))
+    stage("rail", data=("rail.json",), join=True)
     phase("railway")
     stations, track = [], {"lines": [], "crossings": []}
     rl = None
@@ -3211,7 +3212,7 @@ def main():
                             lambda x, y: _not_building(x, y) and not in_lane(x, y, 0.25),
                             roads, __import__("json").load(open(os.path.join(a.src, "roads.json"), encoding="utf-8"))["elements"])
         xwalks = candidate_controls["crossings"]
-    stage("rasters")
+    stage("rasters", join=True)
     phase("ground rasters")
     hg = Image.new("L", (NCX, NCY), 0)       # ground height class: 0 ground, 1 asphalt, 2 pavement
     hd = ImageDraw.Draw(hg)
@@ -3232,7 +3233,7 @@ def main():
         add_c(chunk_of(x, y), MAT_SOLID, *g_)
 
     # ---- fire escapes up to the flat roofs, launch ramps between roofs ------------------------------
-    stage("escapes")
+    stage("escapes", join=True)
     phase("fire escapes and roof jumps")
     plats, esc_info = [], {}
     try:
@@ -3244,7 +3245,7 @@ def main():
         print(f"[build] fire escapes skipped: {e}")
 
     # ---- chunk index (for ground baking) ---------------------------------------------------------
-    stage("index")
+    stage("index", join=True)
     chunks = {}
 
     def slot(c):

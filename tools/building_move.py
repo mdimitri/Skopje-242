@@ -4,7 +4,6 @@ import math
 import numpy as np
 from PIL import Image, ImageDraw
 import shapely
-from shapely.affinity import translate
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
@@ -18,6 +17,7 @@ class BuildingMoves:
         self.tree = STRtree(self.shapes)
         self.moved = {}
         self.bounds = [s.bounds for s in self.shapes]          # of every shape where it stands now
+        self.moved_cells = {}                                  # 40 m grid cell -> indices of moved shapes reaching into it
 
     def _over_water(self, shape):
         x0, y0, x1, y1 = shape.bounds
@@ -66,17 +66,20 @@ class BuildingMoves:
                 ox, oy = dx * distance, dy * distance
                 if x0 + ox < -self.hx or x1 + ox > self.hx or y0 + oy < -self.hy or y1 + oy > self.hy:
                     continue
-                candidate = translate(original, ox, oy)
+                candidate = shapely.transform(original, lambda c: c + (ox, oy))
                 if corridor.intersects(candidate):
                     continue
                 if self._over_water(candidate):
                     continue
                 a, b, c, d = candidate.bounds
-                nearby = set(self.tree.query(candidate)) | set(self.moved)
+                cells = [(gx, gy) for gx in range(int(a // 40), int(c // 40) + 1) for gy in range(int(b // 40), int(d // 40) + 1)]
+                nearby = set(self.tree.query(candidate)).union(*(self.moved_cells.get(k, ()) for k in cells))
                 if any(i != index and self.bounds[i][0] < c and self.bounds[i][2] > a and self.bounds[i][1] < d and self.bounds[i][3] > b
                        and candidate.intersection(self.moved.get(i, self.shapes[i])).area > 0.05 for i in nearby):
                     continue
                 self.moved[index] = candidate
                 self.bounds[index] = (a, b, c, d)
+                for k in cells:
+                    self.moved_cells.setdefault(k, set()).add(index)
                 return dx * distance, dy * distance
         return None

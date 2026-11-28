@@ -49,6 +49,8 @@ The `road_controls` stage adds citywide traffic controls with the candidate's si
 
 Both control passes place gantries on the painted stop line, looking farther outward for clear supports. The city pass checks for a stop within 50 m along the same directed through route before adding another. Inferred slip yield teeth are moved upstream if they overlap an adjoining carriageway footprint.
 
+Starting the road tiles early beside the one-core stages was measured and rejected: on the 20-thread laptop the contention slowed the main process by more than the overlap saved. Any triangle subdivision before terrain draping must go through `tools/subdivide.py` (an edge is split by a rule on that edge alone): per-triangle splitting opens hairline cracks. Worn footpaths draw from one random sequence per sample / building / POI and derive node ids from positions, so a map edit stays local.
+
 Road work runs as one batch on all cores (`roads_designer.add_tiles`): 300 m road tiles (150 m tiles were tried and dropped footpaths), one job per reviewed window (`roads_candidate.build_site`; the tiles leave those windows empty) and the deck tiles, longest first. `tools/road_cache.py` stores each road tile and window under a hash of the builder code and the inputs it reads; change what `build_tile` reads from graph edges and its `_used` filter together. Outlines are merged within 5 mm (`roadvault/mesh.py` `MERGE`, also on traced road sides before polygon work) and buffers use `road_candidate.ARC` segments per quarter circle. The 90 m tile margin matters: narrower margins drop footpaths whose attachment lies outside it.
 
 The candidate tiles store a compressed half-metre height map of their asphalt and raised polygons in the baked surface data. `World.ground_y` and `World.kerb` use it to put pedestrians and vehicle wheels at the rendered surface height. Earlier worlds retain the graph-based height lookup. Tunnels use the draped road ribbon because the ground candidate excludes tunnel ways. From world version 91, an explicitly negative-layer carriageway that crosses a higher bridge without sharing a node also enters the underpass pipeline. Inferred median noses leave room for the generated vehicle envelopes.
@@ -73,7 +75,7 @@ Generated geometry is designed to be plausible and performant at city scale. Bui
 
 ## Incremental build system
 
-`tools/par.py` keeps one spawn pool for the whole build; a call's shared context is written to a file that each worker reads once (`par.submit` runs jobs while the caller continues). `--tile N` builds an N x N m square (`tools/tile_crop.py` cuts the data, `tools/geo.py` reads `SK242_TILE`). Stage outputs must not contain clock times or `id()` keys, or later stages re-run needlessly. Restarting from a middle stage (`SK242_REBUILD_FROM`) does not give a byte-identical world to a cold build (a few collision posts differ); this predates the parallel build.
+`tools/par.py` keeps one spawn pool for the whole build; a call's shared context is written to a file that each worker reads once (`par.submit` runs jobs while the caller continues). `--tile N` builds an N x N m square (`tools/tile_crop.py` cuts the data, `tools/geo.py` reads `SK242_TILE`). Stage outputs must not contain clock times or `id()` keys, or later stages re-run needlessly. Module globals that a later stage reads must be listed in `stages.MODSTATE`, or a restart from a middle stage differs from a cold build. Stages marked `join=True` share the cache snapshot of the stage before them (saving a snapshot costs time on one core).
 
 `tools/build_world.py` declares ordered build stages and performs the actual transformations. `tools/stages.py` parses the stage markers, fingerprints each stage's code dependencies and declared input data, and caches stage state and emitted mesh layers. It can reuse unchanged stage outputs and stop propagating rebuilds when an upstream stage's output digest remains unchanged. The final write stage serializes the world from cached layers. This means a helper or imported local module can affect cache validity even when the visible stage body does not change.
 
@@ -184,7 +186,7 @@ Exact dependencies are expressed by `stage(name, data=...)` declarations and cod
 
 ### Text files
 
-`src/texts.py` loads all `text/*.txt` entries by stable key. Format, escapes, placeholders, source annotations, and validation are in `text/README.md`. `tools/check_text.py` checks syntax and code references. Preserve numeric keys. Check for `WARNING: lookup` before rephrasing strings compared with map/data names. Build-baked text needs a world refresh or corresponding asset-generation step.
+`src/texts.py` loads all `text/*.txt` entries by stable key; some player-facing strings also remain in code. Format, escapes, placeholders, source annotations, and validation are in `text/README.md`. `tools/check_text.py` checks syntax and literal code references, but reports dynamically generated keys as unused. Preserve numeric keys. Check for `WARNING: lookup` before rephrasing strings compared with map/data names. Build-baked text needs a world refresh or corresponding asset-generation step. Loading-screen tile labels use the translations in `src/strings.py` and `src/ui.py`; unknown labels are still transliterated rather than translated.
 
 ### Settings and saves
 

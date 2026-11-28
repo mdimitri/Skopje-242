@@ -33,7 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FORMAT = 3                                    # layout of the cache itself
 # module-level lists the tool modules fill while building; later code reads them, so they travel with the snapshots
-MODSTATE = (("furniture", "SIGNALS"), ("furniture", "STOPS"), ("construction", "LOTS"))
+MODSTATE = (("furniture", "SIGNALS"), ("furniture", "STOPS"), ("construction", "LOTS"), ("monument", "BRIDGE_PTS"))
 SOURCE = os.path.join(HERE, "build_world.py")
 
 
@@ -67,7 +67,13 @@ def layout(path=SOURCE):
     for st in main.body:
         m = _marker(st)
         if m:
-            stages.append((m[0], m[1], []))
+            if m[1].get("join") and stages:                       # a quick step: part of the stage before it (one snapshot)
+                kw = stages[-1][1]
+                for k in ("data", "mods", "files"):
+                    if m[1].get(k):
+                        kw[k] = tuple(dict.fromkeys((*kw.get(k, ()), *m[1][k])))
+            else:
+                stages.append((m[0], dict(m[1]), []))
         elif isinstance(st, (ast.FunctionDef, ast.ClassDef)):
             hoisted.append(st)
         else:
@@ -211,6 +217,7 @@ def fingerprints(src, path=SOURCE, version=None):
     out = _fingerprints(src, path, version)
     _FP_MEMO[key] = out
     try:
+        os.makedirs(os.path.dirname(cf), exist_ok=True)
         with open(cf + ".tmp", "w", encoding="utf-8") as f:
             json.dump({"key": key, "fps": out}, f)
         os.replace(cf + ".tmp", cf)
@@ -272,7 +279,7 @@ class _Ticker:
     come (est = the expected size), so pickling a big variable never freezes the bar."""
 
     def __init__(self, lo, hi, est, f=None, sub="saving"):
-        self.h, self.f, self.n = hashlib.md5(), f, 0
+        self.h, self.f, self.n = hashlib.sha1(), f, 0
         self.lo, self.hi, self.est, self.sub = lo, hi, max(1, est), sub
 
     def write(self, b):
@@ -380,7 +387,7 @@ def run(argv=None):
 
     def digest(layer=None):
         """Digest of everything the stages so far left behind: the variables, plus the geometry (when given)."""
-        h = hashlib.md5()
+        h = hashlib.sha1()
         for k in sorted(state.known):
             if k in modbase and state.known[k] == modbase[k]:
                 continue                                  # a module constant nobody rebound (e.g. VERSION)
@@ -388,7 +395,7 @@ def run(argv=None):
         for k in sorted(layer or (), key=str):
             h.update(repr(k).encode())
             for arr in layer[k]:
-                h.update(arr.tobytes() if hasattr(arr, "tobytes") else bytes(arr))
+                h.update(__import__("numpy").ascontiguousarray(arr).data if hasattr(arr, "tobytes") else bytes(arr))
         return h.hexdigest()
 
     cur = digest()                                        # input of the first stage

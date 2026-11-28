@@ -16,7 +16,7 @@ import shapely
 from stages import _CanonPickler
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CODE = ("roads_candidate.py", "roads_designer.py", "road_cache.py", "junction_net.py", "terrain.py", "geo.py", "roadvault/road_candidate.py",
+CODE = ("roads_candidate.py", "roads_designer.py", "road_cache.py", "junction_net.py", "terrain.py", "geo.py", "subdivide.py", "roadvault/road_candidate.py",
         "roadvault/road_inference.py", "roadvault/mesh.py", "roadvault/run_candidate.py", "roadvault/traffic_furniture.py",
         "roadvault/partizanski_glavinov.json", "../src/roadwidth.py")
 _ONCE = {}                                              # per worker: hashes of what every key shares

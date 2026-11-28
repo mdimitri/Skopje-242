@@ -149,6 +149,13 @@ def _stairs(g, M, u, n, nf, fh, hg0, L):
     return [(q[0], q[2], q[1]) for q in path]                           # (x, y, height)
 
 
+def _stair_job(job):
+    """One fire escape -> (ride line, mesh)."""
+    g = G()
+    path = _stairs(g, *job)
+    return path, g.out()
+
+
 def _ramp(g, pA, d, base, rise):
     """Wedge ending at the lip pA, going up along d from height `base`."""
     ex, ez = -d[1], d[0]
@@ -183,6 +190,7 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
     import collections
     rej = collections.Counter()
     eq = []                                                     # equipped buildings
+    stairs = []                                                 # (chunk, arguments) of their meshes, built below
     cand = [i for i, b in enumerate(buildings)
             if b["tri"] and 7.0 <= b["h"] <= 28.0 and (b["area"] >= 240 or b["h"] >= 11.0) and len(b["ring"]) >= 4]
     for i in span(cand, 0.0, 0.6, "fire escapes"):
@@ -234,9 +242,7 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
             if not ok:
                 rej['free:' + why] += 1
                 continue
-            g = G()
-            path = _stairs(g, M, u, n, nf, fh, hg0, L)
-            add(chunk_of(mx, my), mat, *g.out())
+            stairs.append((chunk_of(mx, my), (M, u, n, nf, fh, hg0, L)))
             for j in range(nf):                                            # walkable surfaces
                 vc = V0 + FW / 2 + (FW if j % 2 else 0.0)
                 du = -1.0 if j % 2 else 1.0
@@ -254,9 +260,11 @@ def build(buildings, T, bld_a, occ_a, surf_a, hg_a, cell, hx, hy, add, chunk_of,
             eq.append((i, ring, roof, att))
             plats.append((1, [(float(x), float(y)) for x, y in ring], float(roof)))
             info["stairs"].append({"toe": [M[0] + n[0] * (V0 + FW / 2), M[1] + n[1] * (V0 + FW / 2)], "floors": nf, "roof": roof,
-                                   "u": list(u), "n": list(n), "b": i,
-                                   "path": [[float(a), float(b), float(c)] for a, b, c in path]})
+                                   "u": list(u), "n": list(n), "b": i})
             break
+    for (chunk, _), (path, geometry), record in zip(stairs, par.pmap(_stair_job, [job for _, job in stairs], chunk=4), info["stairs"]):
+        add(chunk, mat, *geometry)
+        record["path"] = [[float(a), float(b), float(c)] for a, b, c in path]
     log(f"[build] fire escapes: {len(eq)} of {len(cand)} eligible buildings ({len(buildings)} total)")
 
     # ---- jumps between equipped roofs ----------------------------------------------------------------

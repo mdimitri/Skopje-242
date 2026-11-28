@@ -48,7 +48,7 @@ characters.0022 = вообразен, богат, обожава мала паж
 characters.0023 = Мали
 characters.0024 = умно дете, домашното готово, мамина гордост, иден академик
 characters.0025 = Работник Момчило
-characters.0026 = најјак шамар во градот, тивок по малку пивнат, нема пари, работи по 15 саати, прљав комбинезон
+characters.0026 = најјак шамар во градот, тивок, по малку пивнат, нема пари, работи по 15 саати, прљав комбинезон
 characters.0027 = Бурек-мајстор Благоја
 characters.0028 = ноќна птица, јак момак, брашнест тен, штеди на фил, мириса на маргарин
 characters.0029 = Боза-мајстор Љупчо
@@ -600,7 +600,7 @@ vehicles.0203 = Не ми ги плаши рибите!
 
 # [Golabar]
 vehicles.0204 = Прават шверц со голуби.
-vehicles.0205 = Направи самоубиство летна во Вардар.
+vehicles.0205 = Направи самоубиство, летна во Вардар.
 vehicles.0206 = Дошле голуби од Турска.
 
 # [Komunalec]
@@ -839,7 +839,7 @@ radio.0007 = Радио Таксист
 # --- module level · data `HINT` (1 texts) ---
 # used in: radio.py > Radio.__init__
 
-radio.0008 = Тука стави своја музика (mp3, ogg, wav, flac) – играта ја вчитува целата.\nPut your own music here (mp3, ogg, wav, flac; m4a/aac/opus are not supported by the engine).\nEvery sub-folder becomes a radio station named after the folder; loose files are shared out between a few stations.\nIn a vehicle: Q / E (or , / .) change station, the last step is radio off.\n
+radio.0008 = Тука стави своја музика (mp3, ogg, wav, flac). Форматите m4a, aac и opus не се поддржани.\nСекоја потпапка станува радио-станица со името на папката; датотеките надвор од потпапките се распоредуваат во неколку станици.\nВо возило: со Q / E (или , / .) менувај станица; последниот избор го исклучува радиото.\n
 
 # --- function/class `Radio.rescan` · data `self.hint` (1 texts) ---
 # called from: radio.py > Radio.__init__, radio.py > Radio._collect, radio.py > Radio.step, radio.py > Radio.update

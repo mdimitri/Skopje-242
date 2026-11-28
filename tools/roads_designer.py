@@ -11,6 +11,7 @@ import junction_net as jn
 import par
 import road_cache
 import roads_candidate
+import subdivide
 
 TILE = 300.0
 CH = 120.0                                               # roads3d.CHUNK
@@ -95,23 +96,14 @@ def drape_feet(P, edges, decks, T, tx, ty):
 
 
 def _split(P, C, maxlen=6.0, rounds=7):
-    """Halve every triangle across its longest (horizontal) edge until all edges are <= maxlen, so the flush's terrain
-    draping can follow the ground instead of cutting through it with long thin triangles."""
+    """Halve every triangle edge longer than maxlen (horizontally), so the flush's terrain draping can follow the ground
+    instead of cutting through it with long thin triangles."""
     for _ in range(rounds):
-        e = np.stack([np.hypot(P[:, 1, 0] - P[:, 0, 0], P[:, 1, 2] - P[:, 0, 2]),
-                      np.hypot(P[:, 2, 0] - P[:, 1, 0], P[:, 2, 2] - P[:, 1, 2]),
-                      np.hypot(P[:, 0, 0] - P[:, 2, 0], P[:, 0, 2] - P[:, 2, 2])], 1)
-        k = e.argmax(1)
-        big = e[np.arange(len(P)), k] > maxlen
-        if not big.any():
+        step = P[:, [1, 2, 0]] - P
+        long = np.hypot(step[:, :, 0], step[:, :, 2]) > maxlen
+        if not long.any():
             break
-        Pb, Cb, kb = P[big], C[big], k[big]
-        i = np.arange(len(Pb))
-        a, b, c = Pb[i, kb], Pb[i, (kb + 1) % 3], Pb[i, (kb + 2) % 3]
-        mid = (a + b) / 2
-        t1, t2 = np.stack([a, mid, c], 1), np.stack([mid, b, c], 1)
-        P = np.concatenate([P[~big], t1, t2])
-        C = np.concatenate([C[~big], Cb, Cb])
+        P, C = subdivide.split_edges(P, C, long)
     return P, C
 
 

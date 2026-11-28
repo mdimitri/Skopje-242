@@ -10,6 +10,7 @@ import random
 import numpy as np
 
 import par
+import segindex
 import roads3d
 from roadwidth import has_sidewalk, lane_bounds, lane_count as lanes_n
 from progress import frac, span
@@ -441,18 +442,17 @@ def build(edges, roads, is_water, not_building, add, chunk_of, half, to_cell=Non
     xw, posts, lamps = [], [], []
     counts = {"masts": 0, "lights": 0, "signs": 0, "cross": 0, "bridges": 0, "stops": 0, "benches": 0, "bins": 0, "junk": 0, "boards": 0}
 
-    # every ground-level drive road as segments in a 20 m grid: props never stand on a carriageway
-    seg_grid = {}
+    # every ground-level drive road as segments: props never stand on a carriageway
+    road_segs = []
     for e in span(edges, 0.0, 0.04, "road grid"):
         if e["drive"] and not e["bridge"]:
             hw = e["w"] / 2
-            for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]):
-                for gx in range(int(min(ax, bx) // 20) - 1, int(max(ax, bx) // 20) + 2):
-                    for gy in range(int(min(ay, by) // 20) - 1, int(max(ay, by) // 20) + 2):
-                        seg_grid.setdefault((gx, gy), []).append((ax, ay, bx, by, hw))
+            road_segs.extend((ax, ay, bx, by, hw) for (ax, ay), (bx, by) in zip(e["pts"], e["pts"][1:]))
+
+    near_roads = segindex.SegIndex(road_segs)
 
     def on_road(x, z, clear=0.35):
-        for ax, ay, bx, by, hw in seg_grid.get((int(x // 20), int(z // 20)), ()):
+        for ax, ay, bx, by, hw in near_roads.near(x, z, clear):
             dx, dy = bx - ax, by - ay
             l2 = dx * dx + dy * dy or 1e-9
             t = max(0.0, min(1.0, ((x - ax) * dx + (z - ay) * dy) / l2))

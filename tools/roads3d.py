@@ -12,6 +12,7 @@ import numpy as np
 
 import lanefix
 import par
+import subdivide
 from progress import Bar
 from roadwidth import half_width, has_sidewalk, lane_bounds, lane_turns, lane_count as lanes_per_way
 
@@ -1110,36 +1111,32 @@ REFINE_TOL = 0.025                                      # a ground triangle whos
 
 
 def _refine(pos, col, T, levels=5):
-    """Split ground triangles (mid-edge, 1 -> 4) wherever the terrain under them is not flat enough for the flat face to
-    stay on top of it: a 24 m ribbon piece or a junction plate over the curve of an approach embankment, a cutting or a
-    hillside let the ground mesh show through the asphalt as holes."""
+    """Split the edges of ground triangles wherever the terrain under their middle is not close enough to the straight
+    edge: a 24 m ribbon piece or a junction plate over the curve of an approach embankment, a cutting or a hillside let
+    the ground mesh show through the asphalt as holes.  Both triangles beside an edge split it, so no cracks open."""
     n = len(pos) // 3
     if n == 0:
         return pos, col
     tri = pos.reshape(n, 3, 3).astype(np.float64)
     rgb = col.reshape(n, 3, 4)
-    keep_t, keep_c = [], []
+    done_t, done_c = [], []
     for _ in range(levels):
-        a, b, c_ = tri[:, 0], tri[:, 1], tri[:, 2]
-        mids = np.stack([(a + b) / 2, (b + c_) / 2, (c_ + a) / 2], 1)
+        nxt = tri[:, [1, 2, 0]]
+        mid = (tri + nxt) / 2
         h = np.asarray(T.h(tri[:, :, 0].ravel(), tri[:, :, 2].ravel()), np.float64).reshape(-1, 3)
-        hm = np.asarray(T.h(mids[:, :, 0].ravel(), mids[:, :, 2].ravel()), np.float64).reshape(-1, 3)
-        lin = np.stack([(h[:, 0] + h[:, 1]) / 2, (h[:, 1] + h[:, 2]) / 2, (h[:, 2] + h[:, 0]) / 2], 1)
-        ext = np.max(np.hypot(tri[:, [1, 2, 0], 0] - tri[:, :, 0], tri[:, [1, 2, 0], 2] - tri[:, :, 2]), axis=1)
-        split = (np.max(hm - lin, axis=1) > REFINE_TOL) & (ext > 1.5)
-        keep_t.append(tri[~split])
-        keep_c.append(rgb[~split])
-        if not split.any():
+        hm = np.asarray(T.h(mid[:, :, 0].ravel(), mid[:, :, 2].ravel()), np.float64).reshape(-1, 3)
+        long = np.hypot(nxt[:, :, 0] - tri[:, :, 0], nxt[:, :, 2] - tri[:, :, 2]) > 1.5
+        split = (hm - (h + h[:, [1, 2, 0]]) / 2 > REFINE_TOL) & long
+        some = split.any(axis=1)
+        done_t.append(tri[~some])
+        done_c.append(rgb[~some])
+        if not some.any():
             tri, rgb = tri[:0], rgb[:0]
             break
-        t, m, cc = tri[split], mids[split], rgb[split]
-        A, B, C = t[:, 0], t[:, 1], t[:, 2]
-        mab, mbc, mca = m[:, 0], m[:, 1], m[:, 2]
-        tri = np.concatenate([np.stack(q, 1) for q in ((A, mab, mca), (mab, B, mbc), (mca, mbc, C), (mab, mbc, mca))])
-        rgb = np.concatenate([cc] * 4)
-    keep_t.append(tri)
-    keep_c.append(rgb)
-    return (np.concatenate(keep_t).reshape(-1, 3).astype(np.float32), np.concatenate(keep_c).reshape(-1, 4))
+        tri, rgb = subdivide.split_edges(tri[some], rgb[some], split[some])
+    done_t.append(tri)
+    done_c.append(rgb)
+    return (np.concatenate(done_t).reshape(-1, 3).astype(np.float32), np.concatenate(done_c).reshape(-1, 4))
 
 
 def _junctions(out, edges, plates, ribs, hulls):
