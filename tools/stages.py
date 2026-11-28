@@ -371,6 +371,7 @@ def run(argv=None):
     force = os.environ.get("SK242_REBUILD_FROM")
     forced = names.index(force) if force in names else len(names)
     os.makedirs(cache, exist_ok=True)
+    os.environ["SK242_ROAD_CACHE"] = os.path.join(cache, "roadtiles")      # tools/road_cache.py
     keep = {}
 
     def save_index():
@@ -431,6 +432,7 @@ def run(argv=None):
         if did and "rebind" in ns:
             ns["rebind"](ns)
         ran.append(n)
+        __import__("par").start()                         # the workers start while the first stages run
         _, kw, stmts = stages[i]
         t0 = time.time()
         ns["mesh"] = ns["MeshAcc"]()

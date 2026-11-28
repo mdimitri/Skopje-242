@@ -42,26 +42,32 @@ def _pip(x, y, ring):
 
 def _solid(g, pts, col, ref):
     """Convex planar polygon (fan), wound and lit as seen from outside (away from `ref`)."""
-    a, b, c = np.array(pts[0], float), np.array(pts[1], float), np.array(pts[2], float)
-    n = np.cross(b - a, c - a)
-    ln = np.linalg.norm(n)
+    (ax, ay, az), (bx, by, bz), (cx, cy, cz) = pts[0], pts[1], pts[2]          # (plain floats: numpy is slow on 3 numbers)
+    ux, uy, uz, vx, vy, vz = float(bx - ax), float(by - ay), float(bz - az), float(cx - ax), float(cy - ay), float(cz - az)
+    nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
     if ln < 1e-9:
         return
-    n /= ln
-    ctr = np.mean(np.array(pts, float), axis=0)
-    if np.dot(n, ctr - np.array(ref, float)) < 0:
-        n = -n
+    nx, ny, nz = nx / ln, ny / ln, nz / ln
+    mx = my = mz = 0.0
+    for x, y, z in pts:
+        mx, my, mz = mx + float(x), my + float(y), mz + float(z)
+    k = len(pts)
+    if nx * (mx / k - float(ref[0])) + ny * (my / k - float(ref[1])) + nz * (mz / k - float(ref[2])) < 0:
+        nx, ny, nz = -nx, -ny, -nz
         pts = pts[::-1]
     for i in range(1, len(pts) - 1):
-        g.tri(pts[0], pts[i], pts[i + 1], col, tuple(n))
+        g.tri(pts[0], pts[i], pts[i + 1], col, (nx, ny, nz))
 
 
 def _prism(g, a, b, hw, th, col, up=(0.0, 1.0, 0.0)):
     """Bar from a to b (x, y, z), `hw` half wide, `th` thick (hangs below the line)."""
     a, b = np.array(a, float), np.array(b, float)
     d = b - a
-    w = np.cross(d, up)
-    ln = np.linalg.norm(w)
+    dx, dy, dz = d.tolist()
+    ux, uy, uz = up
+    w = np.array((dy * uz - dz * uy, dz * ux - dx * uz, dx * uy - dy * ux))
+    ln = math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2])
     if ln < 1e-9:
         return
     w = w / ln * hw

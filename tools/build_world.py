@@ -19,6 +19,8 @@ import mapbox_earcut as earcut
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+if __name__ == "__main__" and "--tile" in sys.argv[:-1]:         # before geo is imported (the pool workers inherit it)
+    os.environ["SK242_TILE"] = sys.argv[sys.argv.index("--tile") + 1]
 from geo import HX, HY, project
 from progress import Bar, each, phase, spread, flat, frac, span, tile_items
 import par
@@ -2098,9 +2100,11 @@ def rebind(ns):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default=os.path.join(ROOT, "data", "osm"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "data", "cache", "world"))
+    ap.add_argument("--out", default=None, help="default: data/cache/world, or data/cache/world_tile<N> with --tile N")
+    ap.add_argument("--tile", type=int, default=0, help="build only an N x N m square around the centre (for quick tests)")
     ap.add_argument("--allow-flat", action="store_true", help="build a flat city when terrain.npy is missing or for another box")
     a = ap.parse_args()
+    a.out = a.out or os.path.join(ROOT, "data", "cache", f"world_tile{a.tile}" if a.tile else "world")
 
     if os.path.exists(os.path.join(a.src, "pbf", "country.osm.pbf")) and not os.path.exists(os.path.join(a.src, "bus_stops.json")):
         try:                                                    # real bus stops (and lines / POIs) from the country file
@@ -2110,6 +2114,9 @@ def main():
             fetch_extras.main()
         except Exception as e:  # noqa: BLE001 - optional
             print(f"[build] extras skipped: {e}")
+    if a.tile:
+        import tile_crop
+        a.src = tile_crop.crop(a.src, a.out + ".src")
     elements = load_elements(a.src)
     photo_fit = load_photogram(a.src)
     print(f"[build] {len(elements)} OSM elements from {a.src}")
@@ -2467,8 +2474,8 @@ def main():
         jobs_ = []
     hide_ = party_walls(jobs_, T_b)
     jobs_ = [j_ + (hd_,) for j_, hd_ in zip(jobs_, hide_)]
-    bb_ = Bar("building meshes on terrain", max(1, len(jobs_)))
-    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T_b,)), chunk=16, on=lambda d, t: bb_.update(d)):         # the meshes: pure per-building work, on all cores
+    bar_ = Bar("building meshes on terrain", max(1, len(jobs_)))
+    for binf_, adds_ in par.pmap(_bld_job, jobs_, init=(_bld_init, (T_b,)), chunk=16, on=lambda d, t: bar_.update(d)):         # the meshes: pure per-building work, on all cores
         binfo.append(binf_)
         adds_ = [a_ for a_ in adds_ if len(a_[1])]
         spans_ = []
@@ -2482,7 +2489,8 @@ def main():
             lo_ = np.min([p_.min(axis=0) for _, p_, _, _ in adds_], axis=0)
             hi_ = np.max([p_.max(axis=0) for _, p_, _, _ in adds_], axis=0)
             building_lods.append((binf_[0], lo_.tolist(), hi_.tolist(), spans_))
-    bb_.done()
+    bar_.done()
+    del bar_, bmap       # (clock times and object addresses: they would make the stage output differ every run)
     phase("cables and ground")
     buildings[:] = [b_ for b_ in buildings if len(b_["tri"])]
     del mover, building_index, candidate_sections

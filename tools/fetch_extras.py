@@ -17,7 +17,7 @@ def bus_stops(pbf):
     from geo import bbox, project
     s_, w_, n_, e_ = bbox()
     out = []
-    for o in osmium.FileProcessor(pbf, osmium.osm.NODE):
+    for o in osmium.FileProcessor(pbf, osmium.osm.NODE).with_filter(osmium.filter.KeyFilter("highway", "public_transport")):
         t = o.tags
         if t.get("highway") == "bus_stop" or (t.get("public_transport") == "platform" and t.get("bus") == "yes"):
             if o.location.valid() and s_ <= o.location.lat <= n_ and w_ <= o.location.lon <= e_:
@@ -32,7 +32,7 @@ def signal_nodes(pbf):
     from geo import bbox, project
     s_, w_, n_, e_ = bbox()
     out = []
-    for o in osmium.FileProcessor(pbf, osmium.osm.NODE):
+    for o in osmium.FileProcessor(pbf, osmium.osm.NODE).with_filter(osmium.filter.KeyFilter("highway")):
         if o.tags.get("highway") == "traffic_signals" and o.location.valid() and s_ <= o.location.lat <= n_ and w_ <= o.location.lon <= e_:
             x, y = project(o.location.lat, o.location.lon)
             out.append([round(x, 1), round(y, 1)])
@@ -65,7 +65,7 @@ def rail_data(pbf):
             if any(s_ <= q.lat <= n_ and w_ <= q.lon <= e_ for q in w.nodes if q.location.valid()):
                 out.append(["way", k, t.get("bridge", "no") != "no", t.get("tunnel", "no") != "no", [[round(a, 1), round(b, 1)] for a, b in pts]])
 
-    H().apply_file(pbf, locations=True)
+    H().apply_file(pbf, locations=True, filters=[osmium.filter.KeyFilter("railway")])
     return out
 
 

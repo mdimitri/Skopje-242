@@ -3,10 +3,16 @@ import math
 
 import mapbox_earcut as earcut
 import numpy as np
+import shapely
 from shapely.geometry import MultiPolygon, Polygon
 
 SUN = np.array([-0.45, 0.80, -0.40])
 SUN = SUN / np.linalg.norm(SUN)
+MERGE = 0.005          # outline points that move a filled shape by less than this (m) are merged: fewer triangles
+
+
+def merged(g):
+    return shapely.simplify(g, MERGE) if g is not None and MERGE else g
 
 
 def polys(g):
@@ -41,29 +47,55 @@ class Mesh:
         self.tri(a, b, c, col)
         self.tri(a, c, d, col)
 
+    def tris(self, t, col, lit=True):
+        """Many tri() at once: t is (n, 3, 3)."""
+        if lit:
+            n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+            ln = np.sqrt((n * n).sum(axis=1))
+            keep = ln >= 1e-12
+            t, n, ln = t[keep], n[keep], ln[keep]
+            n = n / ln[:, None]
+            n[n[:, 1] < 0] *= -1
+            k = 0.62 + 0.46 * np.maximum(0.0, n @ SUN) - 0.08 * (1 - n[:, 1])
+        else:
+            k = np.ones(len(t))
+        cc = np.full((len(t), 4), 255)
+        cc[:, :3] = np.clip(np.trunc(np.asarray(col[:3], float) * k[:, None]), 0, 255)
+        self.P.extend(t.reshape(-1, 3))
+        self.C.extend(np.repeat(cc, 3, axis=0).tolist())
+
     def poly(self, g, y, col, lit=True):
-        """Fill a shapely (Multi)Polygon, holes included, flat at height y (y may be a function (x, z) -> y)."""
-        for p in polys(g):
+        """Fill a shapely (Multi)Polygon, holes included, flat at height y (y may be a function of coordinate arrays
+        (x, z) -> heights)."""
+        for p in polys(merged(g)):
             if p.area < 1e-4:
                 continue
             rings = [np.asarray(p.exterior.coords)[:-1]] + [np.asarray(r.coords)[:-1] for r in p.interiors]
             v = np.concatenate(rings).astype(np.float64)
             ends = np.cumsum([len(r) for r in rings]).astype(np.uint32)
             idx = np.asarray(earcut.triangulate_float64(v, ends)).reshape(-1, 3)
-            for t in idx:
-                q = [(v[i][0], (y(v[i][0], v[i][1]) if callable(y) else y), v[i][1]) for i in t]
-                self.tri(*q, col, lit)
+            if not len(idx):
+                continue
+            height = np.broadcast_to(y(v[:, 0], v[:, 1]) if callable(y) else y, len(v))
+            self.tris(np.stack([v[idx, 0], height[idx], v[idx, 1]], axis=2), col, lit)
 
     def wall_ring(self, coords, y0, y1, col):
-        c = list(coords)
-        for i in range(len(c) - 1):
-            a, b = c[i], c[i + 1]
-            if (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 < 1e-8:
-                continue
-            self.quad((a[0], y0, a[1]), (b[0], y0, b[1]), (b[0], y1, b[1]), (a[0], y1, a[1]), col)
+        c = np.asarray(coords, float)
+        if len(c) < 2:
+            return
+        a, b = c[:-1, :2], c[1:, :2]
+        far = ((a - b) ** 2).sum(axis=1) >= 1e-8
+        a, b = a[far], b[far]
+        if not len(a):
+            return
+        low, high = np.full(len(a), y0, float), np.full(len(a), y1, float)
+        p, q = np.stack([a[:, 0], low, a[:, 1]], 1), np.stack([b[:, 0], low, b[:, 1]], 1)
+        r, t = np.stack([b[:, 0], high, b[:, 1]], 1), np.stack([a[:, 0], high, a[:, 1]], 1)
+        self.tris(np.stack([np.stack([p, q, r], 1), np.stack([p, r, t], 1)], 1).reshape(-1, 3, 3), col)
 
     def prism(self, g, y0, y1, top, side):
         """Raised slab: flat top at y1 and vertical faces down to y0 on every boundary ring."""
+        g = merged(g)
         self.poly(g, y1, top)
         for p in polys(g):
             self.wall_ring(p.exterior.coords, y0, y1, side)

@@ -86,7 +86,7 @@ def main():
                 res.append([round(x, 1), round(y, 1), c, t.get("name", "")[:40]])
                 subs[f"{round(x, 1)},{round(y, 1)}"] = sub_of(t)
 
-    H().apply_file(pbf, locations=True)
+    H().apply_file(pbf, locations=True, filters=[osmium.filter.KeyFilter(*CATS)])      # the C++ side skips everything else
     with open(out + ".tmp", "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False)
     os.replace(out + ".tmp", out)

@@ -140,6 +140,17 @@ function Pip-Install($pipArgs) {
     & $py -m pip install --disable-pip-version-check --no-warn-script-location --prefer-binary --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org @pipArgs 2>&1 | Out-Host
     return ($LASTEXITCODE -eq 0)
 }
+# everything that is missing in one go with uv (downloads and unpacks in parallel, several times faster than pip);
+# whatever uv cannot do is installed by the pip steps below, which check each library again
+$want = @()
+& $py -c $libTest 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { $want += @('-r', "$root\requirements.txt") }
+foreach ($m in @('osmium', 'comtypes', 'pyworld', 'scipy')) { & $py -c "import $m" 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { $want += $m } }
+if ($want.Count) {
+    Say "Installing libraries ..."
+    & $py -m pip install --disable-pip-version-check --no-warn-script-location --prefer-binary uv 2>&1 | Out-Host
+    if ($LASTEXITCODE -eq 0) { & $py -m uv pip install --python $py --compile-bytecode @want 2>&1 | Out-Host }
+}
 $libErr = & $py -c $libTest 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) {
     Say "Installing libraries (raylib, numpy, pillow, mapbox-earcut) ..."

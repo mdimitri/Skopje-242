@@ -163,7 +163,9 @@ def extract(pbf, on_el=None, on_tick=None):
     out = {k: [] for k in ("roads", "buildings", "areas", "pois", "places")}
     way_geom, node_pos = {}, {}
     st["pass"] = 2
-    fp = osmium.FileProcessor(pbf, osmium.osm.NODE | osmium.osm.WAY).with_locations()
+    # (untagged nodes are dropped inside the C++ library, after their locations are noted: only a few % reach Python)
+    fp = (osmium.FileProcessor(pbf, osmium.osm.NODE | osmium.osm.WAY).with_locations()
+          .with_filter(osmium.filter.EmptyTagFilter().enable_for(osmium.osm.NODE)))
     for o in fp:
         tick()
         if o.is_node():
@@ -171,7 +173,7 @@ def extract(pbf, on_el=None, on_tick=None):
             if not o.location.valid():
                 continue
             lat, lon = o.location.lat, o.location.lon
-            if len(o.tags) and inside(lat, lon):
+            if inside(lat, lon):
                 t = dict(o.tags)
                 el = None
                 for l in layers_of("n", t):

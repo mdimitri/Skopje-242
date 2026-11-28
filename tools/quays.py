@@ -16,7 +16,6 @@ import math
 import numpy as np
 from PIL import Image, ImageDraw
 
-import par
 from progress import frac, tile_plan, tile_state
 
 QSTEP = 1.0
@@ -300,34 +299,14 @@ def _extend_bridges(roads, nearest_bank, reach):
 
 
 # --------------------------------------------------------------------------------------------- the build
-_W = {}                                                   # worker process: its tile function
-
-
-def _worker_init(args):
-    build(*args, log=lambda *a, **k: None, _worker=True)
-
-
-def _tile_job(t_):
-    tile_state(t_, "active")
-    result = _W["tile"](t_)
-    tile_state(t_, "done")
-    return result
-
-
-def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, log=print, _worker=False):
+def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, log=print):
     """river_polys: [(outer, holes)]; river_lines: [(pts, width)] (width >= 8: painted as water);
     roads: build_world road dicts; buildings: dicts with 'ring'; bld_img: building mask at `cell` m.
     -> (Overlay or None, info dict for the meshes)."""
     if not river_polys and not river_lines:
         return None, {}
-    tick = (lambda f, sub='quays': None) if _worker else (lambda f, sub='quays': frac(f, sub))      # (workers stay silent)
-    pinit = None
-    if not _worker and par.jobs() > 1:                  # start the workers now: they repeat the set-up below while this process does it
-        pinit = (_worker_init, ((T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy),))
-        try:
-            par._pool(pinit)
-        except (OSError, ImportError):
-            pinit = None
+    def tick(f, sub='quays'):
+        frac(f, sub)
     W, H = int(round(2 * hx / QSTEP)), int(round(2 * hy / QSTEP))
     mask = Image.new("1", (W, H), 0)                    # river polygons at 1 m
     md = ImageDraw.Draw(mask)
@@ -693,16 +672,13 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
     tick(0.68)
     # ---- tiles near the banks
     ntx, nty = int(math.ceil(W / TILE)), int(math.ceil(H / TILE))
-    want = set()
     offs = np.linspace(-REACH, REACH, int(math.ceil(2 * REACH / (TILE * QSTEP * 0.5))) + 1)     # < half a tile apart
-    for ax, ay, bx, by, *_ in E:
-        for x_, y_ in ((ax, ay), (bx, by)):
-            for dx in offs:
-                for dy in offs:
-                    tx_ = int(math.floor((x_ + dx + hx) / QSTEP / TILE))
-                    ty_ = int(math.floor((y_ + dy + hy) / QSTEP / TILE))
-                    if 0 <= tx_ < ntx and 0 <= ty_ < nty:
-                        want.add((tx_, ty_))
+    ends = np.asarray([q[:4] for q in E], np.float64).reshape(-1, 2)          # both ends of every bank segment
+    tx_ = np.floor((ends[:, 0, None] + offs + hx) / QSTEP / TILE).astype(np.int64)
+    ty_ = np.floor((ends[:, 1, None] + offs + hy) / QSTEP / TILE).astype(np.int64)
+    okx, oky = (tx_ >= 0) & (tx_ < ntx), (ty_ >= 0) & (ty_ < nty)
+    codes = (tx_[:, :, None] * nty + ty_[:, None, :])[okx[:, :, None] & oky[:, None, :]]
+    want = {(int(c) // nty, int(c) % nty) for c in np.unique(codes)}
     for outer, _h in river_polys:                       # the whole water surface too (it is lowered to the water level)
         xs, ys = [p[0] for p in outer], [p[1] for p in outer]
         for tx_ in range(max(0, int((min(xs) + hx) / QSTEP / TILE)), min(ntx - 1, int((max(xs) + hx) / QSTEP / TILE)) + 1):
@@ -738,27 +714,18 @@ def build(T, river_polys, river_lines, roads, buildings, bld_img, cell, hx, hy, 
         cls[inside] = C_WATER
         return delta.reshape(TILE + 1, TILE + 1).astype(np.float32), cls.reshape(TILE + 1, TILE + 1)
 
-    if _worker:                                         # a pool worker: the set-up above is rebuilt here, the tiles come as jobs
-        _W["tile"] = one_tile
-        return None, {}
     tiles = sorted(want)
     tile_plan("quays", TILE * QSTEP, tiles, (-hx, -hy))
 
     def got(k_):
         if k_ % 8 == 0:
             tick(0.7 + 0.27 * k_ / max(1, len(tiles)))
-    if pinit is not None and len(tiles) > 300:          # the tiles are independent: all cores
-        res = par.pmap(_tile_job, tiles, init=pinit,
-                       chunk=max(4, len(tiles) // (par.jobs() * 8)), on=lambda d, t: got(d))
-    else:
-        if pinit is not None:
-            par.close()
-        res = []
-        for k_, t_ in enumerate(tiles):
-            got(k_)
-            tile_state(t_, "active")
-            res.append(one_tile(t_))
-            tile_state(t_, "done")
+    res = []                                            # (a pool would cost more to set up than these tiles take)
+    for k_, t_ in enumerate(tiles):
+        got(k_)
+        tile_state(t_, "active")
+        res.append(one_tile(t_))
+        tile_state(t_, "done")
     for t_, r_ in zip(tiles, res):                      # in tile order: the same overlay however many cores ran it
         if r_ is not None:
             idx[t_[1], t_[0]] = len(Ds)

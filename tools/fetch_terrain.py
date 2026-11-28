@@ -4,6 +4,7 @@ Source: the open "Terrarium" elevation tiles (Mapzen / AWS open data, built from
 If the download fails the game still builds - with flat terrain - and says so.
 """
 import argparse
+import concurrent.futures as cf
 import io
 import math
 import os
@@ -109,12 +110,13 @@ def main():
     net.emit("plan", what="dem", cells=[{"id": f"dem:{x}:{y}", "layer": "dem", "r": tile_rect(Z, x, y)}
                                         for y in range(t_y0, t_y1 + 1) for x in range(t_x0, t_x1 + 1)])
     mosaic = np.zeros(((t_y1 - t_y0 + 1) * 256, (t_x1 - t_x0 + 1) * 256), np.float32)
-    k = 0
     try:
-        for ty in range(t_y0, t_y1 + 1):
-            for tx in range(t_x0, t_x1 + 1):
-                mosaic[(ty - t_y0) * 256:(ty - t_y0 + 1) * 256, (tx - t_x0) * 256:(tx - t_x0 + 1) * 256] = get_tile(Z, tx, ty, mirrors, cache_dir)
-                k += 1
+        with cf.ThreadPoolExecutor(max_workers=8) as pool:                # the time is all waiting: several tiles at once
+            wanted = {pool.submit(get_tile, Z, tx, ty, mirrors, cache_dir): (tx, ty)
+                      for ty in range(t_y0, t_y1 + 1) for tx in range(t_x0, t_x1 + 1)}
+            for done in cf.as_completed(wanted):
+                tx, ty = wanted[done]
+                mosaic[(ty - t_y0) * 256:(ty - t_y0 + 1) * 256, (tx - t_x0) * 256:(tx - t_x0 + 1) * 256] = done.result()
     except Exception as e:  # noqa: BLE001
         print("[terrain] FAILED:", e)
         print("[terrain] WARNING: no elevation data - the city will be flat. Re-run tools/fetch_terrain.py later.")

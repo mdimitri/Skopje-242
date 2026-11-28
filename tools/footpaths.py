@@ -226,6 +226,12 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         return any(math.hypot(px - x, py - y) < 25 for dx in (-1, 0, 1) for dy in (-1, 0, 1) for px, py in feet.get((gx + dx, gy + dy), ()))
 
     # ---- 1: cut-throughs ------------------------------------------------------------------------------------
+    footed = [None] * len(S)                    # by_foot() of every sample, asked for over and over below
+
+    def foot(i):
+        if footed[i] is None:
+            footed[i] = by_foot(S[i][0], S[i][1])
+        return footed[i]
     order = list(range(len(S)))
     rnd.shuffle(order)
     nc = 0
@@ -235,9 +241,9 @@ def generate(roads, buildings, bld_img, surf_img, rails, pois, stops, T, hx, hy,
         if a in used:
             continue
         ax, ay, ra = S[a][0], S[a][1], S[a][2]
-        if by_foot(ax, ay):
+        if foot(a):
             continue
-        cands = [(d, b) for d, b in near(ax, ay, 22.0, 80.0) if S[b][2] != ra and b not in used and not by_foot(S[b][0], S[b][1])]
+        cands = [(d, b) for d, b in near(ax, ay, 22.0, 80.0) if S[b][2] != ra and b not in used and not foot(b)]
         rnd.shuffle(cands)
         for d, b in cands[:10]:
             bx, by = S[b][0], S[b][1]

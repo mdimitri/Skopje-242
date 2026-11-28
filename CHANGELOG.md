@@ -2,6 +2,14 @@
 
 All notable changes to Скопје · 242. Newest first.
 
+## Faster world build
+
+- The world build is several times faster (1 × 1 km sample on a 20-thread laptop: 182 s -> about 30 s). One worker pool serves the whole build, road tiles are compiled and their meshes cleaned and draped in parallel, and the slowest single-threaded steps were rewritten.
+- Road outlines are merged within 5 mm and buffers use fewer arc segments, so the road mesh has about 10x fewer triangles and a built world is about a third of the size.
+- `python tools/build_world.py --tile 1000` builds only a 1 x 1 km square around the centre (own output folder), for quick tests.
+- Road tiles are cached: an unchanged tile is loaded instead of compiled (`<world>.stages/roadtiles`).
+- Setup installs the libraries with `uv` (pip remains the fallback); the map readers skip unneeded objects and terrain tiles download in parallel.
+
 ## Traffic: dodge a standing car
 
 - A car held up by a standing car that is not part of a queue (a side-street or slip-road car waiting at its line with its body in the lane, a breakdown) now takes a free neighbouring lane at once, by space, with no timer (`Traffic.DODGE`, switchable in the lab). Before, cars creeping at 0.3 m/s never counted as stuck and sat behind it. Lab, 12 seeds on a Partizanski Odredi sample: time boulevard cars spent blocked by side-street cars 51 s -> 23 s, no more collisions.

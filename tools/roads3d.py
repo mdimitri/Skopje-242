@@ -196,30 +196,65 @@ class Out:
         self.n += 6
 
     def flush(self, add, mat):
-        arrs = {}
-        for (key, did), (p, c, deck, pre) in self.d.items():
-            pos = np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)])      # pre: blocks from the pool workers
-            c = np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])
-            arrs[(key, did)] = _clean_tris(pos, c)
+        """Cleans, clips and drapes every chunk's triangles (one job per chunk, on all cores) and hands them to add()."""
+        keys = list(self.d)
+        blocks = []
+        for k in keys:
+            p, c, _deck, pre = self.d[k]                     # pre: blocks from the pool workers
+            blocks.append((np.concatenate([q[0] for q in pre] + [np.array(p, np.float32).reshape(-1, 3)]),
+                           np.concatenate([q[1] for q in pre] + [np.array(c, np.uint8).reshape(-1, 4)])))
+        many = len(keys) > 8 and sum(len(p) for p, _ in blocks) > 60000
+        run = par.pmap if many else (lambda fn, jobs, **kw: [fn(j) for j in jobs])
+        arrs = dict(zip(keys, run(_clean_job, blocks, chunk=1)))
         asph = {}                                            # chunk -> its flat asphalt triangles (the clipper also looks across chunk borders)
         for (key, did), (pos, c) in arrs.items():
             if self.d[(key, did)][2] is None and len(pos):
                 t = pos.reshape(-1, 3, 3)
                 asph[key] = t[_asphalt_idx(t, c)]
-        for k_, ((key, did), (pos, c)) in enumerate(arrs.items()):
-            if _TICK[0] and k_ % 8 == 0:
-                _TICK[0](k_ / max(1, len(arrs)))
-            deck = self.d[(key, did)][2]
-            if deck is None:
-                nb = [asph[q] for q in _neighbours(key) if q in asph and len(asph[q])]
-                pos, c = _drop_covered_pavement(pos, c, foreign=np.concatenate(nb) if nb else None)
-                pos, c = _clean_tris(pos, c)                  # slivers left by the clipper
-            if deck is not None:
-                pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
-            elif self.T is not None:
-                pos, c = _refine(pos, c, self.T)
-                pos[:, 1] += self.T.h(pos[:, 0], pos[:, 2])
+
+        def jobs():
+            for (key, did), (pos, c) in arrs.items():
+                deck = self.d[(key, did)][2]
+                nb = [asph[q] for q in _neighbours(key) if q in asph and len(asph[q])] if deck is None else []
+                yield pos, c, deck, np.concatenate(nb) if nb else None
+        todo = list(jobs())
+        if many:
+            done = par.pmap(_flush_job, todo, init=(_init_flush, (self.T,)), chunk=1,
+                            on=(lambda k_, n_: _TICK[0](k_ / n_) if _TICK[0] and k_ % 8 == 0 else None))
+        else:
+            _init_flush(self.T)
+            done = [_flush_job(j) for j in todo]
+        global _CLIPPED
+        for (key, _did), (pos, c, clipped) in zip(arrs, done):
+            if many:
+                _CLIPPED += clipped
             add(key, mat, pos, np.zeros((len(pos), 2), np.float32), c)
+
+
+_FLUSH = [None]                                              # the terrain, in a flush worker
+
+
+def _init_flush(T):
+    _FLUSH[0] = T
+
+
+def _clean_job(block):
+    return _clean_tris(*block)
+
+
+def _flush_job(job):
+    """(positions, colours, deck or None, neighbour chunks' asphalt) -> the chunk's final triangles."""
+    pos, c, deck, foreign = job
+    T, before = _FLUSH[0], _CLIPPED
+    if deck is None:
+        pos, c = _drop_covered_pavement(pos, c, foreign=foreign)
+        pos, c = _clean_tris(pos, c)                         # slivers left by the clipper
+        if T is not None:
+            pos, c = _refine(pos, c, T)
+            pos[:, 1] += T.h(pos[:, 0], pos[:, 2])
+    else:
+        pos[:, 1] += np.array([deck.at(x, z)[0] for x, z in zip(pos[:, 0], pos[:, 2])], np.float32)
+    return pos, c, _CLIPPED - before
 
 
 def _neighbours(key):

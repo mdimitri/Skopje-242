@@ -3,10 +3,12 @@
 The box is 11 km (east-west) x 7 km (north-south): the original 5 x 5 km around the centre plus 3 km to the east and
 west and 1 km to the north and south."""
 import math
+import os
 
 LAT0, LON0 = 41.9973, 21.4280      # Stone Bridge / Macedonia Square
-HX = 6000.0                        # half-size east-west in metres
-HY = 4000.0                        # half-size north-south in metres
+_TILE = float(os.environ.get("SK242_TILE") or 0)      # build_world --tile: a square this many metres wide
+HX = _TILE / 2 or 6000.0           # half-size east-west in metres
+HY = _TILE / 2 or 4000.0           # half-size north-south in metres
 HALF = HX                          # (kept for old callers: the longest half-extent)
 M_LAT = 110574.0
 M_LON = 111320.0 * math.cos(math.radians(LAT0))

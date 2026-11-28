@@ -47,7 +47,7 @@ class BridgeInterfaces(unittest.TestCase):
         source = SimpleNamespace(features=[("road", way, line)], index=STRtree([line]),
                                  road_ids=[20, 10], node_ids={0: 100, 1: 101, 2: 102},
                                  originals={10: 10}, tags={10: way["tags"], 20: way["tags"]},
-                                 references=[], reviewed=None, relations=[])
+                                 sites=[], relations=[])
         mesh = build_tile(source, [ground, bridge, *feet], 0, 0, 120)
         triangles = np.asarray(mesh.P).reshape(-1, 3, 3)
         asphalt = unary_union([Polygon(t[:, [0, 2]]) for t in triangles if np.allclose(t[:, 1], 0)])

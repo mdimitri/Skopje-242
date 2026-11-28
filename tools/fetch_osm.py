@@ -237,7 +237,7 @@ def from_pbf(grid, todo, results):
                 preview(f"{layer}:{i}:{j}", layer, els, limit=400)
             buf.clear()
             phase = {1: "relations", 2: "nodes + ways", 3: "done"}[st["pass"]]
-            est = max(1.0, os.path.getsize(pbf) * 0.14)               # ~ objects per byte of a .osm.pbf
+            est = max(1.0, os.path.getsize(pbf) * 0.013)              # ~ ways + tagged nodes per byte of a .osm.pbf
             frac = 0.05 if st["pass"] == 1 else min(0.95, 0.05 + 0.9 * (st["nodes"] + st["ways"]) / est)
             net.emit("cut", nodes=st["nodes"], ways=st["ways"], found=st["found"], frac=round(frac if st["pass"] < 3 else 0.97, 3),
                      **{"pass": st["pass"]})

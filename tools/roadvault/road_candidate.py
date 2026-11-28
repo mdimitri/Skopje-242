@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 import numpy as np
+import shapely
 from shapely import STRtree, make_valid
 from shapely.geometry import LineString, Point, Polygon, mapping
 from shapely.geometry.polygon import orient
@@ -16,14 +17,15 @@ sys.path.append(str(ROOT / "src"))
 from roadwidth import lane_bounds, lane_count, lane_turns  # noqa: E402
 
 if __package__:
-    from .mesh import Mesh, polys
+    from .mesh import Mesh, merged, polys
     from .traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
 else:
-    from mesh import Mesh, polys
+    from mesh import Mesh, merged, polys
     from traffic_furniture import GANTRY_CLEARANCE, draw_device, draw_gantry
 
 LANE_WIDTH = 3.25
 PAINT = (236, 233, 216)
+ARC = 4                          # segments per quarter circle of the buffers (round kerbs, caps and noses)
 
 
 def unit(vector):
@@ -36,6 +38,19 @@ def frame(line, station):
     b = np.array(line.interpolate(min(line.length, station + 0.45)).coords[0])
     heading = unit(b - a)
     return p, heading, np.array([-heading[1], heading[0]])
+
+
+def frames(line, stations):
+    """frame() for many stations at once -> points, rights (n, 2).  (np.interp along the line: asking GEOS for one point
+    at a time walks the line from its start every time.)"""
+    n = len(stations)
+    xy = shapely.get_coordinates(line)
+    along = np.concatenate([[0.0], np.cumsum(np.sqrt((np.diff(xy, axis=0) ** 2).sum(axis=1)))])
+    at = np.concatenate([stations, np.maximum(0, stations - 0.45), np.minimum(line.length, stations + 0.45)])
+    xy = np.stack([np.interp(at, along, xy[:, 0]), np.interp(at, along, xy[:, 1])], axis=1)
+    step = xy[2 * n:] - xy[n:2 * n]
+    heading = step / np.sqrt((step * step).sum(axis=1))[:, None]
+    return xy[:n], np.stack([-heading[:, 1], heading[:, 0]], axis=1)
 
 
 def cubic(a, b, c, d):
@@ -90,35 +105,51 @@ class Edge:
             offsets += np.array([lane_width * (1 - t * t * (3 - 2 * t)), 0]) - lane_width / 2
         return offsets
 
+    def cross_sections(self, stations):
+        """cross_section() for an array of stations -> (n, 2)."""
+        offsets = np.repeat((np.array([-0.5, 0.5]) * self.section["w"])[None, :], len(stations), axis=0)
+        for end, length, left, right, *hold in self.section.get("tapers", []):
+            distance = stations if end == "start" else self.line.length - stations
+            distance = np.maximum(0, distance - (hold[0] if hold else 0))
+            t = np.maximum(0, 1 - distance / length)[:, None]
+            offsets += np.array([left, right]) * t * t * (3 - 2 * t)
+        for end, length, shift in self.section.get("fork_shifts", []):
+            distance = stations if end == "start" else self.line.length - stations
+            t = np.maximum(0, np.minimum(1, 1 - distance / length))[:, None]
+            offsets += np.asarray(shift) * t * t * (3 - 2 * t)
+        if opening := self.section.get("left_lane_opening"):
+            lane_width = self.section["w"] / self.section["lanes"]
+            t = np.minimum(1, stations / opening)
+            offsets += np.stack([lane_width * (1 - t * t * (3 - 2 * t)), np.zeros(len(t))], axis=1) - lane_width / 2
+        return offsets
+
     def trace(self, fraction, stations, extra=0.0, lane_aligned=False):
-        points = []
-        for station in stations:
-            p, _, right = frame(self.line, station)
-            left_edge, right_edge = self.cross_section(station)
-            offset = left_edge + fraction * (right_edge - left_edge)
-            if lane_aligned and self.section.get("left_lane_opening"):
-                lanes = self.section["lanes"]
-                width = self.section["w"]
+        stations = np.asarray(stations, dtype=float)
+        points, right = frames(self.line, stations)
+        left_edge, right_edge = self.cross_sections(stations).T
+        offset = left_edge + fraction * (right_edge - left_edge)
+        if lane_aligned and self.section.get("left_lane_opening"):
+            lanes = self.section["lanes"]
+            width = self.section["w"]
+            divider = right_edge - width * (1 - 1 / lanes)
+            offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
+                      else right_edge - width * (1 - fraction))
+        if lane_aligned and (taper := self.section.get("lane_taper")):
+            _, _, side = taper
+            lanes = self.section["lanes"]
+            width = self.section["w"]
+            if side == "both":
+                nominal = width * (fraction - 0.5)
+                offset = np.maximum(left_edge, np.minimum(right_edge, nominal))
+            elif side == "left":
                 divider = right_edge - width * (1 - 1 / lanes)
                 offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
                           else right_edge - width * (1 - fraction))
-            if lane_aligned and (taper := self.section.get("lane_taper")):
-                _, _, side = taper
-                lanes = self.section["lanes"]
-                width = self.section["w"]
-                if side == "both":
-                    nominal = width * (fraction - 0.5)
-                    offset = max(left_edge, min(right_edge, nominal))
-                elif side == "left":
-                    divider = right_edge - width * (1 - 1 / lanes)
-                    offset = (left_edge + (divider - left_edge) * fraction * lanes if fraction < 1 / lanes
-                              else right_edge - width * (1 - fraction))
-                else:
-                    divider = left_edge + width * (1 - 1 / lanes)
-                    offset = (left_edge + width * fraction if fraction <= 1 - 1 / lanes
-                              else right_edge - (right_edge - divider) * (1 - fraction) * lanes)
-            points.append(p + right * (offset + extra))
-        return LineString(points)
+            else:
+                divider = left_edge + width * (1 - 1 / lanes)
+                offset = (left_edge + width * fraction if fraction <= 1 - 1 / lanes
+                          else right_edge - (right_edge - divider) * (1 - fraction) * lanes)
+        return LineString(points + right * (offset + extra)[:, None])
 
     def lane_fraction(self, lane, direction):
         lo, hi = lane_bounds(self.section, direction)
@@ -305,8 +336,8 @@ def footprint(edge):
     """Sweep the left and right section boundaries in the centerline's local frame."""
     line = edge.line
     stations = np.linspace(0, line.length, max(2, int(line.length * 2) + 1))
-    left = list(edge.trace(0, stations).coords)
-    right = list(edge.trace(1, stations).coords)
+    left = list(merged(edge.trace(0, stations)).coords)
+    right = list(merged(edge.trace(1, stations)).coords)
     return make_valid(Polygon(left + right[::-1]))
 
 
@@ -316,7 +347,7 @@ def dash(line, length=3, period=8):
 
 
 def stroke(line, width):
-    return line.buffer(width / 2, cap_style="flat")
+    return line.buffer(width / 2, cap_style="flat", quad_segs=ARC)
 
 
 def approach_paint(edge, begin, end):
@@ -336,7 +367,7 @@ def approach_paint(edge, begin, end):
             center, heading, right = frame(edge.line, station)
             lo, hi = edge.cross_section(station)
             center += right * (lo + 0.75 if side == "left" else hi - 0.75)
-            wheels = [Point(center + heading * shift).buffer(0.28).boundary.buffer(0.045)
+            wheels = [Point(center + heading * shift).buffer(0.28, quad_segs=ARC).boundary.buffer(0.045, quad_segs=ARC)
                       for shift in (-0.55, 0.55)]
             frame_line = LineString([center - heading * 0.55, center - right * 0.2,
                                      center + heading * 0.55, center + right * 0.15,
@@ -410,8 +441,8 @@ def yield_teeth(edge, station):
 def edge_band(edge, side, width):
     stations = np.linspace(0, edge.line.length, math.ceil(edge.line.length * 2) + 1)
     fraction = 0 if side == "left" else 1
-    inner = list(edge.trace(fraction, stations).coords)
-    outer = list(edge.trace(fraction, stations, -width if side == "left" else width).coords)
+    inner = list(merged(edge.trace(fraction, stations)).coords)
+    outer = list(merged(edge.trace(fraction, stations, -width if side == "left" else width)).coords)
     return make_valid(Polygon(inner + outer[::-1]))
 
 
@@ -463,16 +494,16 @@ def blend_slip_edges(asphalt, edges, joins, report=None):
             report.append(dict(kind="sidewalk_join_needs_layout", source=join[0], target=join[1]))
             continue
         surfaces[index] = rebuilt
-        patches.append(arc.buffer(-3.65, single_sided=True).union(smoothed.buffer(-3.65, single_sided=True)))
+        patches.append(arc.buffer(-3.65, single_sided=True, quad_segs=ARC).union(smoothed.buffer(-3.65, single_sided=True, quad_segs=ARC)))
     return unary_union(surfaces), patches
 
 
 def median_cut_through(a, b):
     """A level crossing link with flared, rounded mouths at the carriageways."""
     direction = unit(b - a)
-    walk = LineString([a - 0.45 * direction, b + 0.45 * direction]).buffer(1.35)
-    mouths = unary_union([Point(a).buffer(1.65), Point(b).buffer(1.65)])
-    return walk.union(mouths).buffer(0.4).buffer(-0.4)
+    walk = LineString([a - 0.45 * direction, b + 0.45 * direction]).buffer(1.35, quad_segs=ARC)
+    mouths = unary_union([Point(a).buffer(1.65, quad_segs=ARC), Point(b).buffer(1.65, quad_segs=ARC)])
+    return walk.union(mouths).buffer(0.4, quad_segs=ARC).buffer(-0.4, quad_segs=ARC)
 
 
 def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk_patches, divider):
@@ -484,8 +515,8 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
                 sidewalks.append(edge_band(edges[int(way)], side, 2.4))
             elif feature == "curb":
                 curbs.append(edge_band(edges[int(way)], side, 0.32))
-    sidewalk = unary_union(sidewalks).buffer(0.6).buffer(-0.6).intersection(bounds).difference(asphalt)
-    sidewalk_outline = asphalt.buffer(2.4).difference(asphalt)
+    sidewalk = unary_union(sidewalks).buffer(0.6, quad_segs=ARC).buffer(-0.6, quad_segs=ARC).intersection(bounds).difference(asphalt)
+    sidewalk_outline = asphalt.buffer(2.4, quad_segs=ARC).difference(asphalt)
     for patch in sidewalk_patches:
         sidewalk = sidewalk.difference(patch).union(sidewalk_outline.intersection(patch)).intersection(bounds)
     if not divider.is_empty:
@@ -493,11 +524,11 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
     sidewalk = polygonal(sidewalk)
     # Follow the final asphalt where a road edge or a median nose calls for a curb.
     # The raw section bands only classify the edge and may be covered by the apron.
-    returns = [Point(x, y).buffer(radius) for x, y, radius in layout.get("curb_returns", [])]
-    curb_zone = unary_union([unary_union(curbs).buffer(0.9), refuges, *returns])
+    returns = [Point(x, y).buffer(radius, quad_segs=ARC) for x, y, radius in layout.get("curb_returns", [])]
+    curb_zone = unary_union([unary_union(curbs).buffer(0.9, quad_segs=ARC), refuges, *returns])
     if not divider.is_empty:
         curb_zone = curb_zone.union(divider)
-    outline = asphalt.buffer(0.32).difference(asphalt)
+    outline = asphalt.buffer(0.32, quad_segs=ARC).difference(asphalt)
     curb = outline.intersection(curb_zone).intersection(bounds).difference(sidewalk)
 
     terminals = {}
@@ -533,16 +564,16 @@ def pedestrian_geometry(edges, layout, walks, asphalt, bounds, refuges, sidewalk
         links.append(stroke(LineString([a, b]), 2.1))
     cut_throughs = polygonal(unary_union(cuts).intersection(bounds).difference(asphalt))
     routes = polygonal(unary_union(links).intersection(bounds).difference(asphalt))
-    curb = curb.union(cut_throughs.buffer(0.32).difference(asphalt).difference(sidewalk))
+    curb = curb.union(cut_throughs.buffer(0.32, quad_segs=ARC).difference(asphalt).difference(sidewalk))
     curb = unary_union(polys(curb.difference(routes).difference(cut_throughs)))
     slip_edges = unary_union([edge_band(edge, "left", 0.55) for edge in edges.values()
                               if edge.section["cls"].endswith("_link") and edge.section["ow"]]) if layout.get("source") == "osm-topology" else Polygon()
     active_refuges = unary_union([refuge for refuge in polys(refuges)
                                   if refuge.intersection(routes).area > 0.1
-                                  or refuge.boundary.intersection(slip_edges.buffer(0.15)).length >= 3])
+                                  or refuge.boundary.intersection(slip_edges.buffer(0.15, quad_segs=ARC)).length >= 3])
     sidewalk_base = polygonal(sidewalk.union(active_refuges).difference(asphalt).difference(curb))
     # On an existing sidewalk or refuge, only the curb ramp needs its own mesh.
-    ramps = routes.intersection(asphalt.buffer(1.35))
+    ramps = routes.intersection(asphalt.buffer(1.35, quad_segs=ARC))
     landings = routes.difference(sidewalk_base).union(ramps).difference(cut_throughs)
     paths = []
     for line, width, _ in walks:
@@ -577,14 +608,14 @@ def median_corridors(edges, layout):
 def median_corridor_geometry(edges, layout):
     """Join adjoining mapped carriageway pairs across their OSM way seams."""
     return unary_union([poly for corridor in median_corridors(edges, layout) for poly in polys(corridor)]).buffer(
-        0.8).buffer(-0.8)
+        0.8, quad_segs=ARC).buffer(-0.8, quad_segs=ARC)
 
 
 def protected_median(edges, layout, raw_pavement, bounds):
     corridor = median_corridor_geometry(edges, layout).intersection(bounds)
     # Round out slivers at the caps of adjacent OSM ways. Keep the lengthwise divider
     # while allowing explicitly mapped transverse carriageways through it.
-    return corridor.difference(raw_pavement.buffer(0.12).buffer(-0.12)).buffer(-0.26).buffer(0.26)
+    return corridor.difference(raw_pavement.buffer(0.12, quad_segs=ARC).buffer(-0.12, quad_segs=ARC)).buffer(-0.26, quad_segs=ARC).buffer(0.26, quad_segs=ARC)
 
 
 def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
@@ -603,7 +634,7 @@ def median_landscape(edges, layout, greens, asphalt, bounds, reserved):
 def place_traffic_furniture(edges, layout, asphalt, landings, report=None):
     """Set poles beside the traffic lane or crosswalk, clear of the pedestrian entries."""
     stations = dict(item for group in layout["crossings"] for item in group)
-    blocked = asphalt.buffer(0.22).union(landings.buffer(0.24))
+    blocked = asphalt.buffer(0.22, quad_segs=ARC).union(landings.buffer(0.24, quad_segs=ARC))
     devices = []
     occupied = []
 
@@ -689,24 +720,30 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
     divider = (protected_median(by_id, layout, asphalt, bounds)
                if inferred else Polygon())
     # A routing mistake should fail review before it can pave an unmapped lot.
-    safe_area = asphalt.buffer(3.5)
+    safe_area = asphalt.buffer(3.5, quad_segs=ARC)
     for spec, line in routes:
         if not line.is_simple or not safe_area.covers(line) or not bounds.covers(line):
             raise ValueError(f"Invalid or off-road movement {spec['id']}")
     # Sweep the vehicle envelope through the actual lane connectors to form the
     # apron. This leaves unmapped gaps and medians outside the sweep intact.
-    envelopes = {spec["id"]: line.buffer(spec.get("sweep_width", 2.94) / 2, cap_style="flat")
+    envelopes = {spec["id"]: line.buffer(spec.get("sweep_width", 2.94) / 2, cap_style="flat", quad_segs=ARC)
                  for spec, line in routes}
     swept = unary_union(list(envelopes.values()))
     divider = divider.difference(swept)
     asphalt = asphalt.union(swept)
+    added = []                       # the rounded corners, joined to the asphalt in one go (one big union, not one per corner)
     for x, y, radius in layout["corner_zones"]:
-        zone = Point(x, y).buffer(radius)
-        local = asphalt.intersection(zone.buffer(4))
-        asphalt = asphalt.union(local.buffer(1.45).buffer(-1.45).intersection(zone))
+        zone = Point(x, y).buffer(radius, quad_segs=ARC)
+        window = zone.buffer(4, quad_segs=ARC)
+        local = asphalt.intersection(window)
+        if near := [patch.intersection(window) for patch in added if patch.intersects(window)]:
+            local = unary_union([local, *near])
+        added.append(local.buffer(1.45, quad_segs=ARC).buffer(-1.45, quad_segs=ARC).intersection(zone))
+    if added:
+        asphalt = unary_union([asphalt, *added])
     asphalt = asphalt.intersection(bounds).difference(divider) if inferred else asphalt.intersection(bounds)
     holes = [Polygon(ring) for poly in polys(asphalt) for ring in poly.interiors]
-    fill = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65).area < 1]
+    fill = [hole for hole in holes if hole.area < 15 and hole.buffer(-0.65, quad_segs=ARC).area < 1]
     refuges = [hole for hole in holes if 15 <= hole.area < 190
                and (not inferred or hole.intersection(divider).area < hole.area * 0.2)]
     rounding = list(layout.get("refuge_rounding", []))
@@ -717,7 +754,7 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
                                   and edge.section["ow"]])
         for hole in holes:
             if (hole.area >= 15 and hole.intersection(divider).area < hole.area * 0.2
-                    and hole.boundary.intersection(slip_inside.buffer(0.12)).length >= 5):
+                    and hole.boundary.intersection(slip_inside.buffer(0.12, quad_segs=ARC)).length >= 5):
                 seed = hole.representative_point()
                 rounding.append([seed.x, seed.y, 1])
     for x, y, radius in rounding:
@@ -725,7 +762,7 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
         hole = next((hole for hole in holes if hole.contains(seed)), None)
         if hole is None:
             raise ValueError(f"No enclosed refuge at ({x}, {y})")
-        rounded = hole.buffer(-radius).buffer(radius).intersection(hole)
+        rounded = hole.buffer(-radius, quad_segs=ARC).buffer(radius, quad_segs=ARC).intersection(hole)
         refuges = [refuge for refuge in refuges if refuge is not hole] + [rounded]
         removed = hole.difference(rounded)
         fill.append(removed)
@@ -783,7 +820,7 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
                         point, _, right, lo, hi = crossing_span(edge, at, asphalt)
                     except ValueError:
                         continue
-                    if (bounds.buffer(-2).covers(Point(point)) and
+                    if (bounds.buffer(-2, quad_segs=ARC).covers(Point(point)) and
                             all(walkable.distance(Point(point + right * lateral)) <= 2
                                 for lateral in (lo - 0.3, hi + 0.3))):
                         group[0][1] = round(at, 3)
@@ -824,9 +861,9 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
         overlaps = [road_footprints[i].intersection(road_footprints[j])
                     for i, j in neighbors.T if i < j]
         shared_pavement = unary_union([overlap for overlap in overlaps if overlap.area > 0.35])
-        painted = unary_union(marks).difference(shared_pavement.buffer(0.6))
+        painted = unary_union(marks).difference(shared_pavement.buffer(0.6, quad_segs=ARC))
         if rounded_tips:
-            painted = painted.difference(unary_union(rounded_tips).buffer(0.5))
+            painted = painted.difference(unary_union(rounded_tips).buffer(0.5, quad_segs=ARC))
         marks = [painted]
     crossing_stations = dict(item for group in layout["crossings"] for item in group)
     for way in layout["stop_lines"]:
@@ -853,11 +890,11 @@ def compile_scene(edges, layout, walks, greens, bounds, report=None, *, mesh=Non
     mesh.prism(pavement, -0.065, 0.145, (181, 175, 161), (143, 139, 128))
     mesh.prism(curb, -0.065, 0.155, (203, 197, 181), (154, 148, 136))
     mesh.prism(paths, -0.065, 0.145, (164, 157, 143), (136, 131, 121))
-    mesh.poly(landings, lambda x, y: 0.145 * min(1, asphalt.distance(Point(x, y)) / 1.35),
+    mesh.poly(landings, lambda x, y: 0.145 * np.minimum(1, shapely.distance(asphalt, shapely.points(x, y)) / 1.35),
               (181, 175, 161))
     mesh.poly(cut_throughs, 0, (181, 175, 161))
-    paint = unary_union(marks).difference(crossings.buffer(0.25))
-    mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08)), 0.011, PAINT, lit=False)
+    paint = unary_union(marks).difference(crossings.buffer(0.25, quad_segs=ARC))
+    mesh.poly(paint.union(unary_union(zebras)).intersection(asphalt.buffer(-0.08, quad_segs=ARC)), 0.011, PAINT, lit=False)
     if not preview:
         if furniture_sink is not None:
             furniture = place_traffic_furniture(by_id, layout, asphalt, landings.union(cut_throughs), report)

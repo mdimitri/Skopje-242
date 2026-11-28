@@ -203,40 +203,20 @@ class Source:
                 if isinstance(point, list) and len(point) == 2:
                     self.features.append(("signal", None, Point(point)))
         self.index = STRtree([shape for _, _, shape in self.features])
-        self.references = []
+        # The reviewed junction windows: only their descriptions here, each is compiled once by its own job (build_site).
+        self.osm = osm
+        self.sites = []
         if raw:
             for lat, lon, radius in REFERENCE_SITES:
                 ox, oy = project(lat, lon)
                 window = box(ox - radius, oy - radius, ox + radius, oy + radius)
-                layout = {"origin": (lat, lon), "source": "osm-topology"}
-                bounds = box(-radius, -radius, radius, radius)
-                try:
-                    edges, walks, greens, originals, report = infer_site(layout, osm, bounds)
-                    if not edges:
-                        continue
-                    compile_scene(edges, layout, walks, greens, bounds, report, preview=False)
-                except (KeyError, ValueError, GEOSException) as exc:
-                    print(f"[road candidate] reference at {lat}, {lon} skipped: {exc}", flush=True)
-                    continue
-                core = window.buffer(-5, join_style="mitre")
-                self.references.append((core, ox, oy, bounds, edges, layout, walks, greens, originals, report))
-
-        self.reviewed = None
+                self.sites.append(dict(kind="reference", origin=(lat, lon), radius=radius,
+                                       core=window.buffer(-5, join_style="mitre")))
         layout = json.loads(GLAVINOV.read_text(encoding="utf-8"))
-        if not all(way in self.tags for spec in layout["movements"] for way in (spec["from"], *spec["via"], spec["to"])):
-            return
-        ox, oy = project(*layout["origin"])
-        radius = layout["radius"]
-        bounds = box(-radius, -radius, radius, radius)
-        core = box(ox - REVIEWED_RADIUS, oy - REVIEWED_RADIUS, ox + REVIEWED_RADIUS, oy + REVIEWED_RADIUS)
-        try:
-            edges, walks, greens = site_inputs(layout, osm, bounds, raw, areas)
-            # Validate the complete reviewed layout once before replacing any inferred tiles.
-            compile_scene(edges, layout, walks, greens, bounds, preview=False)
-        except (KeyError, ValueError, GEOSException) as exc:
-            print(f"[road candidate] reviewed Glavinov layout does not fit this OSM extract: {exc}", flush=True)
-        else:
-            self.reviewed = (core, ox, oy, bounds, edges, layout, walks, greens)
+        if all(way in self.tags for spec in layout["movements"] for way in (spec["from"], *spec["via"], spec["to"])):
+            ox, oy = project(*layout["origin"])
+            self.sites.append(dict(kind="reviewed", origin=layout["origin"], radius=layout["radius"],
+                                   core=box(ox - REVIEWED_RADIUS, oy - REVIEWED_RADIUS, ox + REVIEWED_RADIUS, oy + REVIEWED_RADIUS)))
 
 
 def _points(element):
@@ -296,7 +276,55 @@ def _furniture_sink(mesh, graph, offset, controls, owns, junction=None):
     return emit
 
 
-def build_tile(source, edges, tx, ty, radius, edge_ids=None):
+def _graph_records(edges, edge_ids, source):
+    """OSM way -> [(edge index, graph edge, its line)] for the one-way edges that signals can bind to."""
+    records = {}
+    for i, edge in zip(edge_ids, edges):
+        foot = edge.get("flat") and any(isinstance(n, tuple) and n[:1] == ("foot",) for n in (edge["a"], edge["b"]))
+        if edge["drive"] and edge["ow"] and not edge["bridge"] and not foot and len(edge["pts"]) >= 2 and isinstance(edge["b"], int):
+            records.setdefault(source.road_ids[edge["road"]], []).append((i, edge, LineString(edge["pts"])))
+    return records
+
+
+def build_site(source, index, edges, edge_ids):
+    """Compile one reviewed junction window -> (mesh in site coordinates, (ox, oy)), or None when it does not fit this
+    OSM extract (the road tiles then pave it themselves).  mesh.surface is a half-metre height map whose first pixel is
+    mesh.surface_pixel on the global half-metre grid."""
+    site = source.sites[index]
+    ox, oy = project(*site["origin"])
+    radius = site["radius"]
+    bounds = box(-radius, -radius, radius, radius)
+    originals = report = None
+    try:
+        if site["kind"] == "reference":
+            layout = {"origin": site["origin"], "source": "osm-topology"}
+            site_edges, walks, greens, originals, report = infer_site(layout, source.osm, bounds)
+            if not site_edges:
+                return None
+        else:
+            layout = json.loads(GLAVINOV.read_text(encoding="utf-8"))
+            site_edges, walks, greens = site_inputs(layout, source.osm, bounds, _optional_elements(source.osm / "roads.json"),
+                                                    _optional_elements(source.osm / "areas.json"))
+        mesh = TileMesh(translate(site["core"], -ox, -oy))
+        mesh.controls = {"signals": [], "heads": [], "crossings": []}
+        x0, y0, x1, y1 = site["core"].bounds
+        px, py = math.floor(x0 * 2), math.floor(y0 * 2)
+        mesh.surface = Image.new("L", (math.ceil(x1 * 2) - px + 1, math.ceil(y1 * 2) - py + 1))
+        mesh.surface_origin = (px / 2 - ox, py / 2 - oy)
+        mesh.surface_pixel = (px, py)
+        graph = _graph_records(edges, edge_ids, source)
+        bindings = ({way: graph.get(osm_way, ()) for way, osm_way in originals.items()} if originals is not None else graph)
+        junction = ("candidate", "glavinov") if originals is None else None
+        sink = _furniture_sink(mesh, bindings, (ox, oy), mesh.controls, lambda p: mesh.bounds.covers(p), junction)
+        compile_scene(site_edges, layout, walks, greens, bounds, None if report is None else list(report),
+                      mesh=mesh, preview=False, furniture_sink=sink)
+    except (KeyError, ValueError, GEOSException) as exc:
+        print(f"[road candidate] {site['kind']} layout at {site['origin']} skipped: {exc}", flush=True)
+        return None
+    return mesh, (ox, oy)
+
+
+def build_tile(source, edges, tx, ty, radius, edge_ids=None, skip_sites=()):
     tile = box(-radius, -radius, radius, radius)
     bounds = tile.buffer(MARGIN, join_style="mitre")
     node_tags, guides, greens, walks, signals, raw_ways = {}, [], [], [], [], []
@@ -363,11 +391,9 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
         originals[edge.id] = source.originals[edge.id]
         cooked[edge.id] = reviewed_graph.get(originals[edge.id], ())
 
-    sites = list(source.references)
-    if source.reviewed:
-        sites.append((*source.reviewed, None, None))
-    patches = [(translate(site[0], -tx, -ty).intersection(tile), site) for site in sites]
-    covered = unary_union([patch for patch, _ in patches])
+    # the reviewed windows are paved by their own jobs
+    covered = unary_union([translate(site["core"], -tx, -ty).intersection(tile)
+                           for i, site in enumerate(source.sites) if i not in skip_sites])
     mesh = TileMesh(tile.difference(covered))
     mesh.controls = {"signals": [], "heads": [], "crossings": []}
     size = round(radius * 4)
@@ -383,26 +409,6 @@ def build_tile(source, edges, tx, ty, radius, edge_ids=None):
         sink = _furniture_sink(mesh, cooked, (tx, ty), mesh.controls,
                                lambda p: owns(p) and not covered.covers(p))
         compile_scene(candidates, layout, walks, greens, bounds, report, mesh=mesh, preview=False, furniture_sink=sink)
-    for patch, site in patches:
-        if patch.is_empty:
-            continue
-        _, ox, oy, review_bounds, review_edges, layout, review_walks, review_greens, originals, report = site
-        reviewed_mesh = TileMesh(translate(patch, tx - ox, ty - oy))
-        reviewed_mesh.surface = mesh.surface
-        reviewed_mesh.surface_origin = (tx - ox - radius, ty - oy - radius)
-        bindings = ({way: reviewed_graph.get(osm_way, ()) for way, osm_way in originals.items()}
-                    if originals is not None else reviewed_graph)
-        junction = ("candidate", "glavinov") if originals is None else None
-        sink = _furniture_sink(reviewed_mesh, bindings, (ox, oy), mesh.controls,
-                               lambda p: owns(p, ox - tx, oy - ty) and reviewed_mesh.bounds.covers(p), junction)
-        compile_scene(review_edges, layout, review_walks, review_greens, review_bounds,
-                      None if report is None else list(report),
-                      mesh=reviewed_mesh, preview=False, furniture_sink=sink)
-        for point in reviewed_mesh.P:
-            point[0] += ox - tx
-            point[2] += oy - ty
-        mesh.P.extend(reviewed_mesh.P)
-        mesh.C.extend(reviewed_mesh.C)
     mesh.controls["surface_tiles"] = [((math.floor(tx / (2 * radius)), math.floor(ty / (2 * radius))),
                                        zlib.compress(mesh.surface.tobytes(), 1))]
     return mesh
